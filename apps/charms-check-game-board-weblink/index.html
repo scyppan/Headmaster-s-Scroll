@@ -7,11 +7,11 @@
   <link rel="stylesheet" href="css/game-board.css">
 </head>
 <body class="ccgb-preview-page">
-  <div id="charms-check-game-board" aria-live="polite"></div>
+  <div id="gameboard" aria-live="polite"></div>
   <script src="js/game-board.js"></script>
   <script>
     window.CharmsCheckGameBoard.init({
-      rootId: 'charms-check-game-board',
+      rootId: 'gameboard',
       apiBase: 'https://game.example.com',
       storageKey: 'charms-check-game-board-preview-invite',
       preview: new URLSearchParams(location.search).get('preview') || 'connected'
@@ -19,4 +19,3 @@
   </script>
 </body>
 </html>
-

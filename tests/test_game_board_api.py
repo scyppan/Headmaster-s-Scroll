@@ -67,6 +67,7 @@ class GameBoardApiTests(unittest.TestCase):
         self.assertEqual(set(health), {"service", "available", "paused"})
         self.assertEqual(self.admin.get("/api/admin/state").status_code, 403)
         self.assertEqual(self.admin.get("/api/admin/state", headers=self.admin_headers).status_code, 200)
+        self.assertEqual(self.admin.get("/").status_code, 404)
 
     def test_origin_is_required(self):
         response = self.player.post("/v1/admissions", json={"invite_token": self.invite})
@@ -181,14 +182,34 @@ class GameBoardAssetTests(unittest.TestCase):
         app = root / "apps" / "charms-check-game-board-weblink"
         loader = (app / "wordpress.html").read_text(encoding="utf-8")
         client = (app / "js" / "game-board.js").read_text(encoding="utf-8")
+        index = (app / "index.html").read_text(encoding="utf-8")
         self.assertIn("scyppan/Headmaster-s-Scroll", loader)
         self.assertIn("apps/charms-check-game-board-weblink/", loader)
-        self.assertIn("https://game.example.com", loader)
+        self.assertIn("https://beast.tail102829.ts.net", loader)
+        self.assertNotIn("https://game.example.com", loader)
+        self.assertIn("Tailscale Funnel", loader)
+        self.assertNotIn("Cloudflare", loader)
+        self.assertIn('<div id="gameboard"', loader)
+        self.assertIn("rootId: 'gameboard'", loader)
+        self.assertNotIn('id="charms-check-game-board"', loader + index)
+        self.assertIn("this.root.innerHTML", client)
         self.assertIn("Waiting for the Headmaster", client)
         self.assertIn("heartbeat_ack", client)
         self.assertIn("acknowledgement", client)
         self.assertNotIn("world.json", loader + client)
         self.assertFalse((app / "app.json").exists())
+
+    def test_game_board_tile_opens_native_python_controls(self):
+        root = Path(__file__).resolve().parents[1]
+        entrypoint = (root / "apps" / "game-board" / "main.py").read_text(encoding="utf-8")
+        desktop = (root / "headmasters_scroll" / "game_board" / "desktop.py").read_text(encoding="utf-8")
+        self.assertIn("headmasters_scroll.game_board.desktop", entrypoint)
+        self.assertNotIn("webbrowser", entrypoint)
+        self.assertIn("class GameBoardWindow(tk.Tk)", desktop)
+        self.assertIn('"Currently Logged In"', desktop)
+        self.assertIn('"Send Selected"', desktop)
+        self.assertIn("/api/admin/admissions/", desktop)
+        self.assertFalse((root / "apps" / "game-board" / "web" / "admin.html").exists())
 
 
 if __name__ == "__main__":

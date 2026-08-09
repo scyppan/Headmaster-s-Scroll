@@ -3,10 +3,10 @@
   Paste this entire file into a WordPress Custom HTML block.
 
   Before publishing:
-  1. Replace API_BASE with the named Cloudflare Tunnel hostname.
+  1. Replace API_BASE with the HTTPS hostname printed by Tailscale Funnel.
   2. Set VERSION to a tag that exists in the GitHub repository.
 -->
-<div id="charms-check-game-board" aria-live="polite">
+<div id="gameboard" aria-live="polite">
   <p>Opening the Game Board…</p>
 </div>
 
@@ -16,7 +16,7 @@
 
   const VERSION = 'v0.2.0';
   const REPOSITORY = 'scyppan/Headmaster-s-Scroll';
-  const API_BASE = 'https://game.example.com';
+  const API_BASE = 'https://beast.tail102829.ts.net';
   const BASE = `https://cdn.jsdelivr.net/gh/${REPOSITORY}@${VERSION}/apps/charms-check-game-board-weblink/`;
 
   const cssFiles = ['css/game-board.css'];
@@ -62,7 +62,7 @@
     for (const file of jsFiles) await loadScript(file);
     if (!window.CharmsCheckGameBoard) throw new Error('The Game Board client did not initialize.');
     window.CharmsCheckGameBoard.init({
-      rootId: 'charms-check-game-board',
+      rootId: 'gameboard',
       apiBase: API_BASE,
       storageKey: 'charms-check-game-board-invite'
     });
@@ -70,7 +70,7 @@
 
   initapp().catch(error => {
     console.error('[Charms Check] Game Board failed to load:', error);
-    const root = document.getElementById('charms-check-game-board');
+    const root = document.getElementById('gameboard');
     if (root) root.textContent = 'The Game Board could not be loaded. Please try again later.';
   });
 })();

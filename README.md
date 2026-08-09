@@ -8,7 +8,7 @@ Headmaster's Scroll is the local home for Charms Check desktop applications. The
 python main.py
 ```
 
-Mage Maker and DBM are registered as disabled placeholders. Game Board is an enabled app that opens its private local dashboard when the separately managed server is running. See `apps/game-board/README.md` for Gmail, WordPress, Cloudflare, and startup instructions.
+Mage Maker and DBM are registered as disabled placeholders. Game Board is an enabled native Python app with private Headmaster controls for invitations, approvals, connected players, announcements, and sessions. It starts its local communication service automatically. See `apps/game-board/README.md` for Gmail, WordPress, free Tailscale Funnel, and setup instructions.
 
 ## Shared data API
 

@@ -4,16 +4,16 @@ This is the player-facing WordPress client for Headmaster's Scroll Game Board. I
 
 ## Project layout
 
-- `wordpress.html` — paste this root-level loader into a WordPress Custom HTML block.
+- `wordpress.html` — paste this root-level loader into a WordPress Custom HTML block. It provides `<div id="gameboard">` and loads the published assets.
 - `css/game-board.css` — the parchment presentation.
-- `js/game-board.js` — invitations, approval polling, WebSocket connection, heartbeats, announcements, and acknowledgements.
+- `js/game-board.js` — creates the complete player GUI inside `#gameboard` and handles invitations, approval polling, WebSocket connection, heartbeats, announcements, and acknowledgements.
 - `index.html` — local visual preview. Add `?preview=waiting` or `?preview=denied` to preview those states.
 
 ## First publication
 
 1. Publish Headmaster's Scroll and tag the release as `v0.2.0`.
 2. Confirm the Weblink assets are present under `apps/charms-check-game-board-weblink/` in that tag.
-3. In `wordpress.html`, replace `https://game.example.com` with the stable HTTPS hostname for the named Cloudflare Tunnel.
+3. Confirm `API_BASE` in `wordpress.html` matches the stable Tailscale Funnel hostname.
 4. Paste the complete contents of `wordpress.html` into the WordPress page's Custom HTML block.
 5. Configure Headmaster's Scroll with that exact WordPress origin and player page URL.
 
@@ -27,4 +27,4 @@ For later releases, create a new Git tag and change only `VERSION` in `wordpress
 
 ## Security boundary
 
-The invitation remains in the URL fragment, so it is not sent to WordPress during the page request. The client removes it from the address bar after reading it and keeps it only in the browser session. The Weblink never requests Headmaster dashboard routes or shared JSON data; it communicates only with the public admissions and session endpoints.
+The invitation remains in the URL fragment, so it is not sent to WordPress during the page request. The client removes it from the address bar after reading it and keeps it only in the browser session. The Weblink never requests Headmaster control routes or shared JSON data; it communicates only with the public admissions and session endpoints.

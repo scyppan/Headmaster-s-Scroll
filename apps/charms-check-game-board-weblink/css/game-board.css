@@ -1,4 +1,4 @@
-#charms-check-game-board {
+#gameboard {
   --ccgb-paper: #ead7aa;
   --ccgb-paper-light: #f8edcf;
   --ccgb-paper-edge: #d4b778;
@@ -12,9 +12,9 @@
   max-width: 760px;
 }
 
-#charms-check-game-board * { box-sizing: border-box; }
+#gameboard * { box-sizing: border-box; }
 
-#charms-check-game-board .ccgb-scroll {
+#gameboard .ccgb-scroll {
   background:
     radial-gradient(circle at 28% 16%, rgba(255, 255, 255, 0.3), transparent 28%),
     linear-gradient(100deg, var(--ccgb-paper-edge) 0, var(--ccgb-paper) 5%, var(--ccgb-paper-light) 50%, var(--ccgb-paper) 95%, var(--ccgb-paper-edge) 100%);
@@ -27,7 +27,7 @@
   text-align: center;
 }
 
-#charms-check-game-board .ccgb-scroll::after {
+#gameboard .ccgb-scroll::after {
   border: 1px solid rgba(96, 56, 37, 0.18);
   content: "";
   inset: 9px;
@@ -35,33 +35,33 @@
   position: absolute;
 }
 
-#charms-check-game-board h1,
-#charms-check-game-board h2 { font-family: Georgia, "Times New Roman", serif; }
+#gameboard h1,
+#gameboard h2 { font-family: Georgia, "Times New Roman", serif; }
 
-#charms-check-game-board h1 {
+#gameboard h1 {
   font-size: clamp(32px, 7vw, 52px);
   letter-spacing: 0.02em;
   margin: 12px 0;
 }
 
-#charms-check-game-board h2 {
+#gameboard h2 {
   font-size: 19px;
   margin-top: 0;
 }
 
-#charms-check-game-board .ccgb-rule {
+#gameboard .ccgb-rule {
   background: var(--ccgb-red);
   height: 2px;
   margin: 12px 0 25px;
 }
 
-#charms-check-game-board .ccgb-status {
+#gameboard .ccgb-status {
   color: var(--ccgb-muted);
   font-size: 18px;
   min-height: 54px;
 }
 
-#charms-check-game-board .ccgb-spinner {
+#gameboard .ccgb-spinner {
   animation: ccgb-spin 1s linear infinite;
   border: 3px solid #c9aa71;
   border-radius: 50%;
@@ -71,11 +71,11 @@
   width: 32px;
 }
 
-#charms-check-game-board .ccgb-spinner.is-off { display: none; }
+#gameboard .ccgb-spinner.is-off { display: none; }
 
 @keyframes ccgb-spin { to { transform: rotate(360deg); } }
 
-#charms-check-game-board button {
+#gameboard button {
   background: var(--ccgb-red);
   border: 1px solid #603825;
   border-radius: 3px;
@@ -86,16 +86,16 @@
   padding: 10px 18px;
 }
 
-#charms-check-game-board button:hover,
-#charms-check-game-board button:focus-visible {
+#gameboard button:hover,
+#gameboard button:focus-visible {
   background: #63311f;
   outline: 2px solid #fff1c9;
   outline-offset: 2px;
 }
 
-#charms-check-game-board .ccgb-welcome { font-size: 18px; }
+#gameboard .ccgb-welcome { font-size: 18px; }
 
-#charms-check-game-board .ccgb-quality {
+#gameboard .ccgb-quality {
   align-items: center;
   background: rgba(255, 255, 255, 0.35);
   border-radius: 999px;
@@ -104,19 +104,19 @@
   padding: 7px 12px;
 }
 
-#charms-check-game-board .ccgb-quality-dot {
+#gameboard .ccgb-quality-dot {
   background: var(--ccgb-gold);
   border-radius: 50%;
   height: 10px;
   width: 10px;
 }
 
-#charms-check-game-board .ccgb-quality-dot.good { background: #4e7d42; }
-#charms-check-game-board .ccgb-quality-dot.fair { background: #b17f23; }
-#charms-check-game-board .ccgb-quality-dot.poor { background: #9b362b; }
-#charms-check-game-board .ccgb-quality-dot.disconnected { background: #777; }
+#gameboard .ccgb-quality-dot.good { background: #4e7d42; }
+#gameboard .ccgb-quality-dot.fair { background: #b17f23; }
+#gameboard .ccgb-quality-dot.poor { background: #9b362b; }
+#gameboard .ccgb-quality-dot.disconnected { background: #777; }
 
-#charms-check-game-board .ccgb-announcement {
+#gameboard .ccgb-announcement {
   background: rgba(255, 255, 255, 0.36);
   border: 1px solid #c49c5e;
   margin: 28px auto;
@@ -124,7 +124,7 @@
   padding: 18px;
 }
 
-#charms-check-game-board [hidden] { display: none !important; }
+#gameboard [hidden] { display: none !important; }
 
 .ccgb-preview-page {
   background: #251b15;
@@ -134,14 +134,13 @@
 }
 
 @media (max-width: 560px) {
-  #charms-check-game-board { margin: 12px auto; }
-  #charms-check-game-board .ccgb-scroll {
+  #gameboard { margin: 12px auto; }
+  #gameboard .ccgb-scroll {
     min-height: 360px;
     padding: 28px 24px;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  #charms-check-game-board .ccgb-spinner { animation-duration: 2s; }
+  #gameboard .ccgb-spinner { animation-duration: 2s; }
 }
-

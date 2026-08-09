@@ -6,23 +6,19 @@ from collections import defaultdict, deque
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
-from ..paths import PROJECT_ROOT
 from .gmail import GmailSender
 from .service import GameBoardService, parse_utc, token_hash, utc_now
 from .storage import GameBoardRepository
 
 
-APP_DIRECTORY = PROJECT_ROOT / "apps" / "game-board"
 MAX_MESSAGE_BYTES = 16_384
 
 
@@ -221,13 +217,6 @@ def create_apps(repository: GameBoardRepository | None = None):
             raise HTTPException(status_code=403, detail=str(error)) from error
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
-
-    @admin_app.get("/", response_class=HTMLResponse)
-    async def dashboard(key: str = Query(default="")):
-        if key != settings["admin_key"]:
-            raise HTTPException(status_code=403, detail="Use the private dashboard URL printed by the server")
-        html = (APP_DIRECTORY / "web" / "admin.html").read_text(encoding="utf-8")
-        return html.replace("__ADMIN_KEY__", settings["admin_key"])
 
     @admin_app.get("/api/admin/state", dependencies=[Depends(admin_guard)])
     async def admin_state():
@@ -487,8 +476,7 @@ async def _serve() -> None:
         ) from error
     admin_app, player_app, runtime = create_apps()
     settings = runtime.service.settings(include_private=True)
-    admin_url = f"http://{settings['admin_host']}:{settings['admin_port']}/?key={settings['admin_key']}"
-    print(f"Headmaster dashboard: {admin_url}")
+    print(f"Headmaster control API: http://{settings['admin_host']}:{settings['admin_port']}")
     print(f"Player origin service: http://{settings['player_host']}:{settings['player_port']}")
     admin_server = uvicorn.Server(uvicorn.Config(
         admin_app, host=settings["admin_host"], port=settings["admin_port"],

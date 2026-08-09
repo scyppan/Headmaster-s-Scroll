@@ -10,7 +10,7 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
-from headmasters_scroll.game_board.gmail import GmailSender
+from headmasters_scroll.game_board.gmail import GmailSender, GmailUnavailable
 from headmasters_scroll.game_board.server import create_apps
 from headmasters_scroll.game_board.storage import GameBoardRepository
 
@@ -72,6 +72,40 @@ class GameBoardApiTests(unittest.TestCase):
     def test_origin_is_required(self):
         response = self.player.post("/v1/admissions", json={"invite_token": self.invite})
         self.assertEqual(response.status_code, 403)
+
+    def test_wordpress_origin_is_derived_for_browser_preflight(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            repository = GameBoardRepository(Path(temporary))
+            settings = repository.settings()
+            settings["wordpress_player_url"] = f"{ORIGIN}/game/"
+            settings["allowed_origin"] = ""
+            repository.save_settings(settings)
+            _admin_app, player_app, _runtime = create_apps(repository)
+            with TestClient(player_app) as player:
+                response = player.options(
+                    "/v1/admissions",
+                    headers={
+                        "Origin": ORIGIN,
+                        "Access-Control-Request-Method": "POST",
+                        "Access-Control-Request-Headers": "content-type",
+                    },
+                )
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.headers["access-control-allow-origin"], ORIGIN)
+
+    def test_gmail_setup_errors_are_returned_to_the_native_app(self):
+        with patch.object(GmailSender, "authorize", side_effect=GmailUnavailable("Select a credentials file")):
+            response = self.admin.post(
+                "/api/admin/gmail/authorize",
+                headers=self.admin_headers,
+                json={"credentials_path": "C:/Private/credentials.json", "sender": ""},
+            )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["detail"], "Select a credentials file")
+        self.assertEqual(
+            self.repository.settings()["gmail_credentials_path"],
+            "C:/Private/credentials.json",
+        )
 
     def test_end_to_end_approval_and_ticket_replay(self):
         admission = self.admission()
@@ -186,7 +220,7 @@ class GameBoardAssetTests(unittest.TestCase):
         self.assertIn("scyppan/Headmaster-s-Scroll", loader)
         self.assertIn("apps/charms-check-game-board-weblink/", loader)
         self.assertIn("https://beast.tail102829.ts.net", loader)
-        self.assertIn("a26.8.9.003", loader)
+        self.assertIn("a26.8.9.006", loader)
         self.assertNotIn("https://game.example.com", loader)
         self.assertIn("getElementById('gameboard')", loader)
         self.assertNotIn("<script>", loader)
@@ -195,6 +229,8 @@ class GameBoardAssetTests(unittest.TestCase):
         self.assertIn("rootId: 'gameboard'", loader)
         self.assertNotIn('id="charms-check-game-board"', loader + index)
         self.assertIn("this.root.innerHTML", client)
+        self.assertIn("document.getElementById('gameboard')", client)
+        self.assertNotIn("document.getElementById(options.rootId)", client)
         self.assertIn("Waiting for the Headmaster", client)
         self.assertIn("heartbeat_ack", client)
         self.assertIn("acknowledgement", client)
@@ -210,7 +246,11 @@ class GameBoardAssetTests(unittest.TestCase):
         self.assertIn("class GameBoardWindow(tk.Tk)", desktop)
         self.assertIn('"Currently Logged In"', desktop)
         self.assertIn('"Send Selected"', desktop)
+        self.assertIn('"Send All Players"', desktop)
+        self.assertIn('"Add All"', desktop)
         self.assertIn("/api/admin/admissions/", desktop)
+        self.assertIn("def _grid_card", desktop)
+        self.assertIn("self.settings_dirty", desktop)
         self.assertFalse((root / "apps" / "game-board" / "web" / "admin.html").exists())
 
 

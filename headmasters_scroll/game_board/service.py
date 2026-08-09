@@ -100,6 +100,14 @@ class GameBoardService:
 
     def settings(self, include_private: bool = False) -> dict[str, Any]:
         value = deepcopy(self.repository.settings())
+        # Older settings may have the WordPress page but no separately saved
+        # origin. Derive it so CORS remains safe and the browser can reconnect.
+        if not value.get("allowed_origin") and value.get("wordpress_player_url"):
+            try:
+                self._validate_https_url(value["wordpress_player_url"], "WordPress player URL")
+                value["allowed_origin"] = self._origin(value["wordpress_player_url"])
+            except ValueError:
+                pass
         if not include_private:
             value.pop("admin_key", None)
         return value
@@ -116,12 +124,35 @@ class GameBoardService:
                     if not isinstance(updates[key], str):
                         raise ValueError(f"{key} must be text")
                     value[key] = updates[key].strip()
+            credentials_path = value["gmail_credentials_path"]
+            if len(credentials_path) >= 2 and credentials_path[0] == credentials_path[-1] and credentials_path[0] in {'"', "'"}:
+                value["gmail_credentials_path"] = credentials_path[1:-1].strip()
             ZoneInfo(value["timezone"])
             self._validate_https_url(value["wordpress_player_url"], "WordPress player URL")
-            self._validate_https_url(value["allowed_origin"], "Allowed origin", origin_only=True)
-            self._validate_https_url(value["public_api_base"], "Public API URL", origin_only=True)
+            origin_source = value["wordpress_player_url"] or value["allowed_origin"]
+            self._validate_https_url(origin_source, "Allowed origin")
+            value["allowed_origin"] = self._origin(origin_source)
+            self._validate_https_url(value["public_api_base"], "Public API URL")
+            value["public_api_base"] = self._origin(value["public_api_base"])
             if value["gmail_sender"] and not EMAIL.fullmatch(value["gmail_sender"]):
                 raise ValueError("The Gmail sender address is invalid")
+            self.repository.save_settings(value)
+            return self.settings()
+
+    def update_gmail_settings(self, credentials_path: str, sender: str = "") -> dict[str, Any]:
+        """Save Gmail setup without requiring unrelated connection fields to be complete."""
+        if not isinstance(credentials_path, str) or not isinstance(sender, str):
+            raise ValueError("Gmail settings must be text")
+        credentials_path = credentials_path.strip()
+        sender = sender.strip()
+        if len(credentials_path) >= 2 and credentials_path[0] == credentials_path[-1] and credentials_path[0] in {'"', "'"}:
+            credentials_path = credentials_path[1:-1].strip()
+        if sender and not EMAIL.fullmatch(sender):
+            raise ValueError("The Gmail sender address is invalid")
+        with self._lock:
+            value = self.repository.settings()
+            value["gmail_credentials_path"] = credentials_path
+            value["gmail_sender"] = sender
             self.repository.save_settings(value)
             return self.settings()
 
@@ -136,6 +167,13 @@ class GameBoardService:
             raise ValueError(f"{label} cannot contain credentials, a query, or a fragment")
         if origin_only and parsed.path not in {"", "/"}:
             raise ValueError(f"{label} must contain only its scheme and hostname")
+
+    @staticmethod
+    def _origin(value: str) -> str:
+        if not value:
+            return ""
+        parsed = urlsplit(value)
+        return f"{parsed.scheme}://{parsed.netloc}"
 
     def create_session(
         self,
@@ -248,8 +286,27 @@ class GameBoardService:
             if player is None or player["revoked"]:
                 raise PermissionError("Invalid or revoked invitation")
             existing = next((item for item in session["pending"] if item["contact_id"] == player["contact_id"] and item["status"] in {"pending", "approved", "ticket_issued", "connected"}), None)
+            if existing and existing["status"] == "ticket_issued":
+                ticket = self._ticket_by_request.get(existing["id"])
+                details = self._tickets.get(token_hash(ticket)) if ticket else None
+                if details is None or details["expires_at"] <= utc_now():
+                    if ticket:
+                        self._tickets.pop(token_hash(ticket), None)
+                    self._ticket_by_request.pop(existing["id"], None)
+                    existing["status"] = "disconnected"
+                    existing["disconnected_at"] = iso_utc(utc_now())
+                    existing = None
             if existing:
-                raise PermissionError("An admission request is already active for this player")
+                # Repeating the same valid invitation resumes the active request
+                # instead of consuming rate-limit attempts or stranding the player.
+                poll_token = token_urlsafe(32)
+                existing["poll_hash"] = token_hash(poll_token)
+                self.repository.save_active(wrapper)
+                return {
+                    "request_id": existing["id"],
+                    "poll_token": poll_token,
+                    "status": existing["status"],
+                }
             poll_token = token_urlsafe(32)
             request = {
                 "id": str(uuid4()), "contact_id": player["contact_id"], "name": player["name"],
@@ -270,6 +327,14 @@ class GameBoardService:
             response: dict[str, Any] = {"status": request["status"], "player_name": request["name"]}
             if request["status"] in {"approved", "ticket_issued"}:
                 ticket = self._ticket_by_request.get(request_id)
+                details = self._tickets.get(token_hash(ticket)) if ticket else None
+                if ticket and (details is None or details["expires_at"] <= utc_now()):
+                    self._tickets.pop(token_hash(ticket), None)
+                    self._ticket_by_request.pop(request_id, None)
+                    request["status"] = "disconnected"
+                    request["disconnected_at"] = iso_utc(utc_now())
+                    self.repository.save_active(wrapper)
+                    return {"status": "disconnected", "player_name": request["name"]}
                 if ticket is None:
                     ticket = token_urlsafe(32)
                     self._ticket_by_request[request_id] = ticket

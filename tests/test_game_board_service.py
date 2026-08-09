@@ -45,6 +45,27 @@ class GameBoardServiceTests(unittest.TestCase):
         self.service.delete_contact(self.alice["id"])
         self.assertEqual(self.service.list_contacts(), [])
 
+    def test_settings_derive_origins_from_normal_page_urls(self):
+        updated = self.service.update_settings({
+            "wordpress_player_url": "https://charmscheck.com/game-board/",
+            "allowed_origin": "https://charmscheck.com/game-board/",
+            "public_api_base": "https://beast.tail102829.ts.net/",
+            "gmail_credentials_path": '"C:/Private Files/credentials.json"',
+        })
+        self.assertEqual(updated["allowed_origin"], "https://charmscheck.com")
+        self.assertEqual(updated["public_api_base"], "https://beast.tail102829.ts.net")
+        self.assertEqual(updated["gmail_credentials_path"], "C:/Private Files/credentials.json")
+
+    def test_gmail_settings_do_not_require_connection_setup(self):
+        settings = self.repository.settings()
+        settings["wordpress_player_url"] = "not-finished-yet"
+        self.repository.save_settings(settings)
+        updated = self.service.update_gmail_settings(
+            '"C:/Private Files/credentials.json"', "headmaster@gmail.com"
+        )
+        self.assertEqual(updated["gmail_credentials_path"], "C:/Private Files/credentials.json")
+        self.assertEqual(updated["gmail_sender"], "headmaster@gmail.com")
+
     def test_approval_ticket_is_single_use_and_reconnect_requires_approval(self):
         self.create_session()
         raw, link = self.invite()
@@ -62,6 +83,23 @@ class GameBoardServiceTests(unittest.TestCase):
         self.service.mark_disconnected(request["request_id"], 12.5, 300.0, 2)
         reconnect = self.service.request_admission(raw, "203.0.113.7", "Test Browser")
         self.assertEqual(reconnect["status"], "pending")
+
+    def test_duplicate_admission_resumes_and_expired_ticket_returns_to_queue(self):
+        self.create_session()
+        raw, _link = self.invite()
+        first = self.service.request_admission(raw, "203.0.113.7", "Browser")
+        resumed = self.service.request_admission(raw, "203.0.113.7", "Browser")
+        self.assertEqual(resumed["request_id"], first["request_id"])
+        self.assertNotEqual(resumed["poll_token"], first["poll_token"])
+        self.service.approve(first["request_id"])
+        approved = self.service.poll_admission(first["request_id"], resumed["poll_token"])
+        ticket_hash = next(iter(self.service._tickets))
+        self.service._tickets[ticket_hash]["expires_at"] = utc_now() - timedelta(seconds=1)
+        expired = self.service.poll_admission(first["request_id"], resumed["poll_token"])
+        self.assertEqual(expired["status"], "disconnected")
+        retry = self.service.request_admission(raw, "203.0.113.7", "Browser")
+        self.assertEqual(retry["status"], "pending")
+        self.assertNotEqual(retry["request_id"], first["request_id"])
 
     def test_revoke_invalidates_invitation(self):
         self.create_session()

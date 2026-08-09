@@ -6,7 +6,7 @@ This is the player-facing WordPress client for Headmaster's Scroll Game Board. I
 
 - `wordpress.html` — JavaScript-only loader for the WordPress Head Scripts field. That field supplies the surrounding `<script>` element.
 - `css/game-board.css` — the parchment presentation.
-- `js/game-board.js` — creates the complete player GUI inside `#gameboard` and handles invitations, approval polling, WebSocket connection, heartbeats, announcements, and acknowledgements.
+- `js/game-board.js` — creates the complete player GUI inside the canonical `#gameboard` container and handles invitations, approval polling, WebSocket connection, heartbeats, announcements, and acknowledgements. The mount ID is not configurable.
 - `index.html` — local visual preview. Add `?preview=waiting` or `?preview=denied` to preview those states.
 
 ## WordPress placement
@@ -33,7 +33,7 @@ Set `VERSION` in `wordpress.html` to the release being prepared, commit the file
 The current loader uses this pinned CDN root:
 
 ```text
-https://cdn.jsdelivr.net/gh/scyppan/Headmaster-s-Scroll@a26.8.9.003/apps/charms-check-game-board-weblink/
+https://cdn.jsdelivr.net/gh/scyppan/Headmaster-s-Scroll@a26.8.9.004/apps/charms-check-game-board-weblink/
 ```
 
 ## Security boundary

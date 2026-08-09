@@ -9,6 +9,7 @@ from tkinter import messagebox, ttk
 from .errors import ManifestError
 from .manifests import AppManifest, load_manifests
 from .paths import PROJECT_ROOT
+from .windowing import apply_window_icon, configure_windows_app_id
 
 
 def command_for(manifest: AppManifest) -> list[str]:
@@ -44,6 +45,7 @@ class HomeScreen(tk.Tk):
         self.geometry("1100x720")
         self.minsize(720, 520)
         self.configure(background=self.PARCHMENT)
+        apply_window_icon(self)
         self._fullscreen = True
         self.attributes("-fullscreen", True)
         self.bind("<F11>", self._toggle_fullscreen)
@@ -194,6 +196,7 @@ class HomeScreen(tk.Tk):
 
 
 def main() -> None:
+    configure_windows_app_id()
     try:
         HomeScreen().mainloop()
     except ManifestError as error:

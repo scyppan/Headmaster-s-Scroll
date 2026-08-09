@@ -10,10 +10,11 @@ import urllib.error
 import urllib.request
 from datetime import date
 from pathlib import Path
-from tkinter import messagebox, ttk
+from tkinter import filedialog, messagebox, ttk
 from typing import Any, Callable
 
 from ..paths import PROJECT_ROOT
+from ..windowing import apply_window_icon, configure_windows_app_id
 from .storage import GameBoardRepository
 
 
@@ -24,7 +25,13 @@ class AdminClient:
         self.base_url = f"http://{settings['admin_host']}:{settings['admin_port']}"
         self.admin_key = settings["admin_key"]
 
-    def request(self, method: str, path: str, payload: dict[str, Any] | None = None) -> Any:
+    def request(
+        self,
+        method: str,
+        path: str,
+        payload: dict[str, Any] | None = None,
+        timeout: float = 20,
+    ) -> Any:
         body = json.dumps(payload).encode("utf-8") if payload is not None else None
         request = urllib.request.Request(
             f"{self.base_url}{path}",
@@ -33,7 +40,7 @@ class AdminClient:
             headers={"X-Admin-Key": self.admin_key, "Content-Type": "application/json"},
         )
         try:
-            with urllib.request.urlopen(request, timeout=20) as response:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
                 return json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as error:
             try:
@@ -115,10 +122,12 @@ class GameBoardWindow(tk.Tk):
         self.state_data: dict[str, Any] = {"contacts": [], "settings": {}, "session": None, "connections": []}
         self.refreshing = False
         self.closing = False
+        self.settings_dirty = False
         self.title("Game Board — Headmaster Controls")
         self.geometry("1240x800")
         self.minsize(980, 650)
         self.configure(background=self.PAPER)
+        apply_window_icon(self)
         self.protocol("WM_DELETE_WINDOW", self.close)
         self._configure_style()
         self._build()
@@ -183,6 +192,13 @@ class GameBoardWindow(tk.Tk):
         ttk.Label(card, text=title, style="Section.TLabel").pack(anchor="w", pady=(0, 10))
         return card
 
+    def _grid_card(self, parent: tk.Misc, title: str, columns: int) -> ttk.Frame:
+        card = ttk.Frame(parent, style="Card.TFrame", padding=16)
+        ttk.Label(card, text=title, style="Section.TLabel").grid(
+            row=0, column=0, columnspan=columns, sticky="w", pady=(0, 10)
+        )
+        return card
+
     def _tree(self, parent: tk.Misc, columns: tuple[str, ...], headings: tuple[str, ...]) -> ttk.Treeview:
         tree = ttk.Treeview(parent, columns=columns, show="headings", selectmode="extended")
         for column, heading in zip(columns, headings):
@@ -219,15 +235,15 @@ class GameBoardWindow(tk.Tk):
         ttk.Button(announcement_card, text="Send to Connected Players", command=self.send_announcement).pack(anchor="e", pady=(10, 0))
 
     def _build_contacts(self) -> None:
-        form = self._card(self.contacts_tab, "Add Player")
+        form = self._grid_card(self.contacts_tab, "Add Player", 3)
         form.pack(fill="x", pady=8)
-        ttk.Label(form, text="Name", style="Card.TLabel").grid(row=0, column=0, sticky="w")
-        ttk.Label(form, text="Email", style="Card.TLabel").grid(row=0, column=1, sticky="w", padx=(12, 0))
+        ttk.Label(form, text="Name", style="Card.TLabel").grid(row=1, column=0, sticky="w")
+        ttk.Label(form, text="Email", style="Card.TLabel").grid(row=1, column=1, sticky="w", padx=(12, 0))
         self.contact_name = ttk.Entry(form)
         self.contact_email = ttk.Entry(form)
-        self.contact_name.grid(row=1, column=0, sticky="ew")
-        self.contact_email.grid(row=1, column=1, sticky="ew", padx=(12, 0))
-        ttk.Button(form, text="Add Player", command=self.add_contact).grid(row=1, column=2, padx=(12, 0))
+        self.contact_name.grid(row=2, column=0, sticky="ew")
+        self.contact_email.grid(row=2, column=1, sticky="ew", padx=(12, 0))
+        ttk.Button(form, text="Add Player", command=self.add_contact).grid(row=2, column=2, padx=(12, 0))
         form.columnconfigure(0, weight=1)
         form.columnconfigure(1, weight=1)
 
@@ -237,22 +253,33 @@ class GameBoardWindow(tk.Tk):
         ttk.Button(card, text="Remove Selected", style="Danger.TButton", command=self.remove_contacts).pack(anchor="e", pady=(10, 0))
 
     def _build_session(self) -> None:
-        create = self._card(self.session_tab, "Create Game Session")
+        create = self._grid_card(self.session_tab, "Create Game Session", 4)
         create.pack(fill="x", pady=8)
-        ttk.Label(create, text="Session title", style="Card.TLabel").grid(row=0, column=0, sticky="w")
-        ttk.Label(create, text="Game day (YYYY-MM-DD)", style="Card.TLabel").grid(row=0, column=1, sticky="w", padx=(12, 0))
-        ttk.Label(create, text="Expires", style="Card.TLabel").grid(row=0, column=2, sticky="w", padx=(12, 0))
+        ttk.Label(create, text="Session title", style="Card.TLabel").grid(row=1, column=0, sticky="w")
+        ttk.Label(create, text="Game day (YYYY-MM-DD)", style="Card.TLabel").grid(row=1, column=1, sticky="w", padx=(12, 0))
+        ttk.Label(create, text="Expires", style="Card.TLabel").grid(row=1, column=2, sticky="w", padx=(12, 0))
         self.session_title = ttk.Entry(create)
         self.game_day = ttk.Entry(create, width=14)
         self.expiration = ttk.Entry(create, width=8)
         self.game_day.insert(0, date.today().isoformat())
         self.expiration.insert(0, "23:59")
-        self.session_title.grid(row=1, column=0, sticky="ew")
-        self.game_day.grid(row=1, column=1, sticky="ew", padx=(12, 0))
-        self.expiration.grid(row=1, column=2, sticky="ew", padx=(12, 0))
+        self.session_title.grid(row=2, column=0, sticky="ew")
+        self.game_day.grid(row=2, column=1, sticky="ew", padx=(12, 0))
+        self.expiration.grid(row=2, column=2, sticky="ew", padx=(12, 0))
         self.roster_list = tk.Listbox(create, height=5, selectmode="multiple", exportselection=False, background="#fff8e6", foreground=self.INK)
-        self.roster_list.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(12, 0))
-        ttk.Button(create, text="Create Session", command=self.create_session).grid(row=2, column=3, padx=(12, 0), sticky="s")
+        self.roster_contact_ids: list[str] = []
+        self.roster_list.bind("<<ListboxSelect>>", lambda _event: self._update_roster_count())
+        roster_controls = ttk.Frame(create, style="Card.TFrame")
+        roster_controls.grid(row=3, column=0, columnspan=4, sticky="ew", pady=(12, 4))
+        ttk.Label(roster_controls, text="Players in this session", style="Card.TLabel").pack(side="left")
+        ttk.Button(roster_controls, text="Add All", style="Quiet.TButton", command=self.select_all_roster).pack(side="right")
+        ttk.Button(roster_controls, text="Clear All", style="Quiet.TButton", command=self.clear_roster_selection).pack(side="right", padx=8)
+        self.roster_list.grid(row=4, column=0, columnspan=4, sticky="ew")
+        roster_footer = ttk.Frame(create, style="Card.TFrame")
+        roster_footer.grid(row=5, column=0, columnspan=4, sticky="ew", pady=(8, 0))
+        self.roster_selection_label = ttk.Label(roster_footer, text="0 players selected", style="Card.TLabel")
+        self.roster_selection_label.pack(side="left")
+        ttk.Button(roster_footer, text="Create Session", command=self.create_session).pack(side="right")
         create.columnconfigure(0, weight=2)
         create.columnconfigure(1, weight=1)
 
@@ -261,39 +288,70 @@ class GameBoardWindow(tk.Tk):
         self.session_summary = ttk.Label(active, text="No active session", style="Card.TLabel")
         self.session_summary.pack(anchor="w", pady=(0, 10))
         self.invites_tree = self._tree(active, ("name", "email", "status"), ("Player", "Email", "Invitation"))
+        self.invites_tree.bind("<<TreeviewSelect>>", lambda _event: self._update_invite_count())
+        selection_controls = ttk.Frame(active, style="Card.TFrame")
+        selection_controls.pack(fill="x", pady=(10, 0))
+        self.invite_selection_label = ttk.Label(selection_controls, text="0 players selected", style="Card.TLabel")
+        self.invite_selection_label.pack(side="left")
+        ttk.Button(selection_controls, text="Select All", style="Quiet.TButton", command=self.select_all_invites).pack(side="right")
+        ttk.Button(selection_controls, text="Clear Selection", style="Quiet.TButton", command=self.clear_invite_selection).pack(side="right", padx=8)
         controls = ttk.Frame(active, style="Card.TFrame")
-        controls.pack(fill="x", pady=(10, 0))
-        ttk.Button(controls, text="Preview", style="Quiet.TButton", command=self.preview_invite).pack(side="left")
+        controls.pack(fill="x", pady=(8, 0))
+        ttk.Button(controls, text="Preview Selected", style="Quiet.TButton", command=self.preview_invite).pack(side="left")
         ttk.Button(controls, text="Send Selected", command=lambda: self.send_invites(False)).pack(side="left", padx=8)
-        ttk.Button(controls, text="Send All", command=lambda: self.send_invites(True)).pack(side="left")
+        ttk.Button(controls, text="Send All Players", command=lambda: self.send_invites(True)).pack(side="left")
         self.pause_button = ttk.Button(controls, text="Pause Admissions", style="Quiet.TButton", command=self.toggle_pause)
         self.pause_button.pack(side="right", padx=8)
         ttk.Button(controls, text="End Session", style="Danger.TButton", command=self.end_session).pack(side="right")
 
     def _build_settings(self) -> None:
-        card = self._card(self.settings_tab, "Connection & Gmail Setup")
+        card = self._grid_card(self.settings_tab, "Connection & Gmail Setup", 3)
         card.pack(fill="both", expand=True, pady=8)
         fields = (
             ("wordpress_player_url", "WordPress Game Board page"),
-            ("allowed_origin", "Allowed WordPress origin"),
+            ("allowed_origin", "Allowed WordPress origin (automatic)"),
             ("public_api_base", "Public Game Board address"),
             ("gmail_credentials_path", "Google credentials file"),
-            ("gmail_sender", "Sending Gmail address"),
+            ("gmail_sender", "Sending Gmail address (optional)"),
             ("timezone", "Timezone"),
         )
         self.setting_entries: dict[str, ttk.Entry] = {}
         for row, (key, label) in enumerate(fields):
-            ttk.Label(card, text=label, style="Card.TLabel").grid(row=row, column=0, sticky="w", pady=6)
+            grid_row = row + 1
+            ttk.Label(card, text=label, style="Card.TLabel").grid(row=grid_row, column=0, sticky="w", pady=6)
             entry = ttk.Entry(card)
-            entry.grid(row=row, column=1, sticky="ew", padx=(18, 0), pady=6)
+            entry.grid(row=grid_row, column=1, sticky="ew", padx=(18, 0), pady=6)
+            entry.bind("<FocusIn>", self._begin_settings_edit)
             self.setting_entries[key] = entry
+            if key == "gmail_credentials_path":
+                ttk.Button(
+                    card,
+                    text="Browse…",
+                    style="Quiet.TButton",
+                    command=self.choose_credentials_file,
+                ).grid(row=grid_row, column=2, padx=(10, 0), pady=6)
         card.columnconfigure(1, weight=1)
         controls = ttk.Frame(card, style="Card.TFrame")
-        controls.grid(row=len(fields), column=0, columnspan=2, sticky="e", pady=(18, 0))
+        controls.grid(row=len(fields) + 1, column=0, columnspan=2, sticky="e", pady=(18, 0))
         ttk.Button(controls, text="Connect Gmail", style="Quiet.TButton", command=self.connect_gmail).pack(side="left", padx=(0, 8))
         ttk.Button(controls, text="Save Settings", command=self.save_settings).pack(side="left")
         self.gmail_status = ttk.Label(card, text="Gmail status: checking…", style="Card.TLabel")
-        self.gmail_status.grid(row=len(fields) + 1, column=0, columnspan=2, sticky="w", pady=(14, 0))
+        self.gmail_status.grid(row=len(fields) + 2, column=0, columnspan=2, sticky="w", pady=(14, 0))
+
+    def _begin_settings_edit(self, _event: tk.Event | None = None) -> None:
+        self.settings_dirty = True
+
+    def choose_credentials_file(self) -> None:
+        selected = filedialog.askopenfilename(
+            parent=self,
+            title="Select Google OAuth credentials",
+            filetypes=(("JSON files", "*.json"), ("All files", "*.*")),
+        )
+        if selected:
+            entry = self.setting_entries["gmail_credentials_path"]
+            entry.delete(0, "end")
+            entry.insert(0, selected)
+            self.settings_dirty = True
 
     def _start_server(self) -> None:
         self._background(self.server.start, self._server_started)
@@ -329,7 +387,10 @@ class GameBoardWindow(tk.Tk):
 
     def _failed(self, error: Exception, quiet: bool) -> None:
         self.refreshing = False
-        self.server_status.configure(text="LOCAL SERVER OFFLINE", foreground=self.RED)
+        if isinstance(error, ConnectionError):
+            self.server_status.configure(text="LOCAL SERVER OFFLINE", foreground=self.RED)
+        else:
+            self.server_status.configure(text="LOCAL SERVER ONLINE", foreground=self.GREEN)
         self.set_notice(str(error), error=True)
         if not quiet:
             messagebox.showerror("Game Board", str(error), parent=self)
@@ -353,17 +414,25 @@ class GameBoardWindow(tk.Tk):
         self.state_data = state
         contacts = state.get("contacts", [])
         self._replace_tree(self.contacts_tree, [(c["id"], (c["name"], c["email"])) for c in contacts])
-        current_selection = set(self.roster_list.curselection())
-        self.roster_list.delete(0, "end")
-        for contact in contacts:
-            self.roster_list.insert("end", f"{contact['name']}  —  {contact['email']}")
-        for index in current_selection:
-            if index < self.roster_list.size():
-                self.roster_list.selection_set(index)
+        selected_contact_ids = {
+            self.roster_contact_ids[index]
+            for index in self.roster_list.curselection()
+            if index < len(self.roster_contact_ids)
+        }
+        contact_ids = [contact["id"] for contact in contacts]
+        if contact_ids != self.roster_contact_ids:
+            self.roster_list.delete(0, "end")
+            self.roster_contact_ids = contact_ids
+            for contact in contacts:
+                self.roster_list.insert("end", f"{contact['name']}  —  {contact['email']}")
+            for index, contact_id in enumerate(self.roster_contact_ids):
+                if contact_id in selected_contact_ids:
+                    self.roster_list.selection_set(index)
+        self._update_roster_count()
 
         settings = state.get("settings", {})
-        for key, entry in self.setting_entries.items():
-            if self.focus_get() is not entry:
+        if not self.settings_dirty:
+            for key, entry in self.setting_entries.items():
                 entry.delete(0, "end")
                 entry.insert(0, settings.get(key, ""))
         gmail = state.get("gmail", {})
@@ -388,6 +457,7 @@ class GameBoardWindow(tk.Tk):
             self.pause_button.configure(text="Pause Admissions")
         self._replace_tree(self.pending_tree, pending_rows)
         self._replace_tree(self.invites_tree, invite_rows)
+        self._update_invite_count()
 
         connection_rows = []
         for connection in state.get("connections", []):
@@ -399,13 +469,45 @@ class GameBoardWindow(tk.Tk):
 
     @staticmethod
     def _replace_tree(tree: ttk.Treeview, rows: list[tuple[str, tuple[Any, ...]]]) -> None:
-        selected = set(tree.selection())
-        tree.delete(*tree.get_children())
-        for item_id, values in rows:
-            tree.insert("", "end", iid=item_id, values=values)
-        for item_id in selected:
+        wanted = {item_id for item_id, _values in rows}
+        for item_id in tree.get_children():
+            if item_id not in wanted:
+                tree.delete(item_id)
+        for index, (item_id, values) in enumerate(rows):
             if tree.exists(item_id):
-                tree.selection_add(item_id)
+                tree.item(item_id, values=values)
+                tree.move(item_id, "", index)
+            else:
+                tree.insert("", "end", iid=item_id, values=values)
+
+    def select_all_roster(self) -> None:
+        if self.roster_list.size():
+            self.roster_list.selection_set(0, "end")
+        self._update_roster_count()
+
+    def clear_roster_selection(self) -> None:
+        self.roster_list.selection_clear(0, "end")
+        self._update_roster_count()
+
+    def _update_roster_count(self) -> None:
+        if hasattr(self, "roster_selection_label"):
+            count = len(self.roster_list.curselection())
+            self.roster_selection_label.configure(text=f"{count} player{'s' if count != 1 else ''} selected")
+
+    def select_all_invites(self) -> None:
+        children = self.invites_tree.get_children()
+        if children:
+            self.invites_tree.selection_set(children)
+        self._update_invite_count()
+
+    def clear_invite_selection(self) -> None:
+        self.invites_tree.selection_remove(self.invites_tree.selection())
+        self._update_invite_count()
+
+    def _update_invite_count(self) -> None:
+        if hasattr(self, "invite_selection_label"):
+            count = len(self.invites_tree.selection())
+            self.invite_selection_label.configure(text=f"{count} player{'s' if count != 1 else ''} selected")
 
     def _api_action(self, method: str, path: str, payload: dict[str, Any] | None, success_message: str) -> None:
         def done(_result: Any) -> None:
@@ -436,7 +538,11 @@ class GameBoardWindow(tk.Tk):
 
     def create_session(self) -> None:
         contacts = self.state_data.get("contacts", [])
-        selected = [contacts[index]["id"] for index in self.roster_list.curselection() if index < len(contacts)]
+        selected = [
+            self.roster_contact_ids[index]
+            for index in self.roster_list.curselection()
+            if index < len(self.roster_contact_ids)
+        ]
         if not selected:
             messagebox.showwarning("Create session", "Select at least one player.", parent=self)
             return
@@ -526,21 +632,37 @@ class GameBoardWindow(tk.Tk):
         payload = {key: entry.get().strip() for key, entry in self.setting_entries.items()}
 
         def work() -> Any:
-            result = self.client.request("PUT", "/api/admin/settings", payload)
-            if self.server.process is not None:
-                self.server.stop()
-                self.server.start()
-            return result
+            return self._save_settings_on_server(payload)
 
         def done(_result: Any) -> None:
+            self.settings_dirty = False
             self.set_notice("Settings saved; the local communication service was refreshed")
             self.refresh()
 
         self._background(work, done)
 
+    def _save_settings_on_server(self, payload: dict[str, str]) -> Any:
+        result = self.client.request("PUT", "/api/admin/settings", payload)
+        if self.server.process is not None:
+            self.server.stop()
+            self.server.start()
+        return result
+
     def connect_gmail(self) -> None:
         self.set_notice("Complete Google authorization in the browser window.")
-        self._api_action("POST", "/api/admin/gmail/authorize", None, "Gmail connected")
+        payload = {
+            "credentials_path": self.setting_entries["gmail_credentials_path"].get().strip(),
+            "sender": self.setting_entries["gmail_sender"].get().strip(),
+        }
+
+        def work() -> Any:
+            return self.client.request("POST", "/api/admin/gmail/authorize", payload, timeout=300)
+
+        def done(_result: Any) -> None:
+            self.set_notice("Gmail connected")
+            self.refresh()
+
+        self._background(work, done)
 
     def close(self) -> None:
         self.closing = True
@@ -549,6 +671,7 @@ class GameBoardWindow(tk.Tk):
 
 
 def main() -> None:
+    configure_windows_app_id("GameBoard")
     GameBoardWindow().mainloop()
 
 

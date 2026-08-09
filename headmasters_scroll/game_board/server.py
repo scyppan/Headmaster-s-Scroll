@@ -14,7 +14,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Web
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from .gmail import GmailSender
+from .gmail import GmailSender, GmailUnavailable
 from .service import GameBoardService, parse_utc, token_hash, utc_now
 from .storage import GameBoardRepository
 
@@ -34,6 +34,11 @@ class SettingsBody(BaseModel):
     gmail_credentials_path: str = "credentials.json"
     gmail_sender: str = ""
     timezone: str = "America/Chicago"
+
+
+class GmailAuthorizeBody(BaseModel):
+    credentials_path: str = Field(default="credentials.json", max_length=2048)
+    sender: str = Field(default="", max_length=254)
 
 
 class SessionBody(BaseModel):
@@ -253,8 +258,15 @@ def create_apps(repository: GameBoardRepository | None = None):
         return result
 
     @admin_app.post("/api/admin/gmail/authorize", dependencies=[Depends(admin_guard)])
-    def authorize_gmail():
-        return runtime.gmail().authorize()
+    def authorize_gmail(body: GmailAuthorizeBody | None = None):
+        try:
+            if body is not None:
+                runtime.service.update_gmail_settings(body.credentials_path, body.sender)
+            return runtime.gmail().authorize()
+        except GmailUnavailable as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        except Exception as error:
+            raise HTTPException(status_code=400, detail=f"Gmail connection failed: {error}") from error
 
     @admin_app.post("/api/admin/invitations/send", dependencies=[Depends(admin_guard)])
     async def send_invitations(body: SendBody):

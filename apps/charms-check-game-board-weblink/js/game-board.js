@@ -8,10 +8,11 @@
   class GameBoardClient {
     constructor(options) {
       this.options = options;
-      this.root = document.getElementById(options.rootId);
-      if (!this.root) throw new Error(`Missing Game Board root: ${options.rootId}`);
+      this.root = document.getElementById('gameboard');
+      if (!this.root) throw new Error('Missing Game Board root: gameboard');
       this.apiBase = String(options.apiBase || '').replace(/\/$/, '');
       this.storageKey = options.storageKey || 'charms-check-game-board-invite';
+      this.admissionStorageKey = `${this.storageKey}-admission`;
       this.invite = '';
       this.requestId = '';
       this.pollToken = '';
@@ -20,6 +21,7 @@
       this.currentAnnouncement = '';
       this.state = 'unavailable';
       this.intentionalClose = false;
+      this.requestingAdmission = false;
       this.render();
       this.bind();
     }
@@ -75,6 +77,14 @@
       }
       sessionStorage.setItem(this.storageKey, this.invite);
       history.replaceState(null, '', window.location.pathname + window.location.search);
+      const savedAdmission = this.loadAdmission();
+      if (savedAdmission && savedAdmission.invite === this.invite) {
+        this.requestId = savedAdmission.requestId;
+        this.pollToken = savedAdmission.pollToken;
+        this.show('waiting', 'Restoring your admission request…', { busy: true });
+        this.pollAdmission();
+        return;
+      }
       this.requestAdmission();
     }
 
@@ -101,6 +111,9 @@
         return body;
       } catch (error) {
         if (error.name === 'AbortError') throw new Error('The Game Board did not respond in time.');
+        if (error instanceof TypeError) {
+          throw new Error('The Game Board host cannot be reached. Ask the Headmaster to check Game Board and the Tailscale Funnel.');
+        }
         throw error;
       } finally {
         clearTimeout(timeout);
@@ -108,6 +121,8 @@
     }
 
     async requestAdmission() {
+      if (this.requestingAdmission) return;
+      this.requestingAdmission = true;
       clearTimeout(this.pollTimer);
       if (this.socket) {
         this.intentionalClose = true;
@@ -123,16 +138,13 @@
         });
         this.requestId = result.request_id;
         this.pollToken = result.poll_token;
+        this.saveAdmission();
         this.pollAdmission();
       } catch (error) {
-        const message = this.errorMessage(error);
-        if (message.toLowerCase().includes('already active')) {
-          this.show('waiting', 'A previous connection is still closing. Trying again shortly…', { busy: true });
-          this.pollTimer = setTimeout(() => this.requestAdmission(), 3000);
-        } else {
-          const state = this.errorState(error);
-          this.show(state, message, { retry: !['revoked', 'expired'].includes(state) });
-        }
+        const state = this.errorState(error);
+        this.show(state, this.errorMessage(error), { retry: !['revoked', 'expired'].includes(state) });
+      } finally {
+        this.requestingAdmission = false;
       }
     }
 
@@ -148,16 +160,32 @@
         } else if (result.status === 'approved') {
           this.connect(result.ticket);
         } else if (result.status === 'denied') {
+          this.clearAdmission();
           this.show('denied', 'The Headmaster denied this connection.', { retry: true });
         } else if (result.status === 'revoked') {
+          this.clearAdmission();
           this.show('revoked', 'This invitation has been revoked.');
         } else if (result.status === 'expired') {
+          this.clearAdmission();
           this.show('expired', 'This game session has expired.');
+        } else if (result.status === 'disconnected') {
+          this.clearAdmission();
+          this.show('waiting', 'Returning you to the Headmaster’s approval queue…', { busy: true });
+          this.pollTimer = setTimeout(() => this.requestAdmission(), 750);
+        } else if (result.status === 'connected') {
+          this.show('waiting', 'Finishing the previous connection before requesting approval again…', { busy: true });
+          this.pollTimer = setTimeout(() => this.pollAdmission(), 1000);
         } else {
           this.show('waiting', `Admission status: ${result.status}`, { busy: true });
           this.pollTimer = setTimeout(() => this.pollAdmission(), POLL_DELAY_MS);
         }
       } catch (error) {
+        if (error.status === 403 || error.status === 404) {
+          this.clearAdmission();
+          this.show('waiting', 'Refreshing your admission request…', { busy: true });
+          this.pollTimer = setTimeout(() => this.requestAdmission(), 750);
+          return;
+        }
         this.show(this.errorState(error), this.errorMessage(error), { retry: true });
       }
     }
@@ -167,6 +195,10 @@
       const wsBase = this.apiBase.replace(/^http/i, 'ws');
       this.intentionalClose = false;
       this.socket = new WebSocket(`${wsBase}/v1/session?ticket=${encodeURIComponent(ticket)}`);
+      const connectionTimer = setTimeout(() => {
+        if (this.socket && this.socket.readyState === WebSocket.CONNECTING) this.socket.close();
+      }, 15000);
+      this.socket.addEventListener('open', () => clearTimeout(connectionTimer));
       this.socket.addEventListener('message', event => this.receive(event));
       this.socket.addEventListener('error', () => {
         if (this.state === 'connecting') {
@@ -174,6 +206,7 @@
         }
       });
       this.socket.addEventListener('close', () => {
+        clearTimeout(connectionTimer);
         if (this.intentionalClose) {
           this.intentionalClose = false;
           return;
@@ -248,6 +281,29 @@
       return error instanceof Error ? error.message : String(error);
     }
 
+    saveAdmission() {
+      sessionStorage.setItem(this.admissionStorageKey, JSON.stringify({
+        invite: this.invite,
+        requestId: this.requestId,
+        pollToken: this.pollToken
+      }));
+    }
+
+    loadAdmission() {
+      try {
+        const value = JSON.parse(sessionStorage.getItem(this.admissionStorageKey) || 'null');
+        return value && value.requestId && value.pollToken ? value : null;
+      } catch (_) {
+        return null;
+      }
+    }
+
+    clearAdmission() {
+      this.requestId = '';
+      this.pollToken = '';
+      sessionStorage.removeItem(this.admissionStorageKey);
+    }
+
     showPreview(preview) {
       if (preview === 'waiting') {
         this.show('waiting', 'Waiting for the Headmaster to approve this connection…', { busy: true });
@@ -275,4 +331,3 @@
     }
   });
 })();
-

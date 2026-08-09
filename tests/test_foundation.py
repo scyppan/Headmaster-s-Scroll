@@ -30,6 +30,14 @@ class FoundationTests(unittest.TestCase):
         states = {app.app_id: app.enabled for app in apps}
         self.assertEqual(states, {"mage-maker": False, "dbm": False, "game-board": True})
 
+    def test_headmasters_scroll_window_icon_is_present(self):
+        root = Path(__file__).resolve().parents[1]
+        self.assertTrue((root / "assets" / "worn-scroll.ico").is_file())
+        launcher = (root / "headmasters_scroll" / "launcher.py").read_text(encoding="utf-8")
+        windowing = (root / "headmasters_scroll" / "windowing.py").read_text(encoding="utf-8")
+        self.assertIn("apply_window_icon(self)", launcher)
+        self.assertIn("SetCurrentProcessExplicitAppUserModelID", windowing)
+
     def test_duplicate_and_broken_manifests_are_rejected(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

@@ -150,9 +150,6 @@ class GameBoardWindow(tk.Tk):
         style.configure("Quiet.TButton", background=self.EDGE, foreground=self.INK)
         style.configure("Good.TButton", background=self.GREEN, foreground="white")
         style.configure("Danger.TButton", background=self.RED, foreground="white")
-        style.configure("TNotebook", background=self.PAPER, borderwidth=0)
-        style.configure("TNotebook.Tab", background=self.EDGE, foreground=self.INK, padding=(16, 9), font=("Segoe UI", 9, "bold"))
-        style.map("TNotebook.Tab", background=[("selected", self.LIGHT)])
         style.configure("Treeview", background="#fff8e6", fieldbackground="#fff8e6", foreground=self.INK, rowheight=27)
         style.configure("Treeview.Heading", background=self.EDGE, foreground=self.INK, font=("Segoe UI", 9, "bold"))
 
@@ -167,23 +164,75 @@ class GameBoardWindow(tk.Tk):
         self.server_status.pack(side="right", pady=10)
         tk.Frame(self, height=2, background=self.ACCENT).pack(fill="x", padx=28, pady=(0, 12))
 
-        self.notebook = ttk.Notebook(self)
-        self.notebook.pack(fill="both", expand=True, padx=28, pady=(0, 16))
-        overview_page, self.overview_tab = self._scrollable_tab()
-        chat_page, self.chat_tab = self._scrollable_tab()
-        contacts_page, self.contacts_tab = self._scrollable_tab()
-        session_page, self.session_tab = self._scrollable_tab()
-        settings_page, self.settings_tab = self._scrollable_tab()
-        self.notebook.add(overview_page, text="Live Room")
-        self.notebook.add(chat_page, text="Chat")
-        self.notebook.add(contacts_page, text="Players")
-        self.notebook.add(session_page, text="Invitations & Session")
-        self.notebook.add(settings_page, text="Connection Setup")
+        workspace = ttk.Frame(self)
+        workspace.pack(fill="both", expand=True, padx=28, pady=(0, 16))
+        sidebar = tk.Frame(
+            workspace,
+            width=210,
+            background=self.EDGE,
+            highlightbackground=self.ACCENT,
+            highlightthickness=1,
+        )
+        sidebar.pack(side="left", fill="y", padx=(0, 14))
+        sidebar.pack_propagate(False)
+        tk.Label(
+            sidebar,
+            text="SECTIONS",
+            anchor="w",
+            background=self.EDGE,
+            foreground=self.MUTED,
+            font=("Segoe UI", 9, "bold"),
+            padx=14,
+            pady=12,
+        ).pack(fill="x")
+        page_host = ttk.Frame(workspace)
+        page_host.pack(side="left", fill="both", expand=True)
+        page_host.rowconfigure(0, weight=1)
+        page_host.columnconfigure(0, weight=1)
+
+        overview_page, self.overview_tab = self._scrollable_page(page_host)
+        chat_page, self.chat_tab = self._scrollable_page(page_host)
+        contacts_page, self.contacts_tab = self._scrollable_page(page_host)
+        session_page, self.session_tab = self._scrollable_page(page_host)
+        settings_page, self.settings_tab = self._scrollable_page(page_host)
+        self.page_containers = {
+            "live-room": overview_page,
+            "chat": chat_page,
+            "players": contacts_page,
+            "invitations": session_page,
+            "control-panel": settings_page,
+        }
+        self.sidebar_buttons: dict[str, tk.Button] = {}
+        for key, label in (
+            ("live-room", "Live Room"),
+            ("chat", "Chat"),
+            ("players", "Players"),
+            ("invitations", "Invitations & Session"),
+            ("control-panel", "Control Panel"),
+        ):
+            button = tk.Button(
+                sidebar,
+                text=label,
+                anchor="w",
+                background=self.LIGHT,
+                activebackground=self.PAPER,
+                foreground=self.INK,
+                activeforeground=self.INK,
+                relief="flat",
+                borderwidth=0,
+                font=("Segoe UI", 10, "bold"),
+                padx=16,
+                pady=12,
+                command=lambda selected=key: self.show_page(selected),
+            )
+            button.pack(fill="x", pady=(0, 1))
+            self.sidebar_buttons[key] = button
         self._build_overview()
         self._build_chat()
         self._build_contacts()
         self._build_session()
         self._build_settings()
+        self.show_page("live-room")
 
         footer = ttk.Frame(self)
         footer.pack(fill="x", padx=28, pady=(0, 18))
@@ -191,8 +240,21 @@ class GameBoardWindow(tk.Tk):
         self.notice.pack(side="left")
         ttk.Button(footer, text="Refresh", style="Quiet.TButton", command=self.refresh).pack(side="right")
 
-    def _scrollable_tab(self) -> tuple[ttk.Frame, ttk.Frame]:
-        container = ttk.Frame(self.notebook)
+    def show_page(self, key: str) -> None:
+        page = self.page_containers[key]
+        page.tkraise()
+        for page_key, button in self.sidebar_buttons.items():
+            active = page_key == key
+            button.configure(
+                background=self.ACCENT if active else self.LIGHT,
+                foreground="#fff8e7" if active else self.INK,
+                activebackground=self.ACCENT if active else self.PAPER,
+                activeforeground="#fff8e7" if active else self.INK,
+            )
+
+    def _scrollable_page(self, parent: tk.Misc) -> tuple[ttk.Frame, ttk.Frame]:
+        container = ttk.Frame(parent)
+        container.grid(row=0, column=0, sticky="nsew")
         container.rowconfigure(0, weight=1)
         container.columnconfigure(0, weight=1)
         canvas = tk.Canvas(

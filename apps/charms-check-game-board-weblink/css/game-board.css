@@ -208,6 +208,16 @@
 #gameboard .ccgb-details { grid-column: 3; }
 #gameboard .ccgb-chat { grid-column: 4; }
 
+#gameboard .ccgb-sidebar-heading {
+  color: var(--ccgb-muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  padding: 13px 14px 4px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
 #gameboard .ccgb-player-card {
   align-items: center;
   border-bottom: 1px solid #c5ab78;
@@ -263,7 +273,8 @@
 }
 
 #gameboard .nav-collapsed .ccgb-player-name,
-#gameboard .nav-collapsed .ccgb-nav-label { display: none; }
+#gameboard .nav-collapsed .ccgb-nav-label,
+#gameboard .nav-collapsed .ccgb-sidebar-heading { display: none; }
 #gameboard .nav-collapsed .ccgb-player-card { justify-content: center; padding-inline: 8px; }
 #gameboard .nav-collapsed .ccgb-nav-item { justify-content: center; padding-inline: 5px; }
 

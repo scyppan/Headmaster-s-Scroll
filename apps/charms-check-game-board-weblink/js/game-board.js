@@ -9,11 +9,11 @@
     ['attributes', 'Attributes', '◇'],
     ['spells', 'Spells', '✦'],
     ['proficiencies', 'Proficiencies', '✧'],
-    ['recipes', 'Recipes', '⚗'],
+    ['potions', 'Potions', '⚗'],
     ['pets', 'Pets', '♞'],
     ['inventory', 'Inventory', '▣'],
     ['relationships', 'Relationships', '♡'],
-    ['health', 'Health', '✚'],
+    ['wounds', 'Wounds', '✚'],
     ['settings', 'Settings', '⚙']
   ];
 
@@ -82,6 +82,7 @@
 
           <div class="ccgb-workspace" data-ccgb="workspace">
             <nav class="ccgb-profile-nav" aria-label="Character profile sections">
+              <div class="ccgb-sidebar-heading">Sections</div>
               <div class="ccgb-player-card">
                 <span class="ccgb-avatar" data-ccgb="avatar">?</span>
                 <span class="ccgb-player-name" data-ccgb="player">Player</span>

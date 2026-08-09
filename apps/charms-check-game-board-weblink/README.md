@@ -4,26 +4,37 @@ This is the player-facing WordPress client for Headmaster's Scroll Game Board. I
 
 ## Project layout
 
-- `wordpress.html` — paste this root-level loader into a WordPress Custom HTML block. It provides `<div id="gameboard">` and loads the published assets.
+- `wordpress.html` — JavaScript-only loader for the WordPress Head Scripts field. That field supplies the surrounding `<script>` element.
 - `css/game-board.css` — the parchment presentation.
 - `js/game-board.js` — creates the complete player GUI inside `#gameboard` and handles invitations, approval polling, WebSocket connection, heartbeats, announcements, and acknowledgements.
 - `index.html` — local visual preview. Add `?preview=waiting` or `?preview=denied` to preview those states.
 
-## First publication
+## WordPress placement
 
-1. Publish Headmaster's Scroll and tag the release as `v0.2.0`.
-2. Confirm the Weblink assets are present under `apps/charms-check-game-board-weblink/` in that tag.
-3. Confirm `API_BASE` in `wordpress.html` matches the stable Tailscale Funnel hostname.
-4. Paste the complete contents of `wordpress.html` into the WordPress page's Custom HTML block.
-5. Configure Headmaster's Scroll with that exact WordPress origin and player page URL.
+Place this container on the Game Board page:
 
-The loader uses this pinned CDN root:
-
-```text
-https://cdn.jsdelivr.net/gh/scyppan/Headmaster-s-Scroll@v0.2.0/apps/charms-check-game-board-weblink/
+```html
+<div id="gameboard"></div>
 ```
 
-For later releases, create a new Git tag and change only `VERSION` in `wordpress.html`. A release tag is preferred to `main` because the files for an invitation session remain stable and cacheable.
+Paste the complete contents of `wordpress.html` into the site's **Head Scripts** field. Do not include another `<script>` element or the `<div>` in that field; WordPress already wraps the field in `<script>`.
+
+## Version naming
+
+Release names use `<stage>YY.M.D.NNN`:
+
+- `a` for alpha releases, such as `a26.8.9.002`;
+- `b` for beta releases;
+- `v` for incremental full releases;
+- `NNN` is the three-digit release increment for that date.
+
+Set `VERSION` in `wordpress.html` to the release being prepared, commit the files, and then create the matching Git tag and GitHub release. Do not point WordPress at that version until the tag is publicly available.
+
+The next loader is prepared for this pinned CDN root:
+
+```text
+https://cdn.jsdelivr.net/gh/scyppan/Headmaster-s-Scroll@a26.8.9.002/apps/charms-check-game-board-weblink/
+```
 
 ## Security boundary
 

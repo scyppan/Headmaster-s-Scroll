@@ -1,20 +1,12 @@
-<!--
-  Charms Check Game Board Weblink
-  Paste this entire file into a WordPress Custom HTML block.
+// Charms Check Game Board Weblink
+// Paste this file into the WordPress Head Scripts field as JavaScript only.
+// WordPress supplies the surrounding script element. Tailscale Funnel supplies
+// the public API address. The page itself must contain an element whose ID is gameboard.
 
-  Before publishing:
-  1. Replace API_BASE with the HTTPS hostname printed by Tailscale Funnel.
-  2. Set VERSION to a tag that exists in the GitHub repository.
--->
-<div id="gameboard" aria-live="polite">
-  <p>Opening the Game Board…</p>
-</div>
-
-<script>
 (() => {
   'use strict';
 
-  const VERSION = 'v0.2.0';
+  const VERSION = 'a26.8.9.002';
   const REPOSITORY = 'scyppan/Headmaster-s-Scroll';
   const API_BASE = 'https://beast.tail102829.ts.net';
   const BASE = `https://cdn.jsdelivr.net/gh/${REPOSITORY}@${VERSION}/apps/charms-check-game-board-weblink/`;
@@ -74,4 +66,3 @@
     if (root) root.textContent = 'The Game Board could not be loaded. Please try again later.';
   });
 })();
-</script>

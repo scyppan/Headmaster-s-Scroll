@@ -40,11 +40,12 @@ Only the `gmail.send` scope is requested. The refresh token is stored in Windows
 
 ## Configure the WordPress Weblink
 
-The player interface lives in the sibling app folder `apps/charms-check-game-board-weblink/`. It has no launcher manifest, so it does not appear as a local tile. Its root-level `wordpress.html` is the loader intended for a WordPress Custom HTML block. JavaScript creates the player interface inside `<div id="gameboard">`.
+The player interface lives in the sibling app folder `apps/charms-check-game-board-weblink/`. It has no launcher manifest, so it does not appear as a local tile. Its root-level `wordpress.html` is a JavaScript-only loader for the site's Head Scripts field. JavaScript creates the player interface inside `<div id="gameboard">` on the page.
 
-1. Publish Headmaster's Scroll and create the release tag referenced by the Weblink loader.
-2. Paste the complete contents of `apps/charms-check-game-board-weblink/wordpress.html` into a WordPress Custom HTML block.
-3. Enter the published WordPress page URL, its exact origin, and the Tailscale Funnel URL under **Connection Setup** in the native app.
+1. Add `<div id="gameboard"></div>` to the WordPress Game Board page.
+2. Paste the complete contents of `apps/charms-check-game-board-weblink/wordpress.html` into the WordPress **Head Scripts** field without adding `<script>` tags.
+3. Publish Headmaster's Scroll and create the exact release tag referenced by `VERSION` in the loader.
+4. Enter the published WordPress page URL, its exact origin, and the Tailscale Funnel URL under **Connection Setup** in the native app.
 
 The existing WordPress signup and page-access system remains independent of Game Board.
 

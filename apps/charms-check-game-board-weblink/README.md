@@ -33,7 +33,7 @@ Set `VERSION` in `wordpress.html` to the release being prepared, commit the file
 The current loader uses this pinned CDN root:
 
 ```text
-https://cdn.jsdelivr.net/gh/scyppan/Headmaster-s-Scroll@a26.8.9.001/apps/charms-check-game-board-weblink/
+https://cdn.jsdelivr.net/gh/scyppan/Headmaster-s-Scroll@a26.8.9.003/apps/charms-check-game-board-weblink/
 ```
 
 ## Security boundary

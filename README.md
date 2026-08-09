@@ -8,7 +8,7 @@ Headmaster's Scroll is the local home for Charms Check desktop applications. The
 python main.py
 ```
 
-Mage Maker and DBM are registered as disabled placeholders for the foundation release.
+Mage Maker and DBM are registered as disabled placeholders. Game Board is an enabled app that opens its private local dashboard when the separately managed server is running. See `apps/game-board/README.md` for Gmail, WordPress, Cloudflare, and startup instructions.
 
 ## Shared data API
 
@@ -29,4 +29,10 @@ App manifests are stored at `apps/<app-id>/app.json`. Enabled apps require an en
 
 ```powershell
 python -m unittest discover -s tests -v
+```
+
+Install Game Board's optional server and Gmail dependencies before running its API integration tests:
+
+```powershell
+python -m pip install -e ".[game-board]"
 ```

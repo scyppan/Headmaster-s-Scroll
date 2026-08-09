@@ -1,0 +1,77 @@
+<!--
+  Charms Check Game Board Weblink
+  Paste this entire file into a WordPress Custom HTML block.
+
+  Before publishing:
+  1. Replace API_BASE with the named Cloudflare Tunnel hostname.
+  2. Set VERSION to a tag that exists in the GitHub repository.
+-->
+<div id="charms-check-game-board" aria-live="polite">
+  <p>Opening the Game Board…</p>
+</div>
+
+<script>
+(() => {
+  'use strict';
+
+  const VERSION = 'v0.2.0';
+  const REPOSITORY = 'scyppan/Headmaster-s-Scroll';
+  const API_BASE = 'https://game.example.com';
+  const BASE = `https://cdn.jsdelivr.net/gh/${REPOSITORY}@${VERSION}/apps/charms-check-game-board-weblink/`;
+
+  const cssFiles = ['css/game-board.css'];
+  const jsFiles = ['js/game-board.js'];
+
+  function domReady() {
+    if (document.readyState !== 'loading') return Promise.resolve();
+    return new Promise(resolve => document.addEventListener('DOMContentLoaded', resolve, { once: true }));
+  }
+
+  function loadStyle(file) {
+    return new Promise((resolve, reject) => {
+      const existing = document.querySelector(`link[data-charms-check-asset="${file}"]`);
+      if (existing) return resolve();
+      const link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = `${BASE}${file}?v=${encodeURIComponent(VERSION)}`;
+      link.dataset.charmsCheckAsset = file;
+      link.onload = resolve;
+      link.onerror = () => reject(new Error(`Failed to load ${file}`));
+      document.head.appendChild(link);
+    });
+  }
+
+  function loadScript(file) {
+    return new Promise((resolve, reject) => {
+      const existing = document.querySelector(`script[data-charms-check-asset="${file}"]`);
+      if (existing) return resolve();
+      const script = document.createElement('script');
+      script.src = `${BASE}${file}?v=${encodeURIComponent(VERSION)}`;
+      script.async = false;
+      script.dataset.charmsCheckAsset = file;
+      script.onload = resolve;
+      script.onerror = () => reject(new Error(`Failed to load ${file}`));
+      document.head.appendChild(script);
+    });
+  }
+
+  async function initapp() {
+    console.log(`[Charms Check] Loading Game Board Weblink ${VERSION}`);
+    await domReady();
+    await Promise.all(cssFiles.map(loadStyle));
+    for (const file of jsFiles) await loadScript(file);
+    if (!window.CharmsCheckGameBoard) throw new Error('The Game Board client did not initialize.');
+    window.CharmsCheckGameBoard.init({
+      rootId: 'charms-check-game-board',
+      apiBase: API_BASE,
+      storageKey: 'charms-check-game-board-invite'
+    });
+  }
+
+  initapp().catch(error => {
+    console.error('[Charms Check] Game Board failed to load:', error);
+    const root = document.getElementById('charms-check-game-board');
+    if (root) root.textContent = 'The Game Board could not be loaded. Please try again later.';
+  });
+})();
+</script>

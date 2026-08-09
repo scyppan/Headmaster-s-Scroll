@@ -26,8 +26,9 @@ class FoundationTests(unittest.TestCase):
     def test_planned_manifests_load_disabled(self):
         root = Path(__file__).resolve().parents[1] / "apps"
         apps = load_manifests(root)
-        self.assertEqual({app.app_id for app in apps}, {"mage-maker", "dbm"})
-        self.assertTrue(all(not app.enabled for app in apps))
+        self.assertEqual({app.app_id for app in apps}, {"mage-maker", "dbm", "game-board"})
+        states = {app.app_id: app.enabled for app in apps}
+        self.assertEqual(states, {"mage-maker": False, "dbm": False, "game-board": True})
 
     def test_duplicate_and_broken_manifests_are_rejected(self):
         with tempfile.TemporaryDirectory() as temporary:

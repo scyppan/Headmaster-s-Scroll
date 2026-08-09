@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Charms Check Game Board Weblink</title>
+  <link rel="stylesheet" href="css/game-board.css">
+</head>
+<body class="ccgb-preview-page">
+  <div id="charms-check-game-board" aria-live="polite"></div>
+  <script src="js/game-board.js"></script>
+  <script>
+    window.CharmsCheckGameBoard.init({
+      rootId: 'charms-check-game-board',
+      apiBase: 'https://game.example.com',
+      storageKey: 'charms-check-game-board-preview-invite',
+      preview: new URLSearchParams(location.search).get('preview') || 'connected'
+    });
+  </script>
+</body>
+</html>
+

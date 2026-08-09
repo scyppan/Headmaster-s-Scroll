@@ -1,0 +1,10 @@
+{
+  "id": "game-board",
+  "name": "Game Board",
+  "enabled": true,
+  "entry_command": [
+    "{python}",
+    "{root}/apps/game-board/main.py"
+  ]
+}
+

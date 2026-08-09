@@ -4,4 +4,6 @@ __pycache__/
 data/backups/
 data/*.lock
 runtime/
-
+credentials.json
+client_secret*.json
+.cloudflared/

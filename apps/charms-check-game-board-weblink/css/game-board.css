@@ -114,7 +114,8 @@
 }
 
 #gameboard .ccgb-icon-button,
-#gameboard .ccgb-close-panel {
+#gameboard .ccgb-close-panel,
+#gameboard .ccgb-collapse-panel {
   align-items: center;
   background: rgba(255, 255, 255, 0.3);
   border: 1px solid #b99a65;
@@ -204,6 +205,18 @@
 }
 
 #gameboard .ccgb-profile-nav { border-right: 1px solid #bea16c; grid-column: 1; }
+#gameboard .ccgb-profile-nav {
+  display: flex !important;
+  flex-direction: column;
+  opacity: 1 !important;
+  visibility: visible !important;
+}
+#gameboard .ccgb-profile-nav > *,
+#gameboard .ccgb-nav-list,
+#gameboard .ccgb-nav-item {
+  opacity: 1 !important;
+  visibility: visible !important;
+}
 #gameboard .ccgb-main { grid-column: 2; }
 #gameboard .ccgb-details { grid-column: 3; }
 #gameboard .ccgb-chat { grid-column: 4; }
@@ -371,6 +384,13 @@
 
 #gameboard .ccgb-panel-header h2 { font-size: 24px; }
 #gameboard .ccgb-close-panel { font-size: 22px; height: 32px; width: 32px; }
+#gameboard .ccgb-collapse-panel {
+  flex: 0 0 32px;
+  font-size: 24px;
+  height: 32px;
+  transform: rotate(180deg);
+  width: 32px;
+}
 
 #gameboard .ccgb-detail-list { margin: 0 0 18px; }
 #gameboard .ccgb-detail-list div { border-bottom: 1px solid rgba(126, 91, 50, 0.2); padding: 9px 0; }

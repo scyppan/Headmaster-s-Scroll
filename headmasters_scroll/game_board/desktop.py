@@ -123,6 +123,7 @@ class GameBoardWindow(tk.Tk):
         self.refreshing = False
         self.closing = False
         self.settings_dirty = False
+        self._known_pending_ids: set[str] = set()
         self.title("Game Board — Headmaster Controls")
         self.geometry("1240x800")
         self.minsize(760, 520)
@@ -164,11 +165,44 @@ class GameBoardWindow(tk.Tk):
         self.server_status.pack(side="right", pady=10)
         tk.Frame(self, height=2, background=self.ACCENT).pack(fill="x", padx=28, pady=(0, 12))
 
-        workspace = ttk.Frame(self)
-        workspace.pack(fill="both", expand=True, padx=28, pady=(0, 16))
+        self.admission_alert = tk.Frame(
+            self,
+            background="#f4dda7",
+            highlightbackground=self.ACCENT,
+            highlightthickness=1,
+        )
+        self.admission_alert_text = tk.Label(
+            self.admission_alert,
+            text="A player is waiting for approval",
+            anchor="w",
+            background="#f4dda7",
+            foreground=self.INK,
+            font=("Segoe UI", 10, "bold"),
+            padx=12,
+            pady=9,
+        )
+        self.admission_alert_text.pack(side="left", fill="x", expand=True)
+        tk.Button(
+            self.admission_alert,
+            text="Review request",
+            background=self.ACCENT,
+            foreground="#fff8e7",
+            activebackground="#63311f",
+            activeforeground="#fff8e7",
+            relief="flat",
+            font=("Segoe UI", 9, "bold"),
+            padx=12,
+            pady=7,
+            command=lambda: self.show_control_page("live-room"),
+        ).pack(side="right", padx=6, pady=5)
+
+        self.workspace = ttk.Frame(self)
+        self.workspace.pack(fill="both", expand=True, padx=28, pady=(0, 16))
+        self._build_chat_shell(self.workspace)
+
         sidebar = tk.Frame(
-            workspace,
-            width=210,
+            self.workspace,
+            width=190,
             background=self.EDGE,
             highlightbackground=self.ACCENT,
             highlightthickness=1,
@@ -185,54 +219,84 @@ class GameBoardWindow(tk.Tk):
             padx=14,
             pady=12,
         ).pack(fill="x")
-        page_host = ttk.Frame(workspace)
-        page_host.pack(side="left", fill="both", expand=True)
-        page_host.rowconfigure(0, weight=1)
-        page_host.columnconfigure(0, weight=1)
+        self.control_panel_button = tk.Button(
+            sidebar,
+            text="Control Panel",
+            anchor="w",
+            background=self.ACCENT,
+            activebackground=self.ACCENT,
+            foreground="#fff8e7",
+            activeforeground="#fff8e7",
+            relief="flat",
+            borderwidth=0,
+            font=("Segoe UI", 10, "bold"),
+            padx=16,
+            pady=12,
+            command=lambda: self.show_control_page("live-room"),
+        )
+        self.control_panel_button.pack(fill="x")
+        self.sidebar_buttons = {"control-panel": self.control_panel_button}
 
-        overview_page, self.overview_tab = self._scrollable_page(page_host)
-        chat_page, self.chat_tab = self._scrollable_page(page_host)
-        contacts_page, self.contacts_tab = self._scrollable_page(page_host)
-        session_page, self.session_tab = self._scrollable_page(page_host)
-        settings_page, self.settings_tab = self._scrollable_page(page_host)
-        self.page_containers = {
-            "live-room": overview_page,
-            "chat": chat_page,
-            "players": contacts_page,
-            "invitations": session_page,
-            "control-panel": settings_page,
-        }
-        self.sidebar_buttons: dict[str, tk.Button] = {}
+        control_panel = ttk.Frame(self.workspace)
+        control_panel.pack(side="left", fill="both", expand=True)
+        control_header = ttk.Frame(control_panel)
+        control_header.pack(fill="x", pady=(0, 8))
+        ttk.Label(control_header, text="Control Panel", style="Title.TLabel").pack(side="left")
+        self.control_section_label = ttk.Label(
+            control_header, text="Live Room", style="Status.TLabel"
+        )
+        self.control_section_label.pack(side="right", pady=10)
+
+        control_navigation = tk.Frame(
+            control_panel,
+            background=self.EDGE,
+            highlightbackground=self.ACCENT,
+            highlightthickness=1,
+        )
+        control_navigation.pack(fill="x", pady=(0, 8))
+        self.control_buttons: dict[str, tk.Button] = {}
         for key, label in (
             ("live-room", "Live Room"),
-            ("chat", "Chat"),
-            ("players", "Players"),
+            ("players", "Players & Characters"),
             ("invitations", "Invitations & Session"),
-            ("control-panel", "Control Panel"),
+            ("connection", "Connection & Gmail"),
         ):
             button = tk.Button(
-                sidebar,
+                control_navigation,
                 text=label,
-                anchor="w",
                 background=self.LIGHT,
                 activebackground=self.PAPER,
                 foreground=self.INK,
                 activeforeground=self.INK,
                 relief="flat",
                 borderwidth=0,
-                font=("Segoe UI", 10, "bold"),
-                padx=16,
-                pady=12,
-                command=lambda selected=key: self.show_page(selected),
+                font=("Segoe UI", 9, "bold"),
+                padx=12,
+                pady=9,
+                command=lambda selected=key: self.show_control_page(selected),
             )
-            button.pack(fill="x", pady=(0, 1))
-            self.sidebar_buttons[key] = button
+            button.pack(side="left", fill="x", expand=True, padx=(0, 1))
+            self.control_buttons[key] = button
+
+        control_host = ttk.Frame(control_panel)
+        control_host.pack(fill="both", expand=True)
+        control_host.rowconfigure(0, weight=1)
+        control_host.columnconfigure(0, weight=1)
+        overview_page, self.overview_tab = self._scrollable_page(control_host)
+        contacts_page, self.contacts_tab = self._scrollable_page(control_host)
+        session_page, self.session_tab = self._scrollable_page(control_host)
+        settings_page, self.settings_tab = self._scrollable_page(control_host)
+        self.control_pages = {
+            "live-room": overview_page,
+            "players": contacts_page,
+            "invitations": session_page,
+            "connection": settings_page,
+        }
         self._build_overview()
-        self._build_chat()
         self._build_contacts()
         self._build_session()
         self._build_settings()
-        self.show_page("live-room")
+        self.show_control_page("live-room")
 
         footer = ttk.Frame(self)
         footer.pack(fill="x", padx=28, pady=(0, 18))
@@ -240,10 +304,17 @@ class GameBoardWindow(tk.Tk):
         self.notice.pack(side="left")
         ttk.Button(footer, text="Refresh", style="Quiet.TButton", command=self.refresh).pack(side="right")
 
-    def show_page(self, key: str) -> None:
-        page = self.page_containers[key]
+    def show_control_page(self, key: str) -> None:
+        page = self.control_pages[key]
         page.tkraise()
-        for page_key, button in self.sidebar_buttons.items():
+        labels = {
+            "live-room": "Live Room",
+            "players": "Players & Characters",
+            "invitations": "Invitations & Session",
+            "connection": "Connection & Gmail",
+        }
+        self.control_section_label.configure(text=labels[key])
+        for page_key, button in self.control_buttons.items():
             active = page_key == key
             button.configure(
                 background=self.ACCENT if active else self.LIGHT,
@@ -251,6 +322,66 @@ class GameBoardWindow(tk.Tk):
                 activebackground=self.ACCENT if active else self.PAPER,
                 activeforeground="#fff8e7" if active else self.INK,
             )
+
+    def _build_chat_shell(self, parent: tk.Misc) -> None:
+        self.chat_collapsed = False
+        self.chat_shell = tk.Frame(
+            parent,
+            width=330,
+            background=self.LIGHT,
+            highlightbackground=self.ACCENT,
+            highlightthickness=1,
+        )
+        self.chat_shell.pack(side="left", fill="y", padx=(0, 14))
+        self.chat_shell.pack_propagate(False)
+        self.chat_expanded = tk.Frame(self.chat_shell, background=self.LIGHT)
+        chat_header = tk.Frame(self.chat_expanded, background=self.EDGE)
+        chat_header.pack(fill="x")
+        tk.Label(
+            chat_header,
+            text="SESSION CHAT",
+            anchor="w",
+            background=self.EDGE,
+            foreground=self.INK,
+            font=("Segoe UI", 9, "bold"),
+            padx=12,
+            pady=11,
+        ).pack(side="left", fill="x", expand=True)
+        tk.Button(
+            chat_header,
+            text="‹",
+            width=3,
+            background=self.EDGE,
+            activebackground=self.PAPER,
+            foreground=self.INK,
+            relief="flat",
+            font=("Segoe UI", 15, "bold"),
+            command=self.toggle_chat,
+        ).pack(side="right", fill="y")
+        self._build_chat(self.chat_expanded)
+        self.chat_rail = tk.Button(
+            self.chat_shell,
+            text="›\n\nC\nH\nA\nT",
+            background=self.EDGE,
+            activebackground=self.PAPER,
+            foreground=self.INK,
+            relief="flat",
+            borderwidth=0,
+            font=("Segoe UI", 10, "bold"),
+            command=self.toggle_chat,
+        )
+        self.chat_expanded.pack(fill="both", expand=True)
+
+    def toggle_chat(self) -> None:
+        self.chat_collapsed = not self.chat_collapsed
+        if self.chat_collapsed:
+            self.chat_expanded.pack_forget()
+            self.chat_shell.configure(width=52)
+            self.chat_rail.pack(fill="both", expand=True)
+        else:
+            self.chat_rail.pack_forget()
+            self.chat_shell.configure(width=330)
+            self.chat_expanded.pack(fill="both", expand=True)
 
     def _scrollable_page(self, parent: tk.Misc) -> tuple[ttk.Frame, ttk.Frame]:
         container = ttk.Frame(parent)
@@ -350,16 +481,41 @@ class GameBoardWindow(tk.Tk):
 
         card = self._card(self.contacts_tab, "Private Address Book")
         card.pack(fill="both", expand=True, pady=(0, 8))
-        self.contacts_tree = self._tree(card, ("name", "email"), ("Player", "Email Address"))
-        ttk.Button(card, text="Remove Selected", style="Danger.TButton", command=self.remove_contacts).pack(anchor="e", pady=(10, 0))
+        self.contacts_tree = self._tree(
+            card,
+            ("name", "email", "character"),
+            ("Player", "Email Address", "Character Identity"),
+        )
+        self.contacts_tree.bind("<<TreeviewSelect>>", self._contact_selected)
+        character_row = ttk.Frame(card, style="Card.TFrame")
+        character_row.pack(fill="x", pady=(10, 0))
+        ttk.Label(character_row, text="Link selected player to", style="Card.TLabel").pack(side="left")
+        self.character_combo = ttk.Combobox(character_row, state="readonly", width=32)
+        self.character_combo.pack(side="left", fill="x", expand=True, padx=10)
+        ttk.Button(character_row, text="Link Character", command=self.link_character).pack(side="left")
+        ttk.Button(
+            character_row,
+            text="Clear Link",
+            style="Quiet.TButton",
+            command=self.clear_character_link,
+        ).pack(side="left", padx=(8, 0))
+        ttk.Button(
+            card,
+            text="Remove Selected",
+            style="Danger.TButton",
+            command=self.remove_contacts,
+        ).pack(anchor="e", pady=(10, 0))
+        self.character_choices: list[dict[str, str]] = []
+        self.character_label_to_id: dict[str, str] = {}
 
-    def _build_chat(self) -> None:
-        card = self._card(self.chat_tab, "Session Chat")
-        card.pack(fill="both", expand=True, pady=8)
+    def _build_chat(self, parent: tk.Misc) -> None:
+        card = ttk.Frame(parent, style="Card.TFrame", padding=10)
+        card.pack(fill="both", expand=True)
         ttk.Label(
             card,
-            text="Messages are shared with every currently connected player and are discarded when the session ends.",
+            text="Messages are shared with every connected player.",
             style="Card.TLabel",
+            wraplength=285,
         ).pack(anchor="w", pady=(0, 8))
         log_frame = ttk.Frame(card, style="Card.TFrame")
         log_frame.pack(fill="both", expand=True)
@@ -404,6 +560,7 @@ class GameBoardWindow(tk.Tk):
         self.expiration.grid(row=2, column=2, sticky="ew", padx=(12, 0))
         self.roster_list = tk.Listbox(create, height=5, selectmode="multiple", exportselection=False, background="#fff8e6", foreground=self.INK)
         self.roster_contact_ids: list[str] = []
+        self.roster_labels: list[str] = []
         self.roster_list.bind("<<ListboxSelect>>", lambda _event: self._update_roster_count())
         roster_controls = ttk.Frame(create, style="Card.TFrame")
         roster_controls.grid(row=3, column=0, columnspan=4, sticky="ew", pady=(12, 4))
@@ -549,18 +706,41 @@ class GameBoardWindow(tk.Tk):
     def render(self, state: dict[str, Any]) -> None:
         self.state_data = state
         contacts = state.get("contacts", [])
-        self._replace_tree(self.contacts_tree, [(c["id"], (c["name"], c["email"])) for c in contacts])
+        self._replace_tree(self.contacts_tree, [
+            (c["id"], (c["name"], c["email"], c.get("character_name") or "Not linked"))
+            for c in contacts
+        ])
+        characters = state.get("characters", [])
+        if characters != self.character_choices:
+            self.character_choices = list(characters)
+            counts: dict[str, int] = {}
+            for character in characters:
+                counts[character["name"]] = counts.get(character["name"], 0) + 1
+            self.character_label_to_id = {}
+            labels = []
+            for character in characters:
+                label = character["name"]
+                if counts[label] > 1:
+                    label = f"{label}  [{character['id'][:8]}]"
+                labels.append(label)
+                self.character_label_to_id[label] = character["id"]
+            self.character_combo.configure(values=labels)
         selected_contact_ids = {
             self.roster_contact_ids[index]
             for index in self.roster_list.curselection()
             if index < len(self.roster_contact_ids)
         }
         contact_ids = [contact["id"] for contact in contacts]
-        if contact_ids != self.roster_contact_ids:
+        roster_labels = [
+            f"{contact['name']}  →  {contact.get('character_name') or 'No character linked'}"
+            for contact in contacts
+        ]
+        if contact_ids != self.roster_contact_ids or roster_labels != self.roster_labels:
             self.roster_list.delete(0, "end")
             self.roster_contact_ids = contact_ids
-            for contact in contacts:
-                self.roster_list.insert("end", f"{contact['name']}  —  {contact['email']}")
+            self.roster_labels = roster_labels
+            for label in roster_labels:
+                self.roster_list.insert("end", label)
             for index, contact_id in enumerate(self.roster_contact_ids):
                 if contact_id in selected_contact_ids:
                     self.roster_list.selection_set(index)
@@ -595,6 +775,7 @@ class GameBoardWindow(tk.Tk):
         self._replace_tree(self.pending_tree, pending_rows)
         self._replace_tree(self.invites_tree, invite_rows)
         self._update_invite_count()
+        self._update_admission_alert(pending_rows)
 
         connection_rows = []
         for connection in state.get("connections", []):
@@ -603,6 +784,37 @@ class GameBoardWindow(tk.Tk):
                 connection["name"], connection["quality"].title(), latency, connection["last_activity"]
             )))
         self._replace_tree(self.connections_tree, connection_rows)
+
+    def _update_admission_alert(self, pending_rows: list[tuple[str, tuple[Any, ...]]]) -> None:
+        pending_ids = {request_id for request_id, _values in pending_rows}
+        new_ids = pending_ids - self._known_pending_ids
+        self._known_pending_ids.update(pending_ids)
+        count = len(pending_ids)
+        if count:
+            names = [str(values[0]) for _request_id, values in pending_rows]
+            label = f"{count} player{'s are' if count != 1 else ' is'} waiting for approval: {', '.join(names)}"
+            self.admission_alert_text.configure(text=label)
+            if not self.admission_alert.winfo_manager():
+                self.admission_alert.pack(
+                    fill="x", padx=28, pady=(0, 10), before=self.workspace
+                )
+            self.control_panel_button.configure(text=f"Control Panel  •  {count} waiting")
+        else:
+            if self.admission_alert.winfo_manager():
+                self.admission_alert.pack_forget()
+            self.control_panel_button.configure(text="Control Panel")
+        if new_ids:
+            self._notify_join_request()
+
+    def _notify_join_request(self) -> None:
+        self.bell()
+        self.set_notice("A player is waiting for admission approval")
+        if sys.platform == "win32":
+            try:
+                import ctypes
+                ctypes.windll.user32.FlashWindow(self.winfo_id(), True)
+            except Exception:
+                pass
 
     @staticmethod
     def _replace_tree(tree: ttk.Treeview, rows: list[tuple[str, tuple[Any, ...]]]) -> None:
@@ -672,6 +884,58 @@ class GameBoardWindow(tk.Tk):
                 self.client.request("DELETE", f"/api/admin/contacts/{contact_id}")
 
         self._background(work, lambda _value: (self.set_notice("Players removed"), self.refresh()))
+
+    def _contact_selected(self, _event: tk.Event | None = None) -> None:
+        selected = list(self.contacts_tree.selection())
+        if len(selected) != 1:
+            self.character_combo.set("")
+            return
+        contact = next(
+            (item for item in self.state_data.get("contacts", []) if item["id"] == selected[0]),
+            None,
+        )
+        if not contact or not contact.get("character_id"):
+            self.character_combo.set("")
+            return
+        for label, character_id in self.character_label_to_id.items():
+            if character_id == contact["character_id"]:
+                self.character_combo.set(label)
+                return
+        self.character_combo.set("")
+
+    def link_character(self) -> None:
+        selected = list(self.contacts_tree.selection())
+        if len(selected) != 1:
+            messagebox.showwarning(
+                "Link character", "Select exactly one player first.", parent=self
+            )
+            return
+        character_id = self.character_label_to_id.get(self.character_combo.get())
+        if not character_id:
+            messagebox.showwarning(
+                "Link character", "Choose a character from the list.", parent=self
+            )
+            return
+        self._api_action(
+            "PUT",
+            f"/api/admin/contacts/{selected[0]}/character",
+            {"character_id": character_id},
+            "Character identity linked",
+        )
+
+    def clear_character_link(self) -> None:
+        selected = list(self.contacts_tree.selection())
+        if len(selected) != 1:
+            messagebox.showwarning(
+                "Clear character link", "Select exactly one player first.", parent=self
+            )
+            return
+        self._api_action(
+            "PUT",
+            f"/api/admin/contacts/{selected[0]}/character",
+            {"character_id": None},
+            "Character identity cleared",
+        )
 
     def create_session(self) -> None:
         contacts = self.state_data.get("contacts", [])

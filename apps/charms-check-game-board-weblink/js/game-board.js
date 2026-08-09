@@ -139,7 +139,7 @@
                     <p class="ccgb-eyebrow">Live room</p>
                     <h2>Chat</h2>
                   </div>
-                  <button type="button" class="ccgb-close-panel" data-ccgb="close-chat" aria-label="Collapse chat">×</button>
+                  <button type="button" class="ccgb-collapse-panel" data-ccgb="close-chat" aria-label="Collapse chat" title="Collapse chat">›</button>
                 </div>
                 <div class="ccgb-chat-messages" data-ccgb="chat-messages" aria-live="polite"></div>
                 <form class="ccgb-chat-form" data-ccgb="chat-form">
@@ -373,6 +373,11 @@
           this.chatMessages = this.chatMessages.slice(-100);
           this.renderChat();
         }
+      } else if (message.type === 'identity_updated') {
+        const player = message.player || 'Player';
+        this.element('player').textContent = player;
+        this.element('detail-player').textContent = player;
+        this.element('avatar').textContent = player.trim().charAt(0).toUpperCase() || '?';
       } else if (message.type === 'access_revoked') {
         this.show('revoked', message.message || 'Access was revoked.');
       } else if (message.type === 'session_expired') {

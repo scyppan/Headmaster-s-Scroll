@@ -69,6 +69,9 @@ def _contacts(value: dict[str, Any]) -> None:
             raise ValueError("Every contact requires string id, name, and email values")
         if contact["id"] in ids:
             raise ValueError("Contact IDs must be unique")
+        for key in ("character_id", "character_name"):
+            if key in contact and contact[key] is not None and not isinstance(contact[key], str):
+                raise ValueError(f"Contact {key} must be text or null")
         ids.add(contact["id"])
 
 
@@ -145,4 +148,3 @@ class GameBoardRepository:
 
     def save_summaries(self, value: dict[str, Any]) -> None:
         self.store.save("session-summaries.json", value, _summaries)
-

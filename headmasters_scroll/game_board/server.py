@@ -27,6 +27,10 @@ class ContactBody(BaseModel):
     email: str = Field(min_length=3, max_length=254)
 
 
+class CharacterLinkBody(BaseModel):
+    character_id: str | None = Field(default=None, max_length=100)
+
+
 class SettingsBody(BaseModel):
     wordpress_player_url: str = ""
     allowed_origin: str = ""
@@ -119,6 +123,7 @@ class GameBoardRuntime:
     def state(self) -> dict[str, Any]:
         return {
             "contacts": self.service.list_contacts(),
+            "characters": self.service.list_characters(),
             "settings": self.service.settings(),
             "session": self.service.session_view(),
             "connections": [item.public(self.service) for item in self.connections.values()],
@@ -257,6 +262,24 @@ def create_apps(repository: GameBoardRepository | None = None):
     @admin_app.put("/api/admin/contacts/{contact_id}", dependencies=[Depends(admin_guard)])
     async def update_contact(contact_id: str, body: ContactBody):
         result = admin_result(service.update_contact, contact_id, body.name, body.email)
+        await runtime.notify_admins()
+        return result
+
+    @admin_app.put("/api/admin/contacts/{contact_id}/character", dependencies=[Depends(admin_guard)])
+    async def assign_character(contact_id: str, body: CharacterLinkBody):
+        result = admin_result(service.assign_character, contact_id, body.character_id)
+        connection = runtime.connections.get(contact_id)
+        if connection:
+            connection.name = result["display_name"]
+            try:
+                await connection.websocket.send_json({
+                    "v": 1,
+                    "type": "identity_updated",
+                    "player": result["display_name"],
+                    "character_id": result.get("character_id"),
+                })
+            except Exception:
+                pass
         await runtime.notify_admins()
         return result
 

@@ -69,6 +69,19 @@ class GameBoardApiTests(unittest.TestCase):
         self.assertEqual(self.admin.get("/api/admin/state", headers=self.admin_headers).status_code, 200)
         self.assertEqual(self.admin.get("/").status_code, 404)
 
+    def test_admin_can_link_a_player_to_a_shared_character(self):
+        state = self.admin.get("/api/admin/state", headers=self.admin_headers).json()
+        character = state["characters"][0]
+        response = self.admin.put(
+            f"/api/admin/contacts/{self.contact['id']}/character",
+            headers=self.admin_headers,
+            json={"character_id": character["id"]},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["display_name"], character["name"])
+        updated = self.admin.get("/api/admin/state", headers=self.admin_headers).json()
+        self.assertEqual(updated["session"]["roster"][0]["name"], character["name"])
+
     def test_origin_is_required(self):
         response = self.player.post("/v1/admissions", json={"invite_token": self.invite})
         self.assertEqual(response.status_code, 403)
@@ -243,7 +256,7 @@ class GameBoardAssetTests(unittest.TestCase):
         self.assertIn("scyppan/Headmaster-s-Scroll", loader)
         self.assertIn("apps/charms-check-game-board-weblink/", loader)
         self.assertIn("https://beast.tail102829.ts.net", loader)
-        self.assertIn("a26.8.9.009", loader)
+        self.assertIn("a26.8.9.010", loader)
         self.assertNotIn("https://game.example.com", loader)
         self.assertIn("getElementById('gameboard')", loader)
         self.assertNotIn("<script>", loader)
@@ -258,6 +271,7 @@ class GameBoardAssetTests(unittest.TestCase):
         self.assertIn("heartbeat_ack", client)
         self.assertIn("acknowledgement", client)
         self.assertIn("chat_message", client)
+        self.assertIn("identity_updated", client)
         self.assertIn("ccgb-chat-rail", client)
         self.assertIn("is-own", client)
         self.assertIn("chat-collapsed { --ccgb-chat-width: 52px; }", stylesheet)
@@ -279,12 +293,16 @@ class GameBoardAssetTests(unittest.TestCase):
         self.assertIn('"Send Selected"', desktop)
         self.assertIn('"Send All Players"', desktop)
         self.assertIn('"Add All"', desktop)
-        self.assertIn('(\"chat\", \"Chat\")', desktop)
+        self.assertIn("def toggle_chat", desktop)
+        self.assertIn('text="Control Panel"', desktop)
+        self.assertIn("Players & Characters", desktop)
+        self.assertIn("_notify_join_request", desktop)
+        self.assertIn("/character", desktop)
         self.assertIn('"/api/admin/chat"', desktop)
         self.assertIn("GAME_BOARD_ICON", desktop)
         self.assertIn("maximize_window", desktop)
         self.assertIn("def _scrollable_page", desktop)
-        self.assertIn('("control-panel", "Control Panel")', desktop)
+        self.assertIn('{"control-panel": self.control_panel_button}', desktop)
         self.assertIn("self.sidebar_buttons", desktop)
         self.assertNotIn("ttk.Notebook", desktop)
         self.assertIn("/api/admin/admissions/", desktop)

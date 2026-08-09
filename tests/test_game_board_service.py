@@ -45,6 +45,25 @@ class GameBoardServiceTests(unittest.TestCase):
         self.service.delete_contact(self.alice["id"])
         self.assertEqual(self.service.list_contacts(), [])
 
+    def test_character_link_becomes_the_player_identity_everywhere(self):
+        character = self.service.list_characters()[0]
+        linked = self.service.assign_character(self.alice["id"], character["id"])
+        self.assertEqual(linked["display_name"], character["name"])
+        self.create_session()
+        raw, _link = self.invite()
+        request = self.service.request_admission(raw, "203.0.113.7", "Browser")
+        self.assertEqual(
+            self.service.poll_admission(request["request_id"], request["poll_token"])["player_name"],
+            character["name"],
+        )
+        chat = self.service.post_chat(self.alice["id"], "Wrong Name", "player", "Hello")
+        self.assertEqual(chat["sender_name"], character["name"])
+        self.service.assign_character(self.alice["id"], None)
+        session = self.service.session_view()
+        self.assertEqual(session["roster"][0]["name"], "Alice")
+        self.assertEqual(session["pending"][0]["name"], "Alice")
+        self.assertEqual(session["chat"][0]["sender_name"], "Alice")
+
     def test_settings_derive_origins_from_normal_page_urls(self):
         updated = self.service.update_settings({
             "wordpress_player_url": "https://charmscheck.com/game-board/",

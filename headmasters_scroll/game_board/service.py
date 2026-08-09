@@ -11,6 +11,7 @@ from urllib.parse import quote, urlsplit
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
+from ..store import SharedJsonStore
 from .storage import GameBoardRepository
 
 
@@ -36,6 +37,7 @@ def token_hash(value: str) -> str:
 class GameBoardService:
     def __init__(self, repository: GameBoardRepository | None = None):
         self.repository = repository or GameBoardRepository()
+        self.shared_store = SharedJsonStore()
         self._lock = threading.RLock()
         self._tickets: dict[str, dict[str, Any]] = {}
         self._ticket_by_request: dict[str, str] = {}
@@ -56,8 +58,21 @@ class GameBoardService:
             if changed:
                 self.repository.save_active(wrapper)
 
-    def list_contacts(self) -> list[dict[str, str]]:
-        return deepcopy(self.repository.contacts()["contacts"])
+    def list_contacts(self) -> list[dict[str, Any]]:
+        contacts = deepcopy(self.repository.contacts()["contacts"])
+        for contact in contacts:
+            contact["display_name"] = contact.get("character_name") or contact["name"]
+        return contacts
+
+    def list_characters(self) -> list[dict[str, str]]:
+        world = self.shared_store.load("world.json").data
+        characters = []
+        for person in world.get("people", []):
+            record_id = person.get("record_id")
+            name = str(person.get("displayed_name") or "").strip()
+            if isinstance(record_id, str) and record_id and name:
+                characters.append({"id": record_id, "name": name})
+        return sorted(characters, key=lambda item: (item["name"].casefold(), item["id"]))
 
     def add_contact(self, name: str, email: str) -> dict[str, str]:
         name, email = name.strip(), email.strip().lower()
@@ -69,7 +84,10 @@ class GameBoardService:
             value = self.repository.contacts()
             if any(contact["email"].lower() == email for contact in value["contacts"]):
                 raise ValueError("That email address is already in the address book")
-            contact = {"id": str(uuid4()), "name": name, "email": email}
+            contact = {
+                "id": str(uuid4()), "name": name, "email": email,
+                "character_id": None, "character_name": None,
+            }
             value["contacts"].append(contact)
             self.repository.save_contacts(value)
             return deepcopy(contact)
@@ -88,6 +106,51 @@ class GameBoardService:
             contact.update(name=name, email=email)
             self.repository.save_contacts(value)
             return deepcopy(contact)
+
+    def assign_character(self, contact_id: str, character_id: str | None) -> dict[str, Any]:
+        characters = {item["id"]: item for item in self.list_characters()}
+        if character_id is not None and character_id not in characters:
+            raise ValueError("Choose a character from the shared world data")
+        with self._lock:
+            contacts = self.repository.contacts()
+            contact = next((item for item in contacts["contacts"] if item["id"] == contact_id), None)
+            if contact is None:
+                raise KeyError("Unknown contact")
+            if character_id and any(
+                item["id"] != contact_id and item.get("character_id") == character_id
+                for item in contacts["contacts"]
+            ):
+                raise ValueError("That character is already linked to another player")
+            character_name = characters[character_id]["name"] if character_id else None
+            contact["character_id"] = character_id
+            contact["character_name"] = character_name
+            self.repository.save_contacts(contacts)
+
+            wrapper = self.repository.active()
+            session = wrapper.get("session")
+            if session:
+                player = next(
+                    (item for item in session.get("roster", []) if item["contact_id"] == contact_id),
+                    None,
+                )
+                if player:
+                    display_name = character_name or contact["name"]
+                    player.update(
+                        account_name=contact["name"],
+                        character_id=character_id,
+                        character_name=character_name,
+                        name=display_name,
+                    )
+                    for request in session.get("pending", []):
+                        if request.get("contact_id") == contact_id:
+                            request["name"] = display_name
+                    for message in session.get("chat", []):
+                        if message.get("sender_id") == contact_id:
+                            message["sender_name"] = display_name
+                    self.repository.save_active(wrapper)
+            result = deepcopy(contact)
+            result["display_name"] = character_name or contact["name"]
+            return result
 
     def delete_contact(self, contact_id: str) -> None:
         with self._lock:
@@ -216,9 +279,15 @@ class GameBoardService:
             return self.session_view()
 
     @staticmethod
-    def _roster_entry(contact: dict[str, str]) -> dict[str, Any]:
+    def _roster_entry(contact: dict[str, Any]) -> dict[str, Any]:
+        character_name = contact.get("character_name")
         return {
-            "contact_id": contact["id"], "name": contact["name"], "email": contact["email"],
+            "contact_id": contact["id"],
+            "account_name": contact["name"],
+            "character_id": contact.get("character_id"),
+            "character_name": character_name,
+            "name": character_name or contact["name"],
+            "email": contact["email"],
             "invite_hash": None, "invite_status": "not_sent", "sent_at": None,
             "revoked": False,
             "stats": {

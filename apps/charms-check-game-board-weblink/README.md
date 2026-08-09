@@ -30,10 +30,10 @@ Release names use `<stage>YY.M.D.NNN`:
 
 Set `VERSION` in `wordpress.html` to the release being prepared, commit the files, and then create the matching Git tag and GitHub release. Do not point WordPress at that version until the tag is publicly available.
 
-The next loader is prepared for this pinned CDN root:
+The current loader uses this pinned CDN root:
 
 ```text
-https://cdn.jsdelivr.net/gh/scyppan/Headmaster-s-Scroll@a26.8.9.002/apps/charms-check-game-board-weblink/
+https://cdn.jsdelivr.net/gh/scyppan/Headmaster-s-Scroll@a26.8.9.001/apps/charms-check-game-board-weblink/
 ```
 
 ## Security boundary

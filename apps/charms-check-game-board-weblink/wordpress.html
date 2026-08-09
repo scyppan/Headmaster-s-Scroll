@@ -1,12 +1,11 @@
 // Charms Check Game Board Weblink
-// Paste this file into the WordPress Head Scripts field as JavaScript only.
-// WordPress supplies the surrounding script element. Tailscale Funnel supplies
-// the public API address. The page itself must contain an element whose ID is gameboard.
+// Paste this JavaScript into the WordPress script control.
+// The WordPress page owns the existing element whose ID is gameboard.
 
 (() => {
   'use strict';
 
-  const VERSION = 'a26.8.9.002';
+  const VERSION = 'a26.8.9.001';
   const REPOSITORY = 'scyppan/Headmaster-s-Scroll';
   const API_BASE = 'https://beast.tail102829.ts.net';
   const BASE = `https://cdn.jsdelivr.net/gh/${REPOSITORY}@${VERSION}/apps/charms-check-game-board-weblink/`;
@@ -50,9 +49,14 @@
   async function initapp() {
     console.log(`[Charms Check] Loading Game Board Weblink ${VERSION}`);
     await domReady();
+
+    const gameboard = document.getElementById('gameboard');
+    if (!gameboard) throw new Error('The WordPress page is missing #gameboard.');
+
     await Promise.all(cssFiles.map(loadStyle));
     for (const file of jsFiles) await loadScript(file);
     if (!window.CharmsCheckGameBoard) throw new Error('The Game Board client did not initialize.');
+
     window.CharmsCheckGameBoard.init({
       rootId: 'gameboard',
       apiBase: API_BASE,
@@ -62,7 +66,7 @@
 
   initapp().catch(error => {
     console.error('[Charms Check] Game Board failed to load:', error);
-    const root = document.getElementById('gameboard');
-    if (root) root.textContent = 'The Game Board could not be loaded. Please try again later.';
+    const gameboard = document.getElementById('gameboard');
+    if (gameboard) gameboard.textContent = 'The Game Board could not be loaded. Please try again later.';
   });
 })();

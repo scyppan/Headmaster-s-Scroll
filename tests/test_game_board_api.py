@@ -124,6 +124,13 @@ class GameBoardApiTests(unittest.TestCase):
         ) as websocket:
             accepted = websocket.receive_json()
             self.assertEqual(accepted["type"], "connection_accepted")
+            history = websocket.receive_json()
+            self.assertEqual(history, {"v": 1, "type": "chat_history", "messages": []})
+            websocket.send_json({"v": 1, "type": "chat_message", "message": "Hello room"})
+            chat = websocket.receive_json()
+            self.assertEqual(chat["type"], "chat_message")
+            self.assertEqual(chat["message"]["sender_name"], "Alice")
+            self.assertEqual(chat["message"]["text"], "Hello room")
             websocket.send_json({"v": 1, "type": "not_allowed"})
             self.assertEqual(websocket.receive_json()["type"], "server_error")
         with self.assertRaises(WebSocketDisconnect):
@@ -150,6 +157,20 @@ class GameBoardApiTests(unittest.TestCase):
         self.assertEqual(socket.messages[0], {
             "v": 1, "type": "announcement", "id": announcement_id, "message": "Welcome"
         })
+
+    def test_headmaster_chat_is_stored_and_broadcast(self):
+        socket = FakeSocket()
+        self.runtime.connections["fake"] = type(
+            "Connection", (), {"websocket": socket, "public": lambda _self, _service: {"contact_id": "fake"}}
+        )()
+        response = self.admin.post(
+            "/api/admin/chat", headers=self.admin_headers, json={"message": "Gather in the hall"}
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["sender_role"], "headmaster")
+        self.assertEqual(socket.messages[0]["type"], "chat_message")
+        self.assertEqual(socket.messages[0]["message"]["text"], "Gather in the hall")
+        self.assertEqual(self.runtime.service.session_view()["chat"][0]["sender_name"], "Headmaster")
 
 
 class GmailAdapterTests(unittest.TestCase):
@@ -220,7 +241,7 @@ class GameBoardAssetTests(unittest.TestCase):
         self.assertIn("scyppan/Headmaster-s-Scroll", loader)
         self.assertIn("apps/charms-check-game-board-weblink/", loader)
         self.assertIn("https://beast.tail102829.ts.net", loader)
-        self.assertIn("a26.8.9.006", loader)
+        self.assertIn("a26.8.9.007", loader)
         self.assertNotIn("https://game.example.com", loader)
         self.assertIn("getElementById('gameboard')", loader)
         self.assertNotIn("<script>", loader)
@@ -234,6 +255,9 @@ class GameBoardAssetTests(unittest.TestCase):
         self.assertIn("Waiting for the Headmaster", client)
         self.assertIn("heartbeat_ack", client)
         self.assertIn("acknowledgement", client)
+        self.assertIn("chat_message", client)
+        for section in ("Overview", "Attributes", "Spells", "Proficiencies", "Recipes", "Pets", "Inventory", "Relationships", "Health", "Settings"):
+            self.assertIn(section, client)
         self.assertNotIn("world.json", loader + client)
         self.assertFalse((app / "app.json").exists())
 
@@ -248,6 +272,8 @@ class GameBoardAssetTests(unittest.TestCase):
         self.assertIn('"Send Selected"', desktop)
         self.assertIn('"Send All Players"', desktop)
         self.assertIn('"Add All"', desktop)
+        self.assertIn('text="Chat"', desktop)
+        self.assertIn('"/api/admin/chat"', desktop)
         self.assertIn("/api/admin/admissions/", desktop)
         self.assertIn("def _grid_card", desktop)
         self.assertIn("self.settings_dirty", desktop)

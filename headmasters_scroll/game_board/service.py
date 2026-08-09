@@ -209,6 +209,7 @@ class GameBoardService:
                 "expires_at": iso_utc(local_expiration),
                 "roster": [self._roster_entry(contacts[item]) for item in contact_ids],
                 "pending": [],
+                "chat": [],
                 "announcement_count": 0,
             }
             self.repository.save_active({"schema_version": 1, "session": session})
@@ -412,6 +413,41 @@ class GameBoardService:
             wrapper, session = self._active()
             self._player(session, contact_id)["stats"]["acknowledgements"] += 1
             self.repository.save_active(wrapper)
+
+    def post_chat(
+        self,
+        sender_id: str,
+        sender_name: str,
+        sender_role: str,
+        text: str,
+    ) -> dict[str, str]:
+        text = text.strip()
+        if not text:
+            raise ValueError("Chat messages cannot be empty")
+        if len(text) > 500:
+            raise ValueError("Chat messages are limited to 500 characters")
+        if sender_role not in {"player", "headmaster"}:
+            raise ValueError("Unknown chat sender")
+        with self._lock:
+            wrapper, session = self._active()
+            if sender_role == "player":
+                player = self._player(session, sender_id)
+                if player["revoked"]:
+                    raise PermissionError("Access has been revoked")
+                sender_name = player["name"]
+            message = {
+                "id": str(uuid4()),
+                "sender_id": sender_id,
+                "sender_name": sender_name.strip()[:100] or "Headmaster",
+                "sender_role": sender_role,
+                "text": text,
+                "sent_at": iso_utc(utc_now()),
+            }
+            chat = session.setdefault("chat", [])
+            chat.append(message)
+            del chat[:-100]
+            self.repository.save_active(wrapper)
+            return deepcopy(message)
 
     def revoke(self, contact_id: str) -> None:
         with self._lock:

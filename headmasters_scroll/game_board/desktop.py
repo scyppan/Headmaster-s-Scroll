@@ -169,14 +169,17 @@ class GameBoardWindow(tk.Tk):
         self.notebook = ttk.Notebook(self)
         self.notebook.pack(fill="both", expand=True, padx=28, pady=(0, 16))
         self.overview_tab = ttk.Frame(self.notebook)
+        self.chat_tab = ttk.Frame(self.notebook)
         self.contacts_tab = ttk.Frame(self.notebook)
         self.session_tab = ttk.Frame(self.notebook)
         self.settings_tab = ttk.Frame(self.notebook)
         self.notebook.add(self.overview_tab, text="Live Room")
+        self.notebook.add(self.chat_tab, text="Chat")
         self.notebook.add(self.contacts_tab, text="Players")
         self.notebook.add(self.session_tab, text="Invitations & Session")
         self.notebook.add(self.settings_tab, text="Connection Setup")
         self._build_overview()
+        self._build_chat()
         self._build_contacts()
         self._build_session()
         self._build_settings()
@@ -251,6 +254,41 @@ class GameBoardWindow(tk.Tk):
         card.pack(fill="both", expand=True, pady=(0, 8))
         self.contacts_tree = self._tree(card, ("name", "email"), ("Player", "Email Address"))
         ttk.Button(card, text="Remove Selected", style="Danger.TButton", command=self.remove_contacts).pack(anchor="e", pady=(10, 0))
+
+    def _build_chat(self) -> None:
+        card = self._card(self.chat_tab, "Session Chat")
+        card.pack(fill="both", expand=True, pady=8)
+        ttk.Label(
+            card,
+            text="Messages are shared with every currently connected player and are discarded when the session ends.",
+            style="Card.TLabel",
+        ).pack(anchor="w", pady=(0, 8))
+        log_frame = ttk.Frame(card, style="Card.TFrame")
+        log_frame.pack(fill="both", expand=True)
+        self.chat_log = tk.Text(
+            log_frame,
+            wrap="word",
+            state="disabled",
+            background="#fff8e6",
+            foreground=self.INK,
+            relief="solid",
+            borderwidth=1,
+            padx=10,
+            pady=10,
+        )
+        chat_scroll = ttk.Scrollbar(log_frame, orient="vertical", command=self.chat_log.yview)
+        self.chat_log.configure(yscrollcommand=chat_scroll.set)
+        self.chat_log.pack(side="left", fill="both", expand=True)
+        chat_scroll.pack(side="right", fill="y")
+        self.chat_log.tag_configure("headmaster", foreground=self.ACCENT, font=("Segoe UI", 10, "bold"))
+        self.chat_log.tag_configure("player", foreground=self.INK, font=("Segoe UI", 10, "bold"))
+        composer = ttk.Frame(card, style="Card.TFrame")
+        composer.pack(fill="x", pady=(10, 0))
+        self.chat_entry = ttk.Entry(composer)
+        self.chat_entry.pack(side="left", fill="x", expand=True)
+        self.chat_entry.bind("<Return>", lambda _event: self.send_chat())
+        ttk.Button(composer, text="Send", command=self.send_chat).pack(side="right", padx=(10, 0))
+        self._rendered_chat_ids: tuple[str, ...] = ()
 
     def _build_session(self) -> None:
         create = self._grid_card(self.session_tab, "Create Game Session", 4)
@@ -455,6 +493,7 @@ class GameBoardWindow(tk.Tk):
         else:
             self.session_summary.configure(text="No active session")
             self.pause_button.configure(text="Pause Admissions")
+        self._render_chat(list((session or {}).get("chat", [])))
         self._replace_tree(self.pending_tree, pending_rows)
         self._replace_tree(self.invites_tree, invite_rows)
         self._update_invite_count()
@@ -627,6 +666,36 @@ class GameBoardWindow(tk.Tk):
             return
         self._api_action("POST", "/api/admin/announcements", {"message": text}, "Announcement sent")
         self.announcement.delete("1.0", "end")
+
+    def _render_chat(self, messages: list[dict[str, Any]]) -> None:
+        message_ids = tuple(str(item.get("id", "")) for item in messages)
+        if message_ids == self._rendered_chat_ids:
+            return
+        self._rendered_chat_ids = message_ids
+        self.chat_log.configure(state="normal")
+        self.chat_log.delete("1.0", "end")
+        for message in messages:
+            stamp = str(message.get("sent_at", ""))[11:16] or "--:--"
+            role = "headmaster" if message.get("sender_role") == "headmaster" else "player"
+            self.chat_log.insert("end", f"{stamp}  {message.get('sender_name', 'Player')}: ", role)
+            self.chat_log.insert("end", f"{message.get('text', '')}\n")
+        self.chat_log.configure(state="disabled")
+        self.chat_log.see("end")
+
+    def send_chat(self) -> None:
+        message = self.chat_entry.get().strip()
+        if not message:
+            return
+
+        def done(_result: Any) -> None:
+            self.chat_entry.delete(0, "end")
+            self.set_notice("Chat message sent")
+            self.refresh()
+
+        self._background(
+            lambda: self.client.request("POST", "/api/admin/chat", {"message": message}),
+            done,
+        )
 
     def save_settings(self) -> None:
         payload = {key: entry.get().strip() for key, entry in self.setting_entries.items()}

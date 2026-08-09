@@ -120,6 +120,7 @@ class GameBoardServiceTests(unittest.TestCase):
     def test_expiration_archives_summary_without_credentials_or_email(self):
         self.create_session()
         raw, _link = self.invite()
+        self.service.post_chat(self.alice["id"], "Alice", "player", "A private session message")
         request = self.service.request_admission(raw, "203.0.113.9", "Secret Browser")
         wrapper = self.repository.active()
         wrapper["session"]["expires_at"] = iso_utc(utc_now() - timedelta(seconds=1))
@@ -129,8 +130,19 @@ class GameBoardServiceTests(unittest.TestCase):
         self.assertIsNone(self.repository.active()["session"])
         summary_text = json.dumps(self.repository.summaries())
         self.assertIn("Alice", summary_text)
-        for secret in (raw, request["poll_token"], "alice@example.com", "203.0.113.9", "Secret Browser"):
+        for secret in (raw, request["poll_token"], "alice@example.com", "203.0.113.9", "Secret Browser", "A private session message"):
             self.assertNotIn(secret, summary_text)
+
+    def test_session_chat_is_bounded_and_validated(self):
+        self.create_session()
+        message = self.service.post_chat(self.alice["id"], "Wrong Name", "player", "  Hello!  ")
+        self.assertEqual(message["sender_name"], "Alice")
+        self.assertEqual(message["text"], "Hello!")
+        self.assertEqual(self.service.session_view()["chat"][0]["id"], message["id"])
+        with self.assertRaises(ValueError):
+            self.service.post_chat(self.alice["id"], "Alice", "player", " ")
+        with self.assertRaises(ValueError):
+            self.service.post_chat(self.alice["id"], "Alice", "player", "x" * 501)
 
     def test_restart_returns_approved_player_to_pending(self):
         self.create_session()

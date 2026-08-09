@@ -60,6 +60,10 @@ class AnnouncementBody(BaseModel):
     message: str = Field(min_length=1, max_length=1000)
 
 
+class ChatBody(BaseModel):
+    message: str = Field(min_length=1, max_length=500)
+
+
 @dataclass
 class PlayerConnection:
     websocket: Any
@@ -74,6 +78,7 @@ class PlayerConnection:
     heartbeats: dict[str, float] = field(default_factory=dict)
     last_activity: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     persisted: bool = False
+    chat_events: deque[float] = field(default_factory=deque)
 
     def public(self, service: GameBoardService) -> dict[str, Any]:
         return {
@@ -168,6 +173,16 @@ class GameBoardRuntime:
         )
         self.service.increment_announcements()
         return announcement_id
+
+    async def chat(self, sender_id: str, sender_name: str, sender_role: str, text: str) -> dict[str, str]:
+        chat = self.service.post_chat(sender_id, sender_name, sender_role, text)
+        envelope = {"v": 1, "type": "chat_message", "message": chat}
+        await asyncio.gather(
+            *(connection.websocket.send_json(envelope) for connection in list(self.connections.values())),
+            return_exceptions=True,
+        )
+        await self.notify_admins()
+        return chat
 
 
 def create_apps(repository: GameBoardRepository | None = None):
@@ -347,6 +362,13 @@ def create_apps(repository: GameBoardRepository | None = None):
         await runtime.notify_admins()
         return {"id": announcement_id}
 
+    @admin_app.post("/api/admin/chat", dependencies=[Depends(admin_guard)])
+    async def headmaster_chat(body: ChatBody):
+        try:
+            return await runtime.chat("headmaster", "Headmaster", "headmaster", body.message)
+        except (PermissionError, ValueError) as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
     @admin_app.websocket("/ws/admin")
     async def admin_websocket(websocket: WebSocket, key: str = Query(default="")):
         if key != settings["admin_key"]:
@@ -418,6 +440,12 @@ def create_apps(repository: GameBoardRepository | None = None):
             "v": 1, "type": "connection_accepted", "player": identity["name"],
             "session": identity["session_title"],
         })
+        session = service.session_view()
+        await websocket.send_json({
+            "v": 1,
+            "type": "chat_history",
+            "messages": list((session or {}).get("chat", []))[-100:],
+        })
         await runtime.notify_admins()
 
         async def heartbeat_loop():
@@ -460,6 +488,25 @@ def create_apps(repository: GameBoardRepository | None = None):
                 elif message.get("type") == "acknowledgement" and isinstance(message.get("announcement_id"), str):
                     service.record_acknowledgement(connection.contact_id)
                     await runtime.notify_admins()
+                elif message.get("type") == "chat_message" and isinstance(message.get("message"), str):
+                    now = time.monotonic()
+                    while connection.chat_events and connection.chat_events[0] <= now - 10:
+                        connection.chat_events.popleft()
+                    if len(connection.chat_events) >= 5:
+                        await websocket.send_json({
+                            "v": 1, "type": "server_error",
+                            "message": "Please wait a moment before sending another chat message.",
+                        })
+                        continue
+                    connection.chat_events.append(now)
+                    try:
+                        await runtime.chat(
+                            connection.contact_id, connection.name, "player", message["message"]
+                        )
+                    except (PermissionError, ValueError) as error:
+                        await websocket.send_json({
+                            "v": 1, "type": "server_error", "message": str(error),
+                        })
                 else:
                     await websocket.send_json({"v": 1, "type": "server_error", "message": "Unknown message type"})
         except Exception:

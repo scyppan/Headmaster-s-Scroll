@@ -33,9 +33,13 @@ class FoundationTests(unittest.TestCase):
     def test_headmasters_scroll_window_icon_is_present(self):
         root = Path(__file__).resolve().parents[1]
         self.assertTrue((root / "assets" / "worn-scroll.ico").is_file())
+        self.assertTrue((root / "assets" / "enchanted-d10.ico").is_file())
         launcher = (root / "headmasters_scroll" / "launcher.py").read_text(encoding="utf-8")
         windowing = (root / "headmasters_scroll" / "windowing.py").read_text(encoding="utf-8")
         self.assertIn("apply_window_icon(self)", launcher)
+        self.assertIn("GAME_BOARD_ICON", windowing)
+        self.assertIn("maximize_window", launcher)
+        self.assertNotIn('attributes("-fullscreen"', launcher)
         self.assertIn("SetCurrentProcessExplicitAppUserModelID", windowing)
 
     def test_duplicate_and_broken_manifests_are_rejected(self):

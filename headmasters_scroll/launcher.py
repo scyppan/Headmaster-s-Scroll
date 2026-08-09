@@ -9,7 +9,7 @@ from tkinter import messagebox, ttk
 from .errors import ManifestError
 from .manifests import AppManifest, load_manifests
 from .paths import PROJECT_ROOT
-from .windowing import apply_window_icon, configure_windows_app_id
+from .windowing import apply_window_icon, configure_windows_app_id, maximize_window
 
 
 def command_for(manifest: AppManifest) -> list[str]:
@@ -46,13 +46,12 @@ class HomeScreen(tk.Tk):
         self.minsize(720, 520)
         self.configure(background=self.PARCHMENT)
         apply_window_icon(self)
-        self._fullscreen = True
-        self.attributes("-fullscreen", True)
-        self.bind("<F11>", self._toggle_fullscreen)
-        self.bind("<Escape>", self._leave_fullscreen)
+        self.bind("<F11>", self._toggle_maximized)
+        self.bind("<Escape>", self._restore_window)
         self.manifests = manifests if manifests is not None else load_manifests()
         self.tiles: list[tk.Frame] = []
         self._build()
+        self.after_idle(lambda: maximize_window(self))
 
     def _build(self) -> None:
         style = ttk.Style(self)
@@ -112,7 +111,7 @@ class HomeScreen(tk.Tk):
 
         tk.Label(
             self,
-            text="F11 toggles full screen  •  Esc leaves full screen",
+            text="F11 toggles maximized view  •  Esc restores the window",
             font=("Segoe UI", 9),
             foreground=self.MUTED_INK,
             background=self.PARCHMENT,
@@ -178,14 +177,15 @@ class HomeScreen(tk.Tk):
     def _scroll_cards(self, event: tk.Event) -> None:
         self.canvas.yview_scroll(int(-event.delta / 120), "units")
 
-    def _toggle_fullscreen(self, _event: tk.Event | None = None) -> str:
-        self._fullscreen = not self._fullscreen
-        self.attributes("-fullscreen", self._fullscreen)
+    def _toggle_maximized(self, _event: tk.Event | None = None) -> str:
+        if self.state() == "zoomed":
+            self.state("normal")
+        else:
+            maximize_window(self)
         return "break"
 
-    def _leave_fullscreen(self, _event: tk.Event | None = None) -> str:
-        self._fullscreen = False
-        self.attributes("-fullscreen", False)
+    def _restore_window(self, _event: tk.Event | None = None) -> str:
+        self.state("normal")
         return "break"
 
     def _launch(self, manifest: AppManifest) -> None:

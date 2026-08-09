@@ -14,7 +14,7 @@ from tkinter import filedialog, messagebox, ttk
 from typing import Any, Callable
 
 from ..paths import PROJECT_ROOT
-from ..windowing import apply_window_icon, configure_windows_app_id
+from ..windowing import GAME_BOARD_ICON, apply_window_icon, configure_windows_app_id, maximize_window
 from .storage import GameBoardRepository
 
 
@@ -125,12 +125,13 @@ class GameBoardWindow(tk.Tk):
         self.settings_dirty = False
         self.title("Game Board — Headmaster Controls")
         self.geometry("1240x800")
-        self.minsize(980, 650)
+        self.minsize(760, 520)
         self.configure(background=self.PAPER)
-        apply_window_icon(self)
+        apply_window_icon(self, GAME_BOARD_ICON)
         self.protocol("WM_DELETE_WINDOW", self.close)
         self._configure_style()
         self._build()
+        self.after_idle(lambda: maximize_window(self))
         self.after(100, self._start_server)
 
     def _configure_style(self) -> None:
@@ -168,16 +169,16 @@ class GameBoardWindow(tk.Tk):
 
         self.notebook = ttk.Notebook(self)
         self.notebook.pack(fill="both", expand=True, padx=28, pady=(0, 16))
-        self.overview_tab = ttk.Frame(self.notebook)
-        self.chat_tab = ttk.Frame(self.notebook)
-        self.contacts_tab = ttk.Frame(self.notebook)
-        self.session_tab = ttk.Frame(self.notebook)
-        self.settings_tab = ttk.Frame(self.notebook)
-        self.notebook.add(self.overview_tab, text="Live Room")
-        self.notebook.add(self.chat_tab, text="Chat")
-        self.notebook.add(self.contacts_tab, text="Players")
-        self.notebook.add(self.session_tab, text="Invitations & Session")
-        self.notebook.add(self.settings_tab, text="Connection Setup")
+        overview_page, self.overview_tab = self._scrollable_tab()
+        chat_page, self.chat_tab = self._scrollable_tab()
+        contacts_page, self.contacts_tab = self._scrollable_tab()
+        session_page, self.session_tab = self._scrollable_tab()
+        settings_page, self.settings_tab = self._scrollable_tab()
+        self.notebook.add(overview_page, text="Live Room")
+        self.notebook.add(chat_page, text="Chat")
+        self.notebook.add(contacts_page, text="Players")
+        self.notebook.add(session_page, text="Invitations & Session")
+        self.notebook.add(settings_page, text="Connection Setup")
         self._build_overview()
         self._build_chat()
         self._build_contacts()
@@ -189,6 +190,41 @@ class GameBoardWindow(tk.Tk):
         self.notice = tk.Label(footer, text="Starting…", background=self.PAPER, foreground=self.MUTED)
         self.notice.pack(side="left")
         ttk.Button(footer, text="Refresh", style="Quiet.TButton", command=self.refresh).pack(side="right")
+
+    def _scrollable_tab(self) -> tuple[ttk.Frame, ttk.Frame]:
+        container = ttk.Frame(self.notebook)
+        container.rowconfigure(0, weight=1)
+        container.columnconfigure(0, weight=1)
+        canvas = tk.Canvas(
+            container,
+            background=self.PAPER,
+            borderwidth=0,
+            highlightthickness=0,
+        )
+        vertical = ttk.Scrollbar(container, orient="vertical", command=canvas.yview)
+        horizontal = ttk.Scrollbar(container, orient="horizontal", command=canvas.xview)
+        canvas.configure(yscrollcommand=vertical.set, xscrollcommand=horizontal.set)
+        canvas.grid(row=0, column=0, sticky="nsew")
+        vertical.grid(row=0, column=1, sticky="ns")
+        horizontal.grid(row=1, column=0, sticky="ew")
+        content = ttk.Frame(canvas)
+        window = canvas.create_window((0, 0), window=content, anchor="nw")
+
+        def update_region(_event: tk.Event | None = None) -> None:
+            canvas.update_idletasks()
+            requested = max(content.winfo_reqwidth(), canvas.winfo_width())
+            canvas.itemconfigure(window, width=requested)
+            canvas.configure(scrollregion=canvas.bbox("all"))
+
+        def wheel(event: tk.Event) -> str:
+            canvas.yview_scroll(int(-event.delta / 120), "units")
+            return "break"
+
+        content.bind("<Configure>", update_region)
+        canvas.bind("<Configure>", update_region)
+        canvas.bind("<Enter>", lambda _event: canvas.bind_all("<MouseWheel>", wheel))
+        canvas.bind("<Leave>", lambda _event: canvas.unbind_all("<MouseWheel>"))
+        return container, content
 
     def _card(self, parent: tk.Misc, title: str) -> ttk.Frame:
         card = ttk.Frame(parent, style="Card.TFrame", padding=16)

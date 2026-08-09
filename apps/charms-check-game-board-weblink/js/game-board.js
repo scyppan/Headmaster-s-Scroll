@@ -35,6 +35,7 @@
       this.state = 'unavailable';
       this.intentionalClose = false;
       this.requestingAdmission = false;
+      this.playerId = '';
       this.activeSection = 'overview';
       this.chatMessages = [];
       this.render();
@@ -128,21 +129,26 @@
             </aside>
 
             <aside class="ccgb-chat" aria-label="Session chat">
-              <div class="ccgb-panel-header">
-                <div>
-                  <p class="ccgb-eyebrow">Live room</p>
-                  <h2>Chat</h2>
+              <button type="button" class="ccgb-chat-rail" data-ccgb="chat-rail" aria-label="Expand chat" title="Expand chat">
+                <span aria-hidden="true">✉</span><strong>Chat</strong>
+              </button>
+              <div class="ccgb-chat-content">
+                <div class="ccgb-panel-header">
+                  <div>
+                    <p class="ccgb-eyebrow">Live room</p>
+                    <h2>Chat</h2>
+                  </div>
+                  <button type="button" class="ccgb-close-panel" data-ccgb="close-chat" aria-label="Collapse chat">×</button>
                 </div>
-                <button type="button" class="ccgb-close-panel" data-ccgb="close-chat" aria-label="Collapse chat">×</button>
+                <div class="ccgb-chat-messages" data-ccgb="chat-messages" aria-live="polite"></div>
+                <form class="ccgb-chat-form" data-ccgb="chat-form">
+                  <label for="ccgb-chat-input">Message the room</label>
+                  <div>
+                    <input id="ccgb-chat-input" data-ccgb="chat-input" maxlength="500" placeholder="Write a message…" autocomplete="off">
+                    <button type="submit">Send</button>
+                  </div>
+                </form>
               </div>
-              <div class="ccgb-chat-messages" data-ccgb="chat-messages" aria-live="polite"></div>
-              <form class="ccgb-chat-form" data-ccgb="chat-form">
-                <label for="ccgb-chat-input">Message the room</label>
-                <div>
-                  <input id="ccgb-chat-input" data-ccgb="chat-input" maxlength="500" placeholder="Write a message…" autocomplete="off">
-                  <button type="submit">Send</button>
-                </div>
-              </form>
             </aside>
           </div>
         </section>`;
@@ -156,6 +162,7 @@
       this.element('toggle-chat').addEventListener('click', () => this.toggleRegion('chat'));
       this.element('close-details').addEventListener('click', () => this.toggleRegion('details', true));
       this.element('close-chat').addEventListener('click', () => this.toggleRegion('chat', true));
+      this.element('chat-rail').addEventListener('click', () => this.toggleRegion('chat'));
       this.element('search').addEventListener('input', event => this.search(event.target.value));
       this.element('chat-form').addEventListener('submit', event => {
         event.preventDefault();
@@ -338,6 +345,7 @@
       }
       if (!message || message.v !== VERSION || typeof message.type !== 'string') return;
       if (message.type === 'connection_accepted') {
+        this.playerId = message.player_id || '';
         this.element('player').textContent = message.player || 'Player';
         this.element('detail-player').textContent = message.player || 'Player';
         this.element('avatar').textContent = (message.player || '?').trim().charAt(0).toUpperCase();
@@ -398,7 +406,8 @@
       }
       this.chatMessages.forEach(message => {
         const article = document.createElement('article');
-        article.className = `ccgb-chat-message ${message.sender_role === 'headmaster' ? 'is-headmaster' : ''}`;
+        const ownMessage = Boolean(this.playerId && message.sender_id === this.playerId);
+        article.className = `ccgb-chat-message ${message.sender_role === 'headmaster' ? 'is-headmaster' : ''} ${ownMessage ? 'is-own' : ''}`;
         const heading = document.createElement('div');
         const name = document.createElement('strong');
         name.textContent = message.sender_name || 'Player';
@@ -550,14 +559,16 @@
         return;
       }
       this.element('player').textContent = 'Edward Marksdale';
+      this.playerId = 'preview-edward';
       this.element('detail-player').textContent = 'Edward Marksdale';
       this.element('avatar').textContent = 'E';
       this.element('session').textContent = 'Saturday Evening Session';
       this.show('connected', 'You are connected.', { connected: true });
       this.setQuality('good', '84 ms');
       this.chatMessages = [
-        { id: '1', sender_name: 'Headmaster', sender_role: 'headmaster', text: 'Welcome. The first activity will begin shortly.', sent_at: new Date().toISOString() },
-        { id: '2', sender_name: 'Hermione', sender_role: 'player', text: 'Ready when you are!', sent_at: new Date().toISOString() }
+        { id: '1', sender_id: 'headmaster', sender_name: 'Headmaster', sender_role: 'headmaster', text: 'Welcome. The first activity will begin shortly.', sent_at: new Date().toISOString() },
+        { id: '2', sender_id: 'preview-edward', sender_name: 'Edward Marksdale', sender_role: 'player', text: 'Ready when you are!', sent_at: new Date().toISOString() },
+        { id: '3', sender_id: 'preview-hermione', sender_name: 'Hermione', sender_role: 'player', text: 'I have my wand and notes.', sent_at: new Date().toISOString() }
       ];
       this.renderChat();
     }

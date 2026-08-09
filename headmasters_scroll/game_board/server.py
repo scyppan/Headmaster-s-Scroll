@@ -438,7 +438,7 @@ def create_apps(repository: GameBoardRepository | None = None):
         runtime.connections[identity["contact_id"]] = connection
         await websocket.send_json({
             "v": 1, "type": "connection_accepted", "player": identity["name"],
-            "session": identity["session_title"],
+            "player_id": identity["contact_id"], "session": identity["session_title"],
         })
         session = service.session_view()
         await websocket.send_json({

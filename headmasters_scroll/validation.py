@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from .errors import DataValidationError
+from .board import validate_world_board
 
 
 REQUIRED_COLLECTIONS = {
@@ -47,6 +48,11 @@ def validate_document(filename: str, data: Any) -> None:
         for name, value in data.items():
             if not name.startswith("_") and isinstance(value, list):
                 _validate_record_list(value, name)
+        if filename == "world.json":
+            try:
+                validate_world_board(data)
+            except (TypeError, ValueError) as error:
+                raise DataValidationError(str(error)) from error
     else:
         if not isinstance(data.get("schema_version"), int):
             raise DataValidationError("periods.json requires an integer schema_version")
@@ -54,4 +60,3 @@ def validate_document(filename: str, data: Any) -> None:
         _validate_record_list(groups, "period_groups")
         for group in groups:
             _validate_record_list(group.get("periods"), f"period_groups[{group['record_id']}].periods")
-

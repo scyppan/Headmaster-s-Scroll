@@ -12,6 +12,7 @@ from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 from ..store import SharedJsonStore
+from ..board import WorldBoardRepository
 from .storage import GameBoardRepository
 
 
@@ -30,6 +31,23 @@ def parse_utc(value: str) -> datetime:
     return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(timezone.utc)
 
 
+def normalize_game_datetime(value: str | None, fallback_date: str) -> str:
+    """Validate and normalize a timezone-free in-world date and 24-hour time."""
+
+    raw = value.strip() if isinstance(value, str) else ""
+    if not raw:
+        raw = f"{fallback_date}T08:00"
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}", raw):
+        raise ValueError("Game World Date and time must use YYYY-MM-DD and a 24-hour HH:MM time")
+    try:
+        parsed = datetime.fromisoformat(raw)
+    except ValueError as error:
+        raise ValueError("Game World Date and time must use YYYY-MM-DD and a 24-hour HH:MM time") from error
+    if parsed.tzinfo is not None:
+        raise ValueError("Game World Date and time cannot include a timezone")
+    return parsed.replace(second=0, microsecond=0).isoformat(timespec="minutes")
+
+
 def token_hash(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
@@ -38,6 +56,7 @@ class GameBoardService:
     def __init__(self, repository: GameBoardRepository | None = None):
         self.repository = repository or GameBoardRepository()
         self.shared_store = SharedJsonStore()
+        self.world_board = WorldBoardRepository(self.shared_store)
         self._lock = threading.RLock()
         self._tickets: dict[str, dict[str, Any]] = {}
         self._ticket_by_request: dict[str, str] = {}
@@ -46,9 +65,17 @@ class GameBoardService:
     def _restore_for_reapproval(self) -> None:
         with self._lock:
             wrapper = self.repository.active()
-            session = wrapper.get("session")
             changed = False
-            if session:
+            for session in wrapper.get("sessions", []):
+                session.setdefault("board_control_grants", {})
+                if not session.get("game_datetime"):
+                    fallback_date = (
+                        session.get("event_date")
+                        or session.get("game_day")
+                        or date.today().isoformat()
+                    )
+                    session["game_datetime"] = normalize_game_datetime(None, fallback_date)
+                    changed = True
                 for request in session.get("pending", []):
                     if request.get("status") in {"approved", "ticket_issued", "connected"}:
                         request["status"] = "pending"
@@ -127,8 +154,8 @@ class GameBoardService:
             self.repository.save_contacts(contacts)
 
             wrapper = self.repository.active()
-            session = wrapper.get("session")
-            if session:
+            sessions_changed = False
+            for session in wrapper.get("sessions", []):
                 player = next(
                     (item for item in session.get("roster", []) if item["contact_id"] == contact_id),
                     None,
@@ -147,7 +174,9 @@ class GameBoardService:
                     for message in session.get("chat", []):
                         if message.get("sender_id") == contact_id:
                             message["sender_name"] = display_name
-                    self.repository.save_active(wrapper)
+                    sessions_changed = True
+            if sessions_changed:
+                self.repository.save_active(wrapper)
             result = deepcopy(contact)
             result["display_name"] = character_name or contact["name"]
             return result
@@ -244,6 +273,8 @@ class GameBoardService:
         game_day: str,
         contact_ids: list[str],
         expiration_time: str = "23:59",
+        event_date: str | None = None,
+        game_datetime: str | None = None,
     ) -> dict[str, Any]:
         title = title.strip()
         if not title:
@@ -252,6 +283,15 @@ class GameBoardService:
             raise ValueError("Select at least one player")
         if len(set(contact_ids)) != len(contact_ids) or len(contact_ids) > 9:
             raise ValueError("A session supports one to nine unique players")
+        cleaned_event_date = event_date.strip() if isinstance(event_date, str) else ""
+        if cleaned_event_date:
+            try:
+                date.fromisoformat(cleaned_event_date)
+            except ValueError as error:
+                raise ValueError("Event date must use YYYY-MM-DD") from error
+        cleaned_game_datetime = normalize_game_datetime(
+            game_datetime, cleaned_event_date or game_day
+        )
         settings = self.repository.settings()
         local_expiration = datetime.combine(
             date.fromisoformat(game_day), time.fromisoformat(expiration_time), ZoneInfo(settings["timezone"])
@@ -262,21 +302,26 @@ class GameBoardService:
         if any(contact_id not in contacts for contact_id in contact_ids):
             raise ValueError("The roster contains an unknown contact")
         with self._lock:
-            if self.repository.active().get("session"):
-                raise ValueError("End the active session before creating another")
+            wrapper = self.repository.active()
             session = {
                 "id": str(uuid4()),
                 "title": title,
                 "status": "active",
+                "event_date": cleaned_event_date or None,
+                "game_datetime": cleaned_game_datetime,
+                "game_day": game_day,
+                "expiration_time": expiration_time,
                 "created_at": iso_utc(utc_now()),
                 "expires_at": iso_utc(local_expiration),
                 "roster": [self._roster_entry(contacts[item]) for item in contact_ids],
                 "pending": [],
                 "chat": [],
                 "announcement_count": 0,
+                "board_control_grants": {},
             }
-            self.repository.save_active({"schema_version": 1, "session": session})
-            return self.session_view()
+            wrapper["sessions"].append(session)
+            self.repository.save_active(wrapper)
+            return self.session_view(session["id"])
 
     @staticmethod
     def _roster_entry(contact: dict[str, Any]) -> dict[str, Any]:
@@ -289,6 +334,7 @@ class GameBoardService:
             "name": character_name or contact["name"],
             "email": contact["email"],
             "invite_hash": None, "invite_status": "not_sent", "sent_at": None,
+            "has_logged_in": False, "last_connected_at": None,
             "revoked": False,
             "stats": {
                 "approvals": 0, "disconnects": 0, "acknowledgements": 0,
@@ -296,32 +342,111 @@ class GameBoardService:
             },
         }
 
-    def _active(self) -> tuple[dict[str, Any], dict[str, Any]]:
-        wrapper = self.repository.active()
-        session = wrapper.get("session")
+    @staticmethod
+    def _session(wrapper: dict[str, Any], session_id: str | None = None) -> dict[str, Any]:
+        sessions = wrapper.get("sessions", [])
+        if session_id is None:
+            if not sessions:
+                raise ValueError("There is no active session")
+            return sessions[0]
+        session = next((item for item in sessions if item.get("id") == session_id), None)
         if session is None:
-            raise ValueError("There is no active session")
+            raise KeyError("Unknown session")
+        return session
+
+    @staticmethod
+    def _session_for_request(wrapper: dict[str, Any], request_id: str) -> dict[str, Any]:
+        session = next(
+            (
+                item
+                for item in wrapper.get("sessions", [])
+                if any(request.get("id") == request_id for request in item.get("pending", []))
+            ),
+            None,
+        )
+        if session is None:
+            raise KeyError("Unknown admission request")
+        return session
+
+    def _active(self, session_id: str | None = None) -> tuple[dict[str, Any], dict[str, Any]]:
+        wrapper = self.repository.active()
+        session = self._session(wrapper, session_id)
         if parse_utc(session["expires_at"]) <= utc_now():
-            self.end_session("expired")
+            self.end_session("expired", session["id"])
             raise ValueError("The session has expired")
         return wrapper, session
 
-    def session_view(self) -> dict[str, Any] | None:
+    @staticmethod
+    def _public_session(session: dict[str, Any]) -> dict[str, Any]:
+        view = deepcopy(session)
+        for player in view.get("roster", []):
+            player.pop("invite_hash", None)
+        for request in view.get("pending", []):
+            request.pop("poll_hash", None)
+        return view
+
+    def sessions_view(self) -> list[dict[str, Any]]:
         with self._lock:
             wrapper = self.repository.active()
-            session = wrapper.get("session")
-            if not session:
-                return None
-            view = deepcopy(session)
-            for player in view["roster"]:
-                player.pop("invite_hash", None)
-            for request in view["pending"]:
-                request.pop("poll_hash", None)
-            return view
+            return [self._public_session(session) for session in wrapper.get("sessions", [])]
 
-    def prepare_invite(self, contact_id: str) -> tuple[str, str, dict[str, Any]]:
+    def session_view(self, session_id: str | None = None) -> dict[str, Any] | None:
         with self._lock:
-            wrapper, session = self._active()
+            wrapper = self.repository.active()
+            if not wrapper.get("sessions"):
+                return None
+            return self._public_session(self._session(wrapper, session_id))
+
+    def duplicate_session(self, session_id: str) -> dict[str, Any]:
+        original = self.session_view(session_id)
+        if original is None:
+            raise KeyError("Unknown session")
+        local_expiration = parse_utc(original["expires_at"]).astimezone(
+            ZoneInfo(self.repository.settings()["timezone"])
+        )
+        return self.create_session(
+            f"{original['title']} Copy",
+            original.get("game_day") or local_expiration.date().isoformat(),
+            [player["contact_id"] for player in original["roster"]],
+            original.get("expiration_time") or local_expiration.strftime("%H:%M"),
+            original.get("event_date"),
+            original.get("game_datetime"),
+        )
+
+    def delete_session(self, session_id: str) -> dict[str, Any]:
+        with self._lock:
+            wrapper = self.repository.active()
+            session = self._session(wrapper, session_id)
+            wrapper["sessions"] = [item for item in wrapper["sessions"] if item["id"] != session_id]
+            self._drop_tickets_for_session(session_id)
+            self.repository.save_active(wrapper)
+            return self._public_session(session)
+
+    def remove_player(self, session_id: str, contact_id: str) -> dict[str, Any]:
+        with self._lock:
+            wrapper, session = self._active(session_id)
+            before = len(session["roster"])
+            session["roster"] = [item for item in session["roster"] if item["contact_id"] != contact_id]
+            if len(session["roster"]) == before:
+                raise KeyError("Unknown session player")
+            removed_requests = {
+                request["id"] for request in session["pending"] if request["contact_id"] == contact_id
+            }
+            session["pending"] = [
+                request for request in session["pending"] if request["contact_id"] != contact_id
+            ]
+            for request_id in removed_requests:
+                ticket = self._ticket_by_request.pop(request_id, None)
+                if ticket:
+                    self._tickets.pop(token_hash(ticket), None)
+            self.repository.save_active(wrapper)
+            return self._public_session(session)
+
+    def prepare_invite(
+        self, contact_id: str, session_id: str | None = None
+    ) -> tuple[str, str, dict[str, Any]]:
+        with self._lock:
+            wrapper, session = self._active(session_id)
             player = self._player(session, contact_id)
             if player["revoked"]:
                 raise ValueError("That player's access has been revoked")
@@ -332,26 +457,41 @@ class GameBoardService:
             raw = token_urlsafe(32)
             player["invite_hash"] = token_hash(raw)
             player["invite_status"] = "prepared"
-            player["sent_at"] = None
             self.repository.save_active(wrapper)
             return raw, f"{base}#invite={quote(raw)}", deepcopy(player)
 
-    def record_invite_result(self, contact_id: str, success: bool) -> None:
+    def record_invite_result(
+        self, contact_id: str, success: bool, session_id: str | None = None
+    ) -> None:
         with self._lock:
-            wrapper, session = self._active()
+            wrapper, session = self._active(session_id)
             player = self._player(session, contact_id)
             player["invite_status"] = "sent" if success else "failed"
-            player["sent_at"] = iso_utc(utc_now()) if success else None
+            if success:
+                player["sent_at"] = iso_utc(utc_now())
             self.repository.save_active(wrapper)
 
     def request_admission(self, invite_token: str, client_ip: str, user_agent: str) -> dict[str, str]:
         if not invite_token or len(invite_token) > 256:
             raise ValueError("Invalid invitation")
         with self._lock:
-            wrapper, session = self._active()
+            wrapper = self.repository.active()
+            digest = token_hash(invite_token)
+            session = next(
+                (
+                    item
+                    for item in wrapper.get("sessions", [])
+                    if any(player.get("invite_hash") == digest for player in item.get("roster", []))
+                ),
+                None,
+            )
+            if session is None:
+                raise PermissionError("Invalid or revoked invitation")
+            if parse_utc(session["expires_at"]) <= utc_now():
+                self.end_session("expired", session["id"])
+                raise ValueError("The session has expired")
             if session["status"] == "paused":
                 raise PermissionError("Admissions are paused")
-            digest = token_hash(invite_token)
             player = next((item for item in session["roster"] if item.get("invite_hash") == digest), None)
             if player is None or player["revoked"]:
                 raise PermissionError("Invalid or revoked invitation")
@@ -376,6 +516,7 @@ class GameBoardService:
                     "request_id": existing["id"],
                     "poll_token": poll_token,
                     "status": existing["status"],
+                    "session_id": session["id"],
                 }
             poll_token = token_urlsafe(32)
             request = {
@@ -386,11 +527,18 @@ class GameBoardService:
             }
             session["pending"].append(request)
             self.repository.save_active(wrapper)
-            return {"request_id": request["id"], "poll_token": poll_token, "status": "pending"}
+            return {
+                "request_id": request["id"], "poll_token": poll_token,
+                "status": "pending", "session_id": session["id"],
+            }
 
     def poll_admission(self, request_id: str, poll_token: str) -> dict[str, Any]:
         with self._lock:
-            wrapper, session = self._active()
+            wrapper = self.repository.active()
+            session = self._session_for_request(wrapper, request_id)
+            if parse_utc(session["expires_at"]) <= utc_now():
+                self.end_session("expired", session["id"])
+                raise ValueError("The session has expired")
             request = self._request(session, request_id)
             if not poll_token or token_hash(poll_token) != request["poll_hash"]:
                 raise PermissionError("Invalid polling credential")
@@ -411,6 +559,7 @@ class GameBoardService:
                     self._tickets[token_hash(ticket)] = {
                         "request_id": request_id,
                         "contact_id": request["contact_id"],
+                        "session_id": session["id"],
                         "expires_at": utc_now() + timedelta(seconds=60),
                     }
                 request["status"] = "ticket_issued"
@@ -420,7 +569,8 @@ class GameBoardService:
 
     def approve(self, request_id: str) -> None:
         with self._lock:
-            wrapper, session = self._active()
+            wrapper = self.repository.active()
+            session = self._session_for_request(wrapper, request_id)
             request = self._request(session, request_id)
             if request["status"] != "pending":
                 raise ValueError("Only pending requests can be approved")
@@ -431,7 +581,8 @@ class GameBoardService:
 
     def deny(self, request_id: str) -> None:
         with self._lock:
-            wrapper, session = self._active()
+            wrapper = self.repository.active()
+            session = self._session_for_request(wrapper, request_id)
             request = self._request(session, request_id)
             if request["status"] != "pending":
                 raise ValueError("Only pending requests can be denied")
@@ -445,15 +596,168 @@ class GameBoardService:
             if details is None or details["expires_at"] < utc_now():
                 raise PermissionError("Invalid or expired WebSocket ticket")
             self._ticket_by_request.pop(details["request_id"], None)
-            wrapper, session = self._active()
+            wrapper, session = self._active(details["session_id"])
             request = self._request(session, details["request_id"])
             player = self._player(session, details["contact_id"])
             if request["status"] != "ticket_issued" or player["revoked"]:
                 raise PermissionError("Admission is no longer valid")
             request["status"] = "connected"
             request["connected_at"] = iso_utc(utc_now())
+            player["has_logged_in"] = True
+            player["last_connected_at"] = request["connected_at"]
             self.repository.save_active(wrapper)
-            return {"request_id": request["id"], "contact_id": player["contact_id"], "name": player["name"], "session_id": session["id"], "session_title": session["title"]}
+            return {
+                "request_id": request["id"],
+                "contact_id": player["contact_id"],
+                "character_id": player.get("character_id"),
+                "name": player["name"],
+                "session_id": session["id"],
+                "session_title": session["title"],
+            }
+
+    def board_snapshot(
+        self,
+        session_id: str | None = None,
+        *,
+        for_players: bool = False,
+    ) -> dict[str, Any]:
+        with self._lock:
+            wrapper, session = self._active(session_id)
+            character_ids = [
+                str(player.get("character_id"))
+                for player in session.get("roster", [])
+                if player.get("character_id")
+            ]
+            snapshot = self.world_board.snapshot(
+                str(session.get("game_datetime")),
+                player_character_ids=character_ids,
+                for_players=for_players,
+            )
+            snapshot["session_id"] = session["id"]
+            return snapshot
+
+    def controlled_character_ids(
+        self,
+        session_id: str,
+        contact_id: str,
+    ) -> set[str]:
+        with self._lock:
+            wrapper, session = self._active(session_id)
+            player = self._player(session, contact_id)
+            controlled = {
+                str(player.get("character_id"))
+                for _ in (0,)
+                if player.get("character_id")
+            }
+            grants = session.get("board_control_grants", {}).get(
+                contact_id,
+                [],
+            )
+            controlled.update(str(value) for value in grants if value)
+            return controlled
+
+    def move_person(
+        self,
+        session_id: str,
+        person_id: str,
+        map_id: str,
+        x: float,
+        y: float,
+        *,
+        contact_id: str | None = None,
+    ) -> dict[str, Any]:
+        if contact_id is not None and person_id not in self.controlled_character_ids(
+            session_id,
+            contact_id,
+        ):
+            raise PermissionError("You do not control that token")
+        return self.world_board.move_person(person_id, map_id, x, y)
+
+    def update_person_board(
+        self,
+        person_id: str,
+        updates: dict[str, Any],
+    ) -> dict[str, Any]:
+        return self.world_board.update_person_board(person_id, updates)
+
+    def set_map_published(self, map_id: str, published: bool) -> dict[str, Any]:
+        return self.world_board.set_map_published(map_id, published)
+
+    def create_board_group(
+        self,
+        name: str,
+        location_id: str,
+        person_ids: list[str],
+    ) -> dict[str, Any]:
+        return self.world_board.create_group(name, location_id, person_ids)
+
+    def set_board_group(
+        self,
+        person_id: str,
+        group_id: str | None,
+    ) -> dict[str, Any] | None:
+        return self.world_board.set_group(person_id, group_id)
+
+    def grant_board_control(
+        self,
+        session_id: str,
+        contact_id: str,
+        person_id: str,
+        granted: bool,
+    ) -> dict[str, Any]:
+        with self._lock:
+            wrapper, session = self._active(session_id)
+            self._player(session, contact_id)
+            world_people = {
+                item["id"] for item in self.list_characters()
+            }
+            if person_id not in world_people:
+                raise KeyError("Unknown character")
+            grants = session.setdefault("board_control_grants", {})
+            values = set(grants.get(contact_id, []))
+            if granted:
+                values.add(person_id)
+            else:
+                values.discard(person_id)
+            grants[contact_id] = sorted(values)
+            self.repository.save_active(wrapper)
+            return {
+                "contact_id": contact_id,
+                "character_ids": grants[contact_id],
+            }
+
+    def resolve_player_asset(
+        self,
+        session_id: str,
+        asset_id: str,
+    ) -> tuple[Any, str]:
+        snapshot = self.board_snapshot(session_id, for_players=True)
+        authorized_map_ids = {
+            str(map_record.get("record_id"))
+            for map_record in snapshot.get("maps", [])
+        }
+        world = self.world_board.load().data
+        for map_record in world.get("maps", []):
+            metadata = map_record.get("asset")
+            if (
+                str(map_record.get("record_id")) in authorized_map_ids
+                and isinstance(metadata, dict)
+                and metadata.get("asset_id") == asset_id
+            ):
+                return self.world_board.assets.resolve(asset_id, metadata), str(
+                    metadata.get("mime_type", "application/octet-stream")
+                )
+        if any(
+            actor.get("portrait_asset_id") == asset_id
+            for actor in snapshot.get("actors", [])
+        ):
+            for person in world.get("people", []):
+                portrait = (person.get("board") or {}).get("portrait")
+                if isinstance(portrait, dict) and portrait.get("asset_id") == asset_id:
+                    return self.world_board.assets.resolve(asset_id, portrait), str(
+                        portrait.get("mime_type", "application/octet-stream")
+                    )
+        raise PermissionError("That asset is not available to this session")
 
     def mark_disconnected(
         self,
@@ -464,7 +768,8 @@ class GameBoardService:
     ) -> None:
         with self._lock:
             try:
-                wrapper, session = self._active()
+                wrapper = self.repository.active()
+                session = self._session_for_request(wrapper, request_id)
                 request = self._request(session, request_id)
             except (ValueError, KeyError):
                 return
@@ -477,9 +782,9 @@ class GameBoardService:
             stats["latency_samples"] += max(0, latency_samples)
             self.repository.save_active(wrapper)
 
-    def record_acknowledgement(self, contact_id: str) -> None:
+    def record_acknowledgement(self, contact_id: str, session_id: str | None = None) -> None:
         with self._lock:
-            wrapper, session = self._active()
+            wrapper, session = self._active(session_id)
             self._player(session, contact_id)["stats"]["acknowledgements"] += 1
             self.repository.save_active(wrapper)
 
@@ -489,16 +794,17 @@ class GameBoardService:
         sender_name: str,
         sender_role: str,
         text: str,
+        session_id: str | None = None,
     ) -> dict[str, str]:
         text = text.strip()
         if not text:
             raise ValueError("Chat messages cannot be empty")
         if len(text) > 500:
             raise ValueError("Chat messages are limited to 500 characters")
-        if sender_role not in {"player", "headmaster"}:
+        if sender_role not in {"player", "headmaster", "system"}:
             raise ValueError("Unknown chat sender")
         with self._lock:
-            wrapper, session = self._active()
+            wrapper, session = self._active(session_id)
             if sender_role == "player":
                 player = self._player(session, sender_id)
                 if player["revoked"]:
@@ -518,9 +824,9 @@ class GameBoardService:
             self.repository.save_active(wrapper)
             return deepcopy(message)
 
-    def revoke(self, contact_id: str) -> None:
+    def revoke(self, contact_id: str, session_id: str | None = None) -> None:
         with self._lock:
-            wrapper, session = self._active()
+            wrapper, session = self._active(session_id)
             player = self._player(session, contact_id)
             player.update(revoked=True, invite_hash=None, invite_status="revoked")
             for request in session["pending"]:
@@ -528,27 +834,69 @@ class GameBoardService:
                     request["status"] = "revoked"
             self.repository.save_active(wrapper)
 
-    def set_paused(self, paused: bool) -> None:
+    def set_event_date(
+        self, event_date: str | None, session_id: str | None = None
+    ) -> dict[str, Any]:
+        cleaned = event_date.strip() if isinstance(event_date, str) else ""
+        if cleaned:
+            try:
+                date.fromisoformat(cleaned)
+            except ValueError as error:
+                raise ValueError("Event date must use YYYY-MM-DD") from error
         with self._lock:
-            wrapper, session = self._active()
+            wrapper, session = self._active(session_id)
+            session["event_date"] = cleaned or None
+            self.repository.save_active(wrapper)
+            return self.session_view(session["id"])
+
+    def set_game_datetime(self, session_id: str, game_datetime: str) -> dict[str, Any]:
+        with self._lock:
+            wrapper, session = self._active(session_id)
+            fallback_date = (
+                session.get("event_date")
+                or session.get("game_day")
+                or date.today().isoformat()
+            )
+            session["game_datetime"] = normalize_game_datetime(
+                game_datetime, fallback_date
+            )
+            self.repository.save_active(wrapper)
+            return self._public_session(session)
+
+    def set_paused(self, paused: bool, session_id: str | None = None) -> None:
+        with self._lock:
+            wrapper, session = self._active(session_id)
             session["status"] = "paused" if paused else "active"
             self.repository.save_active(wrapper)
 
-    def increment_announcements(self) -> None:
+    def increment_announcements(self, session_id: str | None = None) -> None:
         with self._lock:
-            wrapper, session = self._active()
+            wrapper, session = self._active(session_id)
             session["announcement_count"] += 1
             self.repository.save_active(wrapper)
 
-    def end_session(self, reason: str = "ended") -> dict[str, Any]:
+    def _drop_tickets_for_session(self, session_id: str) -> None:
+        request_ids = [
+            request_id
+            for request_id, raw_ticket in self._ticket_by_request.items()
+            if (self._tickets.get(token_hash(raw_ticket)) or {}).get("session_id") == session_id
+        ]
+        for request_id in request_ids:
+            raw_ticket = self._ticket_by_request.pop(request_id, None)
+            if raw_ticket:
+                self._tickets.pop(token_hash(raw_ticket), None)
+
+    def end_session(
+        self, reason: str = "ended", session_id: str | None = None
+    ) -> dict[str, Any]:
         with self._lock:
             wrapper = self.repository.active()
-            session = wrapper.get("session")
-            if not session:
-                raise ValueError("There is no active session")
+            session = self._session(wrapper, session_id)
             ended_at = iso_utc(utc_now())
             summary = {
                 "id": session["id"], "title": session["title"], "created_at": session["created_at"],
+                "event_date": session.get("event_date"),
+                "game_datetime": session.get("game_datetime"),
                 "expires_at": session["expires_at"], "ended_at": ended_at, "reason": reason,
                 "announcement_count": session.get("announcement_count", 0),
                 "players": [
@@ -566,9 +914,9 @@ class GameBoardService:
             summaries = self.repository.summaries()
             summaries["sessions"].append(summary)
             self.repository.save_summaries(summaries)
-            self.repository.save_active({"schema_version": 1, "session": None})
-            self._tickets.clear()
-            self._ticket_by_request.clear()
+            wrapper["sessions"] = [item for item in wrapper["sessions"] if item["id"] != session["id"]]
+            self.repository.save_active(wrapper)
+            self._drop_tickets_for_session(session["id"])
             return summary
 
     @staticmethod

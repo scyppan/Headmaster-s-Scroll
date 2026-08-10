@@ -1,7 +1,7 @@
 import json
 import tempfile
 import unittest
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from headmasters_scroll.game_board.service import GameBoardService, iso_utc, utc_now
@@ -89,7 +89,7 @@ class GameBoardServiceTests(unittest.TestCase):
         self.create_session()
         raw, link = self.invite()
         self.assertTrue(link.startswith("https://players.example.com/game/#invite="))
-        stored = self.repository.active()["session"]["roster"][0]
+        stored = self.repository.active()["sessions"][0]["roster"][0]
         self.assertNotIn(raw, json.dumps(stored))
         request = self.service.request_admission(raw, "203.0.113.7", "Test Browser")
         self.assertEqual(self.service.poll_admission(request["request_id"], request["poll_token"])["status"], "pending")
@@ -97,6 +97,7 @@ class GameBoardServiceTests(unittest.TestCase):
         approved = self.service.poll_admission(request["request_id"], request["poll_token"])
         identity = self.service.consume_ticket(approved["ticket"])
         self.assertEqual(identity["name"], "Alice")
+        self.assertTrue(self.service.session_view()["roster"][0]["has_logged_in"])
         with self.assertRaises(PermissionError):
             self.service.consume_ticket(approved["ticket"])
         self.service.mark_disconnected(request["request_id"], 12.5, 300.0, 2)
@@ -136,17 +137,42 @@ class GameBoardServiceTests(unittest.TestCase):
         self.service.set_paused(False)
         self.assertEqual(self.service.request_admission(raw, "203.0.113.8", "Browser")["status"], "pending")
 
+    def test_event_date_is_editable_and_retained_in_summary(self):
+        self.create_session()
+        updated = self.service.set_event_date("1943-09-01")
+        self.assertEqual(updated["event_date"], "1943-09-01")
+        with self.assertRaisesRegex(ValueError, "YYYY-MM-DD"):
+            self.service.set_event_date("September 1")
+        summary = self.service.end_session()
+        self.assertEqual(summary["event_date"], "1943-09-01")
+
+    def test_in_world_game_datetime_is_persisted_validated_and_summarized(self):
+        game_day = (date.today() + timedelta(days=1)).isoformat()
+        created = self.service.create_session(
+            "Game Clock",
+            game_day,
+            [self.alice["id"]],
+            game_datetime="1943-09-01T08:00",
+        )
+        self.assertEqual(created["game_datetime"], "1943-09-01T08:00")
+        updated = self.service.set_game_datetime(created["id"], "1943-09-01T17:45")
+        self.assertEqual(updated["game_datetime"], "1943-09-01T17:45")
+        with self.assertRaisesRegex(ValueError, "24-hour"):
+            self.service.set_game_datetime(created["id"], "September 1 at supper")
+        summary = self.service.end_session("ended", created["id"])
+        self.assertEqual(summary["game_datetime"], "1943-09-01T17:45")
+
     def test_expiration_archives_summary_without_credentials_or_email(self):
         self.create_session()
         raw, _link = self.invite()
         self.service.post_chat(self.alice["id"], "Alice", "player", "A private session message")
         request = self.service.request_admission(raw, "203.0.113.9", "Secret Browser")
         wrapper = self.repository.active()
-        wrapper["session"]["expires_at"] = iso_utc(utc_now() - timedelta(seconds=1))
+        wrapper["sessions"][0]["expires_at"] = iso_utc(utc_now() - timedelta(seconds=1))
         self.repository.save_active(wrapper)
         with self.assertRaises(ValueError):
             self.service.poll_admission(request["request_id"], request["poll_token"])
-        self.assertIsNone(self.repository.active()["session"])
+        self.assertEqual(self.repository.active()["sessions"], [])
         summary_text = json.dumps(self.repository.summaries())
         self.assertIn("Alice", summary_text)
         for secret in (raw, request["poll_token"], "alice@example.com", "203.0.113.9", "Secret Browser", "A private session message"):
@@ -195,6 +221,39 @@ class GameBoardServiceTests(unittest.TestCase):
         self.service.add_contact("Bob", "bob@example.com")
         backups = list((Path(self.temporary.name) / "backups" / "contacts").glob("*.json"))
         self.assertTrue(backups)
+
+    def test_multiple_sessions_duplicate_remove_end_and_delete_independently(self):
+        first = self.create_session()
+        bob = self.service.add_contact("Bob", "bob@example.com")
+        second = self.service.create_session(
+            "Sunday Game", (date.today() + timedelta(days=2)).isoformat(), [bob["id"]],
+            event_date="1943-09-02",
+        )
+        self.assertEqual(len(self.service.sessions_view()), 2)
+        raw, _link, _player = self.service.prepare_invite(bob["id"], second["id"])
+        self.service.record_invite_result(bob["id"], True, second["id"])
+        self.assertIsNotNone(self.service.session_view(second["id"])["roster"][0]["sent_at"])
+        request = self.service.request_admission(raw, "203.0.113.8", "Browser")
+        self.assertEqual(request["session_id"], second["id"])
+
+        duplicate = self.service.duplicate_session(first["id"])
+        self.assertEqual(duplicate["title"], "Saturday Game Copy")
+        self.assertEqual(duplicate["roster"][0]["invite_status"], "not_sent")
+        self.assertEqual(duplicate["game_datetime"], first["game_datetime"])
+        self.service.remove_player(duplicate["id"], self.alice["id"])
+        self.assertEqual(self.service.session_view(duplicate["id"])["roster"], [])
+        self.service.delete_session(duplicate["id"])
+        self.assertEqual(len(self.service.sessions_view()), 2)
+        summary = self.service.end_session("ended", second["id"])
+        self.assertEqual(summary["event_date"], "1943-09-02")
+        self.assertEqual([session["id"] for session in self.service.sessions_view()], [first["id"]])
+
+    def test_legacy_single_session_file_migrates_without_data_loss(self):
+        session = self.create_session()
+        self.repository.save_active({"schema_version": 1, "session": session})
+        migrated = self.repository.active()
+        self.assertEqual(migrated["schema_version"], 1)
+        self.assertEqual([item["id"] for item in migrated["sessions"]], [session["id"]])
 
 
 if __name__ == "__main__":

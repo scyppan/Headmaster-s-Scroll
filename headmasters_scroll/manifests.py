@@ -20,6 +20,7 @@ class AppManifest:
     entry_command: tuple[str, ...]
     icon: Path | None
     directory: Path
+    order: int = 100
 
 
 def load_manifests(apps_directory: Path = APPS_DIRECTORY) -> list[AppManifest]:
@@ -44,6 +45,9 @@ def load_manifests(apps_directory: Path = APPS_DIRECTORY) -> list[AppManifest]:
             raise ManifestError(f"entry_command must be a list of strings in {path}")
         if enabled and not command:
             raise ManifestError(f"Enabled app {app_id} has no entry command")
+        order = raw.get("order", 100)
+        if not isinstance(order, int) or isinstance(order, bool) or order < 0:
+            raise ManifestError(f"order must be a non-negative integer in {path}")
         icon_value = raw.get("icon")
         icon = path.parent / icon_value if isinstance(icon_value, str) and icon_value else None
         if icon is not None and not icon.is_file():
@@ -55,6 +59,10 @@ def load_manifests(apps_directory: Path = APPS_DIRECTORY) -> list[AppManifest]:
                     if not resolved.exists():
                         raise ManifestError(f"Missing entrypoint for {app_id}: {resolved}")
         seen.add(app_id)
-        manifests.append(AppManifest(app_id, name.strip(), enabled, tuple(command), icon, path.parent))
-    return manifests
-
+        manifests.append(
+            AppManifest(app_id, name.strip(), enabled, tuple(command), icon, path.parent, order)
+        )
+    return sorted(
+        manifests,
+        key=lambda manifest: (manifest.order, manifest.name.casefold(), manifest.app_id),
+    )

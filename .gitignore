@@ -4,6 +4,7 @@ __pycache__/
 *.egg-info/
 data/backups/
 data/*.lock
+data/assets/
 runtime/
 credentials.json
 client_secret*.json

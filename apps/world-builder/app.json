@@ -1,0 +1,11 @@
+{
+  "id": "world-builder",
+  "name": "World Builder",
+  "order": 20,
+  "enabled": true,
+  "entry_command": [
+    "{python}",
+    "{root}/apps/world-builder/main.py"
+  ],
+  "icon": "source/assets/crooked-purple-wand.ico"
+}

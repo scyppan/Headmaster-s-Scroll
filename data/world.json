@@ -120157,9 +120157,11 @@
   ],
   "books": [],
   "book_readings": [],
+  "maps": [],
+  "board_groups": [],
   "_headmasters_scroll": {
-    "revision_id": "2c65bc9f-4449-50d8-b001-73745a3a7900",
-    "last_modified_at": "2026-08-09T02:43:53.124364Z",
-    "last_modified_by": "foundation-migration"
+    "revision_id": "ec60e813-fdd4-482c-91e1-33e5741402f7",
+    "last_modified_at": "2026-08-10T18:00:00Z",
+    "last_modified_by": "world-builder-board-migration"
   }
 }

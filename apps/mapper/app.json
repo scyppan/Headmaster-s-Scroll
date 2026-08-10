@@ -1,0 +1,10 @@
+{
+  "id": "mapper",
+  "name": "Mapper",
+  "order": 40,
+  "enabled": true,
+  "entry_command": [
+    "{python}",
+    "{root}/apps/mapper/main.py"
+  ]
+}

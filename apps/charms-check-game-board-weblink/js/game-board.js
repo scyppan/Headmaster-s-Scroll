@@ -5,6 +5,7 @@
   const POLL_DELAY_MS = 2000;
   const REQUEST_TIMEOUT_MS = 10000;
   const SECTIONS = [
+    ['board', 'Game Board', '▦'],
     ['overview', 'Overview', '⌂'],
     ['attributes', 'Attributes', '◇'],
     ['spells', 'Spells', '✦'],
@@ -36,6 +37,13 @@
       this.intentionalClose = false;
       this.requestingAdmission = false;
       this.playerId = '';
+      this.characterId = '';
+      this.assetCredential = '';
+      this.board = { maps: [], actors: [], controlled_character_ids: [] };
+      this.activeMapId = '';
+      this.assetUrls = new Map();
+      this.dragging = null;
+      this.lastMovePreview = 0;
       this.activeSection = 'overview';
       this.chatMessages = [];
       this.render();
@@ -326,6 +334,7 @@
       });
       this.socket.addEventListener('close', () => {
         clearTimeout(connectionTimer);
+        this.releaseAssets();
         if (this.intentionalClose) {
           this.intentionalClose = false;
           return;
@@ -347,6 +356,8 @@
       if (!message || message.v !== VERSION || typeof message.type !== 'string') return;
       if (message.type === 'connection_accepted') {
         this.playerId = message.player_id || '';
+        this.characterId = message.character_id || '';
+        this.assetCredential = message.asset_credential || '';
         this.element('player').textContent = message.player || 'Player';
         this.element('detail-player').textContent = message.player || 'Player';
         this.element('avatar').textContent = (message.player || '?').trim().charAt(0).toUpperCase();
@@ -375,12 +386,28 @@
         }
       } else if (message.type === 'identity_updated') {
         const player = message.player || 'Player';
+        this.characterId = message.character_id || '';
         this.element('player').textContent = player;
         this.element('detail-player').textContent = player;
         this.element('avatar').textContent = player.trim().charAt(0).toUpperCase() || '?';
+      } else if (message.type === 'board_snapshot' && message.board) {
+        this.board = message.board;
+        const mapIds = new Set((this.board.maps || []).map(item => item.record_id));
+        if (!mapIds.has(this.activeMapId)) this.activeMapId = this.board.maps?.[0]?.record_id || '';
+        if (this.activeSection === 'board') this.renderBoardView();
+      } else if (message.type === 'board_move_preview') {
+        const actor = (this.board.actors || []).find(item => item.actor_id === message.person_id);
+        if (actor) {
+          actor.map_id = message.map_id;
+          actor.x = Number(message.x);
+          actor.y = Number(message.y);
+          if (this.activeSection === 'board') this.positionBoardActors();
+        }
       } else if (message.type === 'access_revoked') {
+        this.releaseAssets();
         this.show('revoked', message.message || 'Access was revoked.');
       } else if (message.type === 'session_expired') {
+        this.releaseAssets();
         this.show('expired', message.message || 'The session has ended.');
       } else if (message.type === 'server_error') {
         this.showChatNotice(message.message || 'The message could not be sent.');
@@ -466,6 +493,11 @@
       });
       this.element('section-title').textContent = item[1];
       this.element('detail-section').textContent = item[1];
+      if (item[0] === 'board') {
+        this.renderBoardView();
+        this.search(this.element('search').value);
+        return;
+      }
       const content = this.element('section-content');
       content.innerHTML = `
         <details class="ccgb-content-panel" open>
@@ -481,6 +513,197 @@
           <div><p>Additional character notes can be organized here.</p></div>
         </details>`;
       this.search(this.element('search').value);
+    }
+
+    async assetUrl(assetId) {
+      if (!assetId || !this.assetCredential) return '';
+      if (this.assetUrls.has(assetId)) return this.assetUrls.get(assetId);
+      const response = await fetch(
+        `${this.apiBase}/v1/assets/${encodeURIComponent(assetId)}`,
+        { headers: { Authorization: `Bearer ${this.assetCredential}` } }
+      );
+      if (!response.ok) throw new Error(`Private board image returned ${response.status}.`);
+      const url = URL.createObjectURL(await response.blob());
+      this.assetUrls.set(assetId, url);
+      return url;
+    }
+
+    releaseAssets() {
+      this.assetUrls.forEach(url => URL.revokeObjectURL(url));
+      this.assetUrls.clear();
+      this.assetCredential = '';
+    }
+
+    renderBoardView() {
+      const content = this.element('section-content');
+      content.replaceChildren();
+      content.className = 'ccgb-panel-grid ccgb-board-content';
+      const maps = Array.isArray(this.board.maps) ? this.board.maps : [];
+      if (!maps.length) {
+        const empty = document.createElement('div');
+        empty.className = 'ccgb-board-empty';
+        empty.textContent = 'The Headmaster has not opened a map for players yet.';
+        content.appendChild(empty);
+        return;
+      }
+
+      const shell = document.createElement('section');
+      shell.className = 'ccgb-map-shell';
+      const tabs = document.createElement('div');
+      tabs.className = 'ccgb-map-tabs';
+      maps.forEach(map => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = map.name || 'Map';
+        button.className = map.record_id === this.activeMapId ? 'is-active' : '';
+        button.addEventListener('click', () => {
+          this.activeMapId = map.record_id;
+          this.renderBoardView();
+        });
+        tabs.appendChild(button);
+      });
+      const viewport = document.createElement('div');
+      viewport.className = 'ccgb-map-viewport';
+      viewport.dataset.ccgbMapId = this.activeMapId;
+      const stage = document.createElement('div');
+      stage.className = 'ccgb-map-stage';
+      const map = maps.find(item => item.record_id === this.activeMapId) || maps[0];
+      this.activeMapId = map.record_id;
+      const metadata = map.asset || null;
+      if (metadata?.width && metadata?.height) {
+        stage.style.aspectRatio = `${metadata.width} / ${metadata.height}`;
+      }
+      if (metadata?.asset_id) {
+        const image = document.createElement('img');
+        image.alt = map.name || 'Game map';
+        image.draggable = false;
+        this.assetUrl(metadata.asset_id)
+          .then(url => { if (stage.isConnected) image.src = url; })
+          .catch(error => this.showChatNotice(error.message));
+        stage.appendChild(image);
+      } else {
+        const empty = document.createElement('p');
+        empty.className = 'ccgb-map-image-missing';
+        empty.textContent = 'This map has no available image.';
+        stage.appendChild(empty);
+      }
+      viewport.appendChild(stage);
+      shell.append(tabs, viewport);
+      content.appendChild(shell);
+
+      (this.board.actors || [])
+        .filter(actor => actor.map_id === this.activeMapId)
+        .forEach(actor => this.createBoardActor(stage, actor));
+    }
+
+    createBoardActor(stage, actor) {
+      const piece = document.createElement('button');
+      piece.type = 'button';
+      piece.className = `ccgb-board-actor is-${actor.display_mode || 'dot'}`;
+      piece.dataset.actorId = actor.actor_id;
+      piece.style.setProperty('--actor-color', actor.faction_color || '#808080');
+      piece.title = actor.faction_revealed && actor.faction_name
+        ? `${actor.name || 'Unknown'} — ${actor.faction_name}`
+        : (actor.name || 'Unknown');
+      const controlled = (this.board.controlled_character_ids || []).includes(actor.actor_id);
+      piece.classList.toggle('is-controlled', controlled);
+
+      if (actor.display_mode === 'token' && actor.portrait_asset_id) {
+        const image = document.createElement('img');
+        image.alt = '';
+        image.draggable = false;
+        this.assetUrl(actor.portrait_asset_id)
+          .then(url => { if (piece.isConnected) image.src = url; })
+          .catch(error => this.showChatNotice(error.message));
+        piece.appendChild(image);
+      } else if (actor.display_mode === 'nameplate') {
+        const plate = document.createElement('span');
+        plate.textContent = actor.name || 'Character';
+        piece.appendChild(plate);
+      }
+      if (actor.display_mode !== 'nameplate') {
+        const label = document.createElement('span');
+        label.className = 'ccgb-actor-label';
+        label.textContent = actor.name || 'Unknown';
+        piece.appendChild(label);
+      }
+      piece.style.left = `${Number(actor.x || 0.5) * 100}%`;
+      piece.style.top = `${Number(actor.y || 0.5) * 100}%`;
+      if (controlled) {
+        piece.addEventListener('pointerdown', event => this.beginBoardDrag(event, actor, stage, piece));
+      }
+      stage.appendChild(piece);
+    }
+
+    beginBoardDrag(event, actor, stage, piece) {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      piece.setPointerCapture(event.pointerId);
+      this.dragging = { actor, stage, piece, pointerId: event.pointerId };
+      const move = moveEvent => this.moveBoardDrag(moveEvent);
+      const end = endEvent => {
+        piece.removeEventListener('pointermove', move);
+        piece.removeEventListener('pointerup', end);
+        piece.removeEventListener('pointercancel', end);
+        this.endBoardDrag(endEvent);
+      };
+      piece.addEventListener('pointermove', move);
+      piece.addEventListener('pointerup', end);
+      piece.addEventListener('pointercancel', end);
+    }
+
+    boardPoint(event, stage) {
+      const bounds = stage.getBoundingClientRect();
+      return {
+        x: Math.max(0, Math.min(1, (event.clientX - bounds.left) / Math.max(1, bounds.width))),
+        y: Math.max(0, Math.min(1, (event.clientY - bounds.top) / Math.max(1, bounds.height)))
+      };
+    }
+
+    moveBoardDrag(event) {
+      if (!this.dragging) return;
+      const point = this.boardPoint(event, this.dragging.stage);
+      this.dragging.actor.x = point.x;
+      this.dragging.actor.y = point.y;
+      this.dragging.piece.style.left = `${point.x * 100}%`;
+      this.dragging.piece.style.top = `${point.y * 100}%`;
+      const now = performance.now();
+      if (now - this.lastMovePreview >= 80) {
+        this.lastMovePreview = now;
+        this.send({
+          v: VERSION,
+          type: 'board_move_preview',
+          person_id: this.dragging.actor.actor_id,
+          map_id: this.activeMapId,
+          x: point.x,
+          y: point.y
+        });
+      }
+    }
+
+    endBoardDrag(event) {
+      if (!this.dragging) return;
+      const point = this.boardPoint(event, this.dragging.stage);
+      this.send({
+        v: VERSION,
+        type: 'board_move_commit',
+        person_id: this.dragging.actor.actor_id,
+        map_id: this.activeMapId,
+        x: point.x,
+        y: point.y
+      });
+      this.dragging = null;
+    }
+
+    positionBoardActors() {
+      const stage = this.root.querySelector('.ccgb-map-stage');
+      if (!stage) return;
+      (this.board.actors || []).forEach(actor => {
+        const piece = stage.querySelector(`[data-actor-id="${CSS.escape(actor.actor_id)}"]`);
+        if (!piece || actor.map_id !== this.activeMapId) return;
+        piece.style.left = `${Number(actor.x || 0.5) * 100}%`;
+        piece.style.top = `${Number(actor.y || 0.5) * 100}%`;
+      });
     }
 
     search(value) {
@@ -577,6 +800,16 @@
         { id: '3', sender_id: 'preview-hermione', sender_name: 'Hermione', sender_role: 'player', text: 'I have my wand and notes.', sent_at: new Date().toISOString() }
       ];
       this.renderChat();
+      this.board = {
+        maps: [{ record_id: 'preview-map', name: 'Great Hall', asset: null }],
+        actors: [
+          { actor_id: 'preview-edward', map_id: 'preview-map', x: 0.32, y: 0.48, display_mode: 'nameplate', name: 'Edward Marksdale', faction_color: '#7b3f2b' },
+          { actor_id: 'preview-hermione', map_id: 'preview-map', x: 0.67, y: 0.39, display_mode: 'dot', name: 'Unknown', faction_color: '#808080' }
+        ],
+        controlled_character_ids: ['preview-edward']
+      };
+      this.activeMapId = 'preview-map';
+      this.openSection('board');
     }
   }
 

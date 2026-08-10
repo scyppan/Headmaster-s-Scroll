@@ -528,6 +528,162 @@
   width: 100%;
 }
 
+#gameboard .ccgb-board-content {
+  height: min(650px, calc(100vh - 290px));
+  min-height: 420px;
+}
+
+#gameboard .ccgb-map-shell {
+  background: #211a14;
+  border: 1px solid #9d7a4e;
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+#gameboard .ccgb-map-tabs {
+  background: #dfc792;
+  display: flex;
+  flex: 0 0 auto;
+  gap: 1px;
+  overflow-x: auto;
+  padding: 5px 5px 0;
+}
+
+#gameboard .ccgb-map-tabs button {
+  background: #ead8ac;
+  border: 1px solid #aa8755;
+  border-bottom: 0;
+  border-radius: 5px 5px 0 0;
+  color: var(--ccgb-ink);
+  font-weight: 700;
+  padding: 8px 14px;
+  white-space: nowrap;
+}
+
+#gameboard .ccgb-map-tabs button.is-active {
+  background: var(--ccgb-paper-pale);
+  color: var(--ccgb-red-dark);
+}
+
+#gameboard .ccgb-map-viewport {
+  align-items: center;
+  display: flex;
+  flex: 1 1 auto;
+  justify-content: center;
+  min-height: 0;
+  overflow: auto;
+  padding: 8px;
+}
+
+#gameboard .ccgb-map-stage {
+  aspect-ratio: 16 / 10;
+  background: #30251c;
+  max-height: 100%;
+  max-width: 100%;
+  min-height: 280px;
+  overflow: hidden;
+  position: relative;
+  touch-action: none;
+  width: 100%;
+}
+
+#gameboard .ccgb-map-stage > img {
+  height: 100%;
+  inset: 0;
+  object-fit: contain;
+  pointer-events: none;
+  position: absolute;
+  user-select: none;
+  width: 100%;
+}
+
+#gameboard .ccgb-map-image-missing,
+#gameboard .ccgb-board-empty {
+  color: var(--ccgb-muted);
+  margin: auto;
+  padding: 40px;
+  text-align: center;
+}
+
+#gameboard .ccgb-board-empty {
+  background: rgba(255, 255, 255, 0.4);
+  border: 1px solid #c5a873;
+}
+
+#gameboard .ccgb-board-actor {
+  --actor-color: #808080;
+  align-items: center;
+  background: var(--actor-color);
+  border: 2px solid #3d2a1b;
+  border-radius: 50%;
+  color: #fff8e7;
+  display: flex;
+  height: 20px;
+  justify-content: center;
+  padding: 0;
+  position: absolute;
+  transform: translate(-50%, -50%);
+  width: 20px;
+  z-index: 3;
+}
+
+#gameboard .ccgb-board-actor.is-token {
+  border: 4px solid var(--actor-color);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+  height: 62px;
+  width: 62px;
+}
+
+#gameboard .ccgb-board-actor.is-token > img {
+  border-radius: 50%;
+  height: 52px;
+  object-fit: cover;
+  pointer-events: none;
+  width: 52px;
+}
+
+#gameboard .ccgb-board-actor.is-nameplate {
+  background: var(--ccgb-paper-pale);
+  border-color: var(--actor-color);
+  border-radius: 5px;
+  color: var(--ccgb-ink);
+  font-size: 12px;
+  font-weight: 800;
+  height: auto;
+  min-width: 92px;
+  padding: 6px 9px;
+  width: auto;
+}
+
+#gameboard .ccgb-board-actor.is-controlled {
+  cursor: grab;
+  outline: 2px solid #fff4c8;
+  outline-offset: 2px;
+}
+
+#gameboard .ccgb-board-actor.is-controlled:active { cursor: grabbing; }
+
+#gameboard .ccgb-actor-label {
+  background: rgba(33, 26, 20, 0.86);
+  border-radius: 3px;
+  color: #fff8e7;
+  font-size: 11px;
+  font-weight: 700;
+  left: 50%;
+  max-width: 140px;
+  overflow: hidden;
+  padding: 2px 5px;
+  pointer-events: none;
+  position: absolute;
+  text-overflow: ellipsis;
+  top: calc(100% + 5px);
+  transform: translate(-50%, 0);
+  white-space: nowrap;
+}
+
 #gameboard button:hover,
 #gameboard button:focus-visible,
 #gameboard input:focus-visible,

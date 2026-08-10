@@ -90,6 +90,16 @@ def _settings(value: dict[str, Any]) -> None:
 
 def _active(value: dict[str, Any]) -> None:
     _object(value)
+    if "sessions" in value:
+        sessions = value["sessions"]
+        if not isinstance(sessions, list) or any(not isinstance(session, dict) for session in sessions):
+            raise ValueError("active-session.json sessions must be a list of objects")
+        session_ids = [session.get("id") for session in sessions]
+        if any(not isinstance(session_id, str) or not session_id for session_id in session_ids):
+            raise ValueError("Every active session requires an ID")
+        if len(session_ids) != len(set(session_ids)):
+            raise ValueError("Active session IDs must be unique")
+        return
     session = value.get("session")
     if session is not None and not isinstance(session, dict):
         raise ValueError("active-session.json session must be an object or null")
@@ -138,7 +148,17 @@ class GameBoardRepository:
         self.store.save("settings.json", value, _settings)
 
     def active(self) -> dict[str, Any]:
-        return self.store.load("active-session.json", {"schema_version": 1, "session": None}, _active)
+        value = self.store.load(
+            "active-session.json", {"schema_version": 1, "sessions": []}, _active
+        )
+        if "sessions" not in value:
+            session = value.get("session")
+            value = {
+                "schema_version": 1,
+                "sessions": [session] if isinstance(session, dict) else [],
+            }
+            self.save_active(value)
+        return value
 
     def save_active(self, value: dict[str, Any]) -> None:
         self.store.save("active-session.json", value, _active)

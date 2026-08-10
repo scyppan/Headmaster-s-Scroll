@@ -1,7 +1,11 @@
 {
   "id": "dbm",
   "name": "DBM",
-  "enabled": false,
-  "entry_command": []
+  "order": 30,
+  "enabled": true,
+  "entry_command": [
+    "{python}",
+    "{root}/apps/dbm/main.py"
+  ],
+  "icon": "source/assets/Charms Check Large.ico"
 }
-

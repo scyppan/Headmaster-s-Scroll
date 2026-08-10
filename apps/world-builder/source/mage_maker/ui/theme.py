@@ -1,0 +1,83 @@
+import tkinter.font as tkfont
+
+
+FONT_FAMILY = "Segoe UI"
+FONT_WEIGHT = "normal"
+FONT_WEIGHT_STRONG = "bold"
+
+APP_BACKGROUND = "#E5D6ED"
+SURFACE = "#F0E5F5"
+SURFACE_MUTED = "#E8DAEF"
+SURFACE_RAISED = "#DDCBE6"
+
+FIELD_BACKGROUND = "#F7EFFA"
+FIELD_HOVER = "#F2E6F6"
+FIELD_FOCUS = "#765086"
+FIELD_DISABLED = "#E2D8E7"
+
+PRIMARY = "#B88FC8"
+PRIMARY_DARK = "#52325F"
+PRIMARY_LIGHT = "#DEC9E7"
+PRIMARY_SOFT = "#D8C0E2"
+PRIMARY_HOVER = "#A978BC"
+
+BUTTON_SOFT = "#DDCDE6"
+BUTTON_SOFT_HOVER = "#CFB8DA"
+BUTTON_DISABLED = "#E6DDE9"
+DELETE_SOFT = "#F1DDE3"
+DELETE_HOVER = "#E5C2CC"
+LOCKED_RED = "#B42318"
+LOCKED_RED_HOVER = "#8F1D14"
+
+TEXT_DARK = "#2B1D31"
+TEXT_MUTED = "#625168"
+TEXT_LIGHT = "#FFFFFF"
+TEXT_DISABLED = "#9B919E"
+
+BORDER = "#BDA7C8"
+BORDER_SOFT = "#D3C2DB"
+LOCKED_BORDER = "#C62828"
+LIST_ALTERNATE = "#EEE1F3"
+LIST_HOVER = "#DDCAE7"
+LIST_SELECTED = "#CDAEDB"
+
+FAMILY_GREEN = "#C9E7D0"
+FAMILY_GREEN_DARK = "#365B40"
+FAMILY_GREEN_FADED = "#E8F3EA"
+ADD_GREEN = "#9FD2AA"
+ADD_GREEN_HOVER = "#86C394"
+FAMILY_LINE = "#A58AB1"
+FAMILY_CHILD_FADED_FILL = "#E5D6EC"
+FAMILY_CHILD_FADED_OUTLINE = "#D3C0DD"
+FAMILY_CHILD_FADED_TEXT = "#A897B0"
+FAMILY_CHILD_FADED_MUTED = "#B8A6C0"
+FAMILY_CHILD_FADED_LINE = "#CCB8D6"
+FAMILY_STEP_FILL = "#DDD9DF"
+FAMILY_STEP_ACTIVE = "#C9C3CC"
+FAMILY_STEP_FADED = "#EEEAEF"
+FAMILY_STEP_DARK = "#5F5963"
+
+CONTROL_RADIUS = 10
+
+
+def app_font(size, weight=FONT_WEIGHT):
+    return (FONT_FAMILY, size, weight)
+
+
+def configure_tk_fonts(root):
+    for font_name in (
+        "TkDefaultFont",
+        "TkTextFont",
+        "TkMenuFont",
+        "TkHeadingFont",
+        "TkCaptionFont",
+        "TkSmallCaptionFont",
+        "TkIconFont",
+        "TkTooltipFont",
+    ):
+        try:
+            named_font = tkfont.nametofont(font_name, root=root)
+        except tk.TclError:
+            continue
+
+        named_font.configure(family=FONT_FAMILY, weight=FONT_WEIGHT)

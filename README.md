@@ -8,7 +8,13 @@ Headmaster's Scroll is the local home for Charms Check desktop applications. The
 python main.py
 ```
 
-Mage Maker and DBM are registered as disabled placeholders. Game Board is an enabled native Python app with private Headmaster controls for invitations, approvals, connected players, announcements, and sessions. It starts its local communication service automatically. See `apps/game-board/README.md` for Gmail, WordPress, free Tailscale Funnel, and setup instructions.
+The Scroll launches Game Board, World Builder, DBM, and Mapper as separate native Python applications. Game Board starts its local communication service automatically. See `apps/game-board/README.md` for Gmail, WordPress, free Tailscale Funnel, and setup instructions.
+
+## Private portraits and maps
+
+World Builder converts imported character portraits to 512×512 WebP files. Mapper imports map images without embedding them in JSON. Both kinds of image live under the Git-ignored `data/assets/` directory; `world.json` contains only stable asset IDs, hashes, dimensions, and media metadata.
+
+These images are intentionally not published to GitHub. Back up `data/assets/` separately alongside the canonical JSON backups. During a game, the player service exposes only images visible to that admitted connection using a temporary credential that expires on disconnect, revocation, expiration, or session end.
 
 ## Shared data API
 
@@ -18,7 +24,7 @@ from headmasters_scroll import SharedJsonStore
 store = SharedJsonStore()
 session = store.load("world.json")
 session.data["people"][0]["notes"] = "Updated locally"
-result = store.save(session, app_id="mage-maker")
+result = store.save(session, app_id="world-builder")
 ```
 
 If `result.status == "conflicts"`, present `result.conflicts` as line items. Map each `conflict_id` to `"app"` or `"disk"`, then call `save_with_resolutions` with `result.disk_revision`. A changed disk revision causes a fresh comparison instead of overwriting newer work.
@@ -28,7 +34,7 @@ App manifests are stored at `apps/<app-id>/app.json`. Enabled apps require an en
 ## Tests
 
 ```powershell
-python -m unittest discover -s tests -v
+python -m pytest -q tests
 ```
 
 Install Game Board's optional server and Gmail dependencies before running its API integration tests:

@@ -23,12 +23,35 @@ class FoundationTests(unittest.TestCase):
         self.assertEqual(len(group_ids), len(set(group_ids)))
         self.assertEqual(len(period_ids), len(set(period_ids)))
 
-    def test_planned_manifests_load_disabled(self):
+    def test_suite_manifests_load_enabled(self):
         root = Path(__file__).resolve().parents[1] / "apps"
         apps = load_manifests(root)
-        self.assertEqual({app.app_id for app in apps}, {"mage-maker", "dbm", "game-board"})
+        self.assertEqual(
+            {app.app_id for app in apps},
+            {"world-builder", "dbm", "game-board", "mapper"},
+        )
+        self.assertEqual(
+            [app.app_id for app in apps],
+            ["game-board", "world-builder", "dbm", "mapper"],
+        )
         states = {app.app_id: app.enabled for app in apps}
-        self.assertEqual(states, {"mage-maker": False, "dbm": False, "game-board": True})
+        self.assertTrue(all(states.values()))
+
+    def test_migrated_apps_use_canonical_shared_data(self):
+        root = Path(__file__).resolve().parents[1]
+        dbm = (root / "apps" / "dbm" / "main.py").read_text(encoding="utf-8")
+        dbm_paths = (root / "apps" / "dbm" / "source" / "database" / "paths.py").read_text(encoding="utf-8")
+        world_builder = (root / "apps" / "world-builder" / "main.py").read_text(encoding="utf-8")
+        dbm_manager = (root / "apps" / "dbm" / "source" / "database" / "manager.py").read_text(encoding="utf-8")
+        world_manager = (root / "apps" / "world-builder" / "source" / "mage_maker" / "core" / "database.py").read_text(encoding="utf-8")
+        self.assertIn("HEADMASTERS_SCROLL_DATA_DIRECTORY", dbm)
+        self.assertIn('DATA_DIRECTORY / "db.json"', dbm_paths)
+        self.assertIn('DATA_DIRECTORY / "world.json"', world_builder)
+        self.assertIn('DATA_DIRECTORY / "db.json"', world_builder)
+        self.assertIn('SharedJsonStore', dbm_manager)
+        self.assertIn('SharedJsonStore', world_manager)
+        self.assertFalse((root / "apps" / "mage-maker" / "app.json").exists())
+        self.assertTrue((root / "apps" / "mapper" / "main.py").exists())
 
     def test_headmasters_scroll_window_icon_is_present(self):
         root = Path(__file__).resolve().parents[1]
@@ -60,6 +83,18 @@ class FoundationTests(unittest.TestCase):
             folder.mkdir()
             (folder / "app.json").write_text(json.dumps({
                 "id": "bad", "name": "Bad", "enabled": True, "entry_command": []
+            }), encoding="utf-8")
+            with self.assertRaises(ManifestError):
+                load_manifests(root)
+
+    def test_manifest_order_must_be_non_negative(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            folder = root / "bad-order"
+            folder.mkdir()
+            (folder / "app.json").write_text(json.dumps({
+                "id": "bad-order", "name": "Bad Order", "enabled": False,
+                "entry_command": [], "order": -1,
             }), encoding="utf-8")
             with self.assertRaises(ManifestError):
                 load_manifests(root)

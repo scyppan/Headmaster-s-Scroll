@@ -3,13 +3,19 @@ import base64
 import json
 import tempfile
 import unittest
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
+from headmasters_scroll.game_board.desktop import (
+    directional_minute_snap,
+    format_date_display,
+    format_stored_date,
+    shift_game_calendar,
+)
 from headmasters_scroll.game_board.gmail import GmailSender, GmailUnavailable
 from headmasters_scroll.game_board.server import create_apps
 from headmasters_scroll.game_board.storage import GameBoardRepository
@@ -82,6 +88,82 @@ class GameBoardApiTests(unittest.TestCase):
         updated = self.admin.get("/api/admin/state", headers=self.admin_headers).json()
         self.assertEqual(updated["session"]["roster"][0]["name"], character["name"])
 
+    def test_admin_can_set_the_event_date(self):
+        response = self.admin.put(
+            "/api/admin/session/event-date",
+            headers=self.admin_headers,
+            json={"event_date": "1943-09-01"},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["event_date"], "1943-09-01")
+        invalid = self.admin.put(
+            "/api/admin/session/event-date",
+            headers=self.admin_headers,
+            json={"event_date": "September 1"},
+        )
+        self.assertEqual(invalid.status_code, 400)
+
+    def test_admin_can_set_the_in_world_game_datetime(self):
+        state = self.admin.get("/api/admin/state", headers=self.admin_headers).json()
+        session_id = state["sessions"][0]["id"]
+        response = self.admin.put(
+            f"/api/admin/sessions/{session_id}/game-datetime",
+            headers=self.admin_headers,
+            json={"game_datetime": "1943-09-01T19:15"},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["game_datetime"], "1943-09-01T19:15")
+        invalid = self.admin.put(
+            f"/api/admin/sessions/{session_id}/game-datetime",
+            headers=self.admin_headers,
+            json={"game_datetime": "not-a-date"},
+        )
+        self.assertEqual(invalid.status_code, 400)
+
+    def test_invitation_email_includes_the_in_world_game_datetime(self):
+        state = self.admin.get("/api/admin/state", headers=self.admin_headers).json()
+        session_id = state["sessions"][0]["id"]
+        self.runtime.service.set_game_datetime(session_id, "1943-09-01T08:15")
+        captured = {}
+
+        class FakeGmail:
+            def status(self):
+                return {"connected": True}
+
+            def send(self, recipient, subject, body):
+                captured.update(recipient=recipient, subject=subject, body=body)
+                return "sent-message"
+
+        self.runtime.gmail = lambda: FakeGmail()
+        response = self.admin.post(
+            "/api/admin/invitations/send",
+            headers=self.admin_headers,
+            json={"session_id": session_id, "contact_ids": [self.contact["id"]]},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertTrue(response.json()["results"][0]["success"])
+        self.assertIn("Game World Date: 01 Sep 1943 at 08:15.", captured["body"])
+
+    def test_session_management_routes_are_session_specific(self):
+        state = self.admin.get("/api/admin/state", headers=self.admin_headers).json()
+        session_id = state["sessions"][0]["id"]
+        duplicated = self.admin.post(
+            f"/api/admin/sessions/{session_id}/duplicate", headers=self.admin_headers
+        )
+        self.assertEqual(duplicated.status_code, 200, duplicated.text)
+        duplicate_id = duplicated.json()["id"]
+        removed = self.admin.delete(
+            f"/api/admin/sessions/{duplicate_id}/players/{self.contact['id']}",
+            headers=self.admin_headers,
+        )
+        self.assertEqual(removed.status_code, 200, removed.text)
+        deleted = self.admin.delete(
+            f"/api/admin/sessions/{duplicate_id}", headers=self.admin_headers
+        )
+        self.assertEqual(deleted.status_code, 200, deleted.text)
+        remaining = self.admin.get("/api/admin/state", headers=self.admin_headers).json()
+        self.assertEqual([item["id"] for item in remaining["sessions"]], [session_id])
+
     def test_origin_is_required(self):
         response = self.player.post("/v1/admissions", json={"invite_token": self.invite})
         self.assertEqual(response.status_code, 403)
@@ -140,6 +222,12 @@ class GameBoardApiTests(unittest.TestCase):
             self.assertEqual(accepted["player_id"], self.contact["id"])
             history = websocket.receive_json()
             self.assertEqual(history, {"v": 1, "type": "chat_history", "messages": []})
+            arrival = websocket.receive_json()
+            self.assertEqual(arrival["type"], "chat_message")
+            self.assertEqual(arrival["message"]["sender_role"], "system")
+            self.assertEqual(arrival["message"]["text"], "Alice is here!")
+            board = websocket.receive_json()
+            self.assertEqual(board["type"], "board_snapshot")
             websocket.send_json({"v": 1, "type": "chat_message", "message": "Hello room"})
             chat = websocket.receive_json()
             self.assertEqual(chat["type"], "chat_message")
@@ -256,7 +344,7 @@ class GameBoardAssetTests(unittest.TestCase):
         self.assertIn("scyppan/Headmaster-s-Scroll", loader)
         self.assertIn("apps/charms-check-game-board-weblink/", loader)
         self.assertIn("https://beast.tail102829.ts.net", loader)
-        self.assertIn("a26.8.9.010", loader)
+        self.assertIn("a26.8.10.001", loader)
         self.assertNotIn("https://game.example.com", loader)
         self.assertIn("getElementById('gameboard')", loader)
         self.assertNotIn("<script>", loader)
@@ -272,6 +360,9 @@ class GameBoardAssetTests(unittest.TestCase):
         self.assertIn("acknowledgement", client)
         self.assertIn("chat_message", client)
         self.assertIn("identity_updated", client)
+        self.assertIn("board_snapshot", client)
+        self.assertIn("board_move_commit", client)
+        self.assertIn("/v1/assets/", client)
         self.assertIn("ccgb-chat-rail", client)
         self.assertIn("is-own", client)
         self.assertIn("chat-collapsed { --ccgb-chat-width: 52px; }", stylesheet)
@@ -290,11 +381,13 @@ class GameBoardAssetTests(unittest.TestCase):
         self.assertNotIn("webbrowser", entrypoint)
         self.assertIn("class GameBoardWindow(tk.Tk)", desktop)
         self.assertIn('"Currently Logged In"', desktop)
-        self.assertIn('"Send Selected"', desktop)
-        self.assertIn('"Send All Players"', desktop)
-        self.assertIn('"Add All"', desktop)
+        self.assertIn('text="Send to Selected"', desktop)
+        self.assertIn('text="Send to All"', desktop)
+        self.assertIn('text="Remove from Session"', desktop)
+        self.assertIn('text="Admit All"', desktop)
         self.assertIn("def toggle_chat", desktop)
-        self.assertIn('text="Control Panel"', desktop)
+        self.assertIn('(("game-board", "Game Board"), ("control-panel", "Control Panel"))', desktop)
+        self.assertIn('self.chat_shell.pack(side="right"', desktop)
         self.assertIn("Players & Characters", desktop)
         self.assertIn("_notify_join_request", desktop)
         self.assertIn("/character", desktop)
@@ -302,13 +395,78 @@ class GameBoardAssetTests(unittest.TestCase):
         self.assertIn("GAME_BOARD_ICON", desktop)
         self.assertIn("maximize_window", desktop)
         self.assertIn("def _scrollable_page", desktop)
-        self.assertIn('{"control-panel": self.control_panel_button}', desktop)
+        self.assertIn('self.control_panel_button = self.sidebar_buttons["control-panel"]', desktop)
         self.assertIn("self.sidebar_buttons", desktop)
-        self.assertNotIn("ttk.Notebook", desktop)
+        self.assertIn("ttk.Notebook", desktop)
+        self.assertIn("/api/admin/board/move", desktop)
+        self.assertIn("Publish map", desktop)
         self.assertIn("/api/admin/admissions/", desktop)
         self.assertIn("def _grid_card", desktop)
         self.assertIn("self.settings_dirty", desktop)
+        self.assertIn("def choose_character", desktop)
+        self.assertIn("Search by character name", desktop)
+        self.assertIn('text="Choose and Link"', desktop)
+        self.assertNotIn('text="Link Character"', desktop)
+        self.assertNotIn("def link_character", desktop)
+        self.assertNotIn("self.character_combo", desktop)
+        self.assertIn("class CalendarDateField", desktop)
+        self.assertIn('DATE_DISPLAY_FORMAT = "%d %b %Y"', desktop)
+        self.assertIn("event_date_field = CalendarDateField(body, date.today())", desktop)
+        self.assertNotIn("Invitation day", desktop)
+        self.assertNotIn("game_day_field", desktop)
+        self.assertIn('"game_day": event_date_field.get_iso()', desktop)
+        self.assertIn('text="Game World Date"', desktop)
+        self.assertIn('text="Game time (24-hour)"', desktop)
+        self.assertIn("def _build_game_clock", desktop)
+        self.assertIn('add_button("<<<"', desktop)
+        self.assertIn('add_button(">>>"', desktop)
+        self.assertIn('add_button("hh")', desktop)
+        self.assertIn('add_button("mm")', desktop)
+        self.assertIn("(1, 3, 6, 8, 12, 16)", desktop)
+        self.assertIn("(1, 3, 5, 10, 15, 30, 45)", desktop)
+        self.assertIn('("Morning", 8)', desktop)
+        self.assertIn('("Afternoon", 12)', desktop)
+        self.assertIn('("Evening", 17)', desktop)
+        self.assertIn('("Night", 19)', desktop)
+        self.assertIn('"Last hour" if direction < 0 else "Next hour"', desktop)
+        self.assertIn("def _build_headmaster_tool_rail", desktop)
+        self.assertIn("def select_headmaster_tool", desktop)
+        self.assertIn('if key == "game-board":', desktop)
+        self.assertIn("self.headmaster_tool_rail.pack_forget()", desktop)
+        self.assertLess(
+            desktop.index('sidebar.pack(side="left"'),
+            desktop.index("self._build_headmaster_tool_rail(self.workspace)"),
+        )
+        self.assertNotIn('ttk.Label(header, text="Game Board"', desktop)
+        self.assertNotIn("padx=28", desktop)
+        self.assertIn('("sessions", "Sessions")', desktop)
+        self.assertIn('f"{\'✓\' if contact[\'id\'] in checked else \' \'}', desktop)
+        self.assertNotIn("event_date_entry", desktop)
+        self.assertNotIn("Messages are shared with every connected player.", desktop)
         self.assertFalse((root / "apps" / "game-board" / "web" / "admin.html").exists())
+
+    def test_headmaster_dates_use_readable_display_format(self):
+        self.assertEqual(format_date_display(date(2026, 1, 9)), "09 Jan 2026")
+        self.assertEqual(format_stored_date("2026-08-09"), "09 Aug 2026")
+        self.assertEqual(format_stored_date("2026-08-09T23:59:00Z"), "09 Aug 2026")
+        self.assertEqual(format_stored_date(None), "Not set")
+        self.assertEqual(
+            shift_game_calendar(datetime(2024, 2, 29, 8, 0), years=1),
+            datetime(2025, 2, 28, 8, 0),
+        )
+        self.assertEqual(
+            shift_game_calendar(datetime(2026, 1, 31, 8, 0), months=1),
+            datetime(2026, 2, 28, 8, 0),
+        )
+        current = datetime(1943, 9, 1, 10, 20)
+        self.assertEqual(
+            directional_minute_snap(current, 30, -1),
+            datetime(1943, 9, 1, 9, 30),
+        )
+        self.assertEqual(
+            directional_minute_snap(current, 15, 1),
+            datetime(1943, 9, 1, 11, 15),
+        )
 
 
 if __name__ == "__main__":

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import calendar
 import json
 import subprocess
 import sys
@@ -8,14 +9,86 @@ import time
 import tkinter as tk
 import urllib.error
 import urllib.request
-from datetime import date
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 from typing import Any, Callable
 
+from PIL import Image, ImageTk
+
+from ..assets import AssetStore
 from ..paths import PROJECT_ROOT
 from ..windowing import GAME_BOARD_ICON, apply_window_icon, configure_windows_app_id, maximize_window
 from .storage import GameBoardRepository
+
+
+DATE_DISPLAY_FORMAT = "%d %b %Y"
+GAME_DATETIME_DISPLAY_FORMAT = "%d %b %Y  %H:%M"
+
+
+def format_date_display(value: date) -> str:
+    """Format dates consistently for the Headmaster-facing interface."""
+
+    return value.strftime(DATE_DISPLAY_FORMAT)
+
+
+def format_stored_date(value: Any, fallback: str = "Not set") -> str:
+    """Display an ISO date or timestamp without exposing storage formatting."""
+
+    if not value:
+        return fallback
+    try:
+        return format_date_display(date.fromisoformat(str(value)[:10]))
+    except ValueError:
+        return str(value)
+
+
+def parse_game_datetime(value: str) -> datetime:
+    parsed = datetime.fromisoformat(value)
+    if parsed.tzinfo is not None:
+        raise ValueError("In-world game time cannot include a timezone")
+    return parsed.replace(second=0, microsecond=0)
+
+
+def format_game_datetime(value: datetime) -> str:
+    return value.strftime(GAME_DATETIME_DISPLAY_FORMAT)
+
+
+def format_stored_game_datetime(value: Any, fallback: str = "Not set") -> str:
+    if not value:
+        return fallback
+    try:
+        return format_game_datetime(parse_game_datetime(str(value)))
+    except ValueError:
+        return str(value)
+
+
+def shift_game_calendar(
+    value: datetime,
+    *,
+    years: int = 0,
+    months: int = 0,
+    days: int = 0,
+) -> datetime:
+    """Shift the in-world calendar, clamping dates such as 29 February safely."""
+
+    shifted = value + timedelta(days=days)
+    month_index = shifted.year * 12 + shifted.month - 1 + months + years * 12
+    target_year, zero_month = divmod(month_index, 12)
+    target_month = zero_month + 1
+    target_day = min(shifted.day, calendar.monthrange(target_year, target_month)[1])
+    return shifted.replace(year=target_year, month=target_month, day=target_day)
+
+
+def directional_minute_snap(value: datetime, minute: int, direction: int) -> datetime:
+    """Find the nearest :MM occurrence at or before/after the current game time."""
+
+    target = value.replace(minute=minute)
+    if direction < 0 and target > value:
+        target -= timedelta(hours=1)
+    elif direction > 0 and target < value:
+        target += timedelta(hours=1)
+    return target
 
 
 class AdminClient:
@@ -103,6 +176,155 @@ class LocalServer:
             self.process.kill()
 
 
+class CalendarDateField(ttk.Frame):
+    """A compact, dependency-free date field with a calendar popup."""
+
+    def __init__(
+        self,
+        parent: tk.Misc,
+        initial_date: date | None = None,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(parent, **kwargs)
+        self._date = initial_date or date.today()
+        self._picker: tk.Toplevel | None = None
+        self.display_value = tk.StringVar(value=format_date_display(self._date))
+        ttk.Entry(
+            self,
+            textvariable=self.display_value,
+            state="readonly",
+            width=14,
+        ).pack(side="left", fill="x", expand=True)
+        ttk.Button(
+            self,
+            text="▦",
+            width=3,
+            style="Quiet.TButton",
+            command=self.open_picker,
+        ).pack(side="left", padx=(4, 0))
+
+    def get_date(self) -> date:
+        return self._date
+
+    def get_iso(self) -> str:
+        return self._date.isoformat()
+
+    def set_date(self, value: date) -> None:
+        self._date = value
+        self.display_value.set(format_date_display(value))
+
+    def open_picker(self) -> None:
+        if self._picker is not None and self._picker.winfo_exists():
+            self._picker.lift()
+            return
+
+        picker = tk.Toplevel(self)
+        self._picker = picker
+        picker.title("Choose date")
+        picker.transient(self.winfo_toplevel())
+        picker.resizable(False, False)
+        picker.configure(background="#f8edcf")
+        picker.protocol("WM_DELETE_WINDOW", self._close_picker)
+        picker.bind("<Escape>", lambda _event: self._close_picker())
+
+        current = [self._date.year, self._date.month]
+        shell = ttk.Frame(picker, padding=8, style="Card.TFrame")
+        shell.pack(fill="both", expand=True)
+        month_header = ttk.Frame(shell, style="Card.TFrame")
+        month_header.pack(fill="x", pady=(0, 6))
+        month_label = ttk.Label(month_header, style="Section.TLabel", anchor="center")
+        month_label.pack(side="left", fill="x", expand=True)
+        days_frame = ttk.Frame(shell, style="Card.TFrame")
+        days_frame.pack(fill="both", expand=True)
+
+        def move_month(offset: int) -> None:
+            current[1] += offset
+            if current[1] < 1:
+                current[:] = [current[0] - 1, 12]
+            elif current[1] > 12:
+                current[:] = [current[0] + 1, 1]
+            draw_month()
+
+        ttk.Button(
+            month_header,
+            text="‹",
+            width=3,
+            style="Quiet.TButton",
+            command=lambda: move_month(-1),
+        ).pack(side="left", before=month_label)
+        ttk.Button(
+            month_header,
+            text="›",
+            width=3,
+            style="Quiet.TButton",
+            command=lambda: move_month(1),
+        ).pack(side="right")
+
+        def choose(day_number: int) -> None:
+            self.set_date(date(current[0], current[1], day_number))
+            self._close_picker()
+
+        def draw_month() -> None:
+            for child in days_frame.winfo_children():
+                child.destroy()
+            month_label.configure(text=f"{calendar.month_name[current[1]]} {current[0]}")
+            for column, label in enumerate(("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")):
+                ttk.Label(
+                    days_frame,
+                    text=label,
+                    style="Card.TLabel",
+                    anchor="center",
+                    width=4,
+                ).grid(row=0, column=column, padx=1, pady=(0, 2))
+            weeks = calendar.Calendar(firstweekday=calendar.MONDAY).monthdayscalendar(
+                current[0], current[1]
+            )
+            for row, week in enumerate(weeks, start=1):
+                for column, day_number in enumerate(week):
+                    if day_number == 0:
+                        ttk.Label(days_frame, text="", style="Card.TLabel", width=4).grid(
+                            row=row, column=column, padx=1, pady=1
+                        )
+                        continue
+                    style = (
+                        "Good.TButton"
+                        if date(current[0], current[1], day_number) == self._date
+                        else "Quiet.TButton"
+                    )
+                    ttk.Button(
+                        days_frame,
+                        text=str(day_number),
+                        width=4,
+                        style=style,
+                        command=lambda selected=day_number: choose(selected),
+                    ).grid(row=row, column=column, padx=1, pady=1)
+
+        def choose_today() -> None:
+            self.set_date(date.today())
+            self._close_picker()
+
+        ttk.Button(
+            shell,
+            text="Today",
+            style="Quiet.TButton",
+            command=choose_today,
+        ).pack(anchor="e", pady=(7, 0))
+        draw_month()
+        picker.update_idletasks()
+        picker.geometry(f"+{self.winfo_rootx()}+{self.winfo_rooty() + self.winfo_height() + 4}")
+        picker.grab_set()
+
+    def _close_picker(self) -> None:
+        picker = self._picker
+        self._picker = None
+        if picker is not None and picker.winfo_exists():
+            try:
+                picker.grab_release()
+            except tk.TclError:
+                pass
+            picker.destroy()
+
+
 class GameBoardWindow(tk.Tk):
     PAPER = "#ead7aa"
     LIGHT = "#f8edcf"
@@ -123,6 +345,15 @@ class GameBoardWindow(tk.Tk):
         self.refreshing = False
         self.closing = False
         self.settings_dirty = False
+        self.asset_store = AssetStore()
+        self.board_snapshot: dict[str, Any] = {}
+        self.board_map_label_to_id: dict[str, str] = {}
+        self.selected_board_map_id = ""
+        self.selected_board_actor_id = ""
+        self._board_image: ImageTk.PhotoImage | None = None
+        self._board_portraits: dict[str, ImageTk.PhotoImage] = {}
+        self._board_canvas_actors: dict[tuple[str, int], str] = {}
+        self._drag_actor_id = ""
         self._known_pending_ids: set[str] = set()
         self.title("Game Board — Headmaster Controls")
         self.geometry("1240x800")
@@ -156,14 +387,13 @@ class GameBoardWindow(tk.Tk):
 
     def _build(self) -> None:
         header = ttk.Frame(self)
-        header.pack(fill="x", padx=28, pady=(22, 10))
-        ttk.Label(header, text="Game Board", style="Title.TLabel").pack(side="left")
+        header.pack(fill="x", padx=12, pady=(6, 4))
         self.server_status = tk.Label(
             header, text="STARTING LOCAL SERVER", background=self.PAPER,
             foreground=self.ACCENT, font=("Segoe UI", 9, "bold"),
         )
-        self.server_status.pack(side="right", pady=10)
-        tk.Frame(self, height=2, background=self.ACCENT).pack(fill="x", padx=28, pady=(0, 12))
+        self.server_status.pack(side="right")
+        tk.Frame(self, height=2, background=self.ACCENT).pack(fill="x", padx=12, pady=(0, 6))
 
         self.admission_alert = tk.Frame(
             self,
@@ -197,17 +427,18 @@ class GameBoardWindow(tk.Tk):
         ).pack(side="right", padx=6, pady=5)
 
         self.workspace = ttk.Frame(self)
-        self.workspace.pack(fill="both", expand=True, padx=28, pady=(0, 16))
+        self.workspace.pack(fill="both", expand=True, padx=12, pady=(0, 8))
         self._build_chat_shell(self.workspace)
 
         sidebar = tk.Frame(
             self.workspace,
-            width=190,
+            width=176,
             background=self.EDGE,
             highlightbackground=self.ACCENT,
             highlightthickness=1,
         )
-        sidebar.pack(side="left", fill="y", padx=(0, 14))
+        self.section_sidebar = sidebar
+        sidebar.pack(side="left", fill="y", padx=(0, 8))
         sidebar.pack_propagate(False)
         tk.Label(
             sidebar,
@@ -219,26 +450,45 @@ class GameBoardWindow(tk.Tk):
             padx=14,
             pady=12,
         ).pack(fill="x")
-        self.control_panel_button = tk.Button(
-            sidebar,
-            text="Control Panel",
-            anchor="w",
-            background=self.ACCENT,
-            activebackground=self.ACCENT,
-            foreground="#fff8e7",
-            activeforeground="#fff8e7",
-            relief="flat",
-            borderwidth=0,
-            font=("Segoe UI", 10, "bold"),
-            padx=16,
-            pady=12,
-            command=lambda: self.show_control_page("live-room"),
-        )
-        self.control_panel_button.pack(fill="x")
-        self.sidebar_buttons = {"control-panel": self.control_panel_button}
+        self.sidebar_buttons: dict[str, tk.Button] = {}
+        for key, label in (("game-board", "Game Board"), ("control-panel", "Control Panel")):
+            button = tk.Button(
+                sidebar,
+                text=label,
+                anchor="w",
+                background=self.LIGHT,
+                activebackground=self.PAPER,
+                foreground=self.INK,
+                activeforeground=self.INK,
+                relief="flat",
+                borderwidth=0,
+                font=("Segoe UI", 10, "bold"),
+                padx=16,
+                pady=12,
+                command=lambda selected=key: self.show_app_page(selected),
+            )
+            button.pack(fill="x", pady=(0, 1))
+            self.sidebar_buttons[key] = button
+        self.control_panel_button = self.sidebar_buttons["control-panel"]
+        self._build_headmaster_tool_rail(self.workspace)
 
-        control_panel = ttk.Frame(self.workspace)
-        control_panel.pack(side="left", fill="both", expand=True)
+        self.app_host = ttk.Frame(self.workspace)
+        self.app_host.pack(side="left", fill="both", expand=True)
+        self.app_host.rowconfigure(0, weight=1)
+        self.app_host.columnconfigure(0, weight=1)
+
+        game_board_page = ttk.Frame(self.app_host)
+        game_board_page.grid(row=0, column=0, sticky="nsew")
+        game_board_top = ttk.Frame(game_board_page)
+        game_board_top.pack(fill="x", pady=(0, 6))
+        self._build_game_clock(game_board_top)
+        game_board_card = self._card(game_board_page, "Game Board Workspace")
+        game_board_card.pack(fill="both", expand=True)
+        self._build_board_workspace(game_board_card)
+
+        control_panel = ttk.Frame(self.app_host)
+        control_panel.grid(row=0, column=0, sticky="nsew")
+        self.app_pages = {"game-board": game_board_page, "control-panel": control_panel}
         control_header = ttk.Frame(control_panel)
         control_header.pack(fill="x", pady=(0, 8))
         ttk.Label(control_header, text="Control Panel", style="Title.TLabel").pack(side="left")
@@ -257,8 +507,8 @@ class GameBoardWindow(tk.Tk):
         self.control_buttons: dict[str, tk.Button] = {}
         for key, label in (
             ("live-room", "Live Room"),
+            ("sessions", "Sessions"),
             ("players", "Players & Characters"),
-            ("invitations", "Invitations & Session"),
             ("connection", "Connection & Gmail"),
         ):
             button = tk.Button(
@@ -289,7 +539,7 @@ class GameBoardWindow(tk.Tk):
         self.control_pages = {
             "live-room": overview_page,
             "players": contacts_page,
-            "invitations": session_page,
+            "sessions": session_page,
             "connection": settings_page,
         }
         self._build_overview()
@@ -297,20 +547,879 @@ class GameBoardWindow(tk.Tk):
         self._build_session()
         self._build_settings()
         self.show_control_page("live-room")
+        self.show_app_page("game-board")
 
         footer = ttk.Frame(self)
-        footer.pack(fill="x", padx=28, pady=(0, 18))
+        footer.pack(fill="x", padx=12, pady=(0, 8))
         self.notice = tk.Label(footer, text="Starting…", background=self.PAPER, foreground=self.MUTED)
         self.notice.pack(side="left")
         ttk.Button(footer, text="Refresh", style="Quiet.TButton", command=self.refresh).pack(side="right")
 
+    def _build_board_workspace(self, parent: tk.Misc) -> None:
+        split = ttk.Panedwindow(parent, orient="horizontal")
+        split.pack(fill="both", expand=True)
+
+        board_panel = ttk.Frame(split, style="Card.TFrame")
+        inspector = ttk.Frame(split, style="Card.TFrame", padding=(10, 0, 0, 0))
+        split.add(board_panel, weight=4)
+        split.add(inspector, weight=1)
+
+        map_tools = ttk.Frame(board_panel, style="Card.TFrame")
+        map_tools.pack(fill="x", pady=(0, 6))
+        self.board_map_status = ttk.Label(
+            map_tools,
+            text="Create or import maps in Mapper, then place characters here.",
+            style="Card.TLabel",
+        )
+        self.board_map_status.pack(side="left", fill="x", expand=True)
+        ttk.Button(
+            map_tools,
+            text="Publish map",
+            style="Good.TButton",
+            command=lambda: self.set_current_map_published(True),
+        ).pack(side="right", padx=(6, 0))
+        ttk.Button(
+            map_tools,
+            text="Conceal map",
+            style="Quiet.TButton",
+            command=lambda: self.set_current_map_published(False),
+        ).pack(side="right")
+
+        self.board_notebook = ttk.Notebook(board_panel)
+        self.board_notebook.pack(fill="both", expand=True)
+        self.board_notebook.bind("<<NotebookTabChanged>>", self._board_tab_changed)
+        self.board_canvases: dict[str, tk.Canvas] = {}
+        self.board_canvas_geometry: dict[str, tuple[float, float, float, float]] = {}
+        self.board_map_images: dict[str, ImageTk.PhotoImage] = {}
+        self.board_map_ids: tuple[str, ...] = ()
+        self._board_preview_after: str | None = None
+
+        ttk.Label(inspector, text="Occupants", style="Section.TLabel").pack(anchor="w")
+        self.board_actor_tree = ttk.Treeview(
+            inspector,
+            columns=("name", "display", "visibility"),
+            show="headings",
+            selectmode="browse",
+            height=10,
+        )
+        for column, label, width in (
+            ("name", "Character", 145),
+            ("display", "Piece", 70),
+            ("visibility", "Players", 70),
+        ):
+            self.board_actor_tree.heading(column, text=label)
+            self.board_actor_tree.column(column, width=width, minwidth=55, anchor="w")
+        self.board_actor_tree.pack(fill="both", expand=True, pady=(6, 8))
+        self.board_actor_tree.bind("<<TreeviewSelect>>", self._board_actor_selected)
+
+        ttk.Label(inspector, text="Move to map", style="Card.TLabel").pack(anchor="w")
+        self.board_transfer_map = ttk.Combobox(inspector, state="readonly")
+        self.board_transfer_map.pack(fill="x", pady=(2, 5))
+        ttk.Button(
+            inspector,
+            text="Move selected to map centre",
+            command=self.transfer_selected_actor,
+        ).pack(fill="x", pady=(0, 8))
+
+        piece_row = ttk.Frame(inspector, style="Card.TFrame")
+        piece_row.pack(fill="x", pady=(0, 5))
+        ttk.Button(piece_row, text="Dot", style="Quiet.TButton", command=lambda: self.update_selected_actor(display_mode="dot")).pack(side="left", fill="x", expand=True)
+        ttk.Button(piece_row, text="Portrait", command=lambda: self.update_selected_actor(display_mode="token")).pack(side="left", fill="x", expand=True, padx=(5, 0))
+        visibility_row = ttk.Frame(inspector, style="Card.TFrame")
+        visibility_row.pack(fill="x", pady=(0, 5))
+        ttk.Button(visibility_row, text="Hide", style="Quiet.TButton", command=lambda: self.update_selected_actor(visibility="headmaster")).pack(side="left", fill="x", expand=True)
+        ttk.Button(visibility_row, text="Reveal", style="Good.TButton", command=lambda: self.update_selected_actor(visibility="players")).pack(side="left", fill="x", expand=True, padx=(5, 0))
+        identity_row = ttk.Frame(inspector, style="Card.TFrame")
+        identity_row.pack(fill="x", pady=(0, 8))
+        ttk.Button(identity_row, text="Toggle name", style="Quiet.TButton", command=self.toggle_selected_name).pack(side="left", fill="x", expand=True)
+        ttk.Button(identity_row, text="Toggle faction", style="Quiet.TButton", command=self.toggle_selected_faction).pack(side="left", fill="x", expand=True, padx=(5, 0))
+
+        ttk.Button(inspector, text="Select displayed faction", command=self.select_actor_faction).pack(fill="x", pady=(0, 5))
+        ttk.Button(inspector, text="Grant player control…", command=self.grant_actor_control).pack(fill="x", pady=(0, 5))
+        ttk.Button(inspector, text="Join or leave group…", command=self.manage_actor_group).pack(fill="x", pady=(0, 5))
+        ttk.Button(inspector, text="Create group…", command=self.create_board_group).pack(fill="x")
+
+    def _board_tab_changed(self, _event: tk.Event | None = None) -> None:
+        selected = self.board_notebook.select()
+        for map_id, canvas in self.board_canvases.items():
+            if str(canvas.master) == str(selected):
+                self.selected_board_map_id = map_id
+                break
+        self._render_board_actor_list()
+
+    def _current_board_map(self) -> dict[str, Any] | None:
+        return next(
+            (item for item in self.board_snapshot.get("maps", []) if item.get("record_id") == self.selected_board_map_id),
+            None,
+        )
+
+    def _render_board(self, snapshot: dict[str, Any]) -> None:
+        self.board_snapshot = snapshot or {}
+        maps = list(self.board_snapshot.get("maps", []))
+        map_ids = tuple(str(item.get("record_id")) for item in maps)
+        if map_ids != self.board_map_ids:
+            current = self.selected_board_map_id
+            for tab in self.board_notebook.tabs():
+                self.board_notebook.forget(tab)
+            self.board_canvases.clear()
+            self.board_map_ids = map_ids
+            for record in maps:
+                map_id = str(record.get("record_id"))
+                frame = ttk.Frame(self.board_notebook)
+                canvas = tk.Canvas(frame, background="#241d16", highlightthickness=0)
+                canvas.pack(fill="both", expand=True)
+                canvas.bind("<Configure>", lambda _event, selected=map_id: self._draw_board_map(selected))
+                canvas.bind("<ButtonPress-1>", lambda event, selected=map_id: self._board_drag_start(event, selected))
+                canvas.bind("<B1-Motion>", lambda event, selected=map_id: self._board_drag_move(event, selected))
+                canvas.bind("<ButtonRelease-1>", lambda event, selected=map_id: self._board_drag_end(event, selected))
+                self.board_notebook.add(frame, text=str(record.get("name") or "Map"))
+                self.board_canvases[map_id] = canvas
+            self.selected_board_map_id = current if current in map_ids else (map_ids[0] if map_ids else "")
+            if self.selected_board_map_id:
+                index = map_ids.index(self.selected_board_map_id)
+                self.board_notebook.select(index)
+        name_counts: dict[str, int] = {}
+        for item in maps:
+            name = str(item.get("name") or "Map")
+            name_counts[name] = name_counts.get(name, 0) + 1
+        self.board_map_label_to_id = {}
+        for item in maps:
+            name = str(item.get("name") or "Map")
+            label = name if name_counts[name] == 1 else f"{name} [{str(item.get('record_id'))[:8]}]"
+            self.board_map_label_to_id[label] = str(item.get("record_id"))
+        map_labels = list(self.board_map_label_to_id)
+        self.board_transfer_map.configure(values=map_labels)
+        if maps:
+            current_map = self._current_board_map() or maps[0]
+            self.board_map_status.configure(
+                text=(
+                    f"{current_map.get('name', 'Map')} — "
+                    f"{'published' if current_map.get('players_published') else 'Headmaster only'}"
+                )
+            )
+        else:
+            self.board_map_status.configure(text="No maps yet. Import one in Mapper.")
+        for map_id in map_ids:
+            self._draw_board_map(map_id)
+        self._render_board_actor_list()
+
+    def _draw_board_map(self, map_id: str) -> None:
+        canvas = self.board_canvases.get(map_id)
+        record = next((item for item in self.board_snapshot.get("maps", []) if item.get("record_id") == map_id), None)
+        if canvas is None or record is None or not canvas.winfo_exists():
+            return
+        canvas.delete("all")
+        self._board_canvas_actors = {
+            key: value for key, value in self._board_canvas_actors.items()
+            if key[0] != map_id
+        }
+        width = max(2, canvas.winfo_width())
+        height = max(2, canvas.winfo_height())
+        left, top, draw_width, draw_height = 0.0, 0.0, float(width), float(height)
+        metadata = record.get("asset")
+        if isinstance(metadata, dict) and metadata.get("asset_id"):
+            try:
+                path = self.asset_store.resolve(str(metadata["asset_id"]), metadata)
+                with Image.open(path) as opened:
+                    image = opened.convert("RGB")
+                    scale = min(width / image.width, height / image.height)
+                    draw_width = max(1, int(image.width * scale))
+                    draw_height = max(1, int(image.height * scale))
+                    left = (width - draw_width) / 2
+                    top = (height - draw_height) / 2
+                    resized = image.resize((int(draw_width), int(draw_height)), Image.Resampling.LANCZOS)
+                photo = ImageTk.PhotoImage(resized)
+                self.board_map_images[map_id] = photo
+                canvas.create_image(left, top, image=photo, anchor="nw")
+            except (FileNotFoundError, OSError, ValueError):
+                canvas.create_text(width / 2, height / 2, text="Map image unavailable", fill="#f8edcf", font=("Segoe UI", 14, "bold"))
+        else:
+            canvas.create_text(width / 2, height / 2, text="No map image imported", fill="#f8edcf", font=("Segoe UI", 14, "bold"))
+        self.board_canvas_geometry[map_id] = (left, top, draw_width, draw_height)
+        for actor in self.board_snapshot.get("actors", []):
+            if actor.get("map_id") != map_id:
+                continue
+            x = left + float(actor.get("x", 0.5)) * draw_width
+            y = top + float(actor.get("y", 0.5)) * draw_height
+            actor_id = str(actor.get("actor_id"))
+            color = str(actor.get("faction_color") or "#808080")
+            selected = actor_id == self.selected_board_actor_id
+            if actor.get("display_mode") == "token" and actor.get("portrait_asset_id"):
+                try:
+                    portrait_path = self.asset_store.resolve(str(actor["portrait_asset_id"]))
+                    with Image.open(portrait_path) as opened:
+                        portrait = opened.convert("RGB").resize((52, 52), Image.Resampling.LANCZOS)
+                    photo = ImageTk.PhotoImage(portrait)
+                    self._board_portraits[actor_id] = photo
+                    canvas.create_oval(x - 30, y - 30, x + 30, y + 30, fill=color, outline="#fff3cf" if selected else self.INK, width=4 if selected else 2)
+                    item = canvas.create_image(x, y, image=photo)
+                except (FileNotFoundError, OSError, ValueError):
+                    item = canvas.create_oval(x - 11, y - 11, x + 11, y + 11, fill=color, outline="white" if selected else self.INK, width=3)
+            elif actor.get("display_mode") == "nameplate":
+                name = str(actor.get("name") or "Character")
+                text_item = canvas.create_text(x, y, text=name, fill=self.INK, font=("Segoe UI", 9, "bold"))
+                box = canvas.bbox(text_item) or (x - 25, y - 10, x + 25, y + 10)
+                item = canvas.create_rectangle(box[0] - 6, box[1] - 4, box[2] + 6, box[3] + 4, fill="#f8edcf", outline=color, width=3 if selected else 2)
+                canvas.tag_raise(text_item)
+                self._board_canvas_actors[(map_id, text_item)] = actor_id
+            else:
+                item = canvas.create_oval(x - 9, y - 9, x + 9, y + 9, fill=color, outline="#fff3cf" if selected else self.INK, width=3 if selected else 2)
+            self._board_canvas_actors[(map_id, item)] = actor_id
+            name = str(actor.get("name") or "Unknown")
+            label = canvas.create_text(x, y + 38 if actor.get("display_mode") == "token" else y + 18, text=name, fill="#fff8e7", font=("Segoe UI", 9, "bold"))
+            self._board_canvas_actors[(map_id, label)] = actor_id
+
+    def _actor_at(self, canvas: tk.Canvas, map_id: str, x: float, y: float) -> str:
+        for item in reversed(canvas.find_overlapping(x - 8, y - 8, x + 8, y + 8)):
+            actor_id = self._board_canvas_actors.get((map_id, item))
+            if actor_id:
+                return actor_id
+        return ""
+
+    def _board_drag_start(self, event: tk.Event, map_id: str) -> None:
+        canvas = self.board_canvases[map_id]
+        self._drag_actor_id = self._actor_at(canvas, map_id, event.x, event.y)
+        if self._drag_actor_id:
+            self.selected_board_actor_id = self._drag_actor_id
+            self._render_board_actor_list()
+
+    def _normalized_board_point(self, map_id: str, x: float, y: float) -> tuple[float, float]:
+        left, top, width, height = self.board_canvas_geometry.get(map_id, (0, 0, 1, 1))
+        return (
+            max(0.0, min(1.0, (x - left) / max(1.0, width))),
+            max(0.0, min(1.0, (y - top) / max(1.0, height))),
+        )
+
+    def _board_drag_move(self, event: tk.Event, map_id: str) -> None:
+        if not self._drag_actor_id:
+            return
+        x, y = self._normalized_board_point(map_id, event.x, event.y)
+        actor = next((item for item in self.board_snapshot.get("actors", []) if item.get("actor_id") == self._drag_actor_id), None)
+        if actor:
+            actor.update(map_id=map_id, x=x, y=y)
+            self._draw_board_map(map_id)
+        if self._board_preview_after:
+            self.after_cancel(self._board_preview_after)
+        self._board_preview_after = self.after(
+            80,
+            lambda: self._send_board_preview(self._drag_actor_id, map_id, x, y),
+        )
+
+    def _send_board_preview(self, person_id: str, map_id: str, x: float, y: float) -> None:
+        self._board_preview_after = None
+        session_id = self.selected_session_id
+        if not session_id:
+            return
+        self._background(
+            lambda: self.client.request("POST", "/api/admin/board/move-preview", {
+                "session_id": session_id, "person_id": person_id, "map_id": map_id, "x": x, "y": y,
+            }),
+            quiet=True,
+        )
+
+    def _board_drag_end(self, event: tk.Event, map_id: str) -> None:
+        person_id = self._drag_actor_id
+        self._drag_actor_id = ""
+        if not person_id or not self.selected_session_id:
+            return
+        x, y = self._normalized_board_point(map_id, event.x, event.y)
+        payload = {"session_id": self.selected_session_id, "person_id": person_id, "map_id": map_id, "x": x, "y": y}
+        self._background(
+            lambda: self.client.request("POST", "/api/admin/board/move", payload),
+            lambda _result: self.refresh(silent=True),
+        )
+
+    def _render_board_actor_list(self) -> None:
+        if not hasattr(self, "board_actor_tree"):
+            return
+        rows = []
+        for actor in self.board_snapshot.get("actors", []):
+            if actor.get("map_id") != self.selected_board_map_id:
+                continue
+            rows.append((str(actor.get("actor_id")), (
+                actor.get("name") or "Unknown",
+                actor.get("display_mode", "dot").title(),
+                "Visible" if actor.get("visibility") == "players" else "Hidden",
+            )))
+        self._replace_tree(self.board_actor_tree, rows)
+        if self.selected_board_actor_id and self.board_actor_tree.exists(self.selected_board_actor_id):
+            self.board_actor_tree.selection_set(self.selected_board_actor_id)
+
+    def _board_actor_selected(self, _event: tk.Event | None = None) -> None:
+        selected = self.board_actor_tree.selection()
+        if selected:
+            self.selected_board_actor_id = selected[0]
+            self._draw_board_map(self.selected_board_map_id)
+
+    def _selected_board_actor(self) -> dict[str, Any] | None:
+        return next((item for item in self.board_snapshot.get("actors", []) if item.get("actor_id") == self.selected_board_actor_id), None)
+
+    def set_current_map_published(self, published: bool) -> None:
+        if not self.selected_board_map_id:
+            return
+        self._background(
+            lambda: self.client.request("PUT", f"/api/admin/board/maps/{self.selected_board_map_id}/visibility", {"published": published}),
+            lambda _result: self.refresh(silent=True),
+        )
+
+    def update_selected_actor(self, **updates: Any) -> None:
+        if not self.selected_board_actor_id:
+            messagebox.showinfo("Board", "Select a character first.", parent=self)
+            return
+        self._background(
+            lambda: self.client.request("PUT", f"/api/admin/board/people/{self.selected_board_actor_id}", updates),
+            lambda _result: self.refresh(silent=True),
+        )
+
+    def toggle_selected_name(self) -> None:
+        actor = self._selected_board_actor()
+        if actor:
+            self.update_selected_actor(name_revealed=not bool(actor.get("name_revealed")))
+
+    def toggle_selected_faction(self) -> None:
+        actor = self._selected_board_actor()
+        if actor:
+            self.update_selected_actor(faction_revealed=not bool(actor.get("faction_revealed")))
+
+    def select_actor_faction(self) -> None:
+        actor = self._selected_board_actor()
+        if not actor:
+            messagebox.showinfo("Board", "Select a character first.", parent=self)
+            return
+        choices = list(actor.get("active_factions", []))
+        if not choices:
+            messagebox.showinfo("Faction", "This character has no active faction on the current Game World Date.", parent=self)
+            return
+        chooser = tk.Toplevel(self)
+        chooser.title("Displayed faction")
+        chooser.transient(self)
+        chooser.grab_set()
+        ttk.Label(chooser, text="Choose the active faction to display:", padding=12).pack(anchor="w")
+        choice_ids = [str(item.get("organization_id")) for item in choices]
+        value = tk.StringVar(value=str(actor.get("faction_id") or choice_ids[0]))
+        for faction in choices:
+            faction_id = str(faction.get("organization_id"))
+            ttk.Radiobutton(chooser, text=str(faction.get("name") or faction_id), value=faction_id, variable=value).pack(anchor="w", padx=12, pady=2)
+        ttk.Button(chooser, text="Use faction", command=lambda: (self.update_selected_actor(faction_organization_id=value.get()), chooser.destroy())).pack(pady=12)
+
+    def transfer_selected_actor(self) -> None:
+        actor = self._selected_board_actor()
+        label = self.board_transfer_map.get()
+        map_id = self.board_map_label_to_id.get(label, "")
+        record = next((item for item in self.board_snapshot.get("maps", []) if str(item.get("record_id")) == map_id), None)
+        if not actor or not record or not self.selected_session_id:
+            messagebox.showinfo("Board", "Select a character and destination map.", parent=self)
+            return
+        payload = {"session_id": self.selected_session_id, "person_id": actor["actor_id"], "map_id": record["record_id"], "x": 0.5, "y": 0.5}
+        if str(actor.get("location_id")) == str(record.get("location_id")):
+            self._background(lambda: self.client.request("POST", "/api/admin/board/move", payload), lambda _result: self.refresh(silent=True))
+            return
+        self._choose_arrival_group(actor, record, payload)
+
+    def _choose_arrival_group(
+        self,
+        actor: dict[str, Any],
+        destination: dict[str, Any],
+        move_payload: dict[str, Any],
+    ) -> None:
+        location_id = str(destination.get("location_id"))
+        groups = [group for group in self.board_snapshot.get("groups", []) if str(group.get("location_id")) == location_id]
+        occupants = [
+            item for item in self.board_snapshot.get("actors", [])
+            if str(item.get("location_id")) == location_id and item.get("actor_id") != actor.get("actor_id")
+        ]
+        if not groups and not occupants:
+            self._background(lambda: self.client.request("POST", "/api/admin/board/move", move_payload), lambda _result: self.refresh(silent=True))
+            return
+        dialog = tk.Toplevel(self)
+        dialog.title("Arrival at a new location")
+        dialog.transient(self)
+        dialog.grab_set()
+        ttk.Label(dialog, text="How should this character arrive?", padding=10).pack(anchor="w")
+        choice = tk.StringVar(value="solo")
+        ttk.Radiobutton(dialog, text="Remain solo", variable=choice, value="solo").pack(anchor="w", padx=10, pady=2)
+        for group in groups:
+            ttk.Radiobutton(dialog, text=f"Join {group.get('name', 'group')}", variable=choice, value=f"group:{group['record_id']}").pack(anchor="w", padx=10, pady=2)
+        for occupant in occupants:
+            ttk.Radiobutton(dialog, text=f"Create a group with {occupant.get('name', 'occupant')}", variable=choice, value=f"create:{occupant['actor_id']}").pack(anchor="w", padx=10, pady=2)
+        def apply() -> None:
+            selected = choice.get()
+            def work() -> None:
+                self.client.request("POST", "/api/admin/board/move", move_payload)
+                if selected.startswith("group:"):
+                    self.client.request("PUT", f"/api/admin/board/groups/people/{actor['actor_id']}", {"group_id": selected.split(':', 1)[1]})
+                elif selected.startswith("create:"):
+                    self.client.request("POST", "/api/admin/board/groups", {
+                        "name": f"{actor.get('name', 'New')} group",
+                        "location_id": location_id,
+                        "person_ids": [actor["actor_id"], selected.split(':', 1)[1]],
+                    })
+            self._background(work, lambda _result: self.refresh(silent=True))
+            dialog.destroy()
+        ttk.Button(dialog, text="Move", command=apply).pack(pady=10)
+
+    def grant_actor_control(self) -> None:
+        actor = self._selected_board_actor()
+        session = next((item for item in self.state_data.get("sessions", []) if item.get("id") == self.selected_session_id), None)
+        if not actor or not session:
+            messagebox.showinfo("Board", "Select a character and active session.", parent=self)
+            return
+        roster = session.get("roster", [])
+        if not roster:
+            return
+        chooser = tk.Toplevel(self)
+        chooser.title("Grant token control")
+        chooser.transient(self)
+        chooser.grab_set()
+        ttk.Label(chooser, text="Player", padding=10).pack(anchor="w")
+        labels = [player["name"] for player in roster]
+        value = tk.StringVar(value=labels[0])
+        box = ttk.Combobox(chooser, state="readonly", values=labels, textvariable=value)
+        box.pack(fill="x", padx=10)
+        def apply(granted: bool) -> None:
+            player = roster[labels.index(value.get())]
+            payload = {"session_id": session["id"], "contact_id": player["contact_id"], "person_id": actor["actor_id"], "granted": granted}
+            self._background(lambda: self.client.request("PUT", "/api/admin/board/control", payload), lambda _result: self.refresh(silent=True))
+            chooser.destroy()
+        row = ttk.Frame(chooser, padding=10)
+        row.pack(fill="x")
+        ttk.Button(row, text="Grant", style="Good.TButton", command=lambda: apply(True)).pack(side="left")
+        ttk.Button(row, text="Revoke", style="Danger.TButton", command=lambda: apply(False)).pack(side="right")
+
+    def create_board_group(self) -> None:
+        actors = [item for item in self.board_snapshot.get("actors", []) if item.get("map_id") == self.selected_board_map_id]
+        if len(actors) < 2:
+            messagebox.showinfo("Groups", "At least two people must occupy this map.", parent=self)
+            return
+        dialog = tk.Toplevel(self)
+        dialog.title("Create board group")
+        dialog.transient(self)
+        dialog.grab_set()
+        ttk.Label(dialog, text="Group name", padding=(10, 10, 10, 2)).pack(anchor="w")
+        name = ttk.Entry(dialog)
+        name.pack(fill="x", padx=10)
+        values: dict[str, tk.BooleanVar] = {}
+        for actor in actors:
+            variable = tk.BooleanVar(value=actor.get("actor_id") == self.selected_board_actor_id)
+            values[str(actor["actor_id"])] = variable
+            ttk.Checkbutton(dialog, text=str(actor.get("name") or "Unknown"), variable=variable).pack(anchor="w", padx=10, pady=2)
+        def save() -> None:
+            person_ids = [actor_id for actor_id, variable in values.items() if variable.get()]
+            current_map = self._current_board_map()
+            if len(person_ids) < 2 or not current_map:
+                messagebox.showerror("Groups", "Choose at least two people.", parent=dialog)
+                return
+            payload = {"name": name.get().strip() or "Group", "location_id": current_map["location_id"], "person_ids": person_ids}
+            self._background(lambda: self.client.request("POST", "/api/admin/board/groups", payload), lambda _result: self.refresh(silent=True))
+            dialog.destroy()
+        ttk.Button(dialog, text="Create group", command=save).pack(pady=10)
+
+    def manage_actor_group(self) -> None:
+        actor = self._selected_board_actor()
+        if not actor:
+            messagebox.showinfo("Groups", "Select a character first.", parent=self)
+            return
+        groups = [
+            group for group in self.board_snapshot.get("groups", [])
+            if str(group.get("location_id")) == str(actor.get("location_id"))
+        ]
+        dialog = tk.Toplevel(self)
+        dialog.title("Board group")
+        dialog.transient(self)
+        dialog.grab_set()
+        value = tk.StringVar(value="")
+        current = ""
+        for group in groups:
+            if any(member.get("actor_id") == actor.get("actor_id") for member in group.get("members", [])):
+                current = str(group.get("record_id"))
+                break
+        value.set(current)
+        ttk.Label(dialog, text="Choose a group at this location, or remain solo.", padding=10).pack(anchor="w")
+        ttk.Radiobutton(dialog, text="Remain solo", variable=value, value="").pack(anchor="w", padx=10, pady=2)
+        for group in groups:
+            ttk.Radiobutton(dialog, text=str(group.get("name") or "Group"), variable=value, value=str(group.get("record_id"))).pack(anchor="w", padx=10, pady=2)
+        def save() -> None:
+            self._background(
+                lambda: self.client.request("PUT", f"/api/admin/board/groups/people/{actor['actor_id']}", {"group_id": value.get() or None}),
+                lambda _result: self.refresh(silent=True),
+            )
+            dialog.destroy()
+        ttk.Button(dialog, text="Apply", command=save).pack(pady=10)
+
+    def _build_game_clock(self, parent: tk.Misc) -> None:
+        shell = tk.Frame(
+            parent,
+            background=self.EDGE,
+            highlightbackground=self.ACCENT,
+            highlightthickness=1,
+        )
+        shell.pack(side="right")
+        self.game_clock_buttons: list[tk.Button] = []
+
+        def add_button(text: str, command: Callable[[], None] | None = None) -> tk.Button:
+            button = tk.Button(
+                shell,
+                text=text,
+                width=max(2, len(text)),
+                background=self.LIGHT,
+                activebackground=self.PAPER,
+                foreground=self.INK,
+                activeforeground=self.INK,
+                relief="flat",
+                borderwidth=0,
+                font=("Consolas", 9, "bold"),
+                padx=2,
+                pady=5,
+                command=command,
+            )
+            button.pack(side="left", padx=(0, 1))
+            self.game_clock_buttons.append(button)
+            return button
+
+        add_button("<<<", lambda: self.shift_game_clock(years=-1))
+        add_button("<<", lambda: self.shift_game_clock(months=-1))
+        add_button("<", lambda: self.shift_game_clock(days=-1))
+        hour_back = add_button("hh")
+        minute_back = add_button("mm")
+        self.game_clock_value = tk.StringVar(value="Select a session")
+        tk.Label(
+            shell,
+            textvariable=self.game_clock_value,
+            background="#fff8e6",
+            foreground=self.INK,
+            font=("Consolas", 10, "bold"),
+            padx=6,
+            pady=6,
+        ).pack(side="left", padx=(0, 1))
+        minute_forward = add_button("mm")
+        hour_forward = add_button("hh")
+        add_button(">", lambda: self.shift_game_clock(days=1))
+        add_button(">>", lambda: self.shift_game_clock(months=1))
+        add_button(">>>", lambda: self.shift_game_clock(years=1))
+        hour_back.configure(
+            command=lambda widget=hour_back: self.open_time_popup(widget, "hour", -1)
+        )
+        minute_back.configure(
+            command=lambda widget=minute_back: self.open_time_popup(widget, "minute", -1)
+        )
+        minute_forward.configure(
+            command=lambda widget=minute_forward: self.open_time_popup(widget, "minute", 1)
+        )
+        hour_forward.configure(
+            command=lambda widget=hour_forward: self.open_time_popup(widget, "hour", 1)
+        )
+
+    def _build_headmaster_tool_rail(self, parent: tk.Misc) -> None:
+        """Build a Photoshop-style tool strip that does not navigate the workspace."""
+
+        rail = tk.Frame(
+            parent,
+            width=50,
+            background=self.ACCENT,
+            highlightbackground=self.ACCENT,
+            highlightthickness=1,
+        )
+        self.headmaster_tool_rail = rail
+        rail.pack(side="left", fill="y", padx=(0, 8))
+        rail.pack_propagate(False)
+        tk.Label(
+            rail,
+            text="TOOLS",
+            background=self.ACCENT,
+            foreground="#fff8e7",
+            font=("Segoe UI", 7, "bold"),
+            pady=8,
+        ).pack(fill="x")
+        self.headmaster_tool_buttons: dict[str, tk.Button] = {}
+        tools = (
+            ("select", "↖", "Select"),
+            ("reveal", "✦", "Reveal"),
+            ("roll", "⚄", "Roll"),
+            ("target", "⌖", "Target"),
+            ("marker", "◎", "Marker"),
+            ("tools", "⚙", "Tools"),
+        )
+        for key, symbol, label in tools:
+            button = tk.Button(
+                rail,
+                text=symbol,
+                background=self.ACCENT,
+                activebackground=self.EDGE,
+                foreground="#fff8e7",
+                activeforeground=self.INK,
+                relief="flat",
+                borderwidth=0,
+                font=("Segoe UI Symbol", 16),
+                padx=4,
+                pady=8,
+                cursor="hand2",
+                command=lambda selected=key, name=label: self.select_headmaster_tool(selected, name),
+            )
+            button.pack(fill="x", pady=(0, 1))
+            self.headmaster_tool_buttons[key] = button
+        self.select_headmaster_tool("select", "Select")
+
+    def select_headmaster_tool(self, key: str, label: str) -> None:
+        """Select a future quick tool without changing the visible app panel."""
+
+        for tool_key, button in self.headmaster_tool_buttons.items():
+            active = tool_key == key
+            button.configure(
+                background=self.EDGE if active else self.ACCENT,
+                foreground=self.INK if active else "#fff8e7",
+            )
+        if hasattr(self, "notice"):
+            self.set_notice(f"{label} tool selected — controls coming soon")
+
+    def _current_game_datetime(self) -> datetime | None:
+        session = self._selected_session()
+        if not session:
+            return None
+        raw = session.get("game_datetime")
+        if not raw:
+            fallback = session.get("event_date") or session.get("game_day")
+            raw = f"{fallback or date.today().isoformat()}T08:00"
+        try:
+            return parse_game_datetime(str(raw))
+        except ValueError:
+            return None
+
+    def _render_game_clock(self, session: dict[str, Any] | None) -> None:
+        current = self._current_game_datetime() if session else None
+        self.game_clock_value.set(
+            format_game_datetime(current) if current else "Select a session"
+        )
+        state = "normal" if current else "disabled"
+        for button in self.game_clock_buttons:
+            button.configure(state=state)
+
+    def set_game_clock(self, value: datetime) -> None:
+        session = self._selected_session()
+        if not session:
+            self.set_notice("Select a session before changing in-world time", error=True)
+            return
+        normalized = value.replace(second=0, microsecond=0)
+        self.game_clock_value.set(format_game_datetime(normalized))
+        self._api_action(
+            "PUT",
+            f"/api/admin/sessions/{session['id']}/game-datetime",
+            {"game_datetime": normalized.isoformat(timespec="minutes")},
+            f"In-world time set to {format_game_datetime(normalized)}",
+        )
+
+    def shift_game_clock(
+        self,
+        *,
+        years: int = 0,
+        months: int = 0,
+        days: int = 0,
+    ) -> None:
+        current = self._current_game_datetime()
+        if current is None:
+            self.set_notice("Select a session before changing in-world time", error=True)
+            return
+        try:
+            self.set_game_clock(
+                shift_game_calendar(current, years=years, months=months, days=days)
+            )
+        except (OverflowError, ValueError) as error:
+            self.set_notice(str(error), error=True)
+
+    def open_time_popup(self, anchor: tk.Widget, unit: str, direction: int) -> None:
+        current = self._current_game_datetime()
+        if current is None:
+            self.set_notice("Select a session before changing in-world time", error=True)
+            return
+        existing = getattr(self, "_time_popup", None)
+        if existing is not None and existing.winfo_exists():
+            existing.destroy()
+
+        popup = tk.Toplevel(self)
+        self._time_popup = popup
+        popup.overrideredirect(True)
+        popup.transient(self)
+        popup.configure(background=self.ACCENT)
+        popup.bind("<Escape>", lambda _event: popup.destroy())
+        body = tk.Frame(
+            popup,
+            background=self.LIGHT,
+            highlightbackground=self.ACCENT,
+            highlightthickness=1,
+            padx=8,
+            pady=7,
+        )
+        body.pack(fill="both", expand=True)
+        heading = "Earlier" if direction < 0 else "Later"
+        tk.Label(
+            body,
+            text=f"{heading} {unit}",
+            background=self.LIGHT,
+            foreground=self.INK,
+            font=("Segoe UI", 9, "bold"),
+        ).grid(row=0, column=0, columnspan=6, sticky="w")
+        tk.Button(
+            body,
+            text="×",
+            width=2,
+            relief="flat",
+            background=self.LIGHT,
+            activebackground=self.EDGE,
+            foreground=self.INK,
+            command=popup.destroy,
+        ).grid(row=0, column=6, sticky="e")
+        error_value = tk.StringVar()
+        entry_value = tk.StringVar(
+            value=current.strftime("%H:%M") if unit == "hour" else current.strftime("%M")
+        )
+        entry = ttk.Entry(body, textvariable=entry_value, width=9)
+        entry.grid(row=1, column=0, columnspan=4, sticky="ew", pady=(6, 5))
+
+        def close_and_apply(target: datetime, *, same_hour: bool = False) -> None:
+            if target.date() != current.date():
+                error_value.set("Time must remain on the same Game World Date.")
+                return
+            if same_hour and target.hour != current.hour:
+                error_value.set("Time must remain in the same hour.")
+                return
+            if direction < 0 and target > current:
+                error_value.set("Choose a time no later than the current game time.")
+                return
+            if direction > 0 and target < current:
+                error_value.set("Choose a time no earlier than the current game time.")
+                return
+            popup.destroy()
+            self.set_game_clock(target)
+
+        def apply_manual() -> None:
+            try:
+                if unit == "hour":
+                    parsed_time = datetime.strptime(entry_value.get().strip(), "%H:%M").time()
+                    target = current.replace(
+                        hour=parsed_time.hour, minute=parsed_time.minute
+                    )
+                    close_and_apply(target)
+                else:
+                    minute = int(entry_value.get().strip())
+                    if not 0 <= minute <= 59:
+                        raise ValueError
+                    close_and_apply(current.replace(minute=minute), same_hour=True)
+            except ValueError:
+                error_value.set(
+                    "Use HH:MM (24-hour)." if unit == "hour" else "Enter a minute from 00 to 59."
+                )
+
+        ttk.Button(body, text="Set", command=apply_manual).grid(
+            row=1, column=4, columnspan=3, sticky="ew", padx=(5, 0), pady=(6, 5)
+        )
+        entry.bind("<Return>", lambda _event: apply_manual())
+
+        def quick_button(
+            label: str,
+            target: datetime,
+            row: int,
+            column: int,
+            *,
+            same_hour: bool = False,
+        ) -> None:
+            valid = (
+                target.date() == current.date()
+                and (not same_hour or target.hour == current.hour)
+                and (target <= current if direction < 0 else target >= current)
+            )
+            button = tk.Button(
+                body,
+                text=label,
+                relief="flat",
+                borderwidth=1,
+                background=self.EDGE,
+                activebackground=self.PAPER,
+                foreground=self.INK,
+                font=("Segoe UI", 8),
+                padx=4,
+                pady=3,
+                state="normal" if valid else "disabled",
+                command=lambda: close_and_apply(target, same_hour=same_hour),
+            )
+            button.grid(row=row, column=column, sticky="ew", padx=1, pady=1)
+
+        if unit == "hour":
+            for index, amount in enumerate((1, 3, 6, 8, 12, 16)):
+                quick_button(
+                    f"{amount}h",
+                    current + timedelta(hours=direction * amount),
+                    2,
+                    index,
+                )
+            named_times = (("Morning", 8), ("Afternoon", 12), ("Evening", 17), ("Night", 19))
+            for index, (label, hour) in enumerate(named_times):
+                quick_button(label, current.replace(hour=hour, minute=0), 3, index)
+        else:
+            for index, amount in enumerate((1, 3, 5, 10, 15, 30, 45)):
+                quick_button(
+                    f"{amount}m",
+                    current + timedelta(minutes=direction * amount),
+                    2 + index // 6,
+                    index % 6,
+                    same_hour=True,
+                )
+            adjacent_hour = current.replace(minute=0) + timedelta(hours=direction)
+            quick_button(
+                "Last hour" if direction < 0 else "Next hour",
+                adjacent_hour,
+                4,
+                0,
+            )
+            for index, minute in enumerate((0, 15, 30, 45), start=1):
+                quick_button(
+                    f":{minute:02d}",
+                    directional_minute_snap(current, minute, direction),
+                    4,
+                    index,
+                )
+
+        tk.Label(
+            body,
+            textvariable=error_value,
+            background=self.LIGHT,
+            foreground=self.RED,
+            font=("Segoe UI", 8),
+            anchor="w",
+        ).grid(row=5, column=0, columnspan=7, sticky="ew", pady=(4, 0))
+        popup.update_idletasks()
+        x = min(anchor.winfo_rootx(), popup.winfo_screenwidth() - popup.winfo_reqwidth() - 8)
+        y = anchor.winfo_rooty() + anchor.winfo_height() + 3
+        if y + popup.winfo_reqheight() > popup.winfo_screenheight():
+            y = anchor.winfo_rooty() - popup.winfo_reqheight() - 3
+        popup.geometry(f"+{max(0, x)}+{max(0, y)}")
+        popup.grab_set()
+        entry.focus_force()
+
+    def show_app_page(self, key: str) -> None:
+        if key == "game-board":
+            if not self.headmaster_tool_rail.winfo_manager():
+                self.headmaster_tool_rail.pack(
+                    side="left", fill="y", padx=(0, 8), before=self.app_host
+                )
+        elif self.headmaster_tool_rail.winfo_manager():
+            self.headmaster_tool_rail.pack_forget()
+        self.app_pages[key].tkraise()
+        for page_key, button in self.sidebar_buttons.items():
+            active = page_key == key
+            button.configure(
+                background=self.ACCENT if active else self.LIGHT,
+                foreground="#fff8e7" if active else self.INK,
+                activebackground=self.ACCENT if active else self.PAPER,
+                activeforeground="#fff8e7" if active else self.INK,
+            )
+
     def show_control_page(self, key: str) -> None:
+        self.show_app_page("control-panel")
         page = self.control_pages[key]
         page.tkraise()
         labels = {
             "live-room": "Live Room",
+            "sessions": "Sessions",
             "players": "Players & Characters",
-            "invitations": "Invitations & Session",
             "connection": "Connection & Gmail",
         }
         self.control_section_label.configure(text=labels[key])
@@ -332,7 +1441,7 @@ class GameBoardWindow(tk.Tk):
             highlightbackground=self.ACCENT,
             highlightthickness=1,
         )
-        self.chat_shell.pack(side="left", fill="y", padx=(0, 14))
+        self.chat_shell.pack(side="right", fill="y", padx=(8, 0))
         self.chat_shell.pack_propagate(False)
         self.chat_expanded = tk.Frame(self.chat_shell, background=self.LIGHT)
         chat_header = tk.Frame(self.chat_expanded, background=self.EDGE)
@@ -349,7 +1458,7 @@ class GameBoardWindow(tk.Tk):
         ).pack(side="left", fill="x", expand=True)
         tk.Button(
             chat_header,
-            text="‹",
+            text="›",
             width=3,
             background=self.EDGE,
             activebackground=self.PAPER,
@@ -361,7 +1470,7 @@ class GameBoardWindow(tk.Tk):
         self._build_chat(self.chat_expanded)
         self.chat_rail = tk.Button(
             self.chat_shell,
-            text="›\n\nC\nH\nA\nT",
+            text="‹\n\nC\nH\nA\nT",
             background=self.EDGE,
             activebackground=self.PAPER,
             foreground=self.INK,
@@ -450,6 +1559,7 @@ class GameBoardWindow(tk.Tk):
         row.pack(fill="x", pady=(10, 0))
         ttk.Button(row, text="Approve", style="Good.TButton", command=lambda: self.resolve_pending("approve")).pack(side="left")
         ttk.Button(row, text="Deny", style="Danger.TButton", command=lambda: self.resolve_pending("deny")).pack(side="left", padx=8)
+        ttk.Button(row, text="Admit All", style="Good.TButton", command=self.admit_all_pending).pack(side="right")
 
         connected_card = self._card(self.overview_tab, "Currently Logged In")
         connected_card.grid(row=0, column=1, sticky="nsew", padx=(8, 0), pady=8)
@@ -467,56 +1577,67 @@ class GameBoardWindow(tk.Tk):
         ttk.Button(announcement_card, text="Send to Connected Players", command=self.send_announcement).pack(anchor="e", pady=(10, 0))
 
     def _build_contacts(self) -> None:
-        form = self._grid_card(self.contacts_tab, "Add Player", 3)
-        form.pack(fill="x", pady=8)
+        form = ttk.Frame(self.contacts_tab, style="Card.TFrame", padding=(10, 8))
+        form.pack(fill="x", pady=(4, 6))
+        ttk.Label(form, text="Add Player", style="Section.TLabel").grid(
+            row=0, column=0, columnspan=5, sticky="w", pady=(0, 6)
+        )
         ttk.Label(form, text="Name", style="Card.TLabel").grid(row=1, column=0, sticky="w")
-        ttk.Label(form, text="Email", style="Card.TLabel").grid(row=1, column=1, sticky="w", padx=(12, 0))
+        ttk.Label(form, text="Email", style="Card.TLabel").grid(row=1, column=2, sticky="w", padx=(10, 0))
         self.contact_name = ttk.Entry(form)
         self.contact_email = ttk.Entry(form)
-        self.contact_name.grid(row=2, column=0, sticky="ew")
-        self.contact_email.grid(row=2, column=1, sticky="ew", padx=(12, 0))
-        ttk.Button(form, text="Add Player", command=self.add_contact).grid(row=2, column=2, padx=(12, 0))
-        form.columnconfigure(0, weight=1)
+        self.contact_name.grid(row=1, column=1, sticky="ew", padx=(6, 0))
+        self.contact_email.grid(row=1, column=3, sticky="ew", padx=(6, 0))
+        ttk.Button(form, text="Add Player", command=self.add_contact).grid(row=1, column=4, padx=(10, 0))
         form.columnconfigure(1, weight=1)
+        form.columnconfigure(3, weight=1)
 
-        card = self._card(self.contacts_tab, "Private Address Book")
-        card.pack(fill="both", expand=True, pady=(0, 8))
+        card = ttk.Frame(self.contacts_tab, style="Card.TFrame", padding=10)
+        card.pack(fill="x", pady=(0, 4))
+        address_header = ttk.Frame(card, style="Card.TFrame")
+        address_header.pack(fill="x", pady=(0, 6))
+        ttk.Label(address_header, text="Private Address Book", style="Section.TLabel").pack(side="left")
+        ttk.Button(
+            address_header,
+            text="Remove Selected",
+            style="Danger.TButton",
+            command=self.remove_contacts,
+        ).pack(side="right")
         self.contacts_tree = self._tree(
             card,
             ("name", "email", "character"),
             ("Player", "Email Address", "Character Identity"),
         )
+        self.contacts_tree.configure(height=6)
         self.contacts_tree.bind("<<TreeviewSelect>>", self._contact_selected)
         character_row = ttk.Frame(card, style="Card.TFrame")
-        character_row.pack(fill="x", pady=(10, 0))
-        ttk.Label(character_row, text="Link selected player to", style="Card.TLabel").pack(side="left")
-        self.character_combo = ttk.Combobox(character_row, state="readonly", width=32)
-        self.character_combo.pack(side="left", fill="x", expand=True, padx=10)
-        ttk.Button(character_row, text="Link Character", command=self.link_character).pack(side="left")
+        character_row.pack(fill="x", pady=(6, 0))
+        ttk.Label(character_row, text="Character identity", style="Card.TLabel").pack(side="left")
+        self.selected_character_label = tk.StringVar(value="No character selected")
+        ttk.Label(
+            character_row,
+            textvariable=self.selected_character_label,
+            style="Card.TLabel",
+        ).pack(side="left", fill="x", expand=True, padx=10)
+        ttk.Button(
+            character_row,
+            text="Choose Character...",
+            command=self.choose_character,
+        ).pack(side="left")
         ttk.Button(
             character_row,
             text="Clear Link",
             style="Quiet.TButton",
             command=self.clear_character_link,
         ).pack(side="left", padx=(8, 0))
-        ttk.Button(
-            card,
-            text="Remove Selected",
-            style="Danger.TButton",
-            command=self.remove_contacts,
-        ).pack(anchor="e", pady=(10, 0))
         self.character_choices: list[dict[str, str]] = []
         self.character_label_to_id: dict[str, str] = {}
+        self.character_id_to_label: dict[str, str] = {}
+        self.selected_character_id: str | None = None
 
     def _build_chat(self, parent: tk.Misc) -> None:
         card = ttk.Frame(parent, style="Card.TFrame", padding=10)
         card.pack(fill="both", expand=True)
-        ttk.Label(
-            card,
-            text="Messages are shared with every connected player.",
-            style="Card.TLabel",
-            wraplength=285,
-        ).pack(anchor="w", pady=(0, 8))
         log_frame = ttk.Frame(card, style="Card.TFrame")
         log_frame.pack(fill="both", expand=True)
         self.chat_log = tk.Text(
@@ -535,6 +1656,7 @@ class GameBoardWindow(tk.Tk):
         self.chat_log.pack(side="left", fill="both", expand=True)
         chat_scroll.pack(side="right", fill="y")
         self.chat_log.tag_configure("headmaster", foreground=self.ACCENT, font=("Segoe UI", 10, "bold"))
+        self.chat_log.tag_configure("system", foreground=self.GREEN, font=("Segoe UI", 10, "bold"))
         self.chat_log.tag_configure("player", foreground=self.INK, font=("Segoe UI", 10, "bold"))
         composer = ttk.Frame(card, style="Card.TFrame")
         composer.pack(fill="x", pady=(10, 0))
@@ -545,57 +1667,101 @@ class GameBoardWindow(tk.Tk):
         self._rendered_chat_ids: tuple[str, ...] = ()
 
     def _build_session(self) -> None:
-        create = self._grid_card(self.session_tab, "Create Game Session", 4)
-        create.pack(fill="x", pady=8)
-        ttk.Label(create, text="Session title", style="Card.TLabel").grid(row=1, column=0, sticky="w")
-        ttk.Label(create, text="Game day (YYYY-MM-DD)", style="Card.TLabel").grid(row=1, column=1, sticky="w", padx=(12, 0))
-        ttk.Label(create, text="Expires", style="Card.TLabel").grid(row=1, column=2, sticky="w", padx=(12, 0))
-        self.session_title = ttk.Entry(create)
-        self.game_day = ttk.Entry(create, width=14)
-        self.expiration = ttk.Entry(create, width=8)
-        self.game_day.insert(0, date.today().isoformat())
-        self.expiration.insert(0, "23:59")
-        self.session_title.grid(row=2, column=0, sticky="ew")
-        self.game_day.grid(row=2, column=1, sticky="ew", padx=(12, 0))
-        self.expiration.grid(row=2, column=2, sticky="ew", padx=(12, 0))
-        self.roster_list = tk.Listbox(create, height=5, selectmode="multiple", exportselection=False, background="#fff8e6", foreground=self.INK)
-        self.roster_contact_ids: list[str] = []
-        self.roster_labels: list[str] = []
-        self.roster_list.bind("<<ListboxSelect>>", lambda _event: self._update_roster_count())
-        roster_controls = ttk.Frame(create, style="Card.TFrame")
-        roster_controls.grid(row=3, column=0, columnspan=4, sticky="ew", pady=(12, 4))
-        ttk.Label(roster_controls, text="Players in this session", style="Card.TLabel").pack(side="left")
-        ttk.Button(roster_controls, text="Add All", style="Quiet.TButton", command=self.select_all_roster).pack(side="right")
-        ttk.Button(roster_controls, text="Clear All", style="Quiet.TButton", command=self.clear_roster_selection).pack(side="right", padx=8)
-        self.roster_list.grid(row=4, column=0, columnspan=4, sticky="ew")
-        roster_footer = ttk.Frame(create, style="Card.TFrame")
-        roster_footer.grid(row=5, column=0, columnspan=4, sticky="ew", pady=(8, 0))
-        self.roster_selection_label = ttk.Label(roster_footer, text="0 players selected", style="Card.TLabel")
-        self.roster_selection_label.pack(side="left")
-        ttk.Button(roster_footer, text="Create Session", command=self.create_session).pack(side="right")
-        create.columnconfigure(0, weight=2)
-        create.columnconfigure(1, weight=1)
+        self.session_tab.columnconfigure(0, weight=1)
+        self.session_tab.columnconfigure(1, weight=2)
+        self.session_tab.rowconfigure(0, weight=1)
+        self.selected_session_id: str | None = None
+        self.selected_invite_ids: set[str] = set()
 
-        active = self._card(self.session_tab, "Current Session & Invitations")
-        active.pack(fill="both", expand=True, pady=(0, 8))
-        self.session_summary = ttk.Label(active, text="No active session", style="Card.TLabel")
+        sessions_card = self._card(self.session_tab, "Sessions")
+        sessions_card.grid(row=0, column=0, sticky="nsew", padx=(0, 8), pady=8)
+        self.sessions_tree = ttk.Treeview(
+            sessions_card,
+            columns=("title", "event_date", "game_date", "expires"),
+            show="headings",
+            selectmode="browse",
+            height=12,
+        )
+        for column, heading, width in (
+            ("title", "Session", 145),
+            ("event_date", "Event Date", 95),
+            ("game_date", "Game World Date & Time", 145),
+            ("expires", "Expires", 95),
+        ):
+            self.sessions_tree.heading(column, text=heading)
+            self.sessions_tree.column(column, width=width, minwidth=75, anchor="w")
+        session_scroll = ttk.Scrollbar(
+            sessions_card, orient="vertical", command=self.sessions_tree.yview
+        )
+        self.sessions_tree.configure(yscrollcommand=session_scroll.set)
+        self.sessions_tree.pack(side="left", fill="both", expand=True)
+        session_scroll.pack(side="right", fill="y")
+        self.sessions_tree.bind("<<TreeviewSelect>>", self._session_selected)
+
+        session_buttons = ttk.Frame(self.session_tab, style="Card.TFrame")
+        session_buttons.grid(row=1, column=0, sticky="ew", padx=(0, 8), pady=(0, 8))
+        ttk.Button(session_buttons, text="Create", command=self.create_session).pack(side="left")
+        ttk.Button(
+            session_buttons, text="Duplicate", style="Quiet.TButton",
+            command=self.duplicate_session,
+        ).pack(side="left", padx=6)
+        ttk.Button(
+            session_buttons, text="End", style="Quiet.TButton", command=self.end_session
+        ).pack(side="left")
+        ttk.Button(
+            session_buttons, text="Delete", style="Danger.TButton", command=self.delete_session
+        ).pack(side="right")
+
+        invitations_card = self._card(self.session_tab, "Invitations")
+        invitations_card.grid(row=0, column=1, sticky="nsew", padx=(8, 0), pady=8)
+        self.session_summary = ttk.Label(
+            invitations_card, text="Select a session", style="Card.TLabel"
+        )
         self.session_summary.pack(anchor="w", pady=(0, 10))
-        self.invites_tree = self._tree(active, ("name", "email", "status"), ("Player", "Email", "Invitation"))
-        self.invites_tree.bind("<<TreeviewSelect>>", lambda _event: self._update_invite_count())
-        selection_controls = ttk.Frame(active, style="Card.TFrame")
-        selection_controls.pack(fill="x", pady=(10, 0))
-        self.invite_selection_label = ttk.Label(selection_controls, text="0 players selected", style="Card.TLabel")
+        self.invites_tree = ttk.Treeview(
+            invitations_card,
+            columns=("checked", "name", "email", "sent", "logged_in"),
+            show="headings",
+            selectmode="browse",
+            height=12,
+        )
+        for column, heading, width, anchor in (
+            ("checked", "✓", 38, "center"),
+            ("name", "Player", 140, "w"),
+            ("email", "Email", 190, "w"),
+            ("sent", "Last Invitation", 145, "w"),
+            ("logged_in", "Logged In", 85, "center"),
+        ):
+            self.invites_tree.heading(column, text=heading)
+            self.invites_tree.column(column, width=width, minwidth=35, anchor=anchor)
+        invitation_scroll = ttk.Scrollbar(
+            invitations_card, orient="vertical", command=self.invites_tree.yview
+        )
+        self.invites_tree.configure(yscrollcommand=invitation_scroll.set)
+        self.invites_tree.pack(side="left", fill="both", expand=True)
+        invitation_scroll.pack(side="right", fill="y")
+        self.invites_tree.bind("<ButtonRelease-1>", self._toggle_invitation_check)
+        self.invites_tree.bind("<space>", self._toggle_focused_invitation)
+        self.invites_tree.bind("<Return>", self._toggle_focused_invitation)
+
+        invite_controls = ttk.Frame(self.session_tab, style="Card.TFrame")
+        invite_controls.grid(row=1, column=1, sticky="ew", padx=(8, 0), pady=(0, 8))
+        self.invite_selection_label = ttk.Label(
+            invite_controls, text="0 players checked", style="Card.TLabel"
+        )
         self.invite_selection_label.pack(side="left")
-        ttk.Button(selection_controls, text="Select All", style="Quiet.TButton", command=self.select_all_invites).pack(side="right")
-        ttk.Button(selection_controls, text="Clear Selection", style="Quiet.TButton", command=self.clear_invite_selection).pack(side="right", padx=8)
-        controls = ttk.Frame(active, style="Card.TFrame")
-        controls.pack(fill="x", pady=(8, 0))
-        ttk.Button(controls, text="Preview Selected", style="Quiet.TButton", command=self.preview_invite).pack(side="left")
-        ttk.Button(controls, text="Send Selected", command=lambda: self.send_invites(False)).pack(side="left", padx=8)
-        ttk.Button(controls, text="Send All Players", command=lambda: self.send_invites(True)).pack(side="left")
-        self.pause_button = ttk.Button(controls, text="Pause Admissions", style="Quiet.TButton", command=self.toggle_pause)
-        self.pause_button.pack(side="right", padx=8)
-        ttk.Button(controls, text="End Session", style="Danger.TButton", command=self.end_session).pack(side="right")
+        ttk.Button(
+            invite_controls, text="Send to Selected",
+            command=lambda: self.send_invites(False),
+        ).pack(side="right")
+        ttk.Button(
+            invite_controls, text="Send to All", style="Quiet.TButton",
+            command=lambda: self.send_invites(True),
+        ).pack(side="right", padx=8)
+        ttk.Button(
+            invite_controls, text="Remove from Session", style="Danger.TButton",
+            command=self.remove_from_session,
+        ).pack(side="right")
 
     def _build_settings(self) -> None:
         card = self._grid_card(self.settings_tab, "Connection & Gmail Setup", 3)
@@ -717,35 +1883,15 @@ class GameBoardWindow(tk.Tk):
             for character in characters:
                 counts[character["name"]] = counts.get(character["name"], 0) + 1
             self.character_label_to_id = {}
-            labels = []
+            self.character_id_to_label = {}
             for character in characters:
                 label = character["name"]
                 if counts[label] > 1:
                     label = f"{label}  [{character['id'][:8]}]"
-                labels.append(label)
                 self.character_label_to_id[label] = character["id"]
-            self.character_combo.configure(values=labels)
-        selected_contact_ids = {
-            self.roster_contact_ids[index]
-            for index in self.roster_list.curselection()
-            if index < len(self.roster_contact_ids)
-        }
-        contact_ids = [contact["id"] for contact in contacts]
-        roster_labels = [
-            f"{contact['name']}  →  {contact.get('character_name') or 'No character linked'}"
-            for contact in contacts
-        ]
-        if contact_ids != self.roster_contact_ids or roster_labels != self.roster_labels:
-            self.roster_list.delete(0, "end")
-            self.roster_contact_ids = contact_ids
-            self.roster_labels = roster_labels
-            for label in roster_labels:
-                self.roster_list.insert("end", label)
-            for index, contact_id in enumerate(self.roster_contact_ids):
-                if contact_id in selected_contact_ids:
-                    self.roster_list.selection_set(index)
-        self._update_roster_count()
-
+                self.character_id_to_label[character["id"]] = label
+            if self.selected_character_id not in self.character_id_to_label:
+                self._set_character_selection(None)
         settings = state.get("settings", {})
         if not self.settings_dirty:
             for key, entry in self.setting_entries.items():
@@ -755,22 +1901,71 @@ class GameBoardWindow(tk.Tk):
         gmail_text = "connected" if gmail.get("connected") else gmail.get("error") or "not connected"
         self.gmail_status.configure(text=f"Gmail status: {gmail_text}")
 
-        session = state.get("session")
+        sessions = list(state.get("sessions") or ([state["session"]] if state.get("session") else []))
+        session_rows = [
+            (
+                session["id"],
+                (
+                    session["title"],
+                    format_stored_date(session.get("event_date")),
+                    format_stored_game_datetime(session.get("game_datetime")),
+                    format_stored_date(session.get("expires_at")),
+                ),
+            )
+            for session in sessions
+        ]
+        self._replace_tree(self.sessions_tree, session_rows)
+        session_ids = {session["id"] for session in sessions}
+        if self.selected_session_id not in session_ids:
+            self.selected_session_id = sessions[0]["id"] if sessions else None
+            self.selected_invite_ids.clear()
+        if self.selected_session_id and self.sessions_tree.exists(self.selected_session_id):
+            self.sessions_tree.selection_set(self.selected_session_id)
+        session = next(
+            (item for item in sessions if item["id"] == self.selected_session_id), None
+        )
+        self._render_game_clock(session)
+        self._render_board((state.get("boards") or {}).get(self.selected_session_id or "", {}))
+
         pending_rows: list[tuple[str, tuple[Any, ...]]] = []
         invite_rows: list[tuple[str, tuple[Any, ...]]] = []
+        for active_session in sessions:
+            for request in active_session.get("pending", []):
+                if request.get("status") == "pending":
+                    pending_rows.append((
+                        request["id"],
+                        (
+                            f"{request['name']} — {active_session['title']}",
+                            request["requested_at"],
+                            request.get("client_ip", ""),
+                        ),
+                    ))
         if session:
             self.session_summary.configure(
-                text=f"{session['title']}  •  {session['status'].upper()}  •  expires {session['expires_at']}"
+                text=(
+                    f"{session['title']}  •  Event date: {format_stored_date(session.get('event_date'))}"
+                    f"  •  Game World Date: {format_stored_game_datetime(session.get('game_datetime'))}"
+                    f"  •  Expires: {format_stored_date(session.get('expires_at'))}"
+                )
             )
-            for request in session.get("pending", []):
-                if request.get("status") == "pending":
-                    pending_rows.append((request["id"], (request["name"], request["requested_at"], request.get("client_ip", ""))))
+            roster_ids = {player["contact_id"] for player in session.get("roster", [])}
+            self.selected_invite_ids.intersection_update(roster_ids)
             for player in session.get("roster", []):
-                invite_rows.append((player["contact_id"], (player["name"], player["email"], player["invite_status"])))
-            self.pause_button.configure(text="Resume Admissions" if session["status"] == "paused" else "Pause Admissions")
+                sent_at = player.get("sent_at")
+                sent_text = f"{str(sent_at)[:16].replace('T', ' ')} UTC" if sent_at else "Never"
+                invite_rows.append((
+                    player["contact_id"],
+                    (
+                        "✓" if player["contact_id"] in self.selected_invite_ids else "",
+                        player["name"],
+                        player["email"],
+                        sent_text,
+                        "Yes" if player.get("has_logged_in") else "No",
+                    ),
+                ))
         else:
-            self.session_summary.configure(text="No active session")
-            self.pause_button.configure(text="Pause Admissions")
+            self.session_summary.configure(text="Select a session")
+            self.selected_invite_ids.clear()
         self._render_chat(list((session or {}).get("chat", [])))
         self._replace_tree(self.pending_tree, pending_rows)
         self._replace_tree(self.invites_tree, invite_rows)
@@ -780,7 +1975,8 @@ class GameBoardWindow(tk.Tk):
         connection_rows = []
         for connection in state.get("connections", []):
             latency = "Measuring" if connection.get("latency_ms") is None else f"{connection['latency_ms']} ms"
-            connection_rows.append((connection["contact_id"], (
+            connection_id = f"{connection.get('session_id', '')}:{connection['contact_id']}"
+            connection_rows.append((connection_id, (
                 connection["name"], connection["quality"].title(), latency, connection["last_activity"]
             )))
         self._replace_tree(self.connections_tree, connection_rows)
@@ -796,7 +1992,7 @@ class GameBoardWindow(tk.Tk):
             self.admission_alert_text.configure(text=label)
             if not self.admission_alert.winfo_manager():
                 self.admission_alert.pack(
-                    fill="x", padx=28, pady=(0, 10), before=self.workspace
+                    fill="x", padx=12, pady=(0, 6), before=self.workspace
                 )
             self.control_panel_button.configure(text=f"Control Panel  •  {count} waiting")
         else:
@@ -829,34 +2025,57 @@ class GameBoardWindow(tk.Tk):
             else:
                 tree.insert("", "end", iid=item_id, values=values)
 
-    def select_all_roster(self) -> None:
-        if self.roster_list.size():
-            self.roster_list.selection_set(0, "end")
-        self._update_roster_count()
+    def _selected_session(self) -> dict[str, Any] | None:
+        return next(
+            (
+                session for session in self.state_data.get("sessions", [])
+                if session.get("id") == self.selected_session_id
+            ),
+            None,
+        )
 
-    def clear_roster_selection(self) -> None:
-        self.roster_list.selection_clear(0, "end")
-        self._update_roster_count()
+    def _session_selected(self, _event: tk.Event | None = None) -> None:
+        selection = self.sessions_tree.selection()
+        if not selection or selection[0] == self.selected_session_id:
+            return
+        self.selected_session_id = selection[0]
+        self.selected_invite_ids.clear()
+        self.render(self.state_data)
 
-    def _update_roster_count(self) -> None:
-        if hasattr(self, "roster_selection_label"):
-            count = len(self.roster_list.curselection())
-            self.roster_selection_label.configure(text=f"{count} player{'s' if count != 1 else ''} selected")
+    def _toggle_invitation_id(self, contact_id: str) -> None:
+        if contact_id in self.selected_invite_ids:
+            self.selected_invite_ids.remove(contact_id)
+        else:
+            self.selected_invite_ids.add(contact_id)
+        self.render(self.state_data)
+
+    def _toggle_invitation_check(self, event: tk.Event) -> str:
+        contact_id = self.invites_tree.identify_row(event.y)
+        if contact_id:
+            self.invites_tree.focus(contact_id)
+            self._toggle_invitation_id(contact_id)
+        return "break"
+
+    def _toggle_focused_invitation(self, _event: tk.Event | None = None) -> str:
+        contact_id = self.invites_tree.focus()
+        if contact_id:
+            self._toggle_invitation_id(contact_id)
+        return "break"
 
     def select_all_invites(self) -> None:
-        children = self.invites_tree.get_children()
-        if children:
-            self.invites_tree.selection_set(children)
-        self._update_invite_count()
+        self.selected_invite_ids = set(self.invites_tree.get_children())
+        self.render(self.state_data)
 
     def clear_invite_selection(self) -> None:
-        self.invites_tree.selection_remove(self.invites_tree.selection())
-        self._update_invite_count()
+        self.selected_invite_ids.clear()
+        self.render(self.state_data)
 
     def _update_invite_count(self) -> None:
         if hasattr(self, "invite_selection_label"):
-            count = len(self.invites_tree.selection())
-            self.invite_selection_label.configure(text=f"{count} player{'s' if count != 1 else ''} selected")
+            count = len(self.selected_invite_ids)
+            self.invite_selection_label.configure(
+                text=f"{count} player{'s' if count != 1 else ''} checked"
+            )
 
     def _api_action(self, method: str, path: str, payload: dict[str, Any] | None, success_message: str) -> None:
         def done(_result: Any) -> None:
@@ -885,43 +2104,128 @@ class GameBoardWindow(tk.Tk):
 
         self._background(work, lambda _value: (self.set_notice("Players removed"), self.refresh()))
 
+    def _set_character_selection(self, character_id: str | None) -> None:
+        self.selected_character_id = character_id
+        self.selected_character_label.set(
+            self.character_id_to_label.get(character_id, "No character selected")
+        )
+
+    def choose_character(self) -> None:
+        selected_contacts = list(self.contacts_tree.selection())
+        if len(selected_contacts) != 1:
+            messagebox.showwarning(
+                "Choose character",
+                "Select exactly one player first.",
+                parent=self,
+            )
+            return
+        contact_id = selected_contacts[0]
+        if not self.character_label_to_id:
+            messagebox.showinfo(
+                "Choose character",
+                "No characters are available in the shared world data.",
+                parent=self,
+            )
+            return
+        picker = tk.Toplevel(self)
+        picker.title("Choose Character")
+        picker.transient(self)
+        picker.geometry("560x520")
+        picker.minsize(420, 360)
+        picker.configure(background=self.PAPER)
+        picker.grab_set()
+
+        body = ttk.Frame(picker, padding=18)
+        body.pack(fill="both", expand=True)
+        ttk.Label(body, text="Choose Character", style="Title.TLabel").pack(anchor="w")
+        ttk.Label(
+            body,
+            text="Search by character name. Choosing a result links it immediately.",
+            style="Card.TLabel",
+        ).pack(anchor="w", pady=(2, 10))
+        search_value = tk.StringVar()
+        search = ttk.Entry(body, textvariable=search_value)
+        search.pack(fill="x", pady=(0, 10))
+
+        results_frame = ttk.Frame(body)
+        results_frame.pack(fill="both", expand=True)
+        results = tk.Listbox(
+            results_frame,
+            exportselection=False,
+            background="#fff8e6",
+            foreground=self.INK,
+            selectbackground=self.ACCENT,
+            selectforeground="#fff8e7",
+        )
+        scrollbar = ttk.Scrollbar(results_frame, orient="vertical", command=results.yview)
+        results.configure(yscrollcommand=scrollbar.set)
+        results.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        match_label = ttk.Label(body, text="", style="Status.TLabel")
+        match_label.pack(anchor="w", pady=(8, 0))
+        visible: list[tuple[str, str]] = []
+
+        def populate(*_args: object) -> None:
+            query = search_value.get().strip().casefold()
+            visible.clear()
+            visible.extend(
+                (label, character_id)
+                for label, character_id in self.character_label_to_id.items()
+                if not query or query in label.casefold()
+            )
+            results.delete(0, "end")
+            selected_index = None
+            for index, (label, character_id) in enumerate(visible):
+                results.insert("end", label)
+                if character_id == self.selected_character_id:
+                    selected_index = index
+            if selected_index is not None:
+                results.selection_set(selected_index)
+                results.see(selected_index)
+            match_label.configure(text=f"{len(visible)} character(s) shown")
+
+        def accept(_event: tk.Event | None = None) -> None:
+            selection = results.curselection()
+            if not selection:
+                return
+            label, character_id = visible[selection[0]]
+            self._set_character_selection(character_id)
+            picker.destroy()
+            self._api_action(
+                "PUT",
+                f"/api/admin/contacts/{contact_id}/character",
+                {"character_id": character_id},
+                f"{label} linked to player",
+            )
+
+        search_value.trace_add("write", populate)
+        search.bind("<Return>", lambda _event: results.focus_set())
+        results.bind("<Double-Button-1>", accept)
+        results.bind("<Return>", accept)
+        buttons = ttk.Frame(body)
+        buttons.pack(fill="x", pady=(12, 0))
+        ttk.Button(
+            buttons, text="Cancel", style="Quiet.TButton", command=picker.destroy
+        ).pack(side="right")
+        ttk.Button(buttons, text="Choose and Link", command=accept).pack(
+            side="right", padx=(0, 8)
+        )
+        populate()
+        search.focus_set()
+
     def _contact_selected(self, _event: tk.Event | None = None) -> None:
         selected = list(self.contacts_tree.selection())
         if len(selected) != 1:
-            self.character_combo.set("")
+            self._set_character_selection(None)
             return
         contact = next(
             (item for item in self.state_data.get("contacts", []) if item["id"] == selected[0]),
             None,
         )
         if not contact or not contact.get("character_id"):
-            self.character_combo.set("")
+            self._set_character_selection(None)
             return
-        for label, character_id in self.character_label_to_id.items():
-            if character_id == contact["character_id"]:
-                self.character_combo.set(label)
-                return
-        self.character_combo.set("")
-
-    def link_character(self) -> None:
-        selected = list(self.contacts_tree.selection())
-        if len(selected) != 1:
-            messagebox.showwarning(
-                "Link character", "Select exactly one player first.", parent=self
-            )
-            return
-        character_id = self.character_label_to_id.get(self.character_combo.get())
-        if not character_id:
-            messagebox.showwarning(
-                "Link character", "Choose a character from the list.", parent=self
-            )
-            return
-        self._api_action(
-            "PUT",
-            f"/api/admin/contacts/{selected[0]}/character",
-            {"character_id": character_id},
-            "Character identity linked",
-        )
+        self._set_character_selection(contact["character_id"])
 
     def clear_character_link(self) -> None:
         selected = list(self.contacts_tree.selection())
@@ -939,28 +2243,162 @@ class GameBoardWindow(tk.Tk):
 
     def create_session(self) -> None:
         contacts = self.state_data.get("contacts", [])
-        selected = [
-            self.roster_contact_ids[index]
-            for index in self.roster_list.curselection()
-            if index < len(self.roster_contact_ids)
-        ]
-        if not selected:
-            messagebox.showwarning("Create session", "Select at least one player.", parent=self)
+        if not contacts:
+            messagebox.showwarning(
+                "Create session", "Add players before creating a session.", parent=self
+            )
             return
-        payload = {
-            "title": self.session_title.get().strip(),
-            "game_day": self.game_day.get().strip(),
-            "expiration_time": self.expiration.get().strip(),
-            "contact_ids": selected,
-        }
-        self._api_action("POST", "/api/admin/sessions", payload, "Session created")
+        dialog = tk.Toplevel(self)
+        dialog.title("Create Session")
+        dialog.transient(self)
+        dialog.geometry("650x650")
+        dialog.minsize(520, 500)
+        dialog.configure(background=self.PAPER)
+        dialog.grab_set()
+
+        body = ttk.Frame(dialog, padding=18)
+        body.pack(fill="both", expand=True)
+        ttk.Label(body, text="Create Session", style="Title.TLabel").grid(
+            row=0, column=0, columnspan=3, sticky="w", pady=(0, 12)
+        )
+        title_value = tk.StringVar()
+        expiration_value = tk.StringVar(value="23:59")
+        field_labels = (
+            ("Session title", 0),
+            ("Event date", 1),
+            ("Invitations expire", 2),
+        )
+        for label, column in field_labels:
+            ttk.Label(body, text=label, style="Card.TLabel").grid(
+                row=1, column=column, sticky="w", padx=(0 if column == 0 else 8, 0)
+            )
+            body.columnconfigure(column, weight=2 if column == 0 else 1)
+        ttk.Entry(body, textvariable=title_value).grid(row=2, column=0, sticky="ew")
+        event_date_field = CalendarDateField(body, date.today())
+        event_date_field.grid(row=2, column=1, sticky="ew", padx=(8, 0))
+        ttk.Entry(body, textvariable=expiration_value, width=8).grid(
+            row=2, column=2, sticky="ew", padx=(8, 0)
+        )
+        ttk.Label(body, text="Game World Date", style="Card.TLabel").grid(
+            row=3, column=0, sticky="w", pady=(10, 0)
+        )
+        ttk.Label(body, text="Game time (24-hour)", style="Card.TLabel").grid(
+            row=3, column=1, sticky="w", padx=(8, 0), pady=(10, 0)
+        )
+        game_date_field = CalendarDateField(body, date.today())
+        game_date_field.grid(row=4, column=0, sticky="ew")
+        game_time_value = tk.StringVar(value="08:00")
+        ttk.Entry(body, textvariable=game_time_value, width=8).grid(
+            row=4, column=1, sticky="ew", padx=(8, 0)
+        )
+
+        ttk.Label(body, text="Players", style="Section.TLabel").grid(
+            row=5, column=0, columnspan=3, sticky="w", pady=(16, 6)
+        )
+        roster_frame = ttk.Frame(body)
+        roster_frame.grid(row=6, column=0, columnspan=3, sticky="nsew")
+        body.rowconfigure(6, weight=1)
+        roster = tk.Listbox(
+            roster_frame,
+            exportselection=False,
+            background="#fff8e6",
+            foreground=self.INK,
+            selectbackground=self.ACCENT,
+            selectforeground="#fff8e7",
+        )
+        roster_scroll = ttk.Scrollbar(roster_frame, orient="vertical", command=roster.yview)
+        roster.configure(yscrollcommand=roster_scroll.set)
+        roster.pack(side="left", fill="both", expand=True)
+        roster_scroll.pack(side="right", fill="y")
+        contact_ids = [contact["id"] for contact in contacts]
+        checked: set[str] = set(contact_ids)
+
+        def redraw() -> None:
+            focused = roster.curselection()
+            roster.delete(0, "end")
+            for contact in contacts:
+                identity = contact.get("character_name") or "No character linked"
+                roster.insert(
+                    "end",
+                    f"{'✓' if contact['id'] in checked else ' '}  {contact['name']}  —  {identity}",
+                )
+            if focused and focused[0] < roster.size():
+                roster.selection_set(focused[0])
+
+        def toggle(_event: tk.Event | None = None) -> str:
+            selection = roster.curselection()
+            if not selection:
+                return "break"
+            contact_id = contact_ids[selection[0]]
+            if contact_id in checked:
+                checked.remove(contact_id)
+            else:
+                checked.add(contact_id)
+            redraw()
+            return "break"
+
+        roster.bind("<ButtonRelease-1>", toggle)
+        roster.bind("<space>", toggle)
+        roster.bind("<Return>", toggle)
+        redraw()
+
+        selection_row = ttk.Frame(body)
+        selection_row.grid(row=7, column=0, columnspan=3, sticky="ew", pady=(8, 0))
+        ttk.Button(
+            selection_row, text="Check All", style="Quiet.TButton",
+            command=lambda: (checked.update(contact_ids), redraw()),
+        ).pack(side="left")
+        ttk.Button(
+            selection_row, text="Clear", style="Quiet.TButton",
+            command=lambda: (checked.clear(), redraw()),
+        ).pack(side="left", padx=8)
+
+        buttons = ttk.Frame(body)
+        buttons.grid(row=8, column=0, columnspan=3, sticky="e", pady=(16, 0))
+        ttk.Button(buttons, text="Cancel", style="Quiet.TButton", command=dialog.destroy).pack(
+            side="left", padx=(0, 8)
+        )
+
+        def submit() -> None:
+            if not checked:
+                messagebox.showwarning(
+                    "Create session", "Check at least one player.", parent=dialog
+                )
+                return
+            payload = {
+                "title": title_value.get().strip(),
+                "event_date": event_date_field.get_iso(),
+                "game_day": event_date_field.get_iso(),
+                "game_datetime": (
+                    f"{game_date_field.get_iso()}T{game_time_value.get().strip()}"
+                ),
+                "expiration_time": expiration_value.get().strip(),
+                "contact_ids": [contact_id for contact_id in contact_ids if contact_id in checked],
+            }
+
+            def done(result: dict[str, Any]) -> None:
+                self.selected_session_id = result["id"]
+                self.selected_invite_ids.clear()
+                dialog.destroy()
+                self.set_notice("Session created")
+                self.refresh()
+
+            self._background(
+                lambda: self.client.request("POST", "/api/admin/sessions", payload), done
+            )
+
+        ttk.Button(buttons, text="Create Session", command=submit).pack(side="left")
+        dialog.bind("<Escape>", lambda _event: dialog.destroy())
 
     def send_invites(self, all_players: bool) -> None:
-        session = self.state_data.get("session")
+        session = self._selected_session()
         if not session:
-            messagebox.showwarning("Invitations", "Create a session first.", parent=self)
+            messagebox.showwarning("Invitations", "Select a session first.", parent=self)
             return
-        ids = [p["contact_id"] for p in session["roster"] if not p.get("revoked")] if all_players else list(self.invites_tree.selection())
+        ids = (
+            [player["contact_id"] for player in session["roster"] if not player.get("revoked")]
+            if all_players else list(self.selected_invite_ids)
+        )
         if not ids:
             messagebox.showwarning("Invitations", "Select at least one player.", parent=self)
             return
@@ -974,22 +2412,72 @@ class GameBoardWindow(tk.Tk):
             self.set_notice(message, error=bool(failures))
             self.refresh()
 
-        self._background(lambda: self.client.request("POST", "/api/admin/invitations/send", {"contact_ids": ids}), done)
+        payload = {"session_id": session["id"], "contact_ids": ids}
+        self._background(
+            lambda: self.client.request("POST", "/api/admin/invitations/send", payload), done
+        )
 
-    def preview_invite(self) -> None:
-        session = self.state_data.get("session")
+    def duplicate_session(self) -> None:
+        session = self._selected_session()
+        if not session:
+            messagebox.showwarning("Duplicate session", "Select a session first.", parent=self)
+            return
+
+        def done(result: dict[str, Any]) -> None:
+            self.selected_session_id = result["id"]
+            self.selected_invite_ids.clear()
+            self.set_notice("Session duplicated")
+            self.refresh()
+
+        self._background(
+            lambda: self.client.request(
+                "POST", f"/api/admin/sessions/{session['id']}/duplicate"
+            ),
+            done,
+        )
+
+    def delete_session(self) -> None:
+        session = self._selected_session()
         if not session:
             return
-        selected = list(self.invites_tree.selection())
-        contact_id = selected[0] if selected else session["roster"][0]["contact_id"]
-        player = next(item for item in session["roster"] if item["contact_id"] == contact_id)
-        page = self.state_data.get("settings", {}).get("wordpress_player_url") or "[WordPress Game Board page]"
-        text = (
-            f"To: {player['email']}\n\nHello {player['name']},\n\n"
-            f"Use this private link to request admission to {session['title']}:\n\n"
-            f"{page}#invite=[private token]\n\nThe Headmaster must approve every connection."
+        if not messagebox.askyesno(
+            "Delete session",
+            f"Permanently delete {session['title']} without retaining a summary?",
+            parent=self,
+        ):
+            return
+        self._api_action(
+            "DELETE", f"/api/admin/sessions/{session['id']}", None, "Session deleted"
         )
-        messagebox.showinfo("Invitation preview", text, parent=self)
+
+    def remove_from_session(self) -> None:
+        session = self._selected_session()
+        contact_ids = list(self.selected_invite_ids)
+        if not session or not contact_ids:
+            messagebox.showwarning(
+                "Remove from session", "Check one or more players first.", parent=self
+            )
+            return
+        if not messagebox.askyesno(
+            "Remove from session",
+            f"Remove {len(contact_ids)} checked player(s) from {session['title']}?",
+            parent=self,
+        ):
+            return
+
+        def work() -> None:
+            for contact_id in contact_ids:
+                self.client.request(
+                    "DELETE",
+                    f"/api/admin/sessions/{session['id']}/players/{contact_id}",
+                )
+
+        def done(_result: Any) -> None:
+            self.selected_invite_ids.clear()
+            self.set_notice(f"Removed {len(contact_ids)} player(s) from the session")
+            self.refresh()
+
+        self._background(work, done)
 
     def resolve_pending(self, action: str) -> None:
         selected = list(self.pending_tree.selection())
@@ -999,34 +2487,58 @@ class GameBoardWindow(tk.Tk):
         for request_id in selected:
             self._api_action("POST", f"/api/admin/admissions/{request_id}/{action}", None, f"Admission {result_word}")
 
+    def admit_all_pending(self) -> None:
+        request_ids = list(self.pending_tree.get_children())
+        if not request_ids:
+            messagebox.showinfo("Admit all", "No players are currently waiting.", parent=self)
+            return
+
+        def work() -> None:
+            for request_id in request_ids:
+                self.client.request("POST", f"/api/admin/admissions/{request_id}/approve")
+
+        self._background(
+            work,
+            lambda _value: (self.set_notice(f"Admitted {len(request_ids)} player(s)"), self.refresh()),
+        )
+
     def revoke_connected(self) -> None:
         selected = list(self.connections_tree.selection())
         if not selected:
             return
         if not messagebox.askyesno("Revoke access", "Revoke and disconnect the selected players?", parent=self):
             return
-        for contact_id in selected:
-            self._api_action("POST", f"/api/admin/players/{contact_id}/revoke", None, "Player disconnected")
-
-    def toggle_pause(self) -> None:
-        session = self.state_data.get("session")
-        if not session:
-            return
-        action = "resume" if session["status"] == "paused" else "pause"
-        result_word = "resumed" if action == "resume" else "paused"
-        self._api_action("POST", f"/api/admin/session/{action}", None, f"Admissions {result_word}")
+        for connection_id in selected:
+            session_id, contact_id = connection_id.split(":", 1)
+            self._api_action(
+                "POST",
+                f"/api/admin/sessions/{session_id}/players/{contact_id}/revoke",
+                None,
+                "Player disconnected",
+            )
 
     def end_session(self) -> None:
-        if not self.state_data.get("session"):
+        session = self._selected_session()
+        if not session:
             return
-        if messagebox.askyesno("End session", "End the session and disconnect every player?", parent=self):
-            self._api_action("POST", "/api/admin/session/end", None, "Session ended")
+        if messagebox.askyesno(
+            "End session",
+            f"End {session['title']}, disconnect its players, and retain its summary?",
+            parent=self,
+        ):
+            self._api_action(
+                "POST", f"/api/admin/sessions/{session['id']}/end", None, "Session ended"
+            )
 
     def send_announcement(self) -> None:
         text = self.announcement.get("1.0", "end").strip()
         if not text:
             return
-        self._api_action("POST", "/api/admin/announcements", {"message": text}, "Announcement sent")
+        self._api_action(
+            "POST", "/api/admin/announcements",
+            {"message": text, "session_id": self.selected_session_id},
+            "Announcement sent",
+        )
         self.announcement.delete("1.0", "end")
 
     def _render_chat(self, messages: list[dict[str, Any]]) -> None:
@@ -1038,7 +2550,7 @@ class GameBoardWindow(tk.Tk):
         self.chat_log.delete("1.0", "end")
         for message in messages:
             stamp = str(message.get("sent_at", ""))[11:16] or "--:--"
-            role = "headmaster" if message.get("sender_role") == "headmaster" else "player"
+            role = message.get("sender_role") if message.get("sender_role") in {"headmaster", "system"} else "player"
             self.chat_log.insert("end", f"{stamp}  {message.get('sender_name', 'Player')}: ", role)
             self.chat_log.insert("end", f"{message.get('text', '')}\n")
         self.chat_log.configure(state="disabled")
@@ -1055,7 +2567,10 @@ class GameBoardWindow(tk.Tk):
             self.refresh()
 
         self._background(
-            lambda: self.client.request("POST", "/api/admin/chat", {"message": message}),
+            lambda: self.client.request(
+                "POST", "/api/admin/chat",
+                {"message": message, "session_id": self.selected_session_id},
+            ),
             done,
         )
 

@@ -10,8 +10,10 @@
   const MAP_MAX_ZOOM = 32;
   const MAP_PAN_STEP = 24;
   const DEFAULT_TOKEN_SCALE = 0.0055;
-  const TOKEN_SCREEN_SIZES = [14, 16, 19, 23, 28, 34, 41, 49, 58];
-  const LABEL_SCREEN_SIZES = [10, 10, 11, 11, 12, 12, 13, 13, 14];
+  const TOKEN_SCREEN_SIZES = [0, 0, 0, 0, 64, 60, 56, 52];
+  const OVERVIEW_DOT_SCREEN_SIZES = [12, 11, 10, 9, 0, 0, 0, 0];
+  const LABEL_SCREEN_SIZES = [15, 14, 13, 12, 11, 10.5, 10, 9.5];
+  const LABEL_SCREEN_WIDTHS = [200, 185, 170, 155, 145, 135, 126, 118];
   const SECTIONS = [
     ['board', 'Game Board', '▦'],
     ['overview', 'Overview', '⌂'],
@@ -936,12 +938,16 @@
       const tokenSize = Math.max(1, Number(stage.dataset.tokenSize || 6));
       const tier = this.zoomTier(state);
       const sizeRatio = Math.max(0.35, Math.min(5.5, tokenSize / (MAP_NATIVE_WIDTH * DEFAULT_TOKEN_SCALE)));
-      const targetActorScreenSize = Math.max(8, TOKEN_SCREEN_SIZES[tier] * sizeRatio);
+      const overviewMode = tier < 4;
+      const tierScreenSize = overviewMode
+        ? OVERVIEW_DOT_SCREEN_SIZES[tier]
+        : TOKEN_SCREEN_SIZES[tier];
+      const targetActorScreenSize = Math.max(8, tierScreenSize * sizeRatio);
       const actorCameraScale = targetActorScreenSize / Math.max(1, tokenSize * stageScale);
       const actorNetScale = Math.max(0.0001, stageScale * actorCameraScale);
       const screenToActor = value => value / actorNetScale;
       stage.style.setProperty('--map-actor-camera-scale', String(actorCameraScale));
-      stage.style.setProperty('--map-nameplate-width', `${screenToActor(92 + tier * 12)}px`);
+      stage.style.setProperty('--map-nameplate-width', `${screenToActor(LABEL_SCREEN_WIDTHS[tier])}px`);
       stage.style.setProperty('--map-actor-border', `${screenToActor(1)}px`);
       stage.style.setProperty('--map-control-outline', `${screenToActor(2)}px`);
       stage.style.setProperty('--map-control-offset', `${screenToActor(2)}px`);
@@ -951,13 +957,114 @@
       stage.style.setProperty('--map-label-gap', `${screenToActor(3)}px`);
       stage.style.setProperty('--map-label-pad-y', `${screenToActor(2)}px`);
       stage.style.setProperty('--map-label-pad-x', `${screenToActor(4)}px`);
-      stage.style.setProperty('--map-label-max-width', `${screenToActor(100 + tier * 14)}px`);
-      stage.style.setProperty('--map-indicator-size', `${screenToActor(targetActorScreenSize * 0.2)}px`);
+      stage.style.setProperty('--map-label-max-width', `${screenToActor(LABEL_SCREEN_WIDTHS[tier])}px`);
+      stage.style.setProperty('--map-position-dot-size', `${screenToActor(OVERVIEW_DOT_SCREEN_SIZES[tier] || 8)}px`);
+      stage.style.setProperty('--map-position-line-width', `${screenToActor(1.5)}px`);
+      stage.style.setProperty('--map-indicator-size', `${screenToActor(targetActorScreenSize * (tier === 4 ? 0.24 : 0.2))}px`);
       stage.style.setProperty('--map-indicator-gap', `${screenToActor(targetActorScreenSize * 0.055)}px`);
       stage.style.setProperty('--map-indicator-border', `${screenToActor(1)}px`);
       stage.style.setProperty('--map-indicator-offset', `${screenToActor(3)}px`);
       stage.dataset.zoomTier = String(tier);
       stage.style.transform = `translate(-50%, -50%) translate(${state.x}px, ${state.y}px) scale(${stageScale})`;
+      stage.querySelectorAll('.ccgb-board-actor.is-player-character').forEach(piece => {
+        piece.classList.toggle('is-overview-marker', overviewMode);
+      });
+      cancelAnimationFrame(this.actorLabelFrame);
+      if (overviewMode) {
+        this.actorLabelFrame = requestAnimationFrame(() => {
+          if (viewport.isConnected && stage.isConnected) {
+            this.positionOverviewLabels(viewport, stage, tier, actorNetScale);
+          }
+        });
+      }
+    }
+
+    positionOverviewLabels(viewport, stage, tier, actorNetScale) {
+      const pieces = Array.from(stage.querySelectorAll('.ccgb-board-actor.is-player-character.is-overview-marker'));
+      if (!pieces.length) return;
+      const viewportBounds = viewport.getBoundingClientRect();
+      const stageBounds = stage.getBoundingClientRect();
+      const bounds = {
+        left: Math.max(viewportBounds.left + 6, stageBounds.left + 6),
+        top: Math.max(viewportBounds.top + 6, stageBounds.top + 6),
+        right: Math.min(viewportBounds.right - 6, stageBounds.right - 6),
+        bottom: Math.min(viewportBounds.bottom - 6, stageBounds.bottom - 6)
+      };
+      const fontSize = LABEL_SCREEN_SIZES[tier];
+      const maxWidth = LABEL_SCREEN_WIDTHS[tier];
+      const dotSize = OVERVIEW_DOT_SCREEN_SIZES[tier];
+      const anchors = pieces.map(piece => ({
+        piece,
+        x: stageBounds.left + Number(piece.dataset.actorX || 0.5) * stageBounds.width,
+        y: stageBounds.top + Number(piece.dataset.actorY || 0.5) * stageBounds.height
+      }));
+      const occupied = [];
+      const overlaps = (a, b, padding = 5) => !(
+        a.right + padding <= b.left || a.left >= b.right + padding ||
+        a.bottom + padding <= b.top || a.top >= b.bottom + padding
+      );
+      const overflow = rect =>
+        Math.max(0, bounds.left - rect.left) + Math.max(0, rect.right - bounds.right) +
+        Math.max(0, bounds.top - rect.top) + Math.max(0, rect.bottom - bounds.bottom);
+
+      anchors.forEach(anchor => {
+        const label = anchor.piece.querySelector('.ccgb-position-label');
+        if (!label) return;
+        const name = label.textContent || 'Character';
+        const width = Math.min(maxWidth, Math.max(72, name.length * fontSize * 0.62 + 22));
+        const height = fontSize + 14;
+        const gap = dotSize / 2 + 12;
+        const candidates = [
+          [0, -(gap + height / 2)],
+          [width / 2 + gap, 0],
+          [-(width / 2 + gap), 0],
+          [0, gap + height / 2],
+          [width * 0.38 + gap, -(height / 2 + gap)],
+          [-(width * 0.38 + gap), -(height / 2 + gap)],
+          [width * 0.38 + gap, height / 2 + gap],
+          [-(width * 0.38 + gap), height / 2 + gap]
+        ];
+        let best = null;
+        candidates.forEach(([dx, dy]) => {
+          const rect = {
+            left: anchor.x + dx - width / 2,
+            right: anchor.x + dx + width / 2,
+            top: anchor.y + dy - height / 2,
+            bottom: anchor.y + dy + height / 2
+          };
+          const plaqueHits = occupied.filter(item => overlaps(rect, item)).length;
+          const tokenHits = anchors.filter(other => other !== anchor && (
+            other.x >= rect.left - dotSize && other.x <= rect.right + dotSize &&
+            other.y >= rect.top - dotSize && other.y <= rect.bottom + dotSize
+          )).length;
+          const score = plaqueHits * 10000 + tokenHits * 5000 + overflow(rect) * 100 + Math.hypot(dx, dy);
+          if (!best || score < best.score) best = { dx, dy, rect, score };
+        });
+        if (!best) return;
+        const nudgeX = best.rect.left < bounds.left
+          ? bounds.left - best.rect.left
+          : (best.rect.right > bounds.right ? bounds.right - best.rect.right : 0);
+        const nudgeY = best.rect.top < bounds.top
+          ? bounds.top - best.rect.top
+          : (best.rect.bottom > bounds.bottom ? bounds.bottom - best.rect.bottom : 0);
+        best.dx += nudgeX;
+        best.dy += nudgeY;
+        best.rect = {
+          left: best.rect.left + nudgeX,
+          right: best.rect.right + nudgeX,
+          top: best.rect.top + nudgeY,
+          bottom: best.rect.bottom + nudgeY
+        };
+        const shiftX = best.dx / actorNetScale;
+        const shiftY = best.dy / actorNetScale;
+        const distance = Math.hypot(best.dx, best.dy);
+        const lineLength = Math.max(4, distance - Math.min(width, height) / 2 - 3);
+        anchor.piece.style.setProperty('--map-position-label-x', `${shiftX}px`);
+        anchor.piece.style.setProperty('--map-position-label-y', `${shiftY}px`);
+        anchor.piece.style.setProperty('--map-position-line-length', `${lineLength / actorNetScale}px`);
+        anchor.piece.style.setProperty('--map-position-line-angle', `${Math.atan2(best.dy, best.dx)}rad`);
+        occupied.push(best.rect);
+      });
     }
 
     resetMapCamera(mapId) {
@@ -995,6 +1102,9 @@
       const piece = document.createElement('div');
       piece.className = `ccgb-board-actor is-${actor.display_mode || 'dot'}`;
       piece.dataset.actorId = actor.actor_id;
+      piece.dataset.actorX = String(Number(actor.x ?? 0.5));
+      piece.dataset.actorY = String(Number(actor.y ?? 0.5));
+      piece.classList.toggle('is-player-character', Boolean(actor.is_player_character));
       piece.style.setProperty('--actor-color', actor.faction_color || '#808080');
       piece.title = actor.faction_revealed && actor.faction_name
         ? `${actor.name || 'Unknown'} — ${actor.faction_name}`
@@ -1032,6 +1142,7 @@
         piece.appendChild(image);
       } else if (actor.display_mode === 'nameplate') {
         const plate = document.createElement('span');
+        plate.className = 'ccgb-nameplate-body';
         plate.textContent = actor.name || 'Character';
         piece.appendChild(plate);
       }
@@ -1041,8 +1152,16 @@
         label.textContent = actor.name || 'Unknown';
         piece.appendChild(label);
       }
-      piece.style.left = `${Number(actor.x || 0.5) * 100}%`;
-      piece.style.top = `${Number(actor.y || 0.5) * 100}%`;
+      if (actor.is_player_character) {
+        const leader = document.createElement('span');
+        leader.className = 'ccgb-position-leader';
+        const positionLabel = document.createElement('span');
+        positionLabel.className = 'ccgb-position-label';
+        positionLabel.textContent = actor.name || 'Character';
+        piece.append(leader, positionLabel);
+      }
+      piece.style.left = `${Number(actor.x ?? 0.5) * 100}%`;
+      piece.style.top = `${Number(actor.y ?? 0.5) * 100}%`;
       if (controlled) {
         piece.addEventListener('pointerdown', event => this.beginBoardDrag(event, actor, stage, piece));
       }
@@ -1079,6 +1198,8 @@
       const point = this.boardPoint(event, this.dragging.stage);
       this.dragging.actor.x = point.x;
       this.dragging.actor.y = point.y;
+      this.dragging.piece.dataset.actorX = String(point.x);
+      this.dragging.piece.dataset.actorY = String(point.y);
       this.dragging.piece.style.left = `${point.x * 100}%`;
       this.dragging.piece.style.top = `${point.y * 100}%`;
       const now = performance.now();
@@ -1251,9 +1372,16 @@
       ];
       this.renderChat();
       this.board = {
-        maps: [{ record_id: 'preview-map', name: 'Great Hall', asset: null }],
+        maps: [{
+          record_id: 'preview-map',
+          name: 'Great Hall',
+          asset: null,
+          obscurations: [{ record_id: 'preview-obscuration', points: [
+            { x: 0.18, y: 0.2 }, { x: 0.82, y: 0.2 }, { x: 0.82, y: 0.78 }, { x: 0.18, y: 0.78 }
+          ] }]
+        }],
         actors: [
-          { actor_id: 'preview-edward', map_id: 'preview-map', x: 0.32, y: 0.48, display_mode: 'nameplate', name: 'Edward Marksdale', faction_color: '#7b3f2b' },
+          { actor_id: 'preview-edward', map_id: 'preview-map', x: 0.32, y: 0.48, display_mode: 'nameplate', name: 'Edward Marksdale', faction_color: '#7b3f2b', is_player_character: true },
           { actor_id: 'preview-hermione', map_id: 'preview-map', x: 0.67, y: 0.39, display_mode: 'dot', name: 'Unknown', faction_color: '#808080' }
         ],
         controlled_character_ids: ['preview-edward']

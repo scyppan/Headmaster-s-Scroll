@@ -733,6 +733,10 @@
   z-index: 3;
 }
 
+#gameboard .ccgb-board-actor.is-player-character { z-index: 12; }
+
+#gameboard .ccgb-board-actor.is-player-character.is-controlled { z-index: 13; }
+
 #gameboard .ccgb-board-actor.is-token {
   background: transparent;
   border: 0;
@@ -774,6 +778,64 @@
 }
 
 #gameboard .ccgb-board-actor.is-controlled:active { cursor: grabbing; }
+
+#gameboard .ccgb-position-leader,
+#gameboard .ccgb-position-label {
+  display: none;
+}
+
+#gameboard .ccgb-board-actor.is-overview-marker {
+  background: #d6ad52;
+  border: var(--map-actor-border, 0.12px) solid #24170f;
+  border-radius: 50%;
+  height: var(--map-position-dot-size, 6px);
+  min-width: 0;
+  padding: 0;
+  width: var(--map-position-dot-size, 6px);
+}
+
+#gameboard .ccgb-board-actor.is-overview-marker > img,
+#gameboard .ccgb-board-actor.is-overview-marker > .ccgb-nameplate-body,
+#gameboard .ccgb-board-actor.is-overview-marker > .ccgb-actor-label,
+#gameboard .ccgb-board-actor.is-overview-marker > .ccgb-actor-indicators {
+  display: none;
+}
+
+#gameboard .ccgb-board-actor.is-overview-marker .ccgb-position-leader {
+  background: #24170f;
+  display: block;
+  height: var(--map-position-line-width, 0.1px);
+  left: 50%;
+  pointer-events: none;
+  position: absolute;
+  top: 50%;
+  transform: rotate(var(--map-position-line-angle, -1.5708rad));
+  transform-origin: left center;
+  width: var(--map-position-line-length, 8px);
+  z-index: -1;
+}
+
+#gameboard .ccgb-board-actor.is-overview-marker .ccgb-position-label {
+  background: #d6ad52;
+  border: var(--map-label-border, 0.06px) solid #382719;
+  border-radius: var(--map-label-radius, 0.15px);
+  color: #000;
+  display: block;
+  font-size: var(--map-label-font-size, 0.65px);
+  font-weight: 800;
+  left: calc(50% + var(--map-position-label-x, 0px));
+  max-width: var(--map-label-max-width, 15px);
+  overflow: hidden;
+  padding: var(--map-label-pad-y, 0.12px) var(--map-label-pad-x, 0.25px);
+  pointer-events: none;
+  position: absolute;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  top: calc(50% + var(--map-position-label-y, -8px));
+  transform: translate(-50%, -50%);
+  white-space: nowrap;
+  z-index: 2;
+}
 
 #gameboard .ccgb-setting-toggle {
   align-items: flex-start;

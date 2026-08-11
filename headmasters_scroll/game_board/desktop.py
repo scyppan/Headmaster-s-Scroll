@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import calendar
+import math
 import json
 import re
 import subprocess
@@ -10,13 +11,16 @@ import time
 import tkinter as tk
 import urllib.error
 import urllib.request
+from copy import deepcopy
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
+from difflib import SequenceMatcher
 from pathlib import Path
-from tkinter import filedialog, messagebox, ttk
+from tkinter import colorchooser, filedialog, messagebox, ttk
 from typing import Any, Callable
+from uuid import uuid4
 
-from PIL import Image, ImageOps, ImageTk
+from PIL import Image, ImageDraw, ImageOps, ImageTk
 
 from ..assets import AssetStore, MAP_CANVAS_HEIGHT, MAP_CANVAS_WIDTH, MAP_CANVAS_SIZE
 from ..paths import PROJECT_ROOT
@@ -713,11 +717,23 @@ class GameBoardWindow(tk.Tk):
         self.asset_store = AssetStore()
         self.board_snapshot: dict[str, Any] = {}
         self.board_map_label_to_id: dict[str, str] = {}
+        self.board_open_map_ids: list[str] = []
+        self.board_map_drafts: dict[str, dict[str, Any]] = {}
+        self.board_view_states: dict[str, dict[str, float | bool]] = {}
         self.selected_board_map_id = ""
         self.selected_board_actor_id = ""
         self._board_image: ImageTk.PhotoImage | None = None
         self._board_portraits: dict[str, ImageTk.PhotoImage] = {}
         self._board_canvas_actors: dict[tuple[str, int], str] = {}
+        self._board_map_sources: dict[str, Image.Image] = {}
+        self._board_obscure_images: dict[str, ImageTk.PhotoImage] = {}
+        self.board_obscure_mode = False
+        self.board_obscure_draft_points: list[dict[str, float]] = []
+        self.board_selected_obscuration_id = ""
+        self.board_selected_obscuration_node: int | None = None
+        self._board_obscure_drag: dict[str, Any] | None = None
+        self._board_pan_state: tuple[str, float, float, float, float] | None = None
+        self._board_pan_watchdog_id: str | None = None
         self._drag_actor_id = ""
         self._drag_start_point: tuple[float, float] | None = None
         self._piece_popup: tk.Toplevel | None = None
@@ -847,11 +863,12 @@ class GameBoardWindow(tk.Tk):
         game_board_page = ttk.Frame(self.app_host)
         game_board_page.grid(row=0, column=0, sticky="nsew")
         game_board_top = ttk.Frame(game_board_page)
-        game_board_top.pack(fill="x", pady=(0, 6))
+        game_board_top.pack(fill="x", pady=(0, 4))
+        self._build_board_search(game_board_top)
         self._build_game_clock(game_board_top)
-        game_board_card = self._card(game_board_page, "Game Board Workspace")
-        game_board_card.pack(fill="both", expand=True)
-        self._build_board_workspace(game_board_card)
+        game_board_panel = ttk.Frame(game_board_page, style="Card.TFrame")
+        game_board_panel.pack(fill="both", expand=True)
+        self._build_board_workspace(game_board_panel)
 
         control_panel = ttk.Frame(self.app_host)
         control_panel.grid(row=0, column=0, sticky="nsew")
@@ -922,34 +939,263 @@ class GameBoardWindow(tk.Tk):
         self.notice.pack(side="left")
         ttk.Button(footer, text="Refresh", style="Quiet.TButton", command=self.refresh).pack(side="right")
 
+    def _build_board_search(self, parent: tk.Misc) -> None:
+        search = ttk.Frame(parent)
+        search.pack(side="left", fill="x", expand=True, padx=(0, 8))
+        self.board_search_value = tk.StringVar()
+        self.board_search_entry = ttk.Entry(search, textvariable=self.board_search_value)
+        self.board_search_entry.pack(side="left", fill="x", expand=True)
+        self.board_search_entry.bind("<Return>", lambda _event: self.add_best_board_map())
+        self.board_search_entry.bind("<KeyRelease>", self.show_board_search_suggestions)
+        self.board_search_entry.bind("<Escape>", lambda _event: self._close_board_search_suggestions())
+        ttk.Button(search, text="Add map", command=self.add_best_board_map).pack(side="left", padx=(4, 0))
+        ttk.Button(search, text="Explore…", style="Quiet.TButton", command=self.open_board_explorer).pack(side="left", padx=(4, 0))
+        self.board_search_menu: tk.Toplevel | None = None
+
+    def _board_map_search_text(self, record: dict[str, Any]) -> str:
+        return " ".join(
+            str(record.get(field, "") or "")
+            for field in ("name", "location_name", "floor_name", "record_id")
+        ).strip()
+
+    def fuzzy_board_maps(self, query: str, *, limit: int | None = None) -> list[dict[str, Any]]:
+        needle = str(query or "").strip().casefold()
+        maps = list(self.board_snapshot.get("maps", []))
+        if not needle:
+            ranked = sorted(maps, key=lambda item: self._board_map_search_text(item).casefold())
+            return ranked[:limit] if limit else ranked
+        ranked: list[tuple[float, str, dict[str, Any]]] = []
+        for record in maps:
+            haystack = self._board_map_search_text(record).casefold()
+            words = [word for word in re.split(r"\W+", haystack) if word]
+            ratio = max([SequenceMatcher(None, needle, haystack).ratio(), *(
+                SequenceMatcher(None, needle, word).ratio() for word in words
+            )])
+            if needle in haystack:
+                ratio += 1.0
+            if ratio >= 0.32:
+                ranked.append((ratio, haystack, record))
+        ranked.sort(key=lambda item: (-item[0], item[1]))
+        results = [item[2] for item in ranked]
+        return results[:limit] if limit else results
+
+    def show_board_search_suggestions(self, event: tk.Event | None = None) -> None:
+        if event is not None and event.keysym in {"Return", "Escape", "Up", "Down"}:
+            return
+        self._close_board_search_suggestions()
+        query = self.board_search_value.get().strip()
+        if not query:
+            return
+        matches = self.fuzzy_board_maps(query, limit=6)
+        if not matches:
+            return
+        popup = tk.Toplevel(self)
+        self.board_search_menu = popup
+        popup.overrideredirect(True)
+        popup.transient(self)
+        popup.configure(background=self.ACCENT)
+        choices = tk.Listbox(
+            popup,
+            activestyle="none",
+            background=self.LIGHT,
+            foreground=self.INK,
+            highlightbackground=self.ACCENT,
+            highlightthickness=1,
+            relief="flat",
+            selectbackground=self.ACCENT,
+            selectforeground="#fff8e7",
+            height=len(matches),
+            font=("Segoe UI", 9),
+        )
+        choices.pack(fill="both", expand=True)
+        for record in matches:
+            label = str(record.get("name") or "Map")
+            detail = str(record.get("floor_name") or record.get("location_name") or "")
+            choices.insert("end", f"{label}  —  {detail}" if detail and detail != label else label)
+
+        def choose(_event: tk.Event | None = None) -> None:
+            selection = choices.curselection()
+            if selection:
+                self.add_board_map(str(matches[selection[0]].get("record_id")))
+
+        choices.bind("<ButtonRelease-1>", choose)
+        choices.bind("<Return>", choose)
+        width = max(320, self.board_search_entry.winfo_width())
+        popup.geometry(
+            f"{width}x{min(190, 24 * len(matches) + 4)}+"
+            f"{self.board_search_entry.winfo_rootx()}+"
+            f"{self.board_search_entry.winfo_rooty() + self.board_search_entry.winfo_height()}"
+        )
+
+    def _close_board_search_suggestions(self) -> None:
+        popup = self.board_search_menu
+        self.board_search_menu = None
+        if popup is not None and popup.winfo_exists():
+            popup.destroy()
+
+    def add_best_board_map(self) -> None:
+        matches = self.fuzzy_board_maps(self.board_search_value.get(), limit=1)
+        if not matches:
+            self.open_board_explorer()
+            return
+        self.add_board_map(str(matches[0].get("record_id")))
+
+    def add_board_map(self, map_id: str) -> None:
+        if not any(str(item.get("record_id")) == map_id for item in self.board_snapshot.get("maps", [])):
+            return
+        if map_id not in self.board_open_map_ids:
+            self.board_open_map_ids.append(map_id)
+        self.selected_board_map_id = map_id
+        self.board_search_value.set("")
+        self._close_board_search_suggestions()
+        self._render_board(self.board_snapshot)
+
+    def remove_current_board_map(self) -> None:
+        map_id = self.selected_board_map_id
+        if not map_id:
+            return
+        draft = self.board_map_drafts.get(map_id, {})
+        if draft.get("dirty") and not messagebox.askyesno(
+            "Discard unconfirmed changes",
+            "Remove this map and discard its unconfirmed Reveal or obscuring changes?",
+            parent=self,
+        ):
+            return
+        self.board_open_map_ids = [value for value in self.board_open_map_ids if value != map_id]
+        self.board_map_drafts.pop(map_id, None)
+        self.selected_board_map_id = self.board_open_map_ids[-1] if self.board_open_map_ids else ""
+        self._render_board(self.board_snapshot)
+
+    def open_board_explorer(self) -> None:
+        dialog = tk.Toplevel(self)
+        dialog.title("Explore maps")
+        dialog.transient(self)
+        dialog.grab_set()
+        dialog.geometry("820x650")
+        dialog.minsize(620, 460)
+        apply_window_icon(dialog, GAME_BOARD_ICON)
+        shell = ttk.Frame(dialog, padding=10)
+        shell.pack(fill="both", expand=True)
+        query = tk.StringVar(value=self.board_search_value.get())
+        ttk.Label(shell, text="Search locations, floors, map names, or record IDs").pack(anchor="w")
+        entry = ttk.Entry(shell, textvariable=query)
+        entry.pack(fill="x", pady=(2, 6))
+        filters = ttk.Frame(shell)
+        filters.pack(fill="x", pady=(0, 6))
+        include_default = tk.BooleanVar(value=True)
+        include_floors = tk.BooleanVar(value=True)
+        include_revealed = tk.BooleanVar(value=True)
+        include_hidden = tk.BooleanVar(value=True)
+        for text, variable in (
+            ("Default maps", include_default),
+            ("Floor maps", include_floors),
+            ("Revealed", include_revealed),
+            ("Hidden", include_hidden),
+        ):
+            ttk.Checkbutton(filters, text=text, variable=variable).pack(side="left", padx=(0, 12))
+        tree = ttk.Treeview(
+            shell,
+            columns=("location", "floor", "visibility"),
+            show="tree headings",
+            selectmode="browse",
+        )
+        tree.heading("#0", text="Map")
+        tree.heading("location", text="Location")
+        tree.heading("floor", text="Floor")
+        tree.heading("visibility", text="Players")
+        tree.column("#0", width=220)
+        tree.column("location", width=220)
+        tree.column("floor", width=130)
+        tree.column("visibility", width=90)
+        tree.pack(fill="both", expand=True)
+        count = tk.StringVar()
+        ttk.Label(shell, textvariable=count).pack(anchor="w", pady=(4, 0))
+
+        def fill(*_args) -> None:
+            tree.delete(*tree.get_children())
+            matches = []
+            for record in self.fuzzy_board_maps(query.get()):
+                is_floor = bool(record.get("floor_id"))
+                revealed = bool(record.get("players_published"))
+                if (is_floor and not include_floors.get()) or (not is_floor and not include_default.get()):
+                    continue
+                if (revealed and not include_revealed.get()) or (not revealed and not include_hidden.get()):
+                    continue
+                matches.append(record)
+                tree.insert(
+                    "",
+                    "end",
+                    iid=str(record.get("record_id")),
+                    text=str(record.get("name") or "Map"),
+                    values=(
+                        str(record.get("location_name") or ""),
+                        str(record.get("floor_name") or "—"),
+                        "Revealed" if revealed else "Hidden",
+                    ),
+                )
+            count.set(f"{len(matches):,} matching maps")
+
+        def add_selected(*_args) -> None:
+            selected = tree.selection()
+            if not selected:
+                return
+            self.add_board_map(selected[0])
+            dialog.destroy()
+
+        query.trace_add("write", fill)
+        for variable in (include_default, include_floors, include_revealed, include_hidden):
+            variable.trace_add("write", fill)
+        tree.bind("<Double-Button-1>", add_selected)
+        actions = ttk.Frame(shell)
+        actions.pack(fill="x", pady=(6, 0))
+        ttk.Button(actions, text="Cancel", style="Quiet.TButton", command=dialog.destroy).pack(side="right")
+        ttk.Button(actions, text="Add selected", command=add_selected).pack(side="right", padx=(0, 5))
+        fill()
+        entry.focus_set()
+
     def _build_board_workspace(self, parent: tk.Misc) -> None:
         board_panel = ttk.Frame(parent, style="Card.TFrame")
         board_panel.pack(fill="both", expand=True)
 
-        map_tools = ttk.Frame(board_panel, style="Card.TFrame")
-        map_tools.pack(fill="x", pady=(0, 6))
-        self.board_map_status = ttk.Label(
-            map_tools,
-            text="Create or import maps in Mapper, then place characters here.",
-            style="Card.TLabel",
-        )
-        self.board_map_status.pack(side="left", fill="x", expand=True)
-        ttk.Button(
-            map_tools,
-            text="Publish map",
-            style="Good.TButton",
-            command=lambda: self.set_current_map_published(True),
-        ).pack(side="right", padx=(6, 0))
-        ttk.Button(
-            map_tools,
-            text="Conceal map",
-            style="Quiet.TButton",
-            command=lambda: self.set_current_map_published(False),
-        ).pack(side="right")
+        map_controls = ttk.Frame(board_panel, style="Card.TFrame", width=116, padding=5)
+        map_controls.pack(side="left", fill="y", padx=(0, 4))
+        map_controls.pack_propagate(False)
+        ttk.Label(map_controls, text="MAP", style="Card.TLabel", font=("Segoe UI", 8, "bold")).pack(fill="x", pady=(0, 4))
+        self.board_obscure_button = ttk.Button(map_controls, text="Obscure  [O]", command=self.toggle_board_obscure_mode)
+        self.board_obscure_button.pack(fill="x", pady=(0, 3))
+        self.board_reveal_value = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            map_controls,
+            text="Reveal",
+            variable=self.board_reveal_value,
+            command=self.board_presentation_changed,
+        ).pack(anchor="w", pady=(1, 5))
+        ttk.Label(map_controls, text="HM opacity", style="Card.TLabel", font=("Segoe UI", 8)).pack(anchor="w")
+        self.board_obscure_opacity = tk.StringVar(value="35")
+        opacity = ttk.Spinbox(map_controls, from_=5, to=100, increment=5, textvariable=self.board_obscure_opacity, width=7)
+        opacity.pack(fill="x", pady=(0, 4))
+        opacity.bind("<FocusOut>", self.board_presentation_changed)
+        opacity.bind("<Return>", self.board_presentation_changed)
+        self.board_obscure_color = "#ff0000"
+        self.board_color_button = ttk.Button(map_controls, text="Red", style="Quiet.TButton", command=self.choose_board_obscure_color)
+        self.board_color_button.pack(fill="x", pady=(0, 6))
+        ttk.Button(map_controls, text="Delete shape", style="Quiet.TButton", command=self.delete_board_obscuration).pack(fill="x", pady=(0, 3))
+        ttk.Button(map_controls, text="Fit map", style="Quiet.TButton", command=self.fit_current_board_map).pack(fill="x", pady=(0, 3))
+        ttk.Button(map_controls, text="Remove map", style="Quiet.TButton", command=self.remove_current_board_map).pack(fill="x", pady=(0, 6))
+        self.board_confirm_button = ttk.Button(map_controls, text="Confirm to players", style="Good.TButton", command=self.confirm_board_presentation)
+        self.board_confirm_button.pack(fill="x")
+        self.board_draft_status = ttk.Label(map_controls, text="", style="Card.TLabel", wraplength=104, font=("Segoe UI", 8))
+        self.board_draft_status.pack(fill="x", pady=(5, 0))
 
         self.board_notebook = ttk.Notebook(board_panel)
-        self.board_notebook.pack(fill="both", expand=True)
+        self.board_notebook.pack(side="left", fill="both", expand=True)
         self.board_notebook.bind("<<NotebookTabChanged>>", self._board_tab_changed)
+        self.board_empty = ttk.Label(
+            board_panel,
+            text="Search for a map above or use Explore to add one to the Game Board.",
+            style="Card.TLabel",
+            anchor="center",
+        )
         self.board_canvases: dict[str, tk.Canvas] = {}
         self.board_canvas_geometry: dict[str, tuple[float, float, float, float]] = {}
         self.board_map_images: dict[str, ImageTk.PhotoImage] = {}
@@ -958,6 +1204,16 @@ class GameBoardWindow(tk.Tk):
         self.board_actor_tree: ttk.Treeview | None = None
         self.board_transfer_map: ttk.Combobox | None = None
         self.occupants_dialog: tk.Toplevel | None = None
+        self.bind_all("<MouseWheel>", self.route_board_wheel, add="+")
+        self.bind_all("<B2-Motion>", self.board_pan_drag, add="+")
+        self.bind_all("<ButtonRelease-2>", self.board_pan_release, add="+")
+        self.bind("<Control-Key-0>", lambda _event: self.fit_current_board_map(), add="+")
+        self.bind("<KeyPress-o>", self.board_obscure_shortcut, add="+")
+        self.bind("<KeyPress-O>", self.board_obscure_shortcut, add="+")
+        self.bind("<Return>", self.complete_board_obscuration, add="+")
+        self.bind("<Escape>", lambda _event: self.cancel_board_obscuration(), add="+")
+        self.bind("<Delete>", self.delete_board_obscuration_node, add="+")
+        self.bind("<BackSpace>", self.delete_board_obscuration_node, add="+")
 
     def open_occupants_dialog(self) -> None:
         if self.occupants_dialog is not None and self.occupants_dialog.winfo_exists():
@@ -1048,6 +1304,8 @@ class GameBoardWindow(tk.Tk):
             if str(canvas.master) == str(selected):
                 self.selected_board_map_id = map_id
                 break
+        self.cancel_board_obscuration()
+        self._sync_board_presentation_controls()
         self._render_board_actor_list()
 
     def _current_board_map(self) -> dict[str, Any] | None:
@@ -1058,7 +1316,11 @@ class GameBoardWindow(tk.Tk):
 
     def _render_board(self, snapshot: dict[str, Any]) -> None:
         self.board_snapshot = snapshot or {}
-        maps = list(self.board_snapshot.get("maps", []))
+        all_maps = list(self.board_snapshot.get("maps", []))
+        valid_ids = {str(item.get("record_id")) for item in all_maps}
+        self.board_open_map_ids = [map_id for map_id in self.board_open_map_ids if map_id in valid_ids]
+        maps_by_id = {str(item.get("record_id")): item for item in all_maps}
+        maps = [maps_by_id[map_id] for map_id in self.board_open_map_ids if map_id in maps_by_id]
         map_ids = tuple(str(item.get("record_id")) for item in maps)
         if map_ids != self.board_map_ids:
             current = self.selected_board_map_id
@@ -1071,42 +1333,148 @@ class GameBoardWindow(tk.Tk):
                 frame = ttk.Frame(self.board_notebook)
                 canvas = tk.Canvas(frame, background="#241d16", highlightthickness=0)
                 canvas.pack(fill="both", expand=True)
-                canvas.bind("<Configure>", lambda _event, selected=map_id: self._draw_board_map(selected))
-                canvas.bind("<ButtonPress-1>", lambda event, selected=map_id: self._board_drag_start(event, selected))
+                canvas.bind("<Configure>", lambda _event, selected=map_id: self._board_canvas_configured(selected))
+                canvas.bind("<ButtonPress-1>", lambda event, selected=map_id: self._board_pointer_start(event, selected))
                 canvas.bind("<B1-Motion>", lambda event, selected=map_id: self._board_drag_move(event, selected))
                 canvas.bind("<ButtonRelease-1>", lambda event, selected=map_id: self._board_drag_end(event, selected))
+                canvas.bind("<Double-Button-1>", lambda event, selected=map_id: self.complete_board_obscuration(event, selected))
                 canvas.bind("<Button-3>", lambda event, selected=map_id: self._board_piece_menu(event, selected))
+                canvas.bind("<Motion>", lambda event, selected=map_id: self.board_obscure_motion(event, selected))
+                canvas.bind("<Leave>", lambda event, selected=map_id: self.board_canvas_leave(event, selected))
+                canvas.bind("<Button-2>", lambda event, selected=map_id: self.board_pan_press(event, selected))
                 self.board_notebook.add(frame, text=str(record.get("name") or "Map"))
                 self.board_canvases[map_id] = canvas
             self.selected_board_map_id = current if current in map_ids else (map_ids[0] if map_ids else "")
             if self.selected_board_map_id:
                 index = map_ids.index(self.selected_board_map_id)
                 self.board_notebook.select(index)
+        if maps:
+            self.board_empty.pack_forget()
+            if not self.board_notebook.winfo_ismapped():
+                self.board_notebook.pack(side="left", fill="both", expand=True)
+        else:
+            self.board_notebook.pack_forget()
+            self.board_empty.pack(side="left", fill="both", expand=True)
         name_counts: dict[str, int] = {}
-        for item in maps:
+        for item in all_maps:
             name = str(item.get("name") or "Map")
             name_counts[name] = name_counts.get(name, 0) + 1
         self.board_map_label_to_id = {}
-        for item in maps:
+        for item in all_maps:
             name = str(item.get("name") or "Map")
             label = name if name_counts[name] == 1 else f"{name} [{str(item.get('record_id'))[:8]}]"
             self.board_map_label_to_id[label] = str(item.get("record_id"))
         map_labels = list(self.board_map_label_to_id)
         if self.board_transfer_map is not None and self.board_transfer_map.winfo_exists():
             self.board_transfer_map.configure(values=map_labels)
-        if maps:
-            current_map = self._current_board_map() or maps[0]
-            self.board_map_status.configure(
-                text=(
-                    f"{current_map.get('name', 'Map')} — "
-                    f"{'published' if current_map.get('players_published') else 'Headmaster only'}"
-                )
-            )
-        else:
-            self.board_map_status.configure(text="No maps yet. Import one in Mapper.")
+        self._sync_board_presentation_controls()
         for map_id in map_ids:
             self._draw_board_map(map_id)
         self._render_board_actor_list()
+
+    def _board_presentation_draft(self, map_id: str | None = None) -> dict[str, Any] | None:
+        map_id = map_id or self.selected_board_map_id
+        record = next(
+            (item for item in self.board_snapshot.get("maps", []) if str(item.get("record_id")) == map_id),
+            None,
+        )
+        if record is None:
+            return None
+        draft = self.board_map_drafts.get(map_id)
+        if draft is None or not draft.get("dirty"):
+            draft = {
+                "published": bool(record.get("players_published", False)),
+                "obscurations": deepcopy(record.get("obscurations", []) or []),
+                "preview_opacity": float(record.get("obscuration_preview_opacity", 0.35)),
+                "preview_color": str(record.get("obscuration_preview_color", "#ff0000") or "#ff0000"),
+                "dirty": False,
+            }
+            self.board_map_drafts[map_id] = draft
+        return draft
+
+    def _sync_board_presentation_controls(self) -> None:
+        draft = self._board_presentation_draft()
+        if draft is None:
+            self.board_reveal_value.set(False)
+            self.board_obscure_opacity.set("35")
+            self.board_color_button.configure(text="Red")
+            self.board_draft_status.configure(text="No map open")
+            return
+        self.board_reveal_value.set(bool(draft["published"]))
+        self.board_obscure_opacity.set(str(round(float(draft["preview_opacity"]) * 100)))
+        self.board_obscure_color = str(draft["preview_color"])
+        self.board_color_button.configure(text=self.board_obscure_color.upper())
+        self.board_draft_status.configure(
+            text="Unconfirmed changes" if draft.get("dirty") else (
+                "Revealed to players" if draft["published"] else "Hidden from players"
+            )
+        )
+
+    def board_presentation_changed(self, _event: tk.Event | None = None) -> None:
+        draft = self._board_presentation_draft()
+        if draft is None:
+            return
+        try:
+            opacity = max(5, min(100, int(float(self.board_obscure_opacity.get()))))
+        except ValueError:
+            opacity = 35
+        self.board_obscure_opacity.set(str(opacity))
+        draft["published"] = bool(self.board_reveal_value.get())
+        draft["preview_opacity"] = opacity / 100.0
+        draft["preview_color"] = self.board_obscure_color
+        draft["dirty"] = True
+        self.board_draft_status.configure(text="Unconfirmed changes")
+        if self.selected_board_map_id:
+            self._draw_board_map(self.selected_board_map_id)
+
+    def choose_board_obscure_color(self) -> None:
+        color = colorchooser.askcolor(
+            color=self.board_obscure_color,
+            title="Headmaster obscuration color",
+            parent=self,
+        )[1]
+        if not color:
+            return
+        self.board_obscure_color = color.lower()
+        self.board_color_button.configure(text=self.board_obscure_color.upper())
+        self.board_presentation_changed()
+
+    def confirm_board_presentation(self) -> None:
+        map_id = self.selected_board_map_id
+        draft = self._board_presentation_draft(map_id)
+        if not map_id or draft is None:
+            return
+        if self.board_obscure_draft_points:
+            messagebox.showinfo(
+                "Finish obscuring shape",
+                "Close or cancel the unfinished obscuring shape before confirming.",
+                parent=self,
+            )
+            return
+        payload = {
+            "published": bool(draft["published"]),
+            "obscurations": deepcopy(draft["obscurations"]),
+            "preview_opacity": float(draft["preview_opacity"]),
+            "preview_color": str(draft["preview_color"]),
+        }
+
+        def complete(_result: Any) -> None:
+            draft["dirty"] = False
+            self.board_draft_status.configure(text="Confirmed for players")
+            self.refresh(silent=True)
+
+        self._background(
+            lambda: self.client.request(
+                "PUT",
+                f"/api/admin/board/maps/{map_id}/presentation",
+                payload,
+            ),
+            complete,
+        )
+
+    def set_current_map_published(self, published: bool) -> None:
+        self.board_reveal_value.set(bool(published))
+        self.board_presentation_changed()
 
     def _draw_board_map(self, map_id: str) -> None:
         canvas = self.board_canvases.get(map_id)
@@ -1120,30 +1488,56 @@ class GameBoardWindow(tk.Tk):
         }
         width = max(2, canvas.winfo_width())
         height = max(2, canvas.winfo_height())
-        canvas_scale = min(width / MAP_CANVAS_WIDTH, height / MAP_CANVAS_HEIGHT)
-        draw_width = max(1.0, MAP_CANVAS_WIDTH * canvas_scale)
-        draw_height = max(1.0, MAP_CANVAS_HEIGHT * canvas_scale)
-        left = (width - draw_width) / 2
-        top = (height - draw_height) / 2
+        state = self.board_view_states.get(map_id)
+        if state is None:
+            fit_scale = min((width - 24) / MAP_CANVAS_WIDTH, (height - 24) / MAP_CANVAS_HEIGHT)
+            state = {
+                "fit_scale": fit_scale,
+                "scale": fit_scale,
+                "origin_x": (width - MAP_CANVAS_WIDTH * fit_scale) / 2,
+                "origin_y": (height - MAP_CANVAS_HEIGHT * fit_scale) / 2,
+                "modified": False,
+            }
+            self.board_view_states[map_id] = state
+        draw_width = max(1.0, MAP_CANVAS_WIDTH * float(state["scale"]))
+        draw_height = max(1.0, MAP_CANVAS_HEIGHT * float(state["scale"]))
+        left = float(state["origin_x"])
+        top = float(state["origin_y"])
+        canvas.create_rectangle(left, top, left + draw_width, top + draw_height, fill="#241d16", outline="#9d7a4e")
         metadata = record.get("asset")
         if isinstance(metadata, dict) and metadata.get("asset_id"):
             try:
-                path = self.asset_store.resolve(str(metadata["asset_id"]), metadata)
-                with Image.open(path) as opened:
-                    image = ImageOps.pad(
-                        opened.convert("RGB"),
-                        MAP_CANVAS_SIZE,
-                        method=Image.Resampling.LANCZOS,
-                        color="#241d16",
+                source = self._board_map_sources.get(map_id)
+                if source is None:
+                    path = self.asset_store.resolve(str(metadata["asset_id"]), metadata)
+                    with Image.open(path) as opened:
+                        source = ImageOps.pad(
+                            opened.convert("RGB"),
+                            MAP_CANVAS_SIZE,
+                            method=Image.Resampling.LANCZOS,
+                            color="#241d16",
+                        )
+                    self._board_map_sources[map_id] = source
+                visible_left = max(0.0, left)
+                visible_top = max(0.0, top)
+                visible_right = min(float(width), left + draw_width)
+                visible_bottom = min(float(height), top + draw_height)
+                if visible_right > visible_left and visible_bottom > visible_top:
+                    source_left = max(0, math.floor((visible_left - left) / draw_width * source.width))
+                    source_top = max(0, math.floor((visible_top - top) / draw_height * source.height))
+                    source_right = min(source.width, math.ceil((visible_right - left) / draw_width * source.width))
+                    source_bottom = min(source.height, math.ceil((visible_bottom - top) / draw_height * source.height))
+                    visible = source.crop((source_left, source_top, source_right, source_bottom))
+                    resized = visible.resize(
+                        (max(1, round(visible_right - visible_left)), max(1, round(visible_bottom - visible_top))),
+                        Image.Resampling.BILINEAR,
                     )
-                    resized = image.resize((int(draw_width), int(draw_height)), Image.Resampling.LANCZOS)
-                photo = ImageTk.PhotoImage(resized)
-                self.board_map_images[map_id] = photo
-                canvas.create_image(left, top, image=photo, anchor="nw")
+                    photo = ImageTk.PhotoImage(resized)
+                    self.board_map_images[map_id] = photo
+                    canvas.create_image(visible_left, visible_top, image=photo, anchor="nw")
             except (FileNotFoundError, OSError, ValueError):
                 canvas.create_text(width / 2, height / 2, text="Map image unavailable", fill="#f8edcf", font=("Segoe UI", 14, "bold"))
         else:
-            canvas.create_rectangle(left, top, left + draw_width, top + draw_height, fill="#241d16", outline="#9d7a4e")
             canvas.create_text(width / 2, height / 2, text="No map image imported", fill="#f8edcf", font=("Segoe UI", 14, "bold"))
         self.board_canvas_geometry[map_id] = (left, top, draw_width, draw_height)
         for actor in self.board_snapshot.get("actors", []):
@@ -1179,6 +1573,434 @@ class GameBoardWindow(tk.Tk):
             label = canvas.create_text(x, y + 38 if actor.get("display_mode") == "token" else y + 18, text=name, fill="#fff8e7", font=("Segoe UI", 9, "bold"))
             self._board_canvas_actors[(map_id, label)] = actor_id
 
+        draft = self._board_presentation_draft(map_id)
+        obscurations = list((draft or {}).get("obscurations", []))
+        if obscurations:
+            overlay = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+            painter = ImageDraw.Draw(overlay, "RGBA")
+            color = str((draft or {}).get("preview_color", "#ff0000"))
+            try:
+                red, green, blue = tuple(int(color[index:index + 2], 16) for index in (1, 3, 5))
+            except (TypeError, ValueError):
+                red, green, blue = (255, 0, 0)
+            alpha = round(float((draft or {}).get("preview_opacity", 0.35)) * 255)
+            for obscuration in obscurations:
+                coordinates = [
+                    (left + float(point["x"]) * draw_width, top + float(point["y"]) * draw_height)
+                    for point in obscuration.get("points", [])
+                ]
+                if len(coordinates) >= 3:
+                    painter.polygon(coordinates, fill=(red, green, blue, alpha))
+            photo = ImageTk.PhotoImage(overlay)
+            self._board_obscure_images[map_id] = photo
+            canvas.create_image(0, 0, image=photo, anchor="nw", tags=("obscuration-overlay",))
+        if self.board_obscure_mode:
+            for obscuration in obscurations:
+                points = obscuration.get("points", [])
+                coordinates = [coordinate for point in points for coordinate in (
+                    left + float(point["x"]) * draw_width,
+                    top + float(point["y"]) * draw_height,
+                )]
+                selected = str(obscuration.get("record_id")) == self.board_selected_obscuration_id
+                if len(coordinates) >= 6:
+                    canvas.create_polygon(
+                        *coordinates,
+                        fill="",
+                        outline="#fff3cf" if selected else "#5b1717",
+                        width=3 if selected else 1,
+                        tags=("obscuration-shape",),
+                    )
+                if selected:
+                    for index, point in enumerate(points):
+                        x = left + float(point["x"]) * draw_width
+                        y = top + float(point["y"]) * draw_height
+                        radius = 6 if index == self.board_selected_obscuration_node else 4
+                        canvas.create_oval(x - radius, y - radius, x + radius, y + radius, fill="#fff8e7", outline="#000000", width=2)
+        if self.board_obscure_draft_points and map_id == self.selected_board_map_id:
+            coordinates = [coordinate for point in self.board_obscure_draft_points for coordinate in (
+                left + point["x"] * draw_width,
+                top + point["y"] * draw_height,
+            )]
+            if len(coordinates) >= 4:
+                canvas.create_line(*coordinates, fill="#000000", width=2, tags=("obscuration-draft",))
+            for x, y in zip(coordinates[0::2], coordinates[1::2]):
+                canvas.create_oval(x - 4, y - 4, x + 4, y + 4, fill="#fff8e7", outline="#000000", width=2)
+
+    def _board_canvas_configured(self, map_id: str) -> None:
+        canvas = self.board_canvases.get(map_id)
+        if canvas is None:
+            return
+        state = self.board_view_states.get(map_id)
+        if state is None or not bool(state.get("modified")):
+            self._board_fit_map(map_id)
+            return
+        state["fit_scale"] = min(
+            (max(100, canvas.winfo_width()) - 24) / MAP_CANVAS_WIDTH,
+            (max(100, canvas.winfo_height()) - 24) / MAP_CANVAS_HEIGHT,
+        )
+        self._board_clamp_view(map_id)
+        self._draw_board_map(map_id)
+
+    def _board_fit_map(self, map_id: str, *, redraw: bool = True) -> None:
+        canvas = self.board_canvases.get(map_id)
+        if canvas is None or not canvas.winfo_exists():
+            return
+        width, height = max(100, canvas.winfo_width()), max(100, canvas.winfo_height())
+        fit_scale = min((width - 24) / MAP_CANVAS_WIDTH, (height - 24) / MAP_CANVAS_HEIGHT)
+        self.board_view_states[map_id] = {
+            "fit_scale": fit_scale,
+            "scale": fit_scale,
+            "origin_x": (width - MAP_CANVAS_WIDTH * fit_scale) / 2,
+            "origin_y": (height - MAP_CANVAS_HEIGHT * fit_scale) / 2,
+            "modified": False,
+        }
+        if redraw:
+            self._draw_board_map(map_id)
+
+    def fit_current_board_map(self) -> None:
+        if self.selected_board_map_id:
+            self._board_fit_map(self.selected_board_map_id)
+
+    def _board_clamp_view(self, map_id: str) -> None:
+        canvas = self.board_canvases.get(map_id)
+        state = self.board_view_states.get(map_id)
+        if canvas is None or state is None:
+            return
+        canvas_width, canvas_height = max(1.0, float(canvas.winfo_width())), max(1.0, float(canvas.winfo_height()))
+        state["scale"] = max(float(state["fit_scale"]), float(state["scale"]))
+        display_width = MAP_CANVAS_WIDTH * float(state["scale"])
+        display_height = MAP_CANVAS_HEIGHT * float(state["scale"])
+        if display_width <= canvas_width:
+            state["origin_x"] = (canvas_width - display_width) / 2
+        else:
+            state["origin_x"] = min(0.0, max(canvas_width - display_width, float(state["origin_x"])))
+        if display_height <= canvas_height:
+            state["origin_y"] = (canvas_height - display_height) / 2
+        else:
+            state["origin_y"] = min(0.0, max(canvas_height - display_height, float(state["origin_y"])))
+
+    @staticmethod
+    def _board_wheel_steps(event: tk.Event) -> float:
+        return event.delta / 120 if event.delta else 0.0
+
+    @staticmethod
+    def _board_windows_key_down(virtual_key: int) -> bool:
+        if sys.platform != "win32":
+            return False
+        try:
+            import ctypes
+
+            return bool(ctypes.windll.user32.GetAsyncKeyState(virtual_key) & 0x8000)
+        except (AttributeError, OSError):
+            return False
+
+    def _board_canvas_under_event(self, event: tk.Event) -> tuple[str, tk.Canvas] | tuple[None, None]:
+        try:
+            target = self.winfo_containing(event.x_root, event.y_root)
+        except (AttributeError, tk.TclError):
+            return None, None
+        for map_id, canvas in self.board_canvases.items():
+            current = target
+            while current is not None and current is not canvas:
+                current = getattr(current, "master", None)
+            if current is canvas:
+                return map_id, canvas
+        return None, None
+
+    def route_board_wheel(self, event: tk.Event) -> str:
+        map_id, canvas = self._board_canvas_under_event(event)
+        if not map_id or canvas is None:
+            return ""
+        if self._board_pan_state is not None and sys.platform == "win32" and not self._board_windows_key_down(0x04):
+            self._finish_board_pan()
+        if sys.platform == "win32":
+            control_down = bool(event.state & 0x0004) or self._board_windows_key_down(0x11)
+            alt_down = bool(event.state & (0x0008 | 0x20000)) and self._board_windows_key_down(0x12)
+        else:
+            control_down = bool(event.state & 0x0004)
+            alt_down = bool(event.state & (0x0008 | 0x20000))
+        state = self.board_view_states.get(map_id)
+        if state is None:
+            self._board_fit_map(map_id, redraw=False)
+            state = self.board_view_states[map_id]
+        steps = self._board_wheel_steps(event)
+        if control_down:
+            point = self._normalized_board_point(map_id, event.x, event.y, clamp=False)
+            state["scale"] = max(
+                float(state["fit_scale"]),
+                min(float(state["fit_scale"]) * 32.0, float(state["scale"]) * (1.15 ** steps)),
+            )
+            state["origin_x"] = event.x - point[0] * MAP_CANVAS_WIDTH * float(state["scale"])
+            state["origin_y"] = event.y - point[1] * MAP_CANVAS_HEIGHT * float(state["scale"])
+        elif alt_down:
+            state["origin_x"] = float(state["origin_x"]) + steps * 24
+        else:
+            state["origin_y"] = float(state["origin_y"]) + steps * 24
+        state["modified"] = True
+        self._board_clamp_view(map_id)
+        self._draw_board_map(map_id)
+        return "break"
+
+    def board_pan_press(self, event: tk.Event, map_id: str) -> str:
+        self._finish_board_pan()
+        state = self.board_view_states.get(map_id)
+        if state is None:
+            self._board_fit_map(map_id, redraw=False)
+            state = self.board_view_states[map_id]
+        self._board_pan_state = (
+            map_id,
+            float(event.x_root),
+            float(event.y_root),
+            float(state["origin_x"]),
+            float(state["origin_y"]),
+        )
+        self.board_canvases[map_id].configure(cursor="fleur")
+        self._board_pan_watchdog_id = self.after(40, self._watch_board_middle_button)
+        return "break"
+
+    def board_pan_drag(self, event: tk.Event) -> str:
+        if self._board_pan_state is None:
+            return ""
+        map_id, start_x, start_y, origin_x, origin_y = self._board_pan_state
+        state = self.board_view_states.get(map_id)
+        if state is None:
+            return ""
+        state["origin_x"] = origin_x + float(event.x_root) - start_x
+        state["origin_y"] = origin_y + float(event.y_root) - start_y
+        state["modified"] = True
+        self._board_clamp_view(map_id)
+        self._draw_board_map(map_id)
+        return "break"
+
+    def _watch_board_middle_button(self) -> None:
+        self._board_pan_watchdog_id = None
+        if self._board_pan_state is None:
+            return
+        if sys.platform == "win32" and not self._board_windows_key_down(0x04):
+            self._finish_board_pan()
+            return
+        self._board_pan_watchdog_id = self.after(40, self._watch_board_middle_button)
+
+    def _finish_board_pan(self) -> bool:
+        if self._board_pan_state is None:
+            return False
+        map_id = self._board_pan_state[0]
+        self._board_pan_state = None
+        if self._board_pan_watchdog_id is not None:
+            try:
+                self.after_cancel(self._board_pan_watchdog_id)
+            except tk.TclError:
+                pass
+            self._board_pan_watchdog_id = None
+        canvas = self.board_canvases.get(map_id)
+        if canvas is not None and canvas.winfo_exists():
+            canvas.configure(cursor="crosshair" if self.board_obscure_mode else "arrow")
+        return True
+
+    def board_pan_release(self, _event: tk.Event | None = None) -> str:
+        return "break" if self._finish_board_pan() else ""
+
+    def toggle_board_obscure_mode(self) -> None:
+        if not self.selected_board_map_id:
+            return
+        self.board_obscure_mode = not self.board_obscure_mode
+        self.board_obscure_button.configure(text="Select  [O]" if self.board_obscure_mode else "Obscure  [O]")
+        canvas = self.board_canvases.get(self.selected_board_map_id)
+        if canvas is not None:
+            canvas.configure(cursor="crosshair" if self.board_obscure_mode else "arrow")
+        if not self.board_obscure_mode:
+            self.cancel_board_obscuration()
+        self._draw_board_map(self.selected_board_map_id)
+
+    def board_obscure_shortcut(self, event: tk.Event) -> str:
+        if event.widget.winfo_class() in {"Entry", "TEntry", "Text", "TCombobox", "Spinbox", "TSpinbox"}:
+            return ""
+        self.toggle_board_obscure_mode()
+        return "break"
+
+    def _board_pointer_start(self, event: tk.Event, map_id: str) -> None:
+        if self.board_obscure_mode:
+            self._board_obscuration_press(event, map_id)
+        else:
+            self._board_drag_start(event, map_id)
+
+    def _board_obscuration_point(self, map_id: str, x: float, y: float, *, clamp: bool = False) -> dict[str, float]:
+        nx, ny = self._normalized_board_point(map_id, x, y, clamp=clamp)
+        return {"x": nx, "y": ny}
+
+    @staticmethod
+    def _board_nearest_edge(points: list[dict[str, float]], x: float, y: float) -> tuple[int, dict[str, float], float]:
+        best_index, best_point, best_distance = 0, {"x": x, "y": y}, float("inf")
+        for index, start in enumerate(points):
+            end = points[(index + 1) % len(points)]
+            dx, dy = end["x"] - start["x"], end["y"] - start["y"]
+            length_squared = dx * dx + dy * dy
+            ratio = 0.0 if length_squared == 0 else max(0.0, min(1.0, ((x - start["x"]) * dx + (y - start["y"]) * dy) / length_squared))
+            projected = {"x": start["x"] + ratio * dx, "y": start["y"] + ratio * dy}
+            distance = math.hypot(x - projected["x"], y - projected["y"])
+            if distance < best_distance:
+                best_index, best_point, best_distance = index, projected, distance
+        return best_index, best_point, best_distance
+
+    @staticmethod
+    def _board_point_in_polygon(x: float, y: float, points: list[dict[str, float]]) -> bool:
+        inside, previous = False, points[-1]
+        for current in points:
+            if (current["y"] > y) != (previous["y"] > y):
+                crossing = (previous["x"] - current["x"]) * (y - current["y"]) / (previous["y"] - current["y"]) + current["x"]
+                if x < crossing:
+                    inside = not inside
+            previous = current
+        return inside
+
+    def _board_mark_presentation_dirty(self) -> None:
+        draft = self._board_presentation_draft()
+        if draft is not None:
+            draft["dirty"] = True
+            self.board_draft_status.configure(text="Unconfirmed changes")
+
+    def _board_obscuration_press(self, event: tk.Event, map_id: str) -> None:
+        if map_id != self.selected_board_map_id:
+            return
+        point = self._board_obscuration_point(map_id, event.x, event.y)
+        if not 0.0 <= point["x"] <= 1.0 or not 0.0 <= point["y"] <= 1.0:
+            return
+        canvas = self.board_canvases[map_id]
+        left, top, width, height = self.board_canvas_geometry.get(map_id, (0, 0, 1, 1))
+        if self.board_obscure_draft_points:
+            first = self.board_obscure_draft_points[0]
+            first_x, first_y = left + first["x"] * width, top + first["y"] * height
+            if len(self.board_obscure_draft_points) >= 3 and math.hypot(event.x - first_x, event.y - first_y) <= 16:
+                self.complete_board_obscuration(event, map_id)
+                return
+            last = self.board_obscure_draft_points[-1]
+            if math.hypot(point["x"] - last["x"], point["y"] - last["y"]) > 1e-6:
+                self.board_obscure_draft_points.append(point)
+            self._draw_board_map(map_id)
+            return
+        draft = self._board_presentation_draft(map_id)
+        obscurations = list((draft or {}).get("obscurations", []))
+        selected = next((item for item in obscurations if str(item.get("record_id")) == self.board_selected_obscuration_id), None)
+        if selected is not None:
+            for index, node in enumerate(selected["points"]):
+                node_x, node_y = left + node["x"] * width, top + node["y"] * height
+                if math.hypot(event.x - node_x, event.y - node_y) <= 9:
+                    self.board_selected_obscuration_node = index
+                    self._board_obscure_drag = {"kind": "node", "changed": False}
+                    return
+            edge_index, projected, _distance = self._board_nearest_edge(selected["points"], point["x"], point["y"])
+            projected_x, projected_y = left + projected["x"] * width, top + projected["y"] * height
+            if math.hypot(event.x - projected_x, event.y - projected_y) <= 12:
+                selected["points"].insert(edge_index + 1, projected)
+                selected["last_updated"] = datetime.utcnow().isoformat() + "Z"
+                self.board_selected_obscuration_node = edge_index + 1
+                self._board_mark_presentation_dirty()
+                self._draw_board_map(map_id)
+                return
+        hit = next((item for item in reversed(obscurations) if self._board_point_in_polygon(point["x"], point["y"], item["points"])), None)
+        if hit is not None:
+            self.board_selected_obscuration_id = str(hit["record_id"])
+            self.board_selected_obscuration_node = None
+            self._board_obscure_drag = {"kind": "polygon", "start": point, "points": deepcopy(hit["points"]), "changed": False}
+        else:
+            self.board_selected_obscuration_id = ""
+            self.board_selected_obscuration_node = None
+            self.board_obscure_draft_points = [point]
+        canvas.focus_set()
+        self._draw_board_map(map_id)
+
+    def complete_board_obscuration(self, event: tk.Event | None = None, map_id: str | None = None) -> str:
+        if event is not None and event.widget.winfo_class() in {"Entry", "TEntry", "Text", "TCombobox", "Spinbox", "TSpinbox"}:
+            return ""
+        map_id = map_id or self.selected_board_map_id
+        if not self.board_obscure_mode or map_id != self.selected_board_map_id:
+            return ""
+        if len(self.board_obscure_draft_points) < 3:
+            return "break"
+        draft = self._board_presentation_draft(map_id)
+        if draft is None:
+            return "break"
+        now = datetime.utcnow().isoformat() + "Z"
+        obscuration = {
+            "record_id": str(uuid4()),
+            "points": deepcopy(self.board_obscure_draft_points),
+            "created_at": now,
+            "last_updated": now,
+        }
+        draft["obscurations"].append(obscuration)
+        self.board_obscure_draft_points = []
+        self.board_selected_obscuration_id = obscuration["record_id"]
+        self.board_selected_obscuration_node = None
+        self._board_mark_presentation_dirty()
+        self._draw_board_map(map_id)
+        return "break"
+
+    def cancel_board_obscuration(self) -> None:
+        self.board_obscure_draft_points = []
+        self._board_obscure_drag = None
+        canvas = self.board_canvases.get(self.selected_board_map_id)
+        if canvas is not None and canvas.winfo_exists():
+            canvas.delete("obscuration-close-cursor")
+            canvas.configure(cursor="crosshair" if self.board_obscure_mode else "arrow")
+            self._draw_board_map(self.selected_board_map_id)
+
+    def board_obscure_motion(self, event: tk.Event, map_id: str) -> None:
+        if not self.board_obscure_mode or map_id != self.selected_board_map_id or not self.board_obscure_draft_points:
+            return
+        canvas = self.board_canvases[map_id]
+        canvas.delete("obscuration-close-cursor")
+        if len(self.board_obscure_draft_points) < 3:
+            canvas.configure(cursor="crosshair")
+            return
+        left, top, width, height = self.board_canvas_geometry.get(map_id, (0, 0, 1, 1))
+        first = self.board_obscure_draft_points[0]
+        first_x, first_y = left + first["x"] * width, top + first["y"] * height
+        if math.hypot(event.x - first_x, event.y - first_y) > 16:
+            canvas.configure(cursor="crosshair")
+            return
+        canvas.configure(cursor="none")
+        canvas.create_oval(event.x - 10, event.y - 10, event.x + 10, event.y + 10, fill="#2f7d32", outline="#ffffff", width=2, tags=("obscuration-close-cursor",))
+        canvas.create_text(event.x, event.y, text="✓", fill="#ffffff", font=("Segoe UI Symbol", 12, "bold"), tags=("obscuration-close-cursor",))
+
+    def board_canvas_leave(self, _event: tk.Event, map_id: str) -> None:
+        canvas = self.board_canvases.get(map_id)
+        if canvas is not None:
+            canvas.delete("obscuration-close-cursor")
+            canvas.configure(cursor="crosshair" if self.board_obscure_mode else "arrow")
+
+    def delete_board_obscuration(self) -> None:
+        draft = self._board_presentation_draft()
+        if draft is None or not self.board_selected_obscuration_id:
+            return
+        draft["obscurations"] = [
+            item for item in draft["obscurations"]
+            if str(item.get("record_id")) != self.board_selected_obscuration_id
+        ]
+        self.board_selected_obscuration_id = ""
+        self.board_selected_obscuration_node = None
+        self._board_mark_presentation_dirty()
+        self._draw_board_map(self.selected_board_map_id)
+
+    def delete_board_obscuration_node(self, event: tk.Event | None = None) -> str:
+        if event is not None and event.widget.winfo_class() in {"Entry", "TEntry", "Text", "TCombobox", "Spinbox", "TSpinbox"}:
+            return ""
+        draft = self._board_presentation_draft()
+        selected = next(
+            (item for item in (draft or {}).get("obscurations", []) if str(item.get("record_id")) == self.board_selected_obscuration_id),
+            None,
+        )
+        if selected is None or self.board_selected_obscuration_node is None:
+            return ""
+        if len(selected["points"]) <= 3:
+            messagebox.showinfo("Three nodes required", "An obscuring shape must retain at least three nodes.", parent=self)
+            return "break"
+        selected["points"].pop(self.board_selected_obscuration_node)
+        selected["last_updated"] = datetime.utcnow().isoformat() + "Z"
+        self.board_selected_obscuration_node = None
+        self._board_mark_presentation_dirty()
+        self._draw_board_map(self.selected_board_map_id)
+        return "break"
+
     def _actor_at(self, canvas: tk.Canvas, map_id: str, x: float, y: float) -> str:
         for item in reversed(canvas.find_overlapping(x - 8, y - 8, x + 8, y + 8)):
             actor_id = self._board_canvas_actors.get((map_id, item))
@@ -1195,14 +2017,43 @@ class GameBoardWindow(tk.Tk):
             self._render_board_actor_list()
             self._draw_board_map(map_id)
 
-    def _normalized_board_point(self, map_id: str, x: float, y: float) -> tuple[float, float]:
+    def _normalized_board_point(
+        self,
+        map_id: str,
+        x: float,
+        y: float,
+        *,
+        clamp: bool = True,
+    ) -> tuple[float, float]:
         left, top, width, height = self.board_canvas_geometry.get(map_id, (0, 0, 1, 1))
-        return (
-            max(0.0, min(1.0, (x - left) / max(1.0, width))),
-            max(0.0, min(1.0, (y - top) / max(1.0, height))),
-        )
+        nx, ny = (x - left) / max(1.0, width), (y - top) / max(1.0, height)
+        if clamp:
+            nx, ny = max(0.0, min(1.0, nx)), max(0.0, min(1.0, ny))
+        return nx, ny
 
     def _board_drag_move(self, event: tk.Event, map_id: str) -> None:
+        if self._board_obscure_drag is not None and self.board_obscure_mode:
+            draft = self._board_presentation_draft(map_id)
+            selected = next(
+                (item for item in (draft or {}).get("obscurations", []) if str(item.get("record_id")) == self.board_selected_obscuration_id),
+                None,
+            )
+            if selected is None:
+                return
+            point = self._board_obscuration_point(map_id, event.x, event.y, clamp=True)
+            if self._board_obscure_drag["kind"] == "node" and self.board_selected_obscuration_node is not None:
+                selected["points"][self.board_selected_obscuration_node] = point
+            else:
+                start = self._board_obscure_drag["start"]
+                original = self._board_obscure_drag["points"]
+                dx, dy = point["x"] - start["x"], point["y"] - start["y"]
+                min_x, max_x = min(item["x"] for item in original), max(item["x"] for item in original)
+                min_y, max_y = min(item["y"] for item in original), max(item["y"] for item in original)
+                dx, dy = min(max(dx, -min_x), 1.0 - max_x), min(max(dy, -min_y), 1.0 - max_y)
+                selected["points"] = [{"x": item["x"] + dx, "y": item["y"] + dy} for item in original]
+            self._board_obscure_drag["changed"] = True
+            self._draw_board_map(map_id)
+            return
         if not self._drag_actor_id:
             return
         x, y = self._normalized_board_point(map_id, event.x, event.y)
@@ -1230,6 +2081,20 @@ class GameBoardWindow(tk.Tk):
         )
 
     def _board_drag_end(self, event: tk.Event, map_id: str) -> None:
+        if self._board_obscure_drag is not None and self.board_obscure_mode:
+            changed = bool(self._board_obscure_drag.get("changed"))
+            self._board_obscure_drag = None
+            if changed:
+                draft = self._board_presentation_draft(map_id)
+                selected = next(
+                    (item for item in (draft or {}).get("obscurations", []) if str(item.get("record_id")) == self.board_selected_obscuration_id),
+                    None,
+                )
+                if selected is not None:
+                    selected["last_updated"] = datetime.utcnow().isoformat() + "Z"
+                self._board_mark_presentation_dirty()
+                self._draw_board_map(map_id)
+            return
         person_id = self._drag_actor_id
         self._drag_actor_id = ""
         start = self._drag_start_point
@@ -1249,6 +2114,17 @@ class GameBoardWindow(tk.Tk):
         )
 
     def _board_piece_menu(self, event: tk.Event, map_id: str) -> str:
+        if self.board_obscure_mode:
+            draft = self._board_presentation_draft(map_id)
+            left, top, width, height = self.board_canvas_geometry.get(map_id, (0, 0, 1, 1))
+            for obscuration in (draft or {}).get("obscurations", []):
+                for index, point in enumerate(obscuration.get("points", [])):
+                    x, y = left + point["x"] * width, top + point["y"] * height
+                    if math.hypot(event.x - x, event.y - y) <= 10:
+                        self.board_selected_obscuration_id = str(obscuration.get("record_id"))
+                        self.board_selected_obscuration_node = index
+                        return self.delete_board_obscuration_node(event)
+            return "break"
         canvas = self.board_canvases[map_id]
         actor_id = self._actor_at(canvas, map_id, event.x, event.y)
         if actor_id:
@@ -1350,14 +2226,6 @@ class GameBoardWindow(tk.Tk):
 
     def _selected_board_actor(self) -> dict[str, Any] | None:
         return next((item for item in self.board_snapshot.get("actors", []) if item.get("actor_id") == self.selected_board_actor_id), None)
-
-    def set_current_map_published(self, published: bool) -> None:
-        if not self.selected_board_map_id:
-            return
-        self._background(
-            lambda: self.client.request("PUT", f"/api/admin/board/maps/{self.selected_board_map_id}/visibility", {"published": published}),
-            lambda _result: self.refresh(silent=True),
-        )
 
     def update_selected_actor(self, **updates: Any) -> None:
         if not self.selected_board_actor_id:
@@ -2024,13 +2892,21 @@ class GameBoardWindow(tk.Tk):
             canvas.configure(scrollregion=canvas.bbox("all"))
 
         def wheel(event: tk.Event) -> str:
+            try:
+                target = self.winfo_containing(event.x_root, event.y_root)
+            except (AttributeError, tk.TclError):
+                return ""
+            current = target
+            while current is not None and current is not canvas:
+                current = getattr(current, "master", None)
+            if current is not canvas:
+                return ""
             canvas.yview_scroll(int(-event.delta / 120), "units")
             return "break"
 
         content.bind("<Configure>", update_region)
         canvas.bind("<Configure>", update_region)
-        canvas.bind("<Enter>", lambda _event: canvas.bind_all("<MouseWheel>", wheel))
-        canvas.bind("<Leave>", lambda _event: canvas.unbind_all("<MouseWheel>"))
+        self.bind_all("<MouseWheel>", wheel, add="+")
         return container, content
 
     def _card(self, parent: tk.Misc, title: str) -> ttk.Frame:

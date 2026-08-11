@@ -42,6 +42,9 @@
       this.board = { maps: [], actors: [], controlled_character_ids: [] };
       this.activeMapId = '';
       this.assetUrls = new Map();
+      this.mapCameraStates = new Map();
+      this.mapCameraDrag = null;
+      this.mapResizeObserver = null;
       this.dragging = null;
       this.lastMovePreview = 0;
       this.activeSection = 'overview';
@@ -179,6 +182,12 @@
       });
       this.root.querySelectorAll('[data-section]').forEach(button => {
         button.addEventListener('click', () => this.openSection(button.dataset.section));
+      });
+      window.addEventListener('keydown', event => {
+        if (this.activeSection === 'board' && event.ctrlKey && event.key === '0') {
+          event.preventDefault();
+          this.resetMapCamera(this.activeMapId);
+        }
       });
     }
 
@@ -393,7 +402,11 @@
       } else if (message.type === 'board_snapshot' && message.board) {
         this.board = message.board;
         const mapIds = new Set((this.board.maps || []).map(item => item.record_id));
-        if (!mapIds.has(this.activeMapId)) this.activeMapId = this.board.maps?.[0]?.record_id || '';
+        const controlled = (this.board.actors || []).find(actor =>
+          (this.board.controlled_character_ids || []).includes(actor.actor_id)
+        );
+        if (controlled && mapIds.has(controlled.map_id)) this.activeMapId = controlled.map_id;
+        else if (!mapIds.has(this.activeMapId)) this.activeMapId = this.board.maps?.[0]?.record_id || '';
         if (this.activeSection === 'board') this.renderBoardView();
       } else if (message.type === 'board_move_preview') {
         const actor = (this.board.actors || []).find(item => item.actor_id === message.person_id);
@@ -410,7 +423,9 @@
         this.releaseAssets();
         this.show('expired', message.message || 'The session has ended.');
       } else if (message.type === 'server_error') {
-        this.showChatNotice(message.message || 'The message could not be sent.');
+        const errorMessage = message.message || 'The message could not be sent.';
+        if (this.activeSection === 'board') this.showBoardNotice(errorMessage);
+        else this.showChatNotice(errorMessage);
       }
     }
 
@@ -499,6 +514,10 @@
         this.search(this.element('search').value);
         return;
       }
+      if (this.mapResizeObserver) {
+        this.mapResizeObserver.disconnect();
+        this.mapResizeObserver = null;
+      }
       const content = this.element('section-content');
       content.className = 'ccgb-panel-grid';
       content.innerHTML = `
@@ -537,6 +556,10 @@
     }
 
     renderBoardView() {
+      if (this.mapResizeObserver) {
+        this.mapResizeObserver.disconnect();
+        this.mapResizeObserver = null;
+      }
       const content = this.element('section-content');
       content.replaceChildren();
       content.className = 'ccgb-panel-grid ccgb-board-content';
@@ -567,6 +590,10 @@
       const viewport = document.createElement('div');
       viewport.className = 'ccgb-map-viewport';
       viewport.dataset.ccgbMapId = this.activeMapId;
+      const notice = document.createElement('div');
+      notice.className = 'ccgb-map-notice';
+      notice.hidden = true;
+      viewport.appendChild(notice);
       const stage = document.createElement('div');
       stage.className = 'ccgb-map-stage';
       const map = maps.find(item => item.record_id === this.activeMapId) || maps[0];
@@ -593,9 +620,174 @@
       shell.append(tabs, viewport);
       content.appendChild(shell);
 
+      this.createBoardRegionLayer(stage, map);
       (this.board.actors || [])
         .filter(actor => actor.map_id === this.activeMapId)
         .forEach(actor => this.createBoardActor(stage, actor));
+      this.createBoardObscurationLayer(stage, map);
+      this.setupMapCamera(viewport, stage, map.record_id);
+    }
+
+    createBoardRegionLayer(stage, map) {
+      const regions = Array.isArray(map.regions) ? map.regions : [];
+      if (!regions.length) return;
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.classList.add('ccgb-map-regions');
+      svg.setAttribute('viewBox', '0 0 1000 1000');
+      svg.setAttribute('preserveAspectRatio', 'none');
+      regions.forEach(region => {
+        if (!Array.isArray(region.points) || region.points.length < 3) return;
+        const polygon = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+        polygon.setAttribute('points', region.points.map(point => `${Number(point.x) * 1000},${Number(point.y) * 1000}`).join(' '));
+        polygon.dataset.regionId = region.record_id || '';
+        const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+        title.textContent = region.hover_text || region.name || 'Map area';
+        polygon.appendChild(title);
+        if (region.behavior_type === 'travel') {
+          polygon.classList.add('is-travel');
+          polygon.addEventListener('click', event => this.activateTravelRegion(event, stage, map, region));
+        }
+        svg.appendChild(polygon);
+      });
+      stage.appendChild(svg);
+    }
+
+    createBoardObscurationLayer(stage, map) {
+      const obscurations = Array.isArray(map.obscurations) ? map.obscurations : [];
+      if (!obscurations.length) return;
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.classList.add('ccgb-map-obscurations');
+      svg.setAttribute('viewBox', '0 0 1000 1000');
+      svg.setAttribute('preserveAspectRatio', 'none');
+      obscurations.forEach(obscuration => {
+        if (!Array.isArray(obscuration.points) || obscuration.points.length < 3) return;
+        const polygon = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+        polygon.setAttribute('points', obscuration.points.map(point => `${Number(point.x) * 1000},${Number(point.y) * 1000}`).join(' '));
+        const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+        title.textContent = 'This area is obscured.';
+        polygon.appendChild(title);
+        svg.appendChild(polygon);
+      });
+      stage.appendChild(svg);
+    }
+
+    activateTravelRegion(event, stage, map, region) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!region.target_available) {
+        this.showBoardNotice('This area is off limits for now, speak with your headmaster.');
+        return;
+      }
+      const actor = (this.board.actors || []).find(item =>
+        item.map_id === map.record_id && (this.board.controlled_character_ids || []).includes(item.actor_id)
+      );
+      if (!actor) {
+        this.showBoardNotice('You do not control a character on this map.');
+        return;
+      }
+      const bounds = stage.getBoundingClientRect();
+      const x = Math.max(0, Math.min(1, (event.clientX - bounds.left) / Math.max(1, bounds.width)));
+      const y = Math.max(0, Math.min(1, (event.clientY - bounds.top) / Math.max(1, bounds.height)));
+      this.send({
+        v: VERSION,
+        type: 'board_travel',
+        person_id: actor.actor_id,
+        source_map_id: map.record_id,
+        region_id: region.record_id,
+        x,
+        y
+      });
+    }
+
+    showBoardNotice(message) {
+      const notice = this.root.querySelector('.ccgb-map-notice');
+      if (!notice) {
+        this.showChatNotice(message);
+        return;
+      }
+      notice.textContent = message;
+      notice.hidden = false;
+      clearTimeout(this.boardNoticeTimer);
+      this.boardNoticeTimer = setTimeout(() => { if (notice.isConnected) notice.hidden = true; }, 5000);
+    }
+
+    cameraState(mapId) {
+      if (!this.mapCameraStates.has(mapId)) {
+        this.mapCameraStates.set(mapId, { scale: 1, x: 0, y: 0 });
+      }
+      return this.mapCameraStates.get(mapId);
+    }
+
+    setupMapCamera(viewport, stage, mapId) {
+      const sizeStage = () => {
+        const ratio = 3840 / 2960;
+        const availableWidth = Math.max(1, viewport.clientWidth - 16);
+        const availableHeight = Math.max(1, viewport.clientHeight - 16);
+        const width = Math.min(availableWidth, availableHeight * ratio);
+        stage.style.width = `${width}px`;
+        stage.style.height = `${width / ratio}px`;
+        this.applyMapCamera(viewport, stage, mapId);
+      };
+      this.mapResizeObserver = new ResizeObserver(sizeStage);
+      this.mapResizeObserver.observe(viewport);
+      sizeStage();
+      viewport.addEventListener('wheel', event => {
+        event.preventDefault();
+        const state = this.cameraState(mapId);
+        const steps = -Math.sign(event.deltaY || 0);
+        if (event.ctrlKey) {
+          const bounds = viewport.getBoundingClientRect();
+          const cursorX = event.clientX - (bounds.left + bounds.width / 2);
+          const cursorY = event.clientY - (bounds.top + bounds.height / 2);
+          const worldX = (cursorX - state.x) / state.scale;
+          const worldY = (cursorY - state.y) / state.scale;
+          const next = Math.max(1, Math.min(32, state.scale * (1.15 ** steps)));
+          state.x = cursorX - worldX * next;
+          state.y = cursorY - worldY * next;
+          state.scale = next;
+        } else if (event.altKey) {
+          state.x += steps * 24;
+        } else {
+          state.y += steps * 24;
+        }
+        this.applyMapCamera(viewport, stage, mapId);
+      }, { passive: false });
+      viewport.addEventListener('pointerdown', event => {
+        if (event.button !== 1) return;
+        event.preventDefault();
+        viewport.setPointerCapture(event.pointerId);
+        const state = this.cameraState(mapId);
+        this.mapCameraDrag = { mapId, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, x: state.x, y: state.y };
+      });
+      viewport.addEventListener('pointermove', event => {
+        if (!this.mapCameraDrag || this.mapCameraDrag.pointerId !== event.pointerId) return;
+        const state = this.cameraState(mapId);
+        state.x = this.mapCameraDrag.x + event.clientX - this.mapCameraDrag.startX;
+        state.y = this.mapCameraDrag.y + event.clientY - this.mapCameraDrag.startY;
+        this.applyMapCamera(viewport, stage, mapId);
+      });
+      const endPan = event => {
+        if (this.mapCameraDrag?.pointerId === event.pointerId) this.mapCameraDrag = null;
+      };
+      viewport.addEventListener('pointerup', endPan);
+      viewport.addEventListener('pointercancel', endPan);
+    }
+
+    applyMapCamera(viewport, stage, mapId) {
+      const state = this.cameraState(mapId);
+      const boundX = Math.max(0, (stage.offsetWidth * state.scale - viewport.clientWidth) / 2);
+      const boundY = Math.max(0, (stage.offsetHeight * state.scale - viewport.clientHeight) / 2);
+      state.x = Math.max(-boundX, Math.min(boundX, state.x));
+      state.y = Math.max(-boundY, Math.min(boundY, state.y));
+      stage.style.transform = `translate(-50%, -50%) translate(${state.x}px, ${state.y}px) scale(${state.scale})`;
+    }
+
+    resetMapCamera(mapId) {
+      if (!mapId) return;
+      this.mapCameraStates.set(mapId, { scale: 1, x: 0, y: 0 });
+      const viewport = this.root.querySelector('.ccgb-map-viewport');
+      const stage = this.root.querySelector('.ccgb-map-stage');
+      if (viewport && stage) this.applyMapCamera(viewport, stage, mapId);
     }
 
     createBoardActor(stage, actor) {

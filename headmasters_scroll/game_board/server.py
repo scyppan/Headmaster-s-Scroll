@@ -110,6 +110,13 @@ class MapVisibilityBody(BaseModel):
     published: bool
 
 
+class MapPresentationBody(BaseModel):
+    published: bool
+    obscurations: list[dict[str, Any]] = Field(default_factory=list, max_length=500)
+    preview_opacity: float = Field(default=0.35, ge=0.05, le=1.0)
+    preview_color: str = Field(default="#ff0000", min_length=7, max_length=7)
+
+
 class BoardGroupBody(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     location_id: str = Field(min_length=1, max_length=100)
@@ -621,6 +628,23 @@ def create_apps(repository: GameBoardRepository | None = None):
             await runtime.broadcast_board(session["id"])
         return result
 
+    @admin_app.put(
+        "/api/admin/board/maps/{map_id}/presentation",
+        dependencies=[Depends(admin_guard)],
+    )
+    async def update_board_map_presentation(map_id: str, body: MapPresentationBody):
+        result = admin_result(
+            service.set_map_presentation,
+            map_id,
+            published=body.published,
+            obscurations=body.obscurations,
+            preview_opacity=body.preview_opacity,
+            preview_color=body.preview_color,
+        )
+        for session in service.sessions_view():
+            await runtime.broadcast_board(session["id"])
+        return result
+
     @admin_app.post(
         "/api/admin/board/groups",
         dependencies=[Depends(admin_guard)],
@@ -967,6 +991,30 @@ def create_apps(repository: GameBoardRepository | None = None):
                             connection.session_id,
                         )
                     except (PermissionError, ValueError) as error:
+                        await websocket.send_json({
+                            "v": 1, "type": "server_error", "message": str(error),
+                        })
+                elif message.get("type") == "board_travel":
+                    try:
+                        person_id = str(message.get("person_id", ""))
+                        source_map_id = str(message.get("source_map_id", ""))
+                        region_id = str(message.get("region_id", ""))
+                        x, y = float(message.get("x")), float(message.get("y"))
+                        if not person_id or not source_map_id or not region_id:
+                            raise ValueError("A character, source map, and travel area are required")
+                        if not 0.0 <= x <= 1.0 or not 0.0 <= y <= 1.0:
+                            raise ValueError("Travel coordinates must be between zero and one")
+                        service.travel_person(
+                            connection.session_id,
+                            connection.contact_id,
+                            person_id,
+                            source_map_id,
+                            region_id,
+                            x,
+                            y,
+                        )
+                        await runtime.broadcast_board(connection.session_id)
+                    except (KeyError, PermissionError, RuntimeError, TypeError, ValueError) as error:
                         await websocket.send_json({
                             "v": 1, "type": "server_error", "message": str(error),
                         })

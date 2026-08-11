@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 
 from headmasters_scroll.assets import AssetStore, MAP_CANVAS_SIZE
 from headmasters_scroll.board import (
+    OFF_LIMITS_MESSAGE,
     WorldBoardRepository,
     active_faction_ids,
     normalize_map,
@@ -140,7 +141,15 @@ class BoardFoundationTests(unittest.TestCase):
         actor = next(item for item in snapshot["actors"] if item["actor_id"] == "pc-1")
         self.assertEqual(actor["faction_name"], "Unknown")
 
-    def test_player_snapshot_opens_occupied_map_and_hides_npc_identity(self):
+    def test_player_snapshot_requires_explicit_reveal_and_hides_npc_identity(self):
+        concealed = self.repository.snapshot(
+            "2000-06-01T12:00",
+            player_character_ids=["pc-1"],
+            for_players=True,
+        )
+        self.assertEqual(concealed["maps"], [])
+        self.assertEqual(concealed["actors"], [])
+        self.repository.set_map_published("map-1", True)
         snapshot = self.repository.snapshot(
             "2000-06-01T12:00",
             player_character_ids=["pc-1"],
@@ -153,7 +162,7 @@ class BoardFoundationTests(unittest.TestCase):
         self.assertEqual(npc["name"], "Unknown")
         self.assertEqual(npc["faction_color"], "#808080")
 
-    def test_regions_validate_persist_and_never_enter_player_snapshot(self):
+    def test_regions_validate_persist_and_enter_player_snapshot_safely(self):
         region = {
             "record_id": "region-gringotts",
             "name": "Gringotts",
@@ -171,13 +180,96 @@ class BoardFoundationTests(unittest.TestCase):
         }
         session = self.repository.load()
         session.data["maps"][0]["regions"] = [region]
+        session.data["maps"][0]["players_published"] = True
         self.repository.save(session, "mapper")
         reloaded = self.repository.load().data["maps"][0]["regions"]
         self.assertEqual(reloaded, [region])
         admin = self.repository.snapshot("2000-06-01T12:00")
         player = self.repository.snapshot("2000-06-01T12:00", player_character_ids=["pc-1"], for_players=True)
         self.assertEqual(admin["maps"][0]["regions"][0]["name"], "Gringotts")
-        self.assertNotIn("regions", player["maps"][0])
+        public_region = player["maps"][0]["regions"][0]
+        self.assertEqual(public_region["name"], "Gringotts")
+        self.assertEqual(public_region["hover_text"], region["hover_text"])
+        self.assertNotIn("type_label", public_region)
+
+    def test_confirmed_obscurations_are_public_opaque_geometry_but_preview_settings_are_private(self):
+        shape = {
+            "record_id": "obscuration-1",
+            "points": [
+                {"x": 0.1, "y": 0.1},
+                {"x": 0.4, "y": 0.1},
+                {"x": 0.3, "y": 0.4},
+            ],
+            "created_at": "2026-08-10T00:00:00Z",
+            "last_updated": "2026-08-10T00:00:00Z",
+        }
+        saved = self.repository.set_map_presentation(
+            "map-1",
+            published=True,
+            obscurations=[shape],
+            preview_opacity=0.35,
+            preview_color="#ff0000",
+        )
+        self.assertEqual(saved["obscuration_preview_opacity"], 0.35)
+        player = self.repository.snapshot(
+            "2000-06-01T12:00", player_character_ids=["pc-1"], for_players=True
+        )
+        public_map = player["maps"][0]
+        self.assertEqual(public_map["obscurations"], [{"record_id": "obscuration-1", "points": shape["points"]}])
+        self.assertNotIn("obscuration_preview_opacity", public_map)
+        self.assertNotIn("obscuration_preview_color", public_map)
+
+    def test_travel_requires_revealed_destination_and_rejects_obscured_clicks(self):
+        session = self.repository.load()
+        session.data["locations"].append({
+            "record_id": "village",
+            "name": "Village",
+            "is_building": False,
+            "floors": [],
+            "default_map_id": "map-2",
+        })
+        session.data["maps"].append({
+            "record_id": "map-2",
+            "name": "Village",
+            "location_id": "village",
+            "floor_id": "",
+            "players_published": False,
+            "asset": None,
+        })
+        session.data["maps"][0]["regions"] = [{
+            "record_id": "road-out",
+            "name": "Village road",
+            "type_label": "Travel",
+            "behavior_type": "travel",
+            "hover_text": "Follow the road.",
+            "points": [{"x": 0.1, "y": 0.1}, {"x": 0.5, "y": 0.1}, {"x": 0.3, "y": 0.5}],
+            "target_location_id": "village",
+        }]
+        self.repository.save(session, "mapper")
+        obscuration = {
+            "record_id": "fog-road",
+            "points": [{"x": 0.2, "y": 0.15}, {"x": 0.4, "y": 0.15}, {"x": 0.3, "y": 0.3}],
+        }
+        self.repository.set_map_presentation(
+            "map-1", published=True, obscurations=[obscuration]
+        )
+        with self.assertRaisesRegex(PermissionError, "obscured"):
+            self.repository.travel_person("pc-1", "map-1", "road-out", 0.3, 0.2)
+        self.repository.set_map_presentation(
+            "map-1", published=True, obscurations=[]
+        )
+        concealed_snapshot = self.repository.snapshot(
+            "2000-06-01T12:00", player_character_ids=["pc-1"], for_players=True
+        )
+        travel_region = concealed_snapshot["maps"][0]["regions"][0]
+        self.assertFalse(travel_region["target_available"])
+        self.assertEqual(travel_region["target_map_id"], "")
+        with self.assertRaisesRegex(PermissionError, OFF_LIMITS_MESSAGE):
+            self.repository.travel_person("pc-1", "map-1", "road-out", 0.3, 0.2)
+        self.repository.set_map_published("map-2", True)
+        moved = self.repository.travel_person("pc-1", "map-1", "road-out", 0.3, 0.2)
+        self.assertEqual(moved["map_id"], "map-2")
+        self.assertEqual((moved["x"], moved["y"]), (0.5, 0.5))
 
     def test_region_validation_rejects_bad_geometry_and_destinations(self):
         base = {
@@ -278,6 +370,7 @@ class ProtectedAssetApiTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.directory = Path(self.temporary.name)
         world = world_document()
+        world["maps"][0]["players_published"] = True
         source = self.directory / "map.png"
         Image.new("RGB", (320, 180), "purple").save(source)
         assets = AssetStore(self.directory / "assets")

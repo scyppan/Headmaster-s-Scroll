@@ -593,20 +593,22 @@
   flex: 1 1 auto;
   justify-content: center;
   min-height: 0;
-  overflow: auto;
-  padding: 8px;
+  overflow: hidden;
+  padding: 0;
+  position: relative;
+  touch-action: none;
 }
 
 #gameboard .ccgb-map-stage {
   aspect-ratio: 3840 / 2960;
   background: #30251c;
-  max-height: 100%;
-  max-width: 100%;
-  min-height: 280px;
+  left: 50%;
   overflow: hidden;
-  position: relative;
+  position: absolute;
+  top: 50%;
+  transform-origin: center;
   touch-action: none;
-  width: 100%;
+  user-select: none;
 }
 
 #gameboard .ccgb-map-stage > img {
@@ -625,6 +627,61 @@
   margin: auto;
   padding: 40px;
   text-align: center;
+}
+
+#gameboard .ccgb-map-regions,
+#gameboard .ccgb-map-obscurations {
+  height: 100%;
+  inset: 0;
+  overflow: visible;
+  pointer-events: none;
+  position: absolute;
+  width: 100%;
+}
+
+#gameboard .ccgb-map-regions { z-index: 2; }
+
+#gameboard .ccgb-map-regions polygon {
+  cursor: help;
+  fill: rgba(255, 255, 255, 0.002);
+  pointer-events: all;
+  stroke: transparent;
+  stroke-width: 2px;
+  vector-effect: non-scaling-stroke;
+}
+
+#gameboard .ccgb-map-regions polygon.is-travel { cursor: pointer; }
+
+#gameboard .ccgb-map-regions polygon:hover {
+  fill: rgba(228, 190, 104, 0.15);
+  stroke: rgba(112, 67, 35, 0.72);
+}
+
+#gameboard .ccgb-map-obscurations { z-index: 8; }
+
+#gameboard .ccgb-map-obscurations polygon {
+  fill: #808080;
+  opacity: 1;
+  pointer-events: all;
+  stroke: #666;
+  stroke-width: 1px;
+  vector-effect: non-scaling-stroke;
+}
+
+#gameboard .ccgb-map-notice {
+  background: rgba(55, 37, 25, 0.94);
+  border: 1px solid #e7c98c;
+  border-radius: 5px;
+  color: #fff4d1;
+  font-weight: 700;
+  left: 50%;
+  max-width: min(520px, 88%);
+  padding: 10px 14px;
+  position: absolute;
+  text-align: center;
+  top: 14px;
+  transform: translateX(-50%);
+  z-index: 20;
 }
 
 #gameboard .ccgb-board-empty {

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import datetime, timezone
+import re
 from typing import Any, Iterable
 from uuid import uuid4
 
@@ -11,6 +12,8 @@ from .assets import AssetStore
 DISPLAY_MODES = {"dot", "token"}
 VISIBILITY_MODES = {"players", "headmaster"}
 REGION_BEHAVIOR_TYPES = {"area", "shop", "travel", "library", "other"}
+OBSCURATION_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+OFF_LIMITS_MESSAGE = "This area is off limits for now. Speak with your Headmaster."
 
 
 def utc_now() -> str:
@@ -146,6 +149,61 @@ def normalize_region(value: Any) -> dict[str, Any]:
     return result
 
 
+def normalize_obscuration(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise ValueError("Every map obscuration must be an object")
+    record_id = str(value.get("record_id", "") or "").strip()
+    if not record_id:
+        raise ValueError("Every map obscuration requires a stable ID")
+    points = value.get("points", [])
+    if not isinstance(points, list) or len(points) < 3:
+        raise ValueError("Every completed map obscuration requires at least three nodes")
+    normalized_points: list[dict[str, float]] = []
+    seen: set[tuple[float, float]] = set()
+    for point in points:
+        if not isinstance(point, dict):
+            raise ValueError("Every obscuration node must be an object")
+        try:
+            x, y = float(point.get("x")), float(point.get("y"))
+        except (TypeError, ValueError) as error:
+            raise ValueError("Obscuration coordinates must be numbers") from error
+        if not 0.0 <= x <= 1.0 or not 0.0 <= y <= 1.0:
+            raise ValueError("Obscuration coordinates must be between 0 and 1")
+        key = (x, y)
+        if key in seen:
+            raise ValueError("A map obscuration cannot repeat a node")
+        seen.add(key)
+        normalized_points.append({"x": x, "y": y})
+    signed_area = sum(
+        point["x"] * normalized_points[(index + 1) % len(normalized_points)]["y"]
+        - normalized_points[(index + 1) % len(normalized_points)]["x"] * point["y"]
+        for index, point in enumerate(normalized_points)
+    )
+    if abs(signed_area) < 1e-12:
+        raise ValueError("A map obscuration must enclose an area")
+    return {
+        **deepcopy(value),
+        "record_id": record_id,
+        "points": normalized_points,
+        "created_at": str(value.get("created_at", "") or "").strip(),
+        "last_updated": str(value.get("last_updated", "") or "").strip(),
+    }
+
+
+def point_in_polygon(x: float, y: float, points: list[dict[str, float]]) -> bool:
+    inside = False
+    previous = points[-1]
+    for current in points:
+        if (current["y"] > y) != (previous["y"] > y):
+            crossing = (previous["x"] - current["x"]) * (y - current["y"]) / (
+                previous["y"] - current["y"]
+            ) + current["x"]
+            if x < crossing:
+                inside = not inside
+        previous = current
+    return inside
+
+
 def normalize_map(value: Any) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError("Every map must be an object")
@@ -156,6 +214,14 @@ def normalize_map(value: Any) -> dict[str, Any]:
             raise ValueError(f"Every map requires {field}")
     result["floor_id"] = str(result.get("floor_id", "") or "").strip()
     result["players_published"] = bool(result.get("players_published", False))
+    preview_opacity = float(result.get("obscuration_preview_opacity", 0.35))
+    if not 0.05 <= preview_opacity <= 1.0:
+        raise ValueError("Headmaster obscuration opacity must be between 5% and 100%")
+    preview_color = str(result.get("obscuration_preview_color", "#ff0000") or "#ff0000").strip()
+    if not OBSCURATION_COLOR_RE.fullmatch(preview_color):
+        raise ValueError("Headmaster obscuration color must be a six-digit hex color")
+    result["obscuration_preview_opacity"] = preview_opacity
+    result["obscuration_preview_color"] = preview_color.lower()
     asset = result.get("asset")
     if asset is not None and not isinstance(asset, dict):
         raise ValueError("Map asset metadata must be an object or null")
@@ -174,6 +240,14 @@ def normalize_map(value: Any) -> dict[str, Any]:
     if not isinstance(regions, list):
         raise ValueError("Map regions must be a list")
     result["regions"] = [normalize_region(region) for region in regions]
+    obscurations = result.get("obscurations", [])
+    if obscurations is None:
+        obscurations = []
+    if not isinstance(obscurations, list):
+        raise ValueError("Map obscurations must be a list")
+    result["obscurations"] = [normalize_obscuration(item) for item in obscurations]
+    if len({item["record_id"] for item in result["obscurations"]}) != len(result["obscurations"]):
+        raise ValueError("Map obscuration IDs must be unique within a map")
     return result
 
 
@@ -388,24 +462,56 @@ class WorldBoardRepository:
         document = self.load().data
         player_ids = {str(value) for value in player_character_ids if value}
         maps = [normalize_map(item) for item in document.get("maps", [])]
-        occupied_player_maps = {
-            normalize_person_board(person.get("board")).get("placement", {}).get("map_id")
-            for person in document.get("people", [])
-            if isinstance(person, dict)
-            and str(person.get("record_id")) in player_ids
-            and normalize_person_board(person.get("board")).get("placement")
+        locations = {
+            str(item.get("record_id")): item
+            for item in document.get("locations", [])
+            if isinstance(item, dict)
         }
+        for map_record in maps:
+            location = locations.get(map_record["location_id"], {})
+            map_record["location_name"] = str(location.get("name", "") or map_record["name"])
+            map_record["floor_name"] = next(
+                (
+                    str(floor.get("name", "") or "")
+                    for floor in location.get("floors", []) or []
+                    if str(floor.get("record_id")) == map_record.get("floor_id")
+                ),
+                "",
+            )
         visible_map_ids = {
             item["record_id"]
             for item in maps
-            if item.get("players_published") or item["record_id"] in occupied_player_maps
+            if item.get("players_published")
         }
         if for_players:
             maps = [item for item in maps if item["record_id"] in visible_map_ids]
             public_maps = []
             for item in maps:
                 public = deepcopy(item)
-                public.pop("regions", None)
+                public["regions"] = []
+                for region in item.get("regions", []):
+                    target_location_id = str(region.get("target_location_id", "") or "")
+                    target_map_id = str(locations.get(target_location_id, {}).get("default_map_id", "") or "")
+                    target_available = bool(target_map_id and target_map_id in visible_map_ids)
+                    public["regions"].append({
+                        "record_id": region["record_id"],
+                        "name": region["name"],
+                        "behavior_type": region["behavior_type"],
+                        "hover_text": region["hover_text"],
+                        "points": deepcopy(region["points"]),
+                        "target_map_id": (
+                            target_map_id
+                            if region["behavior_type"] == "travel" and target_available
+                            else ""
+                        ),
+                        "target_available": target_available,
+                    })
+                public["obscurations"] = [
+                    {"record_id": item["record_id"], "points": deepcopy(item["points"])}
+                    for item in public.get("obscurations", [])
+                ]
+                public.pop("obscuration_preview_opacity", None)
+                public.pop("obscuration_preview_color", None)
                 metadata = public.get("asset")
                 public["asset"] = (
                     {
@@ -542,6 +648,75 @@ class WorldBoardRepository:
         record["last_updated"] = utc_now()
         self.save(session)
         return deepcopy(record)
+
+    def set_map_presentation(
+        self,
+        map_id: str,
+        *,
+        published: bool,
+        obscurations: list[dict[str, Any]],
+        preview_opacity: float = 0.35,
+        preview_color: str = "#ff0000",
+    ) -> dict[str, Any]:
+        session = self.load()
+        record = next((item for item in session.data["maps"] if item.get("record_id") == map_id), None)
+        if record is None:
+            raise KeyError("Unknown map")
+        record["players_published"] = bool(published)
+        record["obscurations"] = [normalize_obscuration(item) for item in obscurations]
+        record["obscuration_preview_opacity"] = float(preview_opacity)
+        record["obscuration_preview_color"] = str(preview_color).lower()
+        record["last_updated"] = utc_now()
+        normalized = normalize_map(record)
+        record.update(normalized)
+        self.save(session)
+        return deepcopy(record)
+
+    def travel_person(
+        self,
+        person_id: str,
+        source_map_id: str,
+        region_id: str,
+        x: float,
+        y: float,
+    ) -> dict[str, Any]:
+        session = self.load()
+        source = next((item for item in session.data["maps"] if item.get("record_id") == source_map_id), None)
+        person = next((item for item in session.data["people"] if item.get("record_id") == person_id), None)
+        if source is None or person is None:
+            raise KeyError("Unknown map or person")
+        source = normalize_map(source)
+        region = next((item for item in source["regions"] if item["record_id"] == region_id), None)
+        if region is None or region.get("behavior_type") != "travel":
+            raise ValueError("That area is not a travel destination")
+        if not point_in_polygon(float(x), float(y), region["points"]):
+            raise ValueError("The travel point is outside that area")
+        if any(point_in_polygon(float(x), float(y), item["points"]) for item in source["obscurations"]):
+            raise PermissionError("That part of the map is obscured")
+        board = normalize_person_board(person.get("board"))
+        placement = board.get("placement")
+        if not placement or placement["map_id"] != source_map_id:
+            raise PermissionError("Your character is not on that map")
+        target_location_id = str(region.get("target_location_id", "") or "")
+        location = next(
+            (item for item in session.data["locations"] if str(item.get("record_id")) == target_location_id),
+            None,
+        )
+        target_map_id = str((location or {}).get("default_map_id", "") or "")
+        target = next((item for item in session.data["maps"] if item.get("record_id") == target_map_id), None)
+        if target is None or not bool(target.get("players_published", False)):
+            raise PermissionError(OFF_LIMITS_MESSAGE)
+        board["placement"] = {
+            "location_id": str(target["location_id"]),
+            "floor_id": str(target.get("floor_id", "") or ""),
+            "map_id": target_map_id,
+            "x": 0.5,
+            "y": 0.5,
+        }
+        person["board"] = board
+        self._remove_from_incompatible_groups(session.data, person_id, board["placement"]["location_id"])
+        self.save(session)
+        return deepcopy(board["placement"])
 
     def create_group(self, name: str, location_id: str, person_ids: list[str]) -> dict[str, Any]:
         if len(set(person_ids)) < 2:

@@ -710,6 +710,43 @@ class GameBoardService:
     def set_map_published(self, map_id: str, published: bool) -> dict[str, Any]:
         return self.world_board.set_map_published(map_id, published)
 
+    def set_map_presentation(
+        self,
+        map_id: str,
+        *,
+        published: bool,
+        obscurations: list[dict[str, Any]],
+        preview_opacity: float,
+        preview_color: str,
+    ) -> dict[str, Any]:
+        return self.world_board.set_map_presentation(
+            map_id,
+            published=published,
+            obscurations=obscurations,
+            preview_opacity=preview_opacity,
+            preview_color=preview_color,
+        )
+
+    def travel_person(
+        self,
+        session_id: str,
+        contact_id: str,
+        person_id: str,
+        source_map_id: str,
+        region_id: str,
+        x: float,
+        y: float,
+    ) -> dict[str, Any]:
+        if person_id not in self.controlled_character_ids(session_id, contact_id):
+            raise PermissionError("You do not control that token")
+        return self.world_board.travel_person(
+            person_id,
+            source_map_id,
+            region_id,
+            x,
+            y,
+        )
+
     def create_board_group(
         self,
         name: str,

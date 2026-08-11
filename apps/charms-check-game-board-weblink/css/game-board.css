@@ -624,6 +624,7 @@
 #gameboard .ccgb-map-stage {
   aspect-ratio: 3840 / 2960;
   background: #30251c;
+  contain: layout paint style;
   left: 50%;
   overflow: hidden;
   position: absolute;
@@ -636,6 +637,7 @@
 
 #gameboard .ccgb-map-stage > img {
   height: 100%;
+  image-rendering: auto;
   inset: 0;
   object-fit: contain;
   pointer-events: none;
@@ -728,7 +730,6 @@
   transform: translate(-50%, -50%) scale(var(--map-actor-camera-scale, 1));
   transform-origin: center;
   width: var(--map-dot-size, 6px);
-  will-change: transform;
   z-index: 3;
 }
 
@@ -801,9 +802,11 @@
   pointer-events: none;
   position: absolute;
   text-overflow: ellipsis;
+  text-rendering: optimizeLegibility;
   top: calc(100% + var(--map-label-gap, 0.4px));
   transform: translate(-50%, 0);
   white-space: nowrap;
+  -webkit-font-smoothing: antialiased;
 }
 
 #gameboard .ccgb-actor-indicators {

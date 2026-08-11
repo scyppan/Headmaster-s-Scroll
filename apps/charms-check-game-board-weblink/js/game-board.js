@@ -6,12 +6,12 @@
   const REQUEST_TIMEOUT_MS = 10000;
   const MAP_NATIVE_WIDTH = 3840;
   const MAP_NATIVE_HEIGHT = 2960;
-  const MAP_ASPECT_RATIO = MAP_NATIVE_WIDTH / MAP_NATIVE_HEIGHT;
   const MAP_ZOOM_STEP = 1.15;
   const MAP_MAX_ZOOM = 32;
   const MAP_PAN_STEP = 24;
-  const MAX_ACTOR_SCREEN_SIZE = 48;
   const DEFAULT_TOKEN_SCALE = 0.0055;
+  const TOKEN_SCREEN_SIZES = [14, 16, 19, 23, 28, 34, 41, 49, 58];
+  const LABEL_SCREEN_SIZES = [10, 10, 11, 11, 12, 12, 13, 13, 14];
   const SECTIONS = [
     ['board', 'Game Board', '▦'],
     ['overview', 'Overview', '⌂'],
@@ -35,6 +35,7 @@
       this.storageKey = options.storageKey || 'charms-check-game-board-invite';
       this.admissionStorageKey = `${this.storageKey}-admission`;
       this.layoutStorageKey = `${this.storageKey}-layout`;
+      this.viewStorageKey = `${this.storageKey}-player-view`;
       this.invite = '';
       this.requestId = '';
       this.pollToken = '';
@@ -55,16 +56,20 @@
       this.mapCameraDrag = null;
       this.mapResizeObserver = null;
       this.mapCameraFrame = 0;
+      this.currentCampaignId = '';
+      this.hydratedCampaignId = '';
+      this.savedViewCampaignId = '';
       this.dragging = null;
       this.lastMovePreview = 0;
       this.activeSection = 'overview';
       this.chatMessages = [];
       this.cameraPreferenceKey = `${this.storageKey}-allow-headmaster-camera`;
       this.allowHeadmasterCamera = localStorage.getItem(this.cameraPreferenceKey) !== 'false';
+      this.restoreViewState();
       this.render();
       this.bind();
       this.restoreLayout();
-      this.openSection('overview');
+      this.openSection(this.activeSection);
     }
 
     render() {
@@ -203,6 +208,7 @@
       });
       window.addEventListener('blur', () => { this.mapCameraDrag = null; });
       window.addEventListener('pagehide', () => {
+        this.saveViewState();
         this.mapCameraSaveTimers.forEach(timer => clearTimeout(timer));
         this.mapCameraSaveTimers.clear();
         this.mapCameraStates.forEach((_state, mapId) => this.saveCameraNow(mapId));
@@ -348,6 +354,7 @@
       this.show('connecting', 'Permission granted. Opening the Game Board…', { busy: true });
       const wsBase = this.apiBase.replace(/^http/i, 'ws');
       this.intentionalClose = false;
+      this.hydratedCampaignId = '';
       this.socket = new WebSocket(`${wsBase}/v1/session?ticket=${encodeURIComponent(ticket)}`);
       const connectionTimer = setTimeout(() => {
         if (this.socket && this.socket.readyState === WebSocket.CONNECTING) this.socket.close();
@@ -419,6 +426,13 @@
         this.element('avatar').textContent = player.trim().charAt(0).toUpperCase() || '?';
       } else if (message.type === 'board_snapshot' && message.board) {
         this.board = message.board;
+        const campaignId = String(this.board.campaign_id || '');
+        const firstCampaignSnapshot = campaignId !== this.hydratedCampaignId;
+        if (firstCampaignSnapshot && this.savedViewCampaignId && campaignId !== this.savedViewCampaignId) {
+          this.mapCameraStates.clear();
+          this.activeMapId = '';
+        }
+        this.currentCampaignId = campaignId;
         (this.board.maps || []).forEach(map => {
           if (!this.mapCameraStates.has(map.record_id) && map.camera) {
             this.mapCameraStates.set(map.record_id, this.normalizedCamera(map.camera));
@@ -428,9 +442,13 @@
         const controlled = (this.board.actors || []).find(actor =>
           (this.board.controlled_character_ids || []).includes(actor.actor_id)
         );
-        if (mapIds.has(this.board.active_map_id)) this.activeMapId = this.board.active_map_id;
-        else if (controlled && mapIds.has(controlled.map_id)) this.activeMapId = controlled.map_id;
-        else if (!mapIds.has(this.activeMapId)) this.activeMapId = this.board.maps?.[0]?.record_id || '';
+        if (!mapIds.has(this.activeMapId)) {
+          if (mapIds.has(this.board.active_map_id)) this.activeMapId = this.board.active_map_id;
+          else if (controlled && mapIds.has(controlled.map_id)) this.activeMapId = controlled.map_id;
+          else this.activeMapId = this.board.maps?.[0]?.record_id || '';
+        }
+        this.hydratedCampaignId = campaignId;
+        this.saveViewState();
         if (this.activeSection === 'board') this.renderBoardView();
       } else if (message.type === 'board_move_preview') {
         const actor = (this.board.actors || []).find(item => item.actor_id === message.person_id);
@@ -449,6 +467,7 @@
         if (mapId) {
           this.activeMapId = mapId;
           this.mapCameraStates.set(mapId, this.normalizedCamera(message.camera));
+          this.saveViewState();
           if (this.activeSection !== 'board') this.openSection('board');
           else this.renderBoardView();
           this.queueCameraSave(mapId, 0);
@@ -539,6 +558,7 @@
     openSection(section) {
       const item = SECTIONS.find(([id]) => id === section) || SECTIONS[0];
       this.activeSection = item[0];
+      this.saveViewState();
       this.root.classList.toggle('ccgb-board-active', item[0] === 'board');
       this.root.querySelectorAll('[data-section]').forEach(button => {
         const active = button.dataset.section === this.activeSection;
@@ -642,6 +662,7 @@
         button.className = map.record_id === this.activeMapId ? 'is-active' : '';
         button.addEventListener('click', () => {
           this.activeMapId = map.record_id;
+          this.saveViewState();
           this.renderBoardView();
           this.queueCameraSave(map.record_id, 100);
         });
@@ -775,8 +796,10 @@
     }
 
     normalizedCamera(camera) {
+      const scale = Math.max(1, Math.min(MAP_MAX_ZOOM, Number(camera?.zoom || camera?.scale || 1)));
       return {
-        scale: Math.max(1, Math.min(MAP_MAX_ZOOM, Number(camera?.zoom || camera?.scale || 1))),
+        scale,
+        zoomClicks: Math.max(0, Math.round(Math.log(scale) / Math.log(MAP_ZOOM_STEP))),
         centerX: Math.max(0, Math.min(1, Number(camera?.center_x ?? camera?.centerX ?? 0.5))),
         centerY: Math.max(0, Math.min(1, Number(camera?.center_y ?? camera?.centerY ?? 0.5))),
         x: 0,
@@ -792,13 +815,25 @@
     }
 
     syncCameraCenter(state, stage) {
-      const scale = Math.max(1, Number(state.scale || 1));
+      const scale = this.mapStageScale(stage, state);
       state.centerX = Math.max(0, Math.min(
         1, 0.5 - Number(state.x || 0) / Math.max(1, stage.offsetWidth * scale)
       ));
       state.centerY = Math.max(0, Math.min(
         1, 0.5 - Number(state.y || 0) / Math.max(1, stage.offsetHeight * scale)
       ));
+    }
+
+    mapStageScale(stage, state) {
+      const fitScale = Math.max(0.0001, Number(stage.dataset.fitScale || 1));
+      return fitScale * Math.max(1, Number(state.scale || 1));
+    }
+
+    zoomTier(state) {
+      const clicks = Math.max(0, Number.isFinite(state.zoomClicks)
+        ? state.zoomClicks
+        : Math.round(Math.log(Math.max(1, state.scale)) / Math.log(MAP_ZOOM_STEP)));
+      return Math.max(0, Math.min(TOKEN_SCREEN_SIZES.length - 1, Math.floor(clicks / 3)));
     }
 
     setupMapCamera(viewport, stage, mapId, tokenScale = DEFAULT_TOKEN_SCALE, initialCamera = null) {
@@ -809,38 +844,17 @@
           if (!viewport.isConnected || !stage.isConnected) return;
           const availableWidth = Math.max(1, viewport.clientWidth);
           const availableHeight = Math.max(1, viewport.clientHeight);
-          const width = Math.min(
-            MAP_NATIVE_WIDTH,
-            availableWidth,
-            availableHeight * MAP_ASPECT_RATIO
+          const fitScale = Math.min(
+            availableWidth / MAP_NATIVE_WIDTH,
+            availableHeight / MAP_NATIVE_HEIGHT
           );
-          const height = width / MAP_ASPECT_RATIO;
-          stage.style.width = `${Math.floor(width * 100) / 100}px`;
-          stage.style.height = `${Math.floor(height * 100) / 100}px`;
-          const tokenSize = Math.max(6, width * Math.max(0.002, Math.min(0.03, tokenScale)));
+          stage.style.width = `${MAP_NATIVE_WIDTH}px`;
+          stage.style.height = `${MAP_NATIVE_HEIGHT}px`;
+          stage.dataset.fitScale = String(fitScale);
+          const tokenSize = MAP_NATIVE_WIDTH * Math.max(0.002, Math.min(0.03, tokenScale));
           stage.dataset.tokenSize = String(tokenSize);
-          stage.dataset.maxActorScreenSize = String(Math.max(
-            18,
-            Math.min(160, MAX_ACTOR_SCREEN_SIZE * tokenScale / DEFAULT_TOKEN_SCALE)
-          ));
           stage.style.setProperty('--map-token-size', `${tokenSize}px`);
-          stage.style.setProperty('--map-dot-size', `${Math.max(5, tokenSize * 0.9)}px`);
-          stage.style.setProperty('--map-nameplate-width', `${Math.max(3, tokenSize * 2.5)}px`);
-          stage.style.setProperty('--map-actor-border', `${Math.max(0.1, tokenSize * 0.018)}px`);
-          stage.style.setProperty('--map-control-outline', `${Math.max(0.1, tokenSize * 0.018)}px`);
-          stage.style.setProperty('--map-control-offset', `${Math.max(0.08, tokenSize * 0.014)}px`);
-          stage.style.setProperty('--map-label-font-size', `${Math.max(0.55, tokenSize * 0.22)}px`);
-          stage.style.setProperty('--map-label-border', `${Math.max(0.06, tokenSize * 0.01)}px`);
-          stage.style.setProperty('--map-label-radius', `${Math.max(0.12, tokenSize * 0.025)}px`);
-          stage.style.setProperty('--map-label-gap', `${Math.max(0.3, tokenSize * 0.05)}px`);
-          stage.style.setProperty('--map-label-pad-y', `${Math.max(0.12, tokenSize * 0.04)}px`);
-          stage.style.setProperty('--map-label-pad-x', `${Math.max(0.25, tokenSize * 0.08)}px`);
-          stage.style.setProperty('--map-label-max-width', `${Math.max(8, tokenSize * 2.5)}px`);
-          stage.style.setProperty('--map-indicator-size', `${Math.max(0.8, tokenSize * 0.2)}px`);
-          stage.style.setProperty('--map-indicator-gap', `${Math.max(0.2, tokenSize * 0.05)}px`);
-          stage.style.setProperty('--map-indicator-border', `${Math.max(0.06, tokenSize * 0.01)}px`);
-          stage.style.setProperty('--map-indicator-offset', `${Math.max(0.25, tokenSize * 0.05)}px`);
-          stage.dataset.renderWidth = String(Math.round(width));
+          stage.style.setProperty('--map-dot-size', `${tokenSize * 0.9}px`);
           this.applyMapCamera(viewport, stage, mapId);
         });
       };
@@ -856,11 +870,15 @@
           const bounds = viewport.getBoundingClientRect();
           const cursorX = event.clientX - (bounds.left + bounds.width / 2);
           const cursorY = event.clientY - (bounds.top + bounds.height / 2);
-          const worldX = (cursorX - state.x) / state.scale;
-          const worldY = (cursorY - state.y) / state.scale;
-          const next = Math.max(1, Math.min(MAP_MAX_ZOOM, state.scale * (MAP_ZOOM_STEP ** direction)));
-          state.x = cursorX - worldX * next;
-          state.y = cursorY - worldY * next;
+          const currentStageScale = this.mapStageScale(stage, state);
+          const worldX = (cursorX - state.x) / currentStageScale;
+          const worldY = (cursorY - state.y) / currentStageScale;
+          const maxClicks = Math.floor(Math.log(MAP_MAX_ZOOM) / Math.log(MAP_ZOOM_STEP));
+          state.zoomClicks = Math.max(0, Math.min(maxClicks, Number(state.zoomClicks || 0) + direction));
+          const next = Math.max(1, Math.min(MAP_MAX_ZOOM, MAP_ZOOM_STEP ** state.zoomClicks));
+          const nextStageScale = Math.max(0.0001, Number(stage.dataset.fitScale || 1)) * next;
+          state.x = cursorX - worldX * nextStageScale;
+          state.y = cursorY - worldY * nextStageScale;
           state.scale = next;
         } else if (event.altKey) {
           state.x += direction * MAP_PAN_STEP;
@@ -907,19 +925,39 @@
 
     applyMapCamera(viewport, stage, mapId) {
       const state = this.cameraState(mapId);
-      state.x = (0.5 - Number(state.centerX ?? 0.5)) * stage.offsetWidth * state.scale;
-      state.y = (0.5 - Number(state.centerY ?? 0.5)) * stage.offsetHeight * state.scale;
-      const boundX = Math.max(0, (stage.offsetWidth * state.scale - viewport.clientWidth) / 2);
-      const boundY = Math.max(0, (stage.offsetHeight * state.scale - viewport.clientHeight) / 2);
+      const stageScale = this.mapStageScale(stage, state);
+      state.x = (0.5 - Number(state.centerX ?? 0.5)) * stage.offsetWidth * stageScale;
+      state.y = (0.5 - Number(state.centerY ?? 0.5)) * stage.offsetHeight * stageScale;
+      const boundX = Math.max(0, (stage.offsetWidth * stageScale - viewport.clientWidth) / 2);
+      const boundY = Math.max(0, (stage.offsetHeight * stageScale - viewport.clientHeight) / 2);
       state.x = Math.max(-boundX, Math.min(boundX, state.x));
       state.y = Math.max(-boundY, Math.min(boundY, state.y));
       this.syncCameraCenter(state, stage);
       const tokenSize = Math.max(1, Number(stage.dataset.tokenSize || 6));
-      const actorScreenSize = tokenSize * state.scale;
-      const maxActorScreenSize = Math.max(18, Number(stage.dataset.maxActorScreenSize || MAX_ACTOR_SCREEN_SIZE));
-      const actorCameraScale = Math.min(1, maxActorScreenSize / actorScreenSize);
+      const tier = this.zoomTier(state);
+      const sizeRatio = Math.max(0.35, Math.min(5.5, tokenSize / (MAP_NATIVE_WIDTH * DEFAULT_TOKEN_SCALE)));
+      const targetActorScreenSize = Math.max(8, TOKEN_SCREEN_SIZES[tier] * sizeRatio);
+      const actorCameraScale = targetActorScreenSize / Math.max(1, tokenSize * stageScale);
+      const actorNetScale = Math.max(0.0001, stageScale * actorCameraScale);
+      const screenToActor = value => value / actorNetScale;
       stage.style.setProperty('--map-actor-camera-scale', String(actorCameraScale));
-      stage.style.transform = `translate(-50%, -50%) translate(${state.x}px, ${state.y}px) scale(${state.scale})`;
+      stage.style.setProperty('--map-nameplate-width', `${screenToActor(92 + tier * 12)}px`);
+      stage.style.setProperty('--map-actor-border', `${screenToActor(1)}px`);
+      stage.style.setProperty('--map-control-outline', `${screenToActor(2)}px`);
+      stage.style.setProperty('--map-control-offset', `${screenToActor(2)}px`);
+      stage.style.setProperty('--map-label-font-size', `${screenToActor(LABEL_SCREEN_SIZES[tier])}px`);
+      stage.style.setProperty('--map-label-border', `${screenToActor(1)}px`);
+      stage.style.setProperty('--map-label-radius', `${screenToActor(2)}px`);
+      stage.style.setProperty('--map-label-gap', `${screenToActor(3)}px`);
+      stage.style.setProperty('--map-label-pad-y', `${screenToActor(2)}px`);
+      stage.style.setProperty('--map-label-pad-x', `${screenToActor(4)}px`);
+      stage.style.setProperty('--map-label-max-width', `${screenToActor(100 + tier * 14)}px`);
+      stage.style.setProperty('--map-indicator-size', `${screenToActor(targetActorScreenSize * 0.2)}px`);
+      stage.style.setProperty('--map-indicator-gap', `${screenToActor(targetActorScreenSize * 0.055)}px`);
+      stage.style.setProperty('--map-indicator-border', `${screenToActor(1)}px`);
+      stage.style.setProperty('--map-indicator-offset', `${screenToActor(3)}px`);
+      stage.dataset.zoomTier = String(tier);
+      stage.style.transform = `translate(-50%, -50%) translate(${state.x}px, ${state.y}px) scale(${stageScale})`;
     }
 
     resetMapCamera(mapId) {
@@ -932,6 +970,7 @@
     }
 
     queueCameraSave(mapId, delay = 450) {
+      this.saveViewState();
       clearTimeout(this.mapCameraSaveTimers.get(mapId));
       this.mapCameraSaveTimers.set(mapId, setTimeout(() => {
         this.mapCameraSaveTimers.delete(mapId);
@@ -1115,6 +1154,42 @@
         if (value.chat) workspace.classList.add('chat-collapsed');
       } catch (_) {
         // Keep the default open layout when a saved preference is malformed.
+      }
+    }
+
+    saveViewState() {
+      try {
+        const cameras = {};
+        this.mapCameraStates.forEach((state, mapId) => {
+          cameras[mapId] = {
+            zoom: Number(state.scale || 1),
+            center_x: Number(state.centerX ?? 0.5),
+            center_y: Number(state.centerY ?? 0.5)
+          };
+        });
+        localStorage.setItem(this.viewStorageKey, JSON.stringify({
+          section: this.activeSection,
+          activeMapId: this.activeMapId,
+          campaignId: this.currentCampaignId || this.savedViewCampaignId,
+          cameras
+        }));
+        this.savedViewCampaignId = this.currentCampaignId || this.savedViewCampaignId;
+      } catch (_) {
+        // Server-side campaign persistence remains available when local storage is blocked.
+      }
+    }
+
+    restoreViewState() {
+      try {
+        const value = JSON.parse(localStorage.getItem(this.viewStorageKey) || '{}');
+        if (SECTIONS.some(([id]) => id === value.section)) this.activeSection = value.section;
+        this.activeMapId = String(value.activeMapId || '');
+        this.savedViewCampaignId = String(value.campaignId || '');
+        Object.entries(value.cameras || {}).forEach(([mapId, camera]) => {
+          if (mapId) this.mapCameraStates.set(mapId, this.normalizedCamera(camera));
+        });
+      } catch (_) {
+        // Ignore malformed or unavailable local state and use the campaign snapshot.
       }
     }
 

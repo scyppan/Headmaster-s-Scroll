@@ -2,7 +2,7 @@
   "_database": {
     "schema_version": 36,
     "database_version": "0.36.0",
-    "last_saved": "2026-08-11T08:37:23.952962+00:00"
+    "last_saved": "2026-08-11T13:08:44.390784+00:00"
   },
   "people": [
     {
@@ -94447,6 +94447,102 @@
       "record_id": "a7bc9826-202b-47c5-876e-bed43ac5c92d",
       "created_at": "2026-08-09T00:28:44.246449+00:00",
       "last_updated": "2026-08-09T00:31:11.417106+00:00"
+    },
+    {
+      "displayed_name": "Doris Crockford",
+      "name_details": {
+        "entries": []
+      },
+      "narrative": "",
+      "birth_year": null,
+      "birth_month": null,
+      "birth_day": null,
+      "deceased": false,
+      "death_year": null,
+      "death_month": null,
+      "death_day": null,
+      "canon": false,
+      "player_character": false,
+      "non_magical": false,
+      "can_give_birth": false,
+      "does_not_have_children": false,
+      "famous_person": false,
+      "unfinished": true,
+      "biological_mother_id": "",
+      "biological_father_id": "",
+      "biological_mother_status": "unknown",
+      "biological_father_status": "unknown",
+      "blood_status": "Pureblood",
+      "developmental_environment": "",
+      "parental_values": null,
+      "initial_bonuses": null,
+      "characteristics": null,
+      "mate_ids": [],
+      "spouse_relationships": [],
+      "timeline_events": [
+        {
+          "event_id": "life-start:starting-location",
+          "event_type": "starting_location",
+          "detail": "London",
+          "date": "",
+          "note": "",
+          "related_person_id": "",
+          "automatic_source": "life_start",
+          "location_ids": [
+            "f72ada00-abce-49d4-bcc3-37f2bfec2a20"
+          ],
+          "locked_location_ids": [],
+          "birth_location_source": "manual",
+          "time": "",
+          "related_name_entry_id": ""
+        },
+        {
+          "event_id": "life-start:born",
+          "event_type": "born",
+          "detail": "",
+          "date": "",
+          "note": "",
+          "related_person_id": "",
+          "automatic_source": "life_start",
+          "location_ids": [
+            "f72ada00-abce-49d4-bcc3-37f2bfec2a20"
+          ],
+          "locked_location_ids": [],
+          "birth_location_source": "manual",
+          "time": "",
+          "related_name_entry_id": ""
+        },
+        {
+          "event_id": "life-start:birth-name",
+          "event_type": "birth_name",
+          "detail": "Doris Crockford",
+          "date": "",
+          "note": "",
+          "related_person_id": "",
+          "related_name_entry_id": "",
+          "automatic_source": "life_start",
+          "time": ""
+        }
+      ],
+      "school": "",
+      "mage_group_id": "unassigned",
+      "development_plan": {
+        "schema": "Ingredient Crafting",
+        "blood_status_initialized": false,
+        "academic_years_advanced": 0,
+        "school_started": false,
+        "school_years": [],
+        "ledger_entries": [],
+        "adult_years": [],
+        "initial_eminence": [],
+        "mortality_checked_through_age": null
+      },
+      "notes": "",
+      "tags": [],
+      "imported_fields": {},
+      "record_id": "19cdecaf-4b65-400b-9b05-75ac1c549f24",
+      "created_at": "2026-08-11T13:08:39.985302+00:00",
+      "last_updated": "2026-08-11T13:08:39.985302+00:00"
     }
   ],
   "locations": [
@@ -120216,8 +120312,9 @@
     }
   ],
   "_recent_people": [
-    "6882e7fb-529a-4b3e-8929-a795b91b816d",
+    "19cdecaf-4b65-400b-9b05-75ac1c549f24",
     "62ca5c0d-a14f-4450-9581-f36c9396fbcb",
+    "6882e7fb-529a-4b3e-8929-a795b91b816d",
     "a7bc9826-202b-47c5-876e-bed43ac5c92d",
     "834260f1-6a1a-40d4-85f6-93a9e9b20ad1",
     "0f9cad39-6abd-465a-99ec-1f67b8a0768e",
@@ -120226,10 +120323,10 @@
     "0ce7ff22-29a8-405e-863a-394a301380c3",
     "6bfae378-3a03-4d25-a276-1e10596d897b",
     "b06ed514-fff6-4b58-99e2-f35895b030d8",
-    "be1c32f5-173f-4f8d-bbf7-44afed7af7e5",
-    "56858d54-6ba3-4d4d-926d-292954205034"
+    "be1c32f5-173f-4f8d-bbf7-44afed7af7e5"
   ],
   "_recent_locations": [
+    "f72ada00-abce-49d4-bcc3-37f2bfec2a20",
     "11754304-c8d2-43c7-8d55-41cca80b441b",
     "e05e5b3e-920c-481b-a83e-74653bf0041d",
     "0b09ed8f-cf16-4aa4-b966-415c41965f5f",
@@ -120240,8 +120337,7 @@
     "b8b5a376-7c1e-4626-b46a-ef4fd1a6d4ea",
     "4063949a-cfa8-4e77-9ec9-16cd08fb3f45",
     "c362f173-b380-4d64-9b2f-8972754de436",
-    "93ba38a3-3f15-4b86-9e6c-17dc1ba0e2fe",
-    "e9cdd1f9-3e84-4408-b2c2-98ed4b3dabef"
+    "93ba38a3-3f15-4b86-9e6c-17dc1ba0e2fe"
   ],
   "_recent_event_associations": {
     "person_ids": [
@@ -124859,8 +124955,8 @@
   ],
   "board_groups": [],
   "_headmasters_scroll": {
-    "revision_id": "2b95b4d2-773d-447d-bfde-3a42323192a5",
-    "last_modified_at": "2026-08-11T12:59:32.872105Z",
-    "last_modified_by": "mapper"
+    "revision_id": "a677432f-dd10-4702-b13e-fb3d529cf2aa",
+    "last_modified_at": "2026-08-11T13:08:44.472631Z",
+    "last_modified_by": "world-builder"
   }
 }

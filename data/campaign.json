@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "_headmasters_scroll": {
-    "revision_id": "52a0c89f-6774-4806-8810-98aacd6b7679",
-    "last_modified_at": "2026-08-11T12:35:25.285627Z",
+    "revision_id": "6fa5d573-1eb9-4e50-b274-c461563ef4fc",
+    "last_modified_at": "2026-08-11T13:16:34.732614Z",
     "last_modified_by": "game-board"
   },
   "campaigns": [
@@ -11,7 +11,7 @@
       "created_at": "2026-08-11T08:19:23.069609Z",
       "name": "Test camp",
       "game_world_start_date": "2000-08-27",
-      "last_updated": "2026-08-11T12:35:25.283407Z",
+      "last_updated": "2026-08-11T13:16:34.730464Z",
       "game_state": {
         "initialized": true,
         "current_game_datetime": "2000-08-27T08:00",
@@ -107,6 +107,14 @@
             "obscuration_preview_color": "#ffa6a6",
             "token_scale": 0.0025,
             "start_point": null
+          },
+          "a5a85bd9-e989-4069-936c-8acda64f0fdd": {
+            "players_published": false,
+            "obscurations": [],
+            "obscuration_preview_opacity": 0.35,
+            "obscuration_preview_color": "#ff0000",
+            "token_scale": 0.0055,
+            "start_point": null
           }
         },
         "people": {
@@ -131,8 +139,8 @@
               "location_id": "de9bca8f-8fea-4db4-a040-131af6804693",
               "floor_id": "",
               "map_id": "4fc2ff78-e528-4ebd-b4db-9b34fc803622",
-              "x": 0.9818781123107833,
-              "y": 0.34158841969480597
+              "x": 0.9864216008129946,
+              "y": 0.3473759757147895
             },
             "visibility": "players",
             "display_mode": "dot",
@@ -1213,6 +1221,14 @@
             "faction_organization_id": ""
           },
           "a7bc9826-202b-47c5-876e-bed43ac5c92d": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "19cdecaf-4b65-400b-9b05-75ac1c549f24": {
             "placement": null,
             "visibility": "players",
             "display_mode": "dot",

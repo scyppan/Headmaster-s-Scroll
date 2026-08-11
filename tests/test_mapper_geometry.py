@@ -2,6 +2,7 @@ import importlib.util
 import unittest
 from copy import deepcopy
 from pathlib import Path
+from unittest.mock import patch
 
 
 MAPPER_PATH = Path(__file__).resolve().parents[1] / "apps" / "mapper" / "main.py"
@@ -134,6 +135,26 @@ class MapperGeometryTests(unittest.TestCase):
         window.selected_region_id = ""
         window.hover_text_focus_out()
         self.assertEqual(saves, ["Region details"])
+
+    def test_warp_tool_creates_named_point_and_saves_it(self):
+        window = mapper.MapperWindow.__new__(mapper.MapperWindow)
+        window.warp_points = []
+        window.selected_warp_point_id = ""
+        window.editor_dirty = False
+        window.render_canvas = lambda: None
+        saves = []
+        window.autosave_map = lambda reason: saves.append(reason) or True
+
+        with patch.object(mapper.simpledialog, "askstring", return_value="Upper Stairwell"):
+            window.add_warp_point({"x": 0.31, "y": 0.67})
+
+        self.assertEqual(len(window.warp_points), 1)
+        self.assertEqual(window.warp_points[0]["name"], "Upper Stairwell")
+        self.assertEqual(
+            (window.warp_points[0]["x"], window.warp_points[0]["y"]),
+            (0.31, 0.67),
+        )
+        self.assertEqual(saves, ["Added warp point"])
 
 
 if __name__ == "__main__":

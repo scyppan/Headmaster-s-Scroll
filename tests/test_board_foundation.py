@@ -272,6 +272,93 @@ class BoardFoundationTests(unittest.TestCase):
         self.assertEqual(moved["map_id"], "map-2")
         self.assertEqual((moved["x"], moved["y"]), (0.5, 0.5))
 
+    def test_map_start_point_spawns_unplaced_players_without_stacking(self):
+        session = self.repository.load()
+        session.data["maps"][0]["players_published"] = True
+        session.data["maps"][0]["start_point"] = {"x": 0.42, "y": 0.61}
+        session.data["maps"][0]["token_scale"] = 0.06
+        session.data["people"][0]["board"]["placement"] = None
+        session.data["people"].append({
+            "record_id": "pc-2",
+            "displayed_name": "Player Two",
+            "player_character": True,
+            "board": {
+                "portrait": None,
+                "placement": None,
+                "visibility": "players",
+                "display_mode": "dot",
+                "name_revealed": False,
+                "faction_revealed": False,
+                "faction_organization_id": "",
+            },
+        })
+        self.repository.save(session, "game-board")
+
+        first = self.repository.ensure_person_placement("pc-1")
+        second = self.repository.ensure_person_placement("pc-2")
+
+        self.assertEqual((first["x"], first["y"]), (0.42, 0.61))
+        self.assertEqual(first["map_id"], "map-1")
+        self.assertEqual(second["map_id"], "map-1")
+        self.assertNotEqual((second["x"], second["y"]), (first["x"], first["y"]))
+
+    def test_travel_region_arrives_at_its_linked_warp_point(self):
+        session = self.repository.load()
+        session.data["locations"].append({
+            "record_id": "tower",
+            "name": "Tower",
+            "is_building": True,
+            "has_floors": True,
+            "floors": [{
+                "record_id": "tower-upper",
+                "name": "Upper Floor",
+                "sort_order": 0,
+                "primary_map_id": "map-2",
+            }],
+            "default_map_id": "map-2",
+        })
+        session.data["maps"].append({
+            "record_id": "map-2",
+            "name": "Upper Floor",
+            "location_id": "tower",
+            "floor_id": "tower-upper",
+            "players_published": True,
+            "asset": None,
+            "warp_points": [{
+                "record_id": "warp-upper-stair",
+                "name": "Upper stair landing",
+                "x": 0.18,
+                "y": 0.74,
+            }],
+        })
+        session.data["maps"][0]["players_published"] = True
+        session.data["maps"][0]["regions"] = [{
+            "record_id": "stairs-up",
+            "name": "Stairs up",
+            "behavior_type": "travel",
+            "hover_text": "Climb the stairs.",
+            "points": [
+                {"x": 0.1, "y": 0.1},
+                {"x": 0.5, "y": 0.1},
+                {"x": 0.3, "y": 0.5},
+            ],
+            "target_location_id": "tower",
+            "target_warp_point_id": "warp-upper-stair",
+        }]
+        self.repository.save(session, "mapper")
+
+        public = self.repository.snapshot(
+            "2000-06-01T12:00", player_character_ids=["pc-1"], for_players=True
+        )
+        public_region = public["maps"][0]["regions"][0]
+        self.assertTrue(public_region["target_available"])
+        self.assertEqual(public_region["target_map_id"], "map-2")
+        self.assertNotIn("target_warp_point_id", public_region)
+
+        moved = self.repository.travel_person("pc-1", "map-1", "stairs-up", 0.3, 0.2)
+        self.assertEqual(moved["map_id"], "map-2")
+        self.assertEqual((moved["x"], moved["y"]), (0.18, 0.74))
+
     def test_region_validation_rejects_bad_geometry_and_destinations(self):
         base = {
             "record_id": "region-1",

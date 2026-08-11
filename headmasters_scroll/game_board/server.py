@@ -118,6 +118,12 @@ class MapPresentationBody(BaseModel):
     preview_color: str = Field(default="#ff0000", min_length=7, max_length=7)
 
 
+class MapBoardSettingsBody(BaseModel):
+    token_scale: float | None = Field(default=None, ge=0.02, le=0.12)
+    start_point: dict[str, float] | None = None
+    update_start_point: bool = False
+
+
 class BoardGroupBody(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     location_id: str = Field(min_length=1, max_length=100)
@@ -650,6 +656,22 @@ def create_apps(
             obscurations=body.obscurations,
             preview_opacity=body.preview_opacity,
             preview_color=body.preview_color,
+        )
+        for session in service.sessions_view():
+            await runtime.broadcast_board(session["id"])
+        return result
+
+    @admin_app.put(
+        "/api/admin/board/maps/{map_id}/settings",
+        dependencies=[Depends(admin_guard)],
+    )
+    async def update_board_map_settings(map_id: str, body: MapBoardSettingsBody):
+        result = admin_result(
+            service.set_map_settings,
+            map_id,
+            token_scale=body.token_scale,
+            start_point=body.start_point,
+            update_start_point=body.update_start_point,
         )
         for session in service.sessions_view():
             await runtime.broadcast_board(session["id"])

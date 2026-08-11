@@ -649,6 +649,9 @@ class GameBoardService:
             player["has_logged_in"] = True
             player["last_connected_at"] = request["connected_at"]
             self.repository.save_active(wrapper)
+            character_id = player.get("character_id")
+            if character_id:
+                self.world_board.ensure_person_placement(str(character_id))
             return {
                 "request_id": request["id"],
                 "contact_id": player["contact_id"],
@@ -725,6 +728,21 @@ class GameBoardService:
 
     def set_map_published(self, map_id: str, published: bool) -> dict[str, Any]:
         return self.world_board.set_map_published(map_id, published)
+
+    def set_map_settings(
+        self,
+        map_id: str,
+        *,
+        token_scale: float | None = None,
+        start_point: dict[str, Any] | None = None,
+        update_start_point: bool = False,
+    ) -> dict[str, Any]:
+        return self.world_board.set_map_settings(
+            map_id,
+            token_scale=token_scale,
+            start_point=start_point,
+            update_start_point=update_start_point,
+        )
 
     def location_maps(self) -> list[dict[str, Any]]:
         return self.world_board.location_maps()

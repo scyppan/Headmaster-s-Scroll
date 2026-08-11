@@ -20,6 +20,7 @@ from headmasters_scroll.board import (
     WorldBoardRepository,
     ensure_board_collections,
     normalize_region,
+    normalize_warp_point,
 )
 from headmasters_scroll.assets import MAP_CANVAS_HEIGHT, MAP_CANVAS_WIDTH
 from headmasters_scroll.preferences import Preferences
@@ -113,6 +114,8 @@ class MapperWindow(tk.Tk):
         self.selected_location_id = ""
         self.selected_floor_id = ""
         self.regions: list[dict] = []
+        self.warp_points: list[dict] = []
+        self.selected_warp_point_id = ""
         self.selected_region_id = ""
         self.updating_region_selection = False
         self.reporting_callback_exception = False
@@ -228,6 +231,7 @@ class MapperWindow(tk.Tk):
             ("Select  [V]", lambda: self.set_mode("select")),
             ("Poly  [P]", lambda: self.set_mode("draw")),
             ("Edit Poly [E]", lambda: self.set_mode("edit")),
+            ("Warp  [W]", lambda: self.set_mode("warp")),
             ("Undo", self.undo),
             ("Redo", self.redo),
             ("Fit Map", self.fit_map),
@@ -267,6 +271,8 @@ class MapperWindow(tk.Tk):
         self.bind("<KeyPress-P>", lambda event: self.tool_shortcut(event, "draw"))
         self.bind("<KeyPress-e>", lambda event: self.tool_shortcut(event, "edit"))
         self.bind("<KeyPress-E>", lambda event: self.tool_shortcut(event, "edit"))
+        self.bind("<KeyPress-w>", lambda event: self.tool_shortcut(event, "warp"))
+        self.bind("<KeyPress-W>", lambda event: self.tool_shortcut(event, "warp"))
         self.bind("<Delete>", self.delete_node_shortcut)
         self.bind("<BackSpace>", self.delete_node_shortcut)
 
@@ -318,6 +324,7 @@ class MapperWindow(tk.Tk):
         ttk.Button(target_buttons, text="Choose", command=self.choose_destination).pack(side="left")
         ttk.Button(target_buttons, text="Clear", command=self.clear_destination).pack(side="left", padx=4)
         self.target_location_id = ""
+        self.target_warp_point_id = ""
         self.region_help_label = ttk.Label(
             props,
             text="Changes save automatically. Tip: middle-drag pans; mouse wheel zooms at the cursor.",
@@ -491,6 +498,7 @@ class MapperWindow(tk.Tk):
         self.pending_image = None
         self.image_value.set("No image")
         self.regions = []
+        self.warp_points = []
         self._reset_editor()
         self.map_image = None
         self.tk_map_image = None
@@ -540,6 +548,7 @@ class MapperWindow(tk.Tk):
         self.floor_value.set(next((str(floor.get("name", "Unnamed")) for floor in (location or {}).get("floors", []) or [] if str(floor.get("record_id")) == self.selected_floor_id), "Default location map"))
         self.has_floors_value.set(bool((location or {}).get("has_floors", False)))
         self.regions = deepcopy(record.get("regions", []) or [])
+        self.warp_points = deepcopy(record.get("warp_points", []) or [])
         self._reset_editor()
         asset = record.get("asset")
         self.image_value.set("Base image ready" if asset else "No image")
@@ -549,6 +558,7 @@ class MapperWindow(tk.Tk):
 
     def _reset_editor(self) -> None:
         self.selected_region_id = ""
+        self.selected_warp_point_id = ""
         self.selected_vertex = None
         self.draft_points = []
         self.editor_dirty = False
@@ -707,6 +717,7 @@ class MapperWindow(tk.Tk):
             return False
         try:
             regions = [normalize_region(region) for region in self.regions]
+            warp_points = [normalize_warp_point(point) for point in self.warp_points]
             session = self.repository.load()
             record = next((item for item in session.data["maps"] if str(item.get("record_id")) == self.selected_map_id), None)
             now = utc_now()
@@ -718,6 +729,9 @@ class MapperWindow(tk.Tk):
                     "players_published": False,
                     "asset": None,
                     "regions": [],
+                    "warp_points": [],
+                    "start_point": None,
+                    "token_scale": 0.055,
                 }
                 session.data["maps"].append(record)
             map_id = str(record["record_id"])
@@ -725,7 +739,15 @@ class MapperWindow(tk.Tk):
             imported_image = self.pending_image is not None
             if self.pending_image is not None:
                 asset = self.repository.assets.import_map(map_id, self.pending_image)
-            record.update(name=name, location_id=location_id, floor_id=floor_id, asset=asset, regions=regions, last_updated=now)
+            record.update(
+                name=name,
+                location_id=location_id,
+                floor_id=floor_id,
+                asset=asset,
+                regions=regions,
+                warp_points=warp_points,
+                last_updated=now,
+            )
             location = next(item for item in session.data["locations"] if str(item.get("record_id")) == location_id)
             location["has_floors"] = bool(location.get("has_floors", False) or self.has_floors_value.get())
             if not floor_id:
@@ -760,6 +782,7 @@ class MapperWindow(tk.Tk):
                 item for item in self.maps if str(item.get("record_id")) == map_id
             )
             self.regions = deepcopy(saved_record.get("regions", []) or [])
+            self.warp_points = deepcopy(saved_record.get("warp_points", []) or [])
             if imported_image:
                 self.image_value.set("Base image ready")
                 self.load_canvas_image(saved_record)
@@ -789,7 +812,7 @@ class MapperWindow(tk.Tk):
         return self.save_map(reason)
 
     def set_mode(self, mode: str) -> None:
-        if mode == "draw" and self.map_image is None:
+        if mode in {"draw", "warp"} and self.map_image is None:
             messagebox.showinfo("Base map required", "Import and save a base map before drawing shapes.", parent=self)
             return
         if mode != "draw" and self.draft_points:
@@ -799,8 +822,9 @@ class MapperWindow(tk.Tk):
             "select": "Select and move shapes",
             "draw": "Place nodes; click the first node to close",
             "edit": "Line: add • node: drag • right-click: remove",
+            "warp": "Click: add/select warp • drag: move • right-click: remove",
         }[mode])
-        self.canvas.configure(cursor="crosshair" if mode in {"draw", "edit"} else "arrow")
+        self.canvas.configure(cursor="crosshair" if mode in {"draw", "edit", "warp"} else "arrow")
         self.render_canvas()
 
     def tool_shortcut(self, event: tk.Event, mode: str) -> None:
@@ -913,6 +937,31 @@ class MapperWindow(tk.Tk):
                         x, y = self.normal_to_canvas(point)
                         radius = 6 if index == self.selected_vertex else 4
                         self.canvas.create_oval(x - radius, y - radius, x + radius, y + radius, fill="#fff8e7", outline=self.LINE, width=2, tags=(f"node:{index}", "node"))
+        for warp_point in self.warp_points:
+            x, y = self.normal_to_canvas(warp_point)
+            selected = str(warp_point.get("record_id")) == self.selected_warp_point_id
+            radius = 8 if selected else 6
+            self.canvas.create_oval(
+                x - radius,
+                y - radius,
+                x + radius,
+                y + radius,
+                fill="#7b3f8c",
+                outline="#fff8e7" if selected else self.LINE,
+                width=3 if selected else 2,
+                tags=(f"warp:{warp_point['record_id']}", "warp-point"),
+            )
+            self.canvas.create_line(x - 11, y, x + 11, y, fill="#fff8e7", width=2, tags=("warp-point",))
+            self.canvas.create_line(x, y - 11, x, y + 11, fill="#fff8e7", width=2, tags=("warp-point",))
+            self.canvas.create_text(
+                x + 12,
+                y - 12,
+                text=str(warp_point.get("name") or "Warp"),
+                anchor="sw",
+                fill="#fff8e7",
+                font=("Segoe UI", 9, "bold"),
+                tags=("warp-point",),
+            )
         if self.draft_points:
             coords = [coordinate for point in self.draft_points for coordinate in self.normal_to_canvas(point)]
             if len(coords) >= 4:
@@ -1037,7 +1086,7 @@ class MapperWindow(tk.Tk):
             except tk.TclError:
                 pass
             self.pan_watchdog_id = None
-        self.canvas.configure(cursor="crosshair" if self.mode in {"draw", "edit"} else "arrow")
+        self.canvas.configure(cursor="crosshair" if self.mode in {"draw", "edit", "warp"} else "arrow")
         if focus_canvas:
             self.canvas.focus_set()
         return True
@@ -1081,7 +1130,7 @@ class MapperWindow(tk.Tk):
 
     def canvas_leave(self, _event: tk.Event | None = None) -> None:
         self.canvas.delete("draft-close-cursor")
-        self.canvas.configure(cursor="crosshair" if self.mode in {"draw", "edit"} else "arrow")
+        self.canvas.configure(cursor="crosshair" if self.mode in {"draw", "edit", "warp"} else "arrow")
 
     def draft_pointer_position(self, x: float, y: float) -> tuple[float, float, bool]:
         if len(self.draft_points) >= 3:
@@ -1092,6 +1141,36 @@ class MapperWindow(tk.Tk):
         canvas_x, canvas_y = self.normal_to_canvas(point)
         return canvas_x, canvas_y, False
 
+    def warp_point_at(self, x: float, y: float) -> dict | None:
+        for point in reversed(self.warp_points):
+            px, py = self.normal_to_canvas(point)
+            if math.hypot(x - px, y - py) <= 12:
+                return point
+        return None
+
+    def add_warp_point(self, point: dict) -> None:
+        name = simpledialog.askstring(
+            "Name warp point",
+            "Name this arrival point (for example, North Stairwell):",
+            parent=self,
+        )
+        if not name or not name.strip():
+            return
+        now = utc_now()
+        warp_point = normalize_warp_point({
+            "record_id": str(uuid4()),
+            "name": name.strip(),
+            "x": point["x"],
+            "y": point["y"],
+            "created_at": now,
+            "last_updated": now,
+        })
+        self.warp_points.append(warp_point)
+        self.selected_warp_point_id = warp_point["record_id"]
+        self.editor_dirty = True
+        self.render_canvas()
+        self.autosave_map("Added warp point")
+
     def canvas_press(self, event: tk.Event) -> None:
         self.canvas.focus_set()
         if self.pan_state is not None:
@@ -1100,6 +1179,19 @@ class MapperWindow(tk.Tk):
             return
         point = self.canvas_to_normal(event.x, event.y)
         if not 0 <= point["x"] <= 1 or not 0 <= point["y"] <= 1:
+            return
+        if self.mode == "warp":
+            existing = self.warp_point_at(event.x, event.y)
+            if existing is not None:
+                self.selected_warp_point_id = str(existing["record_id"])
+                self.drag_state = {
+                    "kind": "warp",
+                    "record_id": self.selected_warp_point_id,
+                    "changed": False,
+                }
+                self.render_canvas()
+            else:
+                self.add_warp_point(point)
             return
         if self.mode == "draw":
             if len(self.draft_points) >= 3:
@@ -1144,6 +1236,21 @@ class MapperWindow(tk.Tk):
     def canvas_drag(self, event: tk.Event) -> None:
         if not self.drag_state:
             return
+        if self.drag_state.get("kind") == "warp":
+            point = self.canvas_to_normal(event.x, event.y, True)
+            warp_point = next(
+                (
+                    item for item in self.warp_points
+                    if str(item.get("record_id")) == self.drag_state.get("record_id")
+                ),
+                None,
+            )
+            if warp_point is not None:
+                warp_point.update(x=point["x"], y=point["y"])
+                self.drag_state["changed"] = True
+                self.editor_dirty = True
+                self.render_canvas()
+            return
         region = self.selected_region()
         if not region:
             return
@@ -1158,6 +1265,20 @@ class MapperWindow(tk.Tk):
         self.render_canvas()
 
     def canvas_release(self, _event: tk.Event) -> None:
+        if self.drag_state and self.drag_state.get("kind") == "warp":
+            changed = bool(self.drag_state.get("changed"))
+            warp_point = next(
+                (
+                    item for item in self.warp_points
+                    if str(item.get("record_id")) == self.drag_state.get("record_id")
+                ),
+                None,
+            )
+            self.drag_state = None
+            if changed and warp_point is not None:
+                warp_point["last_updated"] = utc_now()
+                self.autosave_map("Moved warp point")
+            return
         changed = bool(self.drag_state and self.drag_state.get("changed"))
         if self.drag_state and not changed and self.undo_stack:
             self.undo_stack.pop()
@@ -1170,6 +1291,29 @@ class MapperWindow(tk.Tk):
             self.autosave_map("Polygon geometry")
 
     def canvas_right_click(self, event: tk.Event) -> str:
+        if self.mode == "warp":
+            warp_point = self.warp_point_at(event.x, event.y)
+            if warp_point is None:
+                return "break"
+            if messagebox.askyesno(
+                "Remove warp point",
+                f"Remove {warp_point.get('name', 'this warp point')}?",
+                parent=self,
+            ):
+                warp_id = str(warp_point.get("record_id"))
+                self.warp_points = [
+                    item for item in self.warp_points
+                    if str(item.get("record_id")) != warp_id
+                ]
+                for region in self.regions:
+                    if str(region.get("target_warp_point_id", "")) == warp_id:
+                        region["target_warp_point_id"] = ""
+                self.selected_warp_point_id = ""
+                self.editor_dirty = True
+                self.render_region_list()
+                self.render_canvas()
+                self.autosave_map("Removed warp point")
+            return "break"
         if self.mode != "edit":
             return ""
         region = self.selected_region()
@@ -1212,6 +1356,7 @@ class MapperWindow(tk.Tk):
             "hover_text": "",
             "points": deepcopy(self.draft_points),
             "target_location_id": "",
+            "target_warp_point_id": "",
             "created_at": now,
             "last_updated": now,
         }
@@ -1260,6 +1405,7 @@ class MapperWindow(tk.Tk):
                 self.hover_text.insert("1.0", region.get("hover_text", ""))
                 self.hover_text.edit_modified(False)
                 self.target_location_id = str(region.get("target_location_id", ""))
+                self.target_warp_point_id = str(region.get("target_warp_point_id", ""))
                 if self.region_tree.exists(region_id):
                     if self.region_tree.selection() != (region_id,):
                         self.updating_region_selection = True
@@ -1285,6 +1431,7 @@ class MapperWindow(tk.Tk):
                 self.hover_text.delete("1.0", "end")
                 self.hover_text.edit_modified(False)
             self.target_location_id = ""
+            self.target_warp_point_id = ""
             if hasattr(self, "region_target"):
                 self.region_target.set("Not applicable")
         finally:
@@ -1297,7 +1444,20 @@ class MapperWindow(tk.Tk):
             behavior = region.get("behavior_type", "area")
             if behavior == "travel":
                 target = str(region.get("target_location_id", ""))
-                status = f"Travel to: {location_names.get(target, 'Missing')}" if target else "Needs destination"
+                warp_id = str(region.get("target_warp_point_id", ""))
+                warp = next(
+                    (
+                        point for map_record in self.maps
+                        for point in map_record.get("warp_points", []) or []
+                        if str(point.get("record_id", "")) == warp_id
+                    ),
+                    None,
+                )
+                status = (
+                    f"Warp: {warp.get('name')}"
+                    if warp
+                    else (f"Travel to: {location_names.get(target, 'Missing')}" if target else "Needs destination")
+                )
             else:
                 status = "Ready"
             self.region_tree.insert("", "end", iid=region["record_id"], text=region["name"], values=(BEHAVIOR_LABELS.get(behavior, behavior), status))
@@ -1315,24 +1475,104 @@ class MapperWindow(tk.Tk):
             self.region_target.set("Not applicable")
             return
         self.target_frame.pack(fill="x", pady=(6, 0), before=self.region_help_label)
+        target_map = next(
+            (
+                map_record for map_record in self.maps
+                if any(
+                    str(point.get("record_id", "")) == self.target_warp_point_id
+                    for point in map_record.get("warp_points", []) or []
+                )
+            ),
+            None,
+        )
+        warp = next(
+            (
+                point for point in (target_map or {}).get("warp_points", []) or []
+                if str(point.get("record_id", "")) == self.target_warp_point_id
+            ),
+            None,
+        )
         location = next((item for item in self.locations if str(item.get("record_id")) == self.target_location_id), None)
-        self.region_target.set(f"Travel to: {location.get('name')}" if location else "Needs destination")
+        if warp and target_map:
+            self.region_target.set(f"Warp to: {target_map.get('name')} — {warp.get('name')}")
+        else:
+            self.region_target.set(f"Travel to: {location.get('name')}" if location else "Needs destination")
 
     def choose_destination(self) -> None:
-        self._choose_location_dialog(
-            "Choose travel destination",
-            self.target_location_id,
-            self._set_destination,
-        )
+        choices = []
+        for map_record in self.maps:
+            for point in map_record.get("warp_points", []) or []:
+                choices.append({
+                    "record_id": str(point.get("record_id", "")),
+                    "name": str(point.get("name", "Warp point")),
+                    "map_name": str(map_record.get("name", "Map")),
+                    "location_id": str(map_record.get("location_id", "")),
+                })
+        if not choices:
+            messagebox.showinfo(
+                "No warp points",
+                "Use the Warp [W] tool on a destination map to create an arrival point first.",
+                parent=self,
+            )
+            return
+        dialog = tk.Toplevel(self)
+        dialog.title("Choose destination warp point")
+        dialog.transient(self)
+        dialog.geometry("560x460")
+        dialog.minsize(460, 360)
+        shell = ttk.Frame(dialog, padding=12)
+        shell.pack(fill="both", expand=True)
+        query = tk.StringVar()
+        ttk.Label(shell, text="Search warp points", font=("Segoe UI", 10, "bold")).pack(anchor="w")
+        entry = ttk.Entry(shell, textvariable=query)
+        entry.pack(fill="x", pady=(3, 8))
+        tree = ttk.Treeview(shell, columns=("map",), show="tree headings", selectmode="browse")
+        tree.heading("#0", text="Warp point")
+        tree.heading("map", text="Destination map")
+        tree.column("#0", width=190)
+        tree.column("map", width=270)
+        tree.pack(fill="both", expand=True)
+
+        def refill(*_args) -> None:
+            text = query.get().strip().casefold()
+            tree.delete(*tree.get_children())
+            for choice in choices:
+                haystack = f"{choice['name']} {choice['map_name']}".casefold()
+                if text and text not in haystack:
+                    continue
+                tree.insert("", "end", iid=choice["record_id"], text=choice["name"], values=(choice["map_name"],))
+
+        def choose(*_args) -> None:
+            selection = tree.selection()
+            if not selection:
+                return
+            choice = next(item for item in choices if item["record_id"] == selection[0])
+            self.target_location_id = choice["location_id"]
+            self.target_warp_point_id = choice["record_id"]
+            self.render_target_controls()
+            self.region_metadata_changed()
+            self.flush_metadata_save()
+            dialog.destroy()
+
+        query.trace_add("write", refill)
+        tree.bind("<Double-Button-1>", choose)
+        actions = ttk.Frame(shell)
+        actions.pack(fill="x", pady=(8, 0))
+        ttk.Button(actions, text="Cancel", command=dialog.destroy).pack(side="right")
+        ttk.Button(actions, text="Choose warp point", command=choose).pack(side="right", padx=(0, 6))
+        refill()
+        entry.focus_set()
 
     def _set_destination(self, location_id: str) -> None:
         self.target_location_id = location_id
+        self.target_warp_point_id = ""
         self.render_target_controls()
         self.region_metadata_changed()
         self.flush_metadata_save()
 
     def clear_destination(self) -> None:
         self.target_location_id = ""
+        self.target_warp_point_id = ""
         self.render_target_controls()
         self.region_metadata_changed()
         self.flush_metadata_save()
@@ -1374,6 +1614,7 @@ class MapperWindow(tk.Tk):
             "behavior_type": behavior,
             "hover_text": self.hover_text.get("1.0", "end-1c").strip(),
             "target_location_id": self.target_location_id if behavior == "travel" else "",
+            "target_warp_point_id": self.target_warp_point_id if behavior == "travel" else "",
         }
         if all(region.get(key, "") == value for key, value in changes.items()):
             return

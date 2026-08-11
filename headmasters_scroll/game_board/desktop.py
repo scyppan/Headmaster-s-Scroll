@@ -741,6 +741,7 @@ class GameBoardWindow(tk.Tk):
         self.board_obscuration_list_ids: list[str] = []
         self.board_obscure_opacity = tk.StringVar(value="35")
         self.board_obscure_color = "#ff0000"
+        self.board_start_point_mode = False
         self.board_confirmation_message_until = 0.0
         self._board_obscure_drag: dict[str, Any] | None = None
         self._board_pan_state: tuple[str, float, float, float, float] | None = None
@@ -751,6 +752,8 @@ class GameBoardWindow(tk.Tk):
         self.board_map_controls_window: tk.Toplevel | None = None
         self.board_settings_window: tk.Toplevel | None = None
         self._known_pending_ids: set[str] = set()
+        self._chat_layout_after_id: str | None = None
+        self._chat_layout_compact: bool | None = None
         self.title("Game Board — Headmaster Controls")
         self.geometry("1240x800")
         self.minsize(760, 520)
@@ -759,6 +762,8 @@ class GameBoardWindow(tk.Tk):
         self.protocol("WM_DELETE_WINDOW", self.close)
         self._configure_style()
         self._build()
+        self.bind("<Configure>", self._window_resized, add="+")
+        self.after_idle(self._apply_responsive_chat_layout)
         self.after_idle(lambda: maximize_window(self))
         self.after(100, self._start_server)
 
@@ -1348,6 +1353,39 @@ class GameBoardWindow(tk.Tk):
         )
         ttk.Button(map_controls, text="Delete obfuscation", style="Quiet.TButton", command=self.delete_board_obscuration).pack(fill="x", pady=(0, 3))
         ttk.Button(map_controls, text="Fit map", style="Quiet.TButton", command=self.fit_current_board_map).pack(fill="x", pady=(0, 3))
+        ttk.Label(
+            map_controls,
+            text="TOKENS",
+            style="Card.TLabel",
+            font=("Segoe UI", 8, "bold"),
+        ).pack(fill="x", pady=(6, 2))
+        token_row = ttk.Frame(map_controls, style="Card.TFrame")
+        token_row.pack(fill="x", pady=(0, 3))
+        ttk.Button(
+            token_row,
+            text="âˆ’",
+            width=3,
+            style="Quiet.TButton",
+            command=lambda: self.adjust_current_map_token_scale(-1),
+        ).pack(side="left")
+        self.board_token_size_label = ttk.Label(
+            token_row, text="100%", anchor="center", style="Card.TLabel"
+        )
+        self.board_token_size_label.pack(side="left", fill="x", expand=True)
+        ttk.Button(
+            token_row,
+            text="+",
+            width=3,
+            style="Quiet.TButton",
+            command=lambda: self.adjust_current_map_token_scale(1),
+        ).pack(side="right")
+        self.board_start_point_button = ttk.Button(
+            map_controls,
+            text="Set player start point",
+            style="Quiet.TButton",
+            command=self.start_setting_board_start_point,
+        )
+        self.board_start_point_button.pack(fill="x", pady=(0, 3))
         ttk.Button(map_controls, text="Remove map", style="Quiet.TButton", command=self.remove_current_board_map).pack(fill="x", pady=(0, 6))
         self.board_confirm_button = ttk.Button(map_controls, text="Confirm to players", style="Good.TButton", command=self.confirm_board_presentation)
         self.board_confirm_button.pack(fill="x")
@@ -1364,7 +1402,7 @@ class GameBoardWindow(tk.Tk):
         self.board_draft_status.pack(fill="x", pady=(5, 0))
         window.update_idletasks()
         width = max(240, window.winfo_reqwidth())
-        height = max(390, window.winfo_reqheight())
+        height = max(470, window.winfo_reqheight())
         window.geometry(
             f"{width}x{height}+{self.winfo_rootx() + 230}+{self.winfo_rooty() + 110}"
         )
@@ -1584,6 +1622,7 @@ class GameBoardWindow(tk.Tk):
             self.board_reveal_value.set(False)
             self.board_obscure_opacity.set("35")
             self.board_obscure_color = "#ff0000"
+            self.board_token_size_label.configure(text="100%")
             self.board_draft_status.configure(text="No map open", foreground=self.MUTED)
             self.board_confirm_button.configure(text="No changes to send", state="disabled")
             self._refresh_board_obscuration_list()
@@ -1591,6 +1630,9 @@ class GameBoardWindow(tk.Tk):
         self.board_reveal_value.set(bool(draft["published"]))
         self.board_obscure_opacity.set(str(round(float(draft["preview_opacity"]) * 100)))
         self.board_obscure_color = str(draft["preview_color"])
+        record = self._current_board_map() or {}
+        token_scale = float(record.get("token_scale", 0.055))
+        self.board_token_size_label.configure(text=f"{round(token_scale / 0.055 * 100):d}%")
         if draft.get("dirty"):
             self.board_draft_status.configure(
                 text="Not sent — these changes are visible only to you.",
@@ -1672,6 +1714,71 @@ class GameBoardWindow(tk.Tk):
         self.board_confirm_button.configure(text="Send changes to players", state="normal")
         if self.selected_board_map_id:
             self._draw_board_map(self.selected_board_map_id)
+
+    def adjust_current_map_token_scale(self, direction: int) -> None:
+        record = self._current_board_map()
+        map_id = self.selected_board_map_id
+        if record is None or not map_id:
+            return
+        current = float(record.get("token_scale", 0.055))
+        value = max(0.02, min(0.12, round(current + 0.005 * direction, 3)))
+        if value == current:
+            return
+        record["token_scale"] = value
+        self.board_token_size_label.configure(text=f"{round(value / 0.055 * 100):d}%")
+        self._draw_board_map(map_id)
+        self._background(
+            lambda: self.client.request(
+                "PUT", f"/api/admin/board/maps/{map_id}/settings", {"token_scale": value}
+            ),
+            lambda _result: self.refresh(silent=True),
+        )
+
+    def start_setting_board_start_point(self) -> None:
+        if not self.selected_board_map_id:
+            messagebox.showinfo(
+                "Player start point",
+                "Add and select a map before setting its player start point.",
+                parent=self,
+            )
+            return
+        self.cancel_board_obscuration()
+        self.board_obscure_mode = False
+        self.board_start_point_mode = True
+        self.board_start_point_button.configure(text="Click the mapâ€¦")
+        self.board_draft_status.configure(
+            text="Click once on the map to set the ideal player start point.",
+            foreground=self.MUTED,
+        )
+        canvas = self.board_canvases.get(self.selected_board_map_id)
+        if canvas is not None:
+            canvas.configure(cursor="crosshair")
+            canvas.focus_set()
+
+    def set_board_start_point(self, event: tk.Event, map_id: str) -> None:
+        if map_id != self.selected_board_map_id:
+            return
+        x, y = self._normalized_board_point(map_id, event.x, event.y, clamp=False)
+        if not 0.0 <= x <= 1.0 or not 0.0 <= y <= 1.0:
+            return
+        self.board_start_point_mode = False
+        self.board_start_point_button.configure(text="Set player start point")
+        canvas = self.board_canvases.get(map_id)
+        if canvas is not None:
+            canvas.configure(cursor="arrow")
+        record = self._current_board_map()
+        if record is not None:
+            record["start_point"] = {"x": x, "y": y}
+        self._draw_board_map(map_id)
+        self.board_draft_status.configure(text="Player start point saved.", foreground=self.GREEN)
+        self._background(
+            lambda: self.client.request(
+                "PUT",
+                f"/api/admin/board/maps/{map_id}/settings",
+                {"start_point": {"x": x, "y": y}, "update_start_point": True},
+            ),
+            lambda _result: self.refresh(silent=True),
+        )
 
     def open_board_settings(self) -> None:
         if not self.selected_board_map_id:
@@ -1861,6 +1968,12 @@ class GameBoardWindow(tk.Tk):
         else:
             canvas.create_text(width / 2, height / 2, text="No map image imported", fill="#f8edcf", font=("Segoe UI", 14, "bold"))
         self.board_canvas_geometry[map_id] = (left, top, draw_width, draw_height)
+        token_scale = max(0.02, min(0.12, float(record.get("token_scale", 0.055))))
+        token_diameter = max(18, round(draw_width * token_scale))
+        portrait_diameter = max(12, token_diameter - max(6, round(token_diameter * 0.14)))
+        dot_diameter = max(10, round(token_diameter * 0.35))
+        for key in [key for key in self._board_portraits if key.startswith(f"{map_id}:")]:
+            self._board_portraits.pop(key, None)
         for actor in self.board_snapshot.get("actors", []):
             if actor.get("map_id") != map_id:
                 continue
@@ -1873,13 +1986,15 @@ class GameBoardWindow(tk.Tk):
                 try:
                     portrait_path = self.asset_store.resolve(str(actor["portrait_asset_id"]))
                     with Image.open(portrait_path) as opened:
-                        portrait = opened.convert("RGB").resize((52, 52), Image.Resampling.LANCZOS)
+                        portrait = opened.convert("RGB").resize((portrait_diameter, portrait_diameter), Image.Resampling.LANCZOS)
                     photo = ImageTk.PhotoImage(portrait)
-                    self._board_portraits[actor_id] = photo
-                    canvas.create_oval(x - 30, y - 30, x + 30, y + 30, fill=color, outline="#fff3cf" if selected else self.INK, width=4 if selected else 2)
+                    self._board_portraits[f"{map_id}:{actor_id}:{token_diameter}"] = photo
+                    radius = token_diameter / 2
+                    canvas.create_oval(x - radius, y - radius, x + radius, y + radius, fill=color, outline="#fff3cf" if selected else self.INK, width=4 if selected else 2)
                     item = canvas.create_image(x, y, image=photo)
                 except (FileNotFoundError, OSError, ValueError):
-                    item = canvas.create_oval(x - 11, y - 11, x + 11, y + 11, fill=color, outline="white" if selected else self.INK, width=3)
+                    radius = dot_diameter / 2
+                    item = canvas.create_oval(x - radius, y - radius, x + radius, y + radius, fill=color, outline="white" if selected else self.INK, width=3)
             elif actor.get("display_mode") == "nameplate":
                 name = str(actor.get("name") or "Character")
                 text_item = canvas.create_text(x, y, text=name, fill=self.INK, font=("Segoe UI", 9, "bold"))
@@ -1888,11 +2003,20 @@ class GameBoardWindow(tk.Tk):
                 canvas.tag_raise(text_item)
                 self._board_canvas_actors[(map_id, text_item)] = actor_id
             else:
-                item = canvas.create_oval(x - 9, y - 9, x + 9, y + 9, fill=color, outline="#fff3cf" if selected else self.INK, width=3 if selected else 2)
+                radius = dot_diameter / 2
+                item = canvas.create_oval(x - radius, y - radius, x + radius, y + radius, fill=color, outline="#fff3cf" if selected else self.INK, width=3 if selected else 2)
             self._board_canvas_actors[(map_id, item)] = actor_id
             name = str(actor.get("name") or "Unknown")
-            label = canvas.create_text(x, y + 38 if actor.get("display_mode") == "token" else y + 18, text=name, fill="#fff8e7", font=("Segoe UI", 9, "bold"))
+            label_offset = token_diameter / 2 + 12 if actor.get("display_mode") == "token" else dot_diameter / 2 + 10
+            label = canvas.create_text(x, y + label_offset, text=name, fill="#fff8e7", font=("Segoe UI", 9, "bold"))
             self._board_canvas_actors[(map_id, label)] = actor_id
+
+        start_point = record.get("start_point")
+        if isinstance(start_point, dict):
+            sx = left + float(start_point.get("x", 0.5)) * draw_width
+            sy = top + float(start_point.get("y", 0.5)) * draw_height
+            canvas.create_oval(sx - 8, sy - 8, sx + 8, sy + 8, fill="#2f7d32", outline="#fff8e7", width=2, tags=("map-start-point",))
+            canvas.create_text(sx, sy - 15, text="START", fill="#fff8e7", font=("Segoe UI", 8, "bold"), tags=("map-start-point",))
 
         draft = self._board_presentation_draft(map_id)
         obscurations = list((draft or {}).get("obscurations", []))
@@ -2164,7 +2288,9 @@ class GameBoardWindow(tk.Tk):
         return "break"
 
     def _board_pointer_start(self, event: tk.Event, map_id: str) -> None:
-        if self.board_obscure_mode:
+        if self.board_start_point_mode:
+            self.set_board_start_point(event, map_id)
+        elif self.board_obscure_mode:
             self._board_obscuration_press(event, map_id)
         else:
             self._board_drag_start(event, map_id)
@@ -3195,7 +3321,7 @@ class GameBoardWindow(tk.Tk):
         self.chat_collapsed = False
         self.chat_shell = tk.Frame(
             parent,
-            width=330,
+            width=292,
             background=self.LIGHT,
             highlightbackground=self.ACCENT,
             highlightthickness=1,
@@ -3244,12 +3370,40 @@ class GameBoardWindow(tk.Tk):
         self.chat_collapsed = not self.chat_collapsed
         if self.chat_collapsed:
             self.chat_expanded.pack_forget()
-            self.chat_shell.configure(width=52)
+            self.chat_shell.configure(width=44)
             self.chat_rail.pack(fill="both", expand=True)
         else:
             self.chat_rail.pack_forget()
-            self.chat_shell.configure(width=330)
+            self.chat_shell.configure(width=292)
             self.chat_expanded.pack(fill="both", expand=True)
+        self._apply_responsive_chat_layout()
+
+    def _window_resized(self, event: tk.Event) -> None:
+        if event.widget is not self:
+            return
+        if self._chat_layout_after_id is not None:
+            try:
+                self.after_cancel(self._chat_layout_after_id)
+            except tk.TclError:
+                pass
+        self._chat_layout_after_id = self.after(60, self._apply_responsive_chat_layout)
+
+    def _apply_responsive_chat_layout(self) -> None:
+        self._chat_layout_after_id = None
+        if not hasattr(self, "chat_shell") or not self.chat_shell.winfo_exists():
+            return
+        compact = self.winfo_width() < 1120
+        self._chat_layout_compact = compact
+        self.chat_shell.pack_forget()
+        if self.chat_collapsed:
+            self.chat_shell.configure(width=44, height=1)
+            self.chat_shell.pack(side="right", fill="y", padx=(6, 0), before=self.section_sidebar)
+        elif compact:
+            self.chat_shell.configure(width=1, height=190)
+            self.chat_shell.pack(side="bottom", fill="x", pady=(6, 0), before=self.section_sidebar)
+        else:
+            self.chat_shell.configure(width=292, height=1)
+            self.chat_shell.pack(side="right", fill="y", padx=(8, 0), before=self.section_sidebar)
 
     def _scrollable_page(self, parent: tk.Misc) -> tuple[ttk.Frame, ttk.Frame]:
         container = ttk.Frame(parent)

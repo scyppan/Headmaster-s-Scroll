@@ -630,7 +630,7 @@
         .filter(actor => actor.map_id === this.activeMapId)
         .forEach(actor => this.createBoardActor(stage, actor));
       this.createBoardObscurationLayer(stage, map);
-      this.setupMapCamera(viewport, stage, map.record_id);
+      this.setupMapCamera(viewport, stage, map.record_id, Number(map.token_scale || 0.055));
     }
 
     createBoardRegionLayer(stage, map) {
@@ -723,7 +723,7 @@
       return this.mapCameraStates.get(mapId);
     }
 
-    setupMapCamera(viewport, stage, mapId) {
+    setupMapCamera(viewport, stage, mapId, tokenScale = 0.055) {
       const sizeStage = () => {
         cancelAnimationFrame(this.mapCameraFrame);
         this.mapCameraFrame = requestAnimationFrame(() => {
@@ -738,6 +738,10 @@
           const height = width / MAP_ASPECT_RATIO;
           stage.style.width = `${Math.floor(width * 100) / 100}px`;
           stage.style.height = `${Math.floor(height * 100) / 100}px`;
+          const tokenSize = Math.max(18, width * Math.max(0.02, Math.min(0.12, tokenScale)));
+          stage.style.setProperty('--map-token-size', `${tokenSize}px`);
+          stage.style.setProperty('--map-dot-size', `${Math.max(10, tokenSize * 0.35)}px`);
+          stage.style.setProperty('--map-nameplate-width', `${Math.max(92, tokenSize * 1.45)}px`);
           stage.dataset.renderWidth = String(Math.round(width));
           this.applyMapCamera(viewport, stage, mapId);
         });

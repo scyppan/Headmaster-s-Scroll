@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import datetime, timezone
+import math
 import re
 from typing import Any, Iterable
 from uuid import uuid4
@@ -14,6 +15,9 @@ VISIBILITY_MODES = {"players", "headmaster"}
 REGION_BEHAVIOR_TYPES = {"area", "shop", "travel", "library", "other"}
 OBSCURATION_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 OFF_LIMITS_MESSAGE = "This area is off limits for now. Speak with your Headmaster."
+DEFAULT_MAP_TOKEN_SCALE = 0.055
+MIN_MAP_TOKEN_SCALE = 0.02
+MAX_MAP_TOKEN_SCALE = 0.12
 
 
 def utc_now() -> str:
@@ -133,7 +137,8 @@ def normalize_region(value: Any) -> dict[str, Any]:
     if abs(signed_area) < 1e-12:
         raise ValueError("A map region polygon must enclose an area")
     target_location_id = str(result.get("target_location_id", "") or "").strip()
-    if behavior_type != "travel" and target_location_id:
+    target_warp_point_id = str(result.get("target_warp_point_id", "") or "").strip()
+    if behavior_type != "travel" and (target_location_id or target_warp_point_id):
         raise ValueError("Only travel regions may specify a destination")
     result.update(
         record_id=record_id,
@@ -143,10 +148,44 @@ def normalize_region(value: Any) -> dict[str, Any]:
         hover_text=str(result.get("hover_text", "") or "").strip(),
         points=normalized_points,
         target_location_id=target_location_id if behavior_type == "travel" else "",
+        target_warp_point_id=target_warp_point_id if behavior_type == "travel" else "",
         created_at=str(result.get("created_at", "") or "").strip(),
         last_updated=str(result.get("last_updated", "") or "").strip(),
     )
     return result
+
+
+def normalize_map_point(value: Any, label: str, *, optional: bool = False) -> dict[str, float] | None:
+    if value is None and optional:
+        return None
+    if not isinstance(value, dict):
+        raise ValueError(f"{label} must be a map point")
+    try:
+        x, y = float(value.get("x")), float(value.get("y"))
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"{label} coordinates must be numbers") from error
+    if not 0.0 <= x <= 1.0 or not 0.0 <= y <= 1.0:
+        raise ValueError(f"{label} coordinates must be between 0 and 1")
+    return {"x": x, "y": y}
+
+
+def normalize_warp_point(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise ValueError("Every warp point must be an object")
+    record_id = str(value.get("record_id", "") or "").strip()
+    name = str(value.get("name", "") or "").strip()
+    if not record_id or not name:
+        raise ValueError("Every warp point requires a stable ID and name")
+    point = normalize_map_point(value, "Warp point")
+    return {
+        **deepcopy(value),
+        "record_id": record_id,
+        "name": name,
+        "x": point["x"],
+        "y": point["y"],
+        "created_at": str(value.get("created_at", "") or "").strip(),
+        "last_updated": str(value.get("last_updated", "") or "").strip(),
+    }
 
 
 def normalize_obscuration(value: Any) -> dict[str, Any]:
@@ -214,6 +253,19 @@ def normalize_map(value: Any) -> dict[str, Any]:
             raise ValueError(f"Every map requires {field}")
     result["floor_id"] = str(result.get("floor_id", "") or "").strip()
     result["players_published"] = bool(result.get("players_published", False))
+    token_scale = float(result.get("token_scale", DEFAULT_MAP_TOKEN_SCALE))
+    if not MIN_MAP_TOKEN_SCALE <= token_scale <= MAX_MAP_TOKEN_SCALE:
+        raise ValueError("Map token size is outside the supported range")
+    result["token_scale"] = token_scale
+    result["start_point"] = normalize_map_point(
+        result.get("start_point"), "Map start point", optional=True
+    )
+    warp_points = result.get("warp_points", []) or []
+    if not isinstance(warp_points, list):
+        raise ValueError("Map warp points must be a list")
+    result["warp_points"] = [normalize_warp_point(item) for item in warp_points]
+    if len({item["record_id"] for item in result["warp_points"]}) != len(result["warp_points"]):
+        raise ValueError("Warp point IDs must be unique within a map")
     preview_opacity = float(result.get("obscuration_preview_opacity", 0.35))
     if not 0.05 <= preview_opacity <= 1.0:
         raise ValueError("Headmaster obscuration opacity must be between 5% and 100%")
@@ -355,6 +407,13 @@ def validate_world_board(document: dict[str, Any]) -> None:
     if len(set(location_ids)) != len(location_ids):
         raise ValueError("Location IDs must be unique so each location has only one default map")
     locations = {str(item.get("record_id")): item for item in location_records}
+    warp_point_maps: dict[str, dict[str, Any]] = {}
+    for map_record in maps:
+        for warp_point in map_record["warp_points"]:
+            warp_id = warp_point["record_id"]
+            if warp_id in warp_point_maps:
+                raise ValueError("Warp point IDs must be unique across the world")
+            warp_point_maps[warp_id] = map_record
     region_ids: set[str] = set()
     for map_record in maps:
         for region in map_record["regions"]:
@@ -365,6 +424,13 @@ def validate_world_board(document: dict[str, Any]) -> None:
             target_location_id = region.get("target_location_id", "")
             if target_location_id and target_location_id not in locations:
                 raise ValueError("A travel region destination must reference an existing location")
+            target_warp_point_id = region.get("target_warp_point_id", "")
+            if target_warp_point_id:
+                target_map = warp_point_maps.get(target_warp_point_id)
+                if target_map is None:
+                    raise ValueError("A travel region warp point must exist")
+                if target_location_id and target_map["location_id"] != target_location_id:
+                    raise ValueError("A travel warp point must belong to its destination location")
     floor_by_id: dict[str, tuple[str, dict[str, Any]]] = {}
     for location_id, location in locations.items():
         floors = [normalize_floor(item, index) for index, item in enumerate(location.get("floors", []) or [])]
@@ -580,7 +646,23 @@ class WorldBoardRepository:
                 public["regions"] = []
                 for region in item.get("regions", []):
                     target_location_id = str(region.get("target_location_id", "") or "")
-                    target_map_id = str(locations.get(target_location_id, {}).get("default_map_id", "") or "")
+                    target_warp_point_id = str(region.get("target_warp_point_id", "") or "")
+                    warp_target = next(
+                        (
+                            candidate
+                            for candidate in self._location_maps(document)
+                            if any(
+                                str(point.get("record_id", "")) == target_warp_point_id
+                                for point in candidate.get("warp_points", []) or []
+                            )
+                        ),
+                        None,
+                    )
+                    target_map_id = str(
+                        (warp_target or {}).get("record_id")
+                        or locations.get(target_location_id, {}).get("default_map_id", "")
+                        or ""
+                    )
                     target_available = bool(target_map_id and target_map_id in visible_map_ids)
                     public["regions"].append({
                         "record_id": region["record_id"],
@@ -601,6 +683,8 @@ class WorldBoardRepository:
                 ]
                 public.pop("obscuration_preview_opacity", None)
                 public.pop("obscuration_preview_color", None)
+                public.pop("start_point", None)
+                public.pop("warp_points", None)
                 metadata = public.get("asset")
                 public["asset"] = (
                     {
@@ -773,6 +857,85 @@ class WorldBoardRepository:
         self.save(session)
         return deepcopy(record)
 
+    def set_map_settings(
+        self,
+        map_id: str,
+        *,
+        token_scale: float | None = None,
+        start_point: dict[str, Any] | None = None,
+        update_start_point: bool = False,
+    ) -> dict[str, Any]:
+        session = self.load()
+        if map_id not in {item["record_id"] for item in self._location_maps(session.data)}:
+            raise KeyError("That map is not assigned to a location or floor")
+        record = next((item for item in session.data["maps"] if item.get("record_id") == map_id), None)
+        if record is None:
+            raise KeyError("Unknown map")
+        if token_scale is not None:
+            record["token_scale"] = float(token_scale)
+        if update_start_point:
+            record["start_point"] = normalize_map_point(
+                start_point, "Map start point", optional=True
+            )
+        record["last_updated"] = utc_now()
+        record.update(normalize_map(record))
+        self.save(session)
+        return deepcopy(record)
+
+    def ensure_person_placement(self, person_id: str) -> dict[str, Any] | None:
+        """Place an unplaced player near the first revealed map's start point."""
+
+        session = self.load()
+        person = next((item for item in session.data["people"] if item.get("record_id") == person_id), None)
+        if person is None:
+            raise KeyError("Unknown person")
+        board = normalize_person_board(person.get("board"))
+        if board.get("placement"):
+            return deepcopy(board["placement"])
+        maps = [item for item in self._location_maps(session.data) if item.get("players_published")]
+        if not maps:
+            return None
+        target = maps[0]
+        start = normalize_map_point(
+            target.get("start_point") or {"x": 0.5, "y": 0.5},
+            "Map start point",
+        )
+        occupied = []
+        for candidate in session.data.get("people", []):
+            if not isinstance(candidate, dict) or candidate is person:
+                continue
+            placement = normalize_person_board(candidate.get("board")).get("placement")
+            if placement and placement["map_id"] == target["record_id"]:
+                occupied.append((float(placement["x"]), float(placement["y"])))
+        spacing = max(0.025, float(target.get("token_scale", DEFAULT_MAP_TOKEN_SCALE)) * 1.15)
+        candidates = [(start["x"], start["y"])]
+        for ring in range(1, 6):
+            radius = spacing * ring
+            count = max(8, ring * 8)
+            for index in range(count):
+                angle = (2.0 * math.pi * index) / count
+                candidates.append((
+                    max(0.02, min(0.98, start["x"] + math.cos(angle) * radius)),
+                    max(0.02, min(0.98, start["y"] + math.sin(angle) * radius)),
+                ))
+        x, y = next(
+            (
+                point for point in candidates
+                if all(math.hypot(point[0] - ox, point[1] - oy) >= spacing for ox, oy in occupied)
+            ),
+            candidates[-1],
+        )
+        board["placement"] = {
+            "location_id": str(target["location_id"]),
+            "floor_id": str(target.get("floor_id", "") or ""),
+            "map_id": str(target["record_id"]),
+            "x": x,
+            "y": y,
+        }
+        person["board"] = board
+        self.save(session)
+        return deepcopy(board["placement"])
+
     def travel_person(
         self,
         person_id: str,
@@ -803,20 +966,41 @@ class WorldBoardRepository:
         if not placement or placement["map_id"] != source_map_id:
             raise PermissionError("Your character is not on that map")
         target_location_id = str(region.get("target_location_id", "") or "")
-        location = next(
-            (item for item in session.data["locations"] if str(item.get("record_id")) == target_location_id),
-            None,
-        )
-        target_map_id = str((location or {}).get("default_map_id", "") or "")
-        target = next((item for item in session.data["maps"] if item.get("record_id") == target_map_id), None)
+        target_warp_point_id = str(region.get("target_warp_point_id", "") or "")
+        target = None
+        warp_point = None
+        if target_warp_point_id:
+            for candidate in session.data["maps"]:
+                point = next(
+                    (
+                        item for item in candidate.get("warp_points", []) or []
+                        if str(item.get("record_id", "")) == target_warp_point_id
+                    ),
+                    None,
+                )
+                if point is not None:
+                    target, warp_point = candidate, point
+                    break
+        if target is None:
+            location = next(
+                (item for item in session.data["locations"] if str(item.get("record_id")) == target_location_id),
+                None,
+            )
+            target_map_id = str((location or {}).get("default_map_id", "") or "")
+            target = next((item for item in session.data["maps"] if item.get("record_id") == target_map_id), None)
         if target is None or not bool(target.get("players_published", False)):
             raise PermissionError(OFF_LIMITS_MESSAGE)
+        target_map_id = str(target["record_id"])
+        arrival = normalize_map_point(
+            warp_point or target.get("start_point") or {"x": 0.5, "y": 0.5},
+            "Travel arrival point",
+        )
         board["placement"] = {
             "location_id": str(target["location_id"]),
             "floor_id": str(target.get("floor_id", "") or ""),
             "map_id": target_map_id,
-            "x": 0.5,
-            "y": 0.5,
+            "x": arrival["x"],
+            "y": arrival["y"],
         }
         person["board"] = board
         self._remove_from_incompatible_groups(session.data, person_id, board["placement"]["location_id"])

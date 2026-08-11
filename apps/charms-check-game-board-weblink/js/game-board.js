@@ -10,6 +10,7 @@
   const MAP_ZOOM_STEP = 1.15;
   const MAP_MAX_ZOOM = 32;
   const MAP_PAN_STEP = 24;
+  const MAX_ACTOR_SCREEN_SIZE = 48;
   const SECTIONS = [
     ['board', 'Game Board', '▦'],
     ['overview', 'Overview', '⌂'],
@@ -739,23 +740,24 @@
           stage.style.width = `${Math.floor(width * 100) / 100}px`;
           stage.style.height = `${Math.floor(height * 100) / 100}px`;
           const tokenSize = Math.max(6, width * Math.max(0.002, Math.min(0.03, tokenScale)));
+          stage.dataset.tokenSize = String(tokenSize);
           stage.style.setProperty('--map-token-size', `${tokenSize}px`);
           stage.style.setProperty('--map-dot-size', `${Math.max(5, tokenSize * 0.9)}px`);
           stage.style.setProperty('--map-nameplate-width', `${Math.max(3, tokenSize * 2.5)}px`);
           stage.style.setProperty('--map-actor-border', `${Math.max(0.1, tokenSize * 0.018)}px`);
           stage.style.setProperty('--map-control-outline', `${Math.max(0.1, tokenSize * 0.018)}px`);
           stage.style.setProperty('--map-control-offset', `${Math.max(0.08, tokenSize * 0.014)}px`);
-          stage.style.setProperty('--map-label-font-size', `${Math.max(0.55, tokenSize * 0.105)}px`);
+          stage.style.setProperty('--map-label-font-size', `${Math.max(0.55, tokenSize * 0.22)}px`);
           stage.style.setProperty('--map-label-border', `${Math.max(0.06, tokenSize * 0.01)}px`);
           stage.style.setProperty('--map-label-radius', `${Math.max(0.12, tokenSize * 0.025)}px`);
-          stage.style.setProperty('--map-label-gap', `${Math.max(0.35, tokenSize * 0.065)}px`);
-          stage.style.setProperty('--map-label-pad-y', `${Math.max(0.1, tokenSize * 0.018)}px`);
-          stage.style.setProperty('--map-label-pad-x', `${Math.max(0.22, tokenSize * 0.04)}px`);
+          stage.style.setProperty('--map-label-gap', `${Math.max(0.3, tokenSize * 0.05)}px`);
+          stage.style.setProperty('--map-label-pad-y', `${Math.max(0.12, tokenSize * 0.04)}px`);
+          stage.style.setProperty('--map-label-pad-x', `${Math.max(0.25, tokenSize * 0.08)}px`);
           stage.style.setProperty('--map-label-max-width', `${Math.max(8, tokenSize * 2.5)}px`);
-          stage.style.setProperty('--map-indicator-size', `${Math.max(0.55, tokenSize * 0.08)}px`);
-          stage.style.setProperty('--map-indicator-gap', `${Math.max(0.2, tokenSize * 0.035)}px`);
+          stage.style.setProperty('--map-indicator-size', `${Math.max(0.8, tokenSize * 0.2)}px`);
+          stage.style.setProperty('--map-indicator-gap', `${Math.max(0.2, tokenSize * 0.05)}px`);
           stage.style.setProperty('--map-indicator-border', `${Math.max(0.06, tokenSize * 0.01)}px`);
-          stage.style.setProperty('--map-indicator-offset', `${Math.max(0.35, tokenSize * 0.06)}px`);
+          stage.style.setProperty('--map-indicator-offset', `${Math.max(0.25, tokenSize * 0.05)}px`);
           stage.dataset.renderWidth = String(Math.round(width));
           this.applyMapCamera(viewport, stage, mapId);
         });
@@ -823,6 +825,10 @@
       const boundY = Math.max(0, (stage.offsetHeight * state.scale - viewport.clientHeight) / 2);
       state.x = Math.max(-boundX, Math.min(boundX, state.x));
       state.y = Math.max(-boundY, Math.min(boundY, state.y));
+      const tokenSize = Math.max(1, Number(stage.dataset.tokenSize || 6));
+      const actorScreenSize = tokenSize * state.scale;
+      const actorCameraScale = Math.min(1, MAX_ACTOR_SCREEN_SIZE / actorScreenSize);
+      stage.style.setProperty('--map-actor-camera-scale', String(actorCameraScale));
       stage.style.transform = `translate(-50%, -50%) translate(${state.x}px, ${state.y}px) scale(${state.scale})`;
     }
 

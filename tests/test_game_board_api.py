@@ -448,7 +448,7 @@ class GameBoardAssetTests(unittest.TestCase):
         self.assertIn("scyppan/Headmaster-s-Scroll", loader)
         self.assertIn("apps/charms-check-game-board-weblink/", loader)
         self.assertIn("https://beast.tail102829.ts.net", loader)
-        self.assertIn("a26.8.11.004", loader)
+        self.assertIn("a26.8.11.005", loader)
         self.assertNotIn("https://game.example.com", loader)
         self.assertIn("getElementById('gameboard')", loader)
         self.assertNotIn("<script>", loader)
@@ -484,6 +484,8 @@ class GameBoardAssetTests(unittest.TestCase):
         self.assertIn("--map-token-size", client)
         self.assertIn("--map-indicator-size", client)
         self.assertIn("tokenSize * 0.9", client)
+        self.assertIn("MAX_ACTOR_SCREEN_SIZE", client)
+        self.assertIn("--map-actor-camera-scale", client)
         self.assertIn("ccgb-actor-indicators", client)
         self.assertIn("background: #d6ad52", stylesheet)
         for section in ("Overview", "Attributes", "Spells", "Proficiencies", "Potions", "Pets", "Inventory", "Relationships", "Wounds", "Settings"):

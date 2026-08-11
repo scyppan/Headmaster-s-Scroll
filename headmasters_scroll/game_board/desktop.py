@@ -2075,19 +2075,31 @@ class GameBoardWindow(tk.Tk):
                 self._board_canvas_actors[(map_id, label_bg)] = actor_id
                 self._board_canvas_actors[(map_id, label)] = actor_id
 
-            indicator_y = y - max(token_diameter, dot_diameter) / 2 - 7
+            actor_diameter = (
+                token_diameter
+                if actor.get("display_mode") in {"token", "nameplate"}
+                else dot_diameter
+            )
+            indicator_diameter = max(4.0, token_diameter * 0.2)
+            indicator_gap = max(1.0, token_diameter * 0.05)
+            indicator_y = y - actor_diameter / 2 - indicator_gap - indicator_diameter / 2
             indicators = (
                 ("Heavy wounds", "#c62828", "#ffffff"),
                 ("Medium wounds", "#f2d13d", "#000000"),
                 ("Light wounds", "#ffffff", "#000000"),
                 ("Status", "#000000", "#ffffff"),
             )
-            total_width = len(indicators) * 6 - 1
+            total_width = (
+                len(indicators) * indicator_diameter
+                + (len(indicators) - 1) * indicator_gap
+            )
             start_x = x - total_width / 2
             for index, (label_text, fill, outline) in enumerate(indicators):
-                cx = start_x + index * 6 + 2.5
+                radius = indicator_diameter / 2
+                cx = start_x + radius + index * (indicator_diameter + indicator_gap)
                 indicator = canvas.create_oval(
-                    cx - 2.5, indicator_y - 2.5, cx + 2.5, indicator_y + 2.5,
+                    cx - radius, indicator_y - radius,
+                    cx + radius, indicator_y + radius,
                     fill=fill, outline=outline, width=1,
                 )
                 self._board_canvas_actors[(map_id, indicator)] = actor_id

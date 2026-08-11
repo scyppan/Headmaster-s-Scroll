@@ -764,11 +764,28 @@
 
 #gameboard .ccgb-board-actor.is-controlled {
   cursor: grab;
+  outline: none;
+}
+
+#gameboard .ccgb-board-actor.is-controlled:focus-visible {
   outline: var(--map-control-outline, 0.12px) solid #fff4c8;
   outline-offset: var(--map-control-offset, 0.1px);
 }
 
 #gameboard .ccgb-board-actor.is-controlled:active { cursor: grabbing; }
+
+#gameboard .ccgb-setting-toggle {
+  align-items: flex-start;
+  cursor: pointer;
+  display: flex;
+  font-weight: 700;
+  gap: 9px;
+}
+
+#gameboard .ccgb-setting-toggle input {
+  flex: 0 0 auto;
+  margin-top: 3px;
+}
 
 #gameboard .ccgb-actor-label {
   background: #d6ad52;
@@ -808,10 +825,10 @@
   width: var(--map-indicator-size, 0.55px);
 }
 
-#gameboard .ccgb-actor-indicators .is-heavy { background: #c62828; }
-#gameboard .ccgb-actor-indicators .is-medium { background: #f2d13d; }
-#gameboard .ccgb-actor-indicators .is-light { background: #fff; }
-#gameboard .ccgb-actor-indicators .is-status { background: #000; }
+#gameboard .ccgb-actor-indicators .is-heavy { background-color: #c62828 !important; }
+#gameboard .ccgb-actor-indicators .is-medium { background-color: #f2d13d !important; }
+#gameboard .ccgb-actor-indicators .is-light { background-color: #fff !important; }
+#gameboard .ccgb-actor-indicators .is-status { background-color: #000 !important; }
 
 #gameboard button:hover,
 #gameboard button:focus-visible,

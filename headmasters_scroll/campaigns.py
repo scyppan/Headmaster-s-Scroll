@@ -52,6 +52,22 @@ def format_game_world_date(value: Any) -> str:
     return f"{day:02d} {calendar.month_abbr[month]} {shown_year}"
 
 
+def normalize_board_camera(value: Any) -> dict[str, float]:
+    raw = value if isinstance(value, dict) else {}
+    zoom = float(raw.get("zoom", 1.0))
+    center_x = float(raw.get("center_x", 0.5))
+    center_y = float(raw.get("center_y", 0.5))
+    if not 1.0 <= zoom <= 32.0:
+        raise ValueError("Campaign map camera zoom must be between 1 and 32")
+    if not 0.0 <= center_x <= 1.0 or not 0.0 <= center_y <= 1.0:
+        raise ValueError("Campaign map camera center must be on the map")
+    return {
+        "zoom": zoom,
+        "center_x": center_x,
+        "center_y": center_y,
+    }
+
+
 def normalize_campaign_game_state(
     value: Any,
     game_world_start_date: str,
@@ -81,6 +97,14 @@ def normalize_campaign_game_state(
     active_map_id = str(raw.get("active_map_id", "") or "").strip()
     if active_map_id and active_map_id not in loaded_map_ids:
         loaded_map_ids.append(active_map_id)
+    raw_player_active_maps = raw.get("player_active_map_ids", {}) or {}
+    if not isinstance(raw_player_active_maps, dict):
+        raise ValueError("Campaign player active maps must be keyed by player ID")
+    player_active_map_ids = {
+        str(player_id).strip(): str(map_id).strip()
+        for player_id, map_id in raw_player_active_maps.items()
+        if str(player_id).strip() and str(map_id).strip()
+    }
 
     map_states: dict[str, dict[str, Any]] = {}
     maps = raw.get("maps", {}) or {}
@@ -105,6 +129,15 @@ def normalize_campaign_game_state(
         color = str(raw_state.get("obscuration_preview_color", "#ff0000") or "#ff0000").lower()
         if not re.fullmatch(r"#[0-9a-f]{6}", color):
             raise ValueError("Campaign obscuration preview color is invalid")
+        raw_player_cameras = raw_state.get("player_cameras", {}) or {}
+        if not isinstance(raw_player_cameras, dict):
+            raise ValueError("Campaign player cameras must be keyed by player ID")
+        player_cameras: dict[str, dict[str, float]] = {}
+        for raw_player_id, raw_camera in raw_player_cameras.items():
+            player_id = str(raw_player_id or "").strip()
+            if not player_id:
+                raise ValueError("Every saved player camera requires a player ID")
+            player_cameras[player_id] = normalize_board_camera(raw_camera)
         map_states[map_id] = {
             "players_published": bool(raw_state.get("players_published", False)),
             "obscurations": obscurations,
@@ -114,6 +147,10 @@ def normalize_campaign_game_state(
             "start_point": normalize_map_point(
                 raw_state.get("start_point"), "Campaign map start point", optional=True
             ),
+            "headmaster_camera": normalize_board_camera(
+                raw_state.get("headmaster_camera")
+            ),
+            "player_cameras": player_cameras,
         }
 
     people: dict[str, dict[str, Any]] = {}
@@ -142,6 +179,7 @@ def normalize_campaign_game_state(
         "current_game_datetime": current,
         "loaded_map_ids": loaded_map_ids,
         "active_map_id": active_map_id,
+        "player_active_map_ids": player_active_map_ids,
         "maps": map_states,
         "people": people,
         "groups": groups,
@@ -250,6 +288,8 @@ class CampaignRepository:
                 "obscuration_preview_color": str(item.get("obscuration_preview_color", "#ff0000") or "#ff0000"),
                 "token_scale": DEFAULT_MAP_TOKEN_SCALE,
                 "start_point": deepcopy(item.get("start_point")),
+                "headmaster_camera": normalize_board_camera(None),
+                "player_cameras": {},
             }
             for item in maps
         }
@@ -275,6 +315,7 @@ class CampaignRepository:
             ),
             "loaded_map_ids": loaded,
             "active_map_id": loaded[0] if loaded else "",
+            "player_active_map_ids": {},
             "maps": map_states,
             "people": people,
             "groups": deepcopy(world_document.get("board_groups", []) or []),

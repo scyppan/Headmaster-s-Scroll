@@ -1338,6 +1338,10 @@ class MapperWindow(tk.Tk):
             parent=self,
         ):
             return
+        before_warp_points = deepcopy(self.warp_points)
+        before_regions = deepcopy(self.regions)
+        before_selected_warp = self.selected_warp_point_id
+        before_editor_dirty = self.editor_dirty
         warp_id = str(warp_point.get("record_id"))
         self.warp_points = [
             item for item in self.warp_points
@@ -1351,7 +1355,14 @@ class MapperWindow(tk.Tk):
         self.editor_dirty = True
         self.render_region_list()
         self.render_canvas()
-        self.autosave_map("Removed warp point")
+        if not self.autosave_map("Removed warp point"):
+            self.warp_points = before_warp_points
+            self.regions = before_regions
+            self.selected_warp_point_id = before_selected_warp
+            self.editor_dirty = before_editor_dirty
+            self.render_region_list()
+            self.render_canvas()
+            self.status_value.set("The warp point was restored because the save did not complete")
 
     def canvas_double_click(self, _event: tk.Event) -> None:
         if self.mode == "draw":
@@ -1721,13 +1732,23 @@ class MapperWindow(tk.Tk):
         if len(region["points"]) <= 3:
             messagebox.showinfo("Three nodes required", "A polygon must retain at least three nodes.", parent=self)
             return
+        before_regions = deepcopy(self.regions)
+        before_selected = self.selected_region_id
+        before_vertex = self.selected_vertex
+        before_editor_dirty = self.editor_dirty
         self.record_history()
         region["points"].pop(self.selected_vertex)
         self.selected_vertex = None
         region["last_updated"] = utc_now()
         self.editor_dirty = True
         self.render_canvas()
-        self.autosave_map("Removed node")
+        if not self.autosave_map("Removed node"):
+            self.regions = before_regions
+            self.selected_vertex = before_vertex
+            self.editor_dirty = before_editor_dirty
+            self.render_region_list()
+            self.select_region(before_selected)
+            self.status_value.set("The node was restored because the save did not complete")
 
     def duplicate_region(self) -> None:
         region = self.selected_region()
@@ -1749,13 +1770,21 @@ class MapperWindow(tk.Tk):
         region = self.selected_region()
         if not region or not messagebox.askyesno("Delete region", f"Delete {region['name']}?", parent=self):
             return
+        before_regions = deepcopy(self.regions)
+        before_selected = self.selected_region_id
+        before_editor_dirty = self.editor_dirty
         self.record_history()
         self.regions = [item for item in self.regions if item["record_id"] != region["record_id"]]
         self.editor_dirty = True
         self.selected_region_id = ""
         self.render_region_list()
         self.select_region("")
-        self.autosave_map("Deleted polygon")
+        if not self.autosave_map("Deleted polygon"):
+            self.regions = before_regions
+            self.editor_dirty = before_editor_dirty
+            self.render_region_list()
+            self.select_region(before_selected)
+            self.status_value.set("The region was restored because the save did not complete")
 
 
 def main() -> None:

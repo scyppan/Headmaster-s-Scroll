@@ -3,7 +3,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from headmasters_scroll.campaigns import CampaignRepository, normalize_game_world_date
+from headmasters_scroll.campaigns import (
+    CampaignRepository,
+    normalize_board_camera,
+    normalize_game_world_date,
+)
 from headmasters_scroll.store import SharedJsonStore
 
 
@@ -50,9 +54,20 @@ class CampaignTests(unittest.TestCase):
         self.assertFalse(state["initialized"])
         self.assertEqual(state["current_game_datetime"], "1943-09-01T08:00")
         self.assertEqual(state["loaded_map_ids"], [])
+        self.assertEqual(state["player_active_map_ids"], {})
         self.assertEqual(state["maps"], {})
         self.assertEqual(state["people"], {})
         self.assertEqual(state["groups"], [])
+
+    def test_board_cameras_are_resolution_independent_and_validated(self):
+        self.assertEqual(
+            normalize_board_camera({"zoom": 12, "center_x": 0.2, "center_y": 0.8}),
+            {"zoom": 12.0, "center_x": 0.2, "center_y": 0.8},
+        )
+        with self.assertRaises(ValueError):
+            normalize_board_camera({"zoom": 33, "center_x": 0.5, "center_y": 0.5})
+        with self.assertRaises(ValueError):
+            normalize_board_camera({"zoom": 2, "center_x": -0.1, "center_y": 0.5})
 
 
 if __name__ == "__main__":

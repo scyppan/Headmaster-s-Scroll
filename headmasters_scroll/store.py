@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import time
 from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
@@ -92,18 +93,47 @@ class SharedJsonStore:
         backup_directory.mkdir(parents=True, exist_ok=True)
         backup_name = f"{now.strftime('%Y%m%dT%H%M%S%fZ')}-{session.loaded_revision}.json"
         shutil.copy2(session.path, backup_directory / backup_name)
-        temporary = session.path.with_suffix(session.path.suffix + f".{os.getpid()}.tmp")
+        # Use a unique file for every commit.  A fixed ``.new.json`` (or even a
+        # per-process name) can collide with a second autosave and is also a
+        # tempting target for indexers and sync clients on Windows.
+        temporary = session.path.with_name(
+            f".{session.path.name}.{os.getpid()}.{uuid4().hex}.tmp"
+        )
         try:
             with temporary.open("w", encoding="utf-8", newline="\n") as stream:
                 json.dump(candidate, stream, ensure_ascii=False, indent=2)
                 stream.write("\n")
                 stream.flush()
                 os.fsync(stream.fileno())
-            os.replace(temporary, session.path)
+            self._replace_with_retry(temporary, session.path)
         finally:
             temporary.unlink(missing_ok=True)
         session.reset_to(candidate, revision)
         return SaveOutcome("saved", revision_id=revision)
+
+    @staticmethod
+    def _replace_with_retry(temporary: Path, destination: Path) -> None:
+        """Atomically replace a JSON file despite brief Windows file locks.
+
+        OneDrive, antivirus scanners, and search indexing can briefly open the
+        destination between validation and replacement.  Retrying only the
+        Windows sharing/access errors keeps the operation atomic without hiding
+        unrelated filesystem failures.
+        """
+
+        retry_delays = (0.0, 0.05, 0.10, 0.20, 0.40, 0.80)
+        for attempt, delay in enumerate(retry_delays):
+            if delay:
+                time.sleep(delay)
+            try:
+                os.replace(temporary, destination)
+                return
+            except OSError as error:
+                retryable = isinstance(error, PermissionError) or getattr(
+                    error, "winerror", None
+                ) in {5, 32}
+                if not retryable or attempt == len(retry_delays) - 1:
+                    raise
 
     @staticmethod
     def _validate_app_id(app_id: str) -> None:

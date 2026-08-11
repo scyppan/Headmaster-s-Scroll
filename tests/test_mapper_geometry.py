@@ -156,6 +156,39 @@ class MapperGeometryTests(unittest.TestCase):
         )
         self.assertEqual(saves, ["Added warp point"])
 
+    def test_failed_region_delete_restores_the_region_in_the_editor(self):
+        class Status:
+            value = ""
+
+            def set(self, value):
+                self.value = value
+
+        region = {
+            "record_id": "region-1",
+            "name": "Hogsmeade",
+            "points": deepcopy(self.square),
+        }
+        window = mapper.MapperWindow.__new__(mapper.MapperWindow)
+        window.regions = [region]
+        window.selected_region_id = "region-1"
+        window.editor_dirty = False
+        window.status_value = Status()
+        window.selected_region = lambda: next(
+            (item for item in window.regions if item["record_id"] == window.selected_region_id),
+            None,
+        )
+        window.record_history = lambda: None
+        window.render_region_list = lambda: None
+        window.select_region = lambda region_id: setattr(window, "selected_region_id", region_id)
+        window.autosave_map = lambda _reason: False
+
+        with patch.object(mapper.messagebox, "askyesno", return_value=True):
+            window.delete_region()
+
+        self.assertEqual(window.regions, [region])
+        self.assertEqual(window.selected_region_id, "region-1")
+        self.assertIn("restored", window.status_value.value)
+
     def test_placed_warp_is_selectable_and_draggable_in_select_mode(self):
         class Canvas:
             def focus_set(self):

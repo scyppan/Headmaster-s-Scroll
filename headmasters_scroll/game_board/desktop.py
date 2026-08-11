@@ -727,6 +727,7 @@ class GameBoardWindow(tk.Tk):
         self.board_workspace_campaign_id = ""
         self.board_map_drafts: dict[str, dict[str, Any]] = {}
         self.board_view_states: dict[str, dict[str, float | bool]] = {}
+        self._board_camera_save_after_ids: dict[str, str] = {}
         self.selected_board_map_id = ""
         self.selected_board_actor_id = ""
         self._board_image: ImageTk.PhotoImage | None = None
@@ -1383,6 +1384,12 @@ class GameBoardWindow(tk.Tk):
         )
         ttk.Button(map_controls, text="Delete obfuscation", style="Quiet.TButton", command=self.delete_board_obscuration).pack(fill="x", pady=(0, 3))
         ttk.Button(map_controls, text="Fit map", style="Quiet.TButton", command=self.fit_current_board_map).pack(fill="x", pady=(0, 3))
+        ttk.Button(
+            map_controls,
+            text="Focus players here",
+            style="Good.TButton",
+            command=self.focus_players_on_current_view,
+        ).pack(fill="x", pady=(0, 3))
         ttk.Label(
             map_controls,
             text="TOKENS",
@@ -1576,6 +1583,7 @@ class GameBoardWindow(tk.Tk):
         campaign_id = str(self.board_snapshot.get("campaign_id", "") or "")
         if campaign_id and campaign_id != self.board_workspace_campaign_id:
             self.board_workspace_campaign_id = campaign_id
+            self.board_view_states.clear()
             self.board_open_map_ids = [
                 str(map_id) for map_id in self.board_snapshot.get("loaded_map_ids", [])
                 if str(map_id) in valid_ids
@@ -1968,15 +1976,31 @@ class GameBoardWindow(tk.Tk):
         height = max(2, canvas.winfo_height())
         state = self.board_view_states.get(map_id)
         if state is None:
-            fit_scale = min((width - 24) / MAP_CANVAS_WIDTH, (height - 24) / MAP_CANVAS_HEIGHT)
+            layout_width = max(100, width)
+            layout_height = max(100, height)
+            fit_scale = max(0.000001, min(
+                (layout_width - 24) / MAP_CANVAS_WIDTH,
+                (layout_height - 24) / MAP_CANVAS_HEIGHT,
+            ))
+            saved_camera = record.get("camera") if isinstance(record.get("camera"), dict) else {}
+            zoom = max(1.0, min(32.0, float(saved_camera.get("zoom", 1.0))))
+            center_x = max(0.0, min(1.0, float(saved_camera.get("center_x", 0.5))))
+            center_y = max(0.0, min(1.0, float(saved_camera.get("center_y", 0.5))))
+            scale = fit_scale * zoom
             state = {
                 "fit_scale": fit_scale,
-                "scale": fit_scale,
-                "origin_x": (width - MAP_CANVAS_WIDTH * fit_scale) / 2,
-                "origin_y": (height - MAP_CANVAS_HEIGHT * fit_scale) / 2,
-                "modified": False,
+                "scale": scale,
+                "origin_x": layout_width / 2 - center_x * MAP_CANVAS_WIDTH * scale,
+                "origin_y": layout_height / 2 - center_y * MAP_CANVAS_HEIGHT * scale,
+                "zoom": zoom,
+                "center_x": center_x,
+                "center_y": center_y,
+                "modified": zoom > 1.000001 or abs(center_x - 0.5) > 0.000001 or abs(center_y - 0.5) > 0.000001,
             }
             self.board_view_states[map_id] = state
+            if width >= 50 and height >= 50:
+                self._board_clamp_view(map_id)
+                self._board_update_camera_coordinates(map_id)
         draw_width = max(1.0, MAP_CANVAS_WIDTH * float(state["scale"]))
         draw_height = max(1.0, MAP_CANVAS_HEIGHT * float(state["scale"]))
         left = float(state["origin_x"])
@@ -2179,11 +2203,18 @@ class GameBoardWindow(tk.Tk):
         if state is None or not bool(state.get("modified")):
             self._board_fit_map(map_id)
             return
+        zoom = max(1.0, min(32.0, float(state.get("zoom", 1.0))))
+        center_x = max(0.0, min(1.0, float(state.get("center_x", 0.5))))
+        center_y = max(0.0, min(1.0, float(state.get("center_y", 0.5))))
         state["fit_scale"] = min(
             (max(100, canvas.winfo_width()) - 24) / MAP_CANVAS_WIDTH,
             (max(100, canvas.winfo_height()) - 24) / MAP_CANVAS_HEIGHT,
         )
+        state["scale"] = float(state["fit_scale"]) * zoom
+        state["origin_x"] = float(canvas.winfo_width()) / 2 - center_x * MAP_CANVAS_WIDTH * float(state["scale"])
+        state["origin_y"] = float(canvas.winfo_height()) / 2 - center_y * MAP_CANVAS_HEIGHT * float(state["scale"])
         self._board_clamp_view(map_id)
+        self._board_update_camera_coordinates(map_id)
         self._draw_board_map(map_id)
 
     def _board_fit_map(self, map_id: str, *, redraw: bool = True) -> None:
@@ -2197,6 +2228,9 @@ class GameBoardWindow(tk.Tk):
             "scale": fit_scale,
             "origin_x": (width - MAP_CANVAS_WIDTH * fit_scale) / 2,
             "origin_y": (height - MAP_CANVAS_HEIGHT * fit_scale) / 2,
+            "zoom": 1.0,
+            "center_x": 0.5,
+            "center_y": 0.5,
             "modified": False,
         }
         if redraw:
@@ -2205,6 +2239,7 @@ class GameBoardWindow(tk.Tk):
     def fit_current_board_map(self) -> None:
         if self.selected_board_map_id:
             self._board_fit_map(self.selected_board_map_id)
+            self._queue_board_camera_save(self.selected_board_map_id)
 
     def _board_clamp_view(self, map_id: str) -> None:
         canvas = self.board_canvases.get(map_id)
@@ -2223,6 +2258,81 @@ class GameBoardWindow(tk.Tk):
             state["origin_y"] = (canvas_height - display_height) / 2
         else:
             state["origin_y"] = min(0.0, max(canvas_height - display_height, float(state["origin_y"])))
+
+    def _board_update_camera_coordinates(self, map_id: str) -> None:
+        canvas = self.board_canvases.get(map_id)
+        state = self.board_view_states.get(map_id)
+        if canvas is None or state is None:
+            return
+        scale = max(0.000001, float(state["scale"]))
+        fit_scale = max(0.000001, float(state["fit_scale"]))
+        state["zoom"] = max(1.0, min(32.0, scale / fit_scale))
+        state["center_x"] = max(0.0, min(
+            1.0,
+            (float(canvas.winfo_width()) / 2 - float(state["origin_x"]))
+            / (MAP_CANVAS_WIDTH * scale),
+        ))
+        state["center_y"] = max(0.0, min(
+            1.0,
+            (float(canvas.winfo_height()) / 2 - float(state["origin_y"]))
+            / (MAP_CANVAS_HEIGHT * scale),
+        ))
+
+    def _board_camera_payload(self, map_id: str) -> dict[str, Any] | None:
+        state = self.board_view_states.get(map_id)
+        if state is None or not self.selected_session_id:
+            return None
+        self._board_update_camera_coordinates(map_id)
+        return {
+            "session_id": self.selected_session_id,
+            "zoom": float(state.get("zoom", 1.0)),
+            "center_x": float(state.get("center_x", 0.5)),
+            "center_y": float(state.get("center_y", 0.5)),
+        }
+
+    def _save_board_camera(self, map_id: str, *, synchronous: bool = False) -> None:
+        self._board_camera_save_after_ids.pop(map_id, None)
+        payload = self._board_camera_payload(map_id)
+        if payload is None:
+            return
+        work = lambda: self.client.request(
+            "PUT", f"/api/admin/board/maps/{map_id}/camera", payload
+        )
+        if synchronous:
+            work()
+        else:
+            self._background(work, quiet=True)
+
+    def _queue_board_camera_save(self, map_id: str, delay_ms: int = 450) -> None:
+        pending = self._board_camera_save_after_ids.pop(map_id, None)
+        if pending is not None:
+            try:
+                self.after_cancel(pending)
+            except tk.TclError:
+                pass
+        self._board_camera_save_after_ids[map_id] = self.after(
+            delay_ms, lambda selected=map_id: self._save_board_camera(selected)
+        )
+
+    def focus_players_on_current_view(self) -> None:
+        map_id = self.selected_board_map_id
+        payload = self._board_camera_payload(map_id)
+        if not map_id or payload is None:
+            messagebox.showinfo(
+                "Focus players", "Open a map before focusing players.", parent=self
+            )
+            return
+        payload["force_players"] = True
+
+        def complete(_result: Any) -> None:
+            self.set_notice("Players were focused on the current map view")
+
+        self._background(
+            lambda: self.client.request(
+                "PUT", f"/api/admin/board/maps/{map_id}/camera", payload
+            ),
+            complete,
+        )
 
     @staticmethod
     def _board_wheel_steps(event: tk.Event) -> float:
@@ -2283,7 +2393,9 @@ class GameBoardWindow(tk.Tk):
             state["origin_y"] = float(state["origin_y"]) + steps * 24
         state["modified"] = True
         self._board_clamp_view(map_id)
+        self._board_update_camera_coordinates(map_id)
         self._draw_board_map(map_id)
+        self._queue_board_camera_save(map_id)
         return "break"
 
     def board_pan_press(self, event: tk.Event, map_id: str) -> str:
@@ -2314,6 +2426,7 @@ class GameBoardWindow(tk.Tk):
         state["origin_y"] = origin_y + float(event.y_root) - start_y
         state["modified"] = True
         self._board_clamp_view(map_id)
+        self._board_update_camera_coordinates(map_id)
         self._draw_board_map(map_id)
         return "break"
 
@@ -2340,6 +2453,8 @@ class GameBoardWindow(tk.Tk):
         canvas = self.board_canvases.get(map_id)
         if canvas is not None and canvas.winfo_exists():
             canvas.configure(cursor="crosshair" if self.board_obscure_drawing else "arrow")
+        self._board_update_camera_coordinates(map_id)
+        self._queue_board_camera_save(map_id, 100)
         return True
 
     def board_pan_release(self, _event: tk.Event | None = None) -> str:
@@ -4829,6 +4944,19 @@ class GameBoardWindow(tk.Tk):
 
     def close(self) -> None:
         self.closing = True
+        for after_id in list(self._board_camera_save_after_ids.values()):
+            try:
+                self.after_cancel(after_id)
+            except tk.TclError:
+                pass
+        self._board_camera_save_after_ids.clear()
+        for map_id in list(self.board_view_states):
+            try:
+                self._save_board_camera(map_id, synchronous=True)
+            except Exception:
+                # A previously debounced save normally already holds this view;
+                # shutdown must still be allowed if the local service has stopped.
+                pass
         self.server.stop()
         self.destroy()
 

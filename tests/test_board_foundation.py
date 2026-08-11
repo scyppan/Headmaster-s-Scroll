@@ -127,6 +127,7 @@ class BoardFoundationTests(unittest.TestCase):
         one = self.assets.import_map("map-1", first)
         two = self.assets.import_map("map-1", second)
         self.assertEqual(one["asset_id"], two["asset_id"])
+        self.assertNotIn(str(second), json.dumps(two))
         self.assertEqual((two["width"], two["height"]), MAP_CANVAS_SIZE)
         self.assertEqual(two["file_extension"], ".png")
         self.assertEqual((two["source_width"], two["source_height"]), (500, 1000))
@@ -549,6 +550,7 @@ class ProtectedAssetApiTests(unittest.TestCase):
         self.admin_headers = {"X-Admin-Key": settings["admin_key"]}
         self.origin_headers = {"Origin": self.ORIGIN}
         contact = self.runtime.service.add_contact("Alice", "alice@example.com")
+        self.contact_id = contact["id"]
         self.runtime.service.assign_character(contact["id"], "pc-1")
         session = self.runtime.service.create_session(
             "Board",
@@ -630,6 +632,16 @@ class ProtectedAssetApiTests(unittest.TestCase):
                     "preview_color": "#ff0000",
                 },
             ),
+            self.admin.put(
+                "/api/admin/board/maps/map-1/camera",
+                headers=self.admin_headers,
+                json={
+                    "session_id": self.session_id,
+                    "zoom": 14.5,
+                    "center_x": 0.72,
+                    "center_y": 0.31,
+                },
+            ),
             self.admin.post(
                 "/api/admin/board/move",
                 headers=self.admin_headers,
@@ -667,6 +679,10 @@ class ProtectedAssetApiTests(unittest.TestCase):
         self.assertTrue(state["maps"]["map-1"]["players_published"])
         self.assertEqual(state["maps"]["map-1"]["token_scale"], 0.007)
         self.assertEqual(state["maps"]["map-1"]["start_point"], {"x": 0.35, "y": 0.45})
+        self.assertEqual(
+            state["maps"]["map-1"]["headmaster_camera"],
+            {"zoom": 14.5, "center_x": 0.72, "center_y": 0.31},
+        )
         placement = state["people"]["pc-1"]["placement"]
         self.assertEqual((placement["x"], placement["y"]), (0.41, 0.62))
         self.assertEqual(state["groups"][0]["name"], "Party")
@@ -682,7 +698,29 @@ class ProtectedAssetApiTests(unittest.TestCase):
         self.assertEqual(snapshot["loaded_map_ids"], ["map-1"])
         self.assertEqual((actor["x"], actor["y"]), (0.41, 0.62))
         self.assertEqual(map_record["token_scale"], 0.007)
+        self.assertEqual(
+            map_record["camera"],
+            {"zoom": 14.5, "center_x": 0.72, "center_y": 0.31},
+        )
         self.assertEqual(snapshot["groups"][0]["name"], "Party")
+
+        resumed.set_board_camera(
+            self.session_id,
+            "map-1",
+            {"zoom": 7, "center_x": 0.25, "center_y": 0.6},
+            contact_id=self.contact_id,
+        )
+        player_snapshot = resumed.board_snapshot(
+            self.session_id, for_players=True, contact_id=self.contact_id
+        )
+        player_map = next(item for item in player_snapshot["maps"] if item["record_id"] == "map-1")
+        self.assertEqual(
+            player_map["camera"],
+            {"zoom": 7.0, "center_x": 0.25, "center_y": 0.6},
+        )
+        self.assertEqual(player_snapshot["active_map_id"], "map-1")
+        self.assertNotIn("player_cameras", player_map)
+        self.assertNotIn("headmaster_camera", player_map)
 
 
 if __name__ == "__main__":

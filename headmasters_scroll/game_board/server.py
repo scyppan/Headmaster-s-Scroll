@@ -153,6 +153,14 @@ class BoardWorkspaceBody(BaseModel):
     active_map_id: str = Field(default="", max_length=100)
 
 
+class BoardCameraBody(BaseModel):
+    session_id: str = Field(min_length=1, max_length=100)
+    zoom: float = Field(ge=1.0, le=32.0)
+    center_x: float = Field(ge=0.0, le=1.0)
+    center_y: float = Field(ge=0.0, le=1.0)
+    force_players: bool = False
+
+
 @dataclass
 class PlayerConnection:
     websocket: Any
@@ -343,6 +351,7 @@ class GameBoardRuntime:
         snapshot = self.service.board_snapshot(
             connection.session_id,
             for_players=True,
+            contact_id=connection.contact_id,
         )
         snapshot["controlled_character_ids"] = sorted(
             self.service.controlled_character_ids(
@@ -364,6 +373,27 @@ class GameBoardRuntime:
             return_exceptions=True,
         )
         await self.notify_admins()
+
+    async def focus_players(
+        self,
+        session_id: str,
+        map_id: str,
+        camera: dict[str, float],
+    ) -> None:
+        envelope = {
+            "v": 1,
+            "type": "board_camera_focus",
+            "map_id": map_id,
+            "camera": camera,
+        }
+        await asyncio.gather(
+            *(
+                connection.websocket.send_json(envelope)
+                for connection in list(self.connections.values())
+                if connection.session_id == session_id
+            ),
+            return_exceptions=True,
+        )
 
     async def preview_move(
         self,
@@ -734,6 +764,25 @@ def create_apps(
         )
         await runtime.notify_admins()
         return result
+
+    @admin_app.put(
+        "/api/admin/board/maps/{map_id}/camera",
+        dependencies=[Depends(admin_guard)],
+    )
+    async def update_board_camera(map_id: str, body: BoardCameraBody):
+        camera = admin_result(
+            service.set_board_camera,
+            body.session_id,
+            map_id,
+            {
+                "zoom": body.zoom,
+                "center_x": body.center_x,
+                "center_y": body.center_y,
+            },
+        )
+        if body.force_players:
+            await runtime.focus_players(body.session_id, map_id, camera)
+        return {"camera": camera}
 
     @admin_app.put(
         "/api/admin/board/control",
@@ -1118,6 +1167,27 @@ def create_apps(
                             "message": str(error),
                         })
                         await runtime.send_board_snapshot(connection)
+                elif message.get("type") == "board_camera":
+                    try:
+                        map_id = str(message.get("map_id", ""))
+                        if not map_id:
+                            raise ValueError("A map is required")
+                        service.set_board_camera(
+                            connection.session_id,
+                            map_id,
+                            {
+                                "zoom": float(message.get("zoom")),
+                                "center_x": float(message.get("center_x")),
+                                "center_y": float(message.get("center_y")),
+                            },
+                            contact_id=connection.contact_id,
+                        )
+                    except (KeyError, PermissionError, RuntimeError, TypeError, ValueError) as error:
+                        await websocket.send_json({
+                            "v": 1,
+                            "type": "server_error",
+                            "message": str(error),
+                        })
                 else:
                     await websocket.send_json({"v": 1, "type": "server_error", "message": "Unknown message type"})
         except Exception:

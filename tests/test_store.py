@@ -134,6 +134,34 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(self.path.read_bytes(), before)
         self.assertFalse(list(self.directory.glob("*.tmp")))
 
+    def test_transient_windows_access_denial_retries_atomic_replace(self):
+        session = self.store.load("db.json")
+        session.data["wand_woods"][0]["name"] = "Changed"
+        real_replace = __import__("os").replace
+        attempts = []
+
+        def briefly_locked(source, destination):
+            attempts.append(Path(source).name)
+            if len(attempts) == 1:
+                error = PermissionError("temporarily locked")
+                error.winerror = 5
+                raise error
+            real_replace(source, destination)
+
+        with patch("headmasters_scroll.store.os.replace", side_effect=briefly_locked), patch(
+            "headmasters_scroll.store.time.sleep"
+        ):
+            outcome = self.store.save(session, "dbm")
+
+        self.assertTrue(outcome.saved)
+        self.assertEqual(len(attempts), 2)
+        self.assertTrue(attempts[0].startswith(".db.json."))
+        self.assertEqual(
+            json.loads(self.path.read_text(encoding="utf-8"))["wand_woods"][0]["name"],
+            "Changed",
+        )
+        self.assertFalse(list(self.directory.glob("*.tmp")))
+
     def test_malformed_json_and_validation_fail_without_overwrite(self):
         self.path.write_text("{broken", encoding="utf-8")
         with self.assertRaises(json.JSONDecodeError):

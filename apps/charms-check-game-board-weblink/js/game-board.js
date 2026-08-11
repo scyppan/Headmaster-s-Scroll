@@ -11,6 +11,7 @@
   const MAP_MAX_ZOOM = 32;
   const MAP_PAN_STEP = 24;
   const MAX_ACTOR_SCREEN_SIZE = 48;
+  const DEFAULT_TOKEN_SCALE = 0.0055;
   const SECTIONS = [
     ['board', 'Game Board', '▦'],
     ['overview', 'Overview', '⌂'],
@@ -50,6 +51,7 @@
       this.activeMapId = '';
       this.assetUrls = new Map();
       this.mapCameraStates = new Map();
+      this.mapCameraSaveTimers = new Map();
       this.mapCameraDrag = null;
       this.mapResizeObserver = null;
       this.mapCameraFrame = 0;
@@ -57,6 +59,8 @@
       this.lastMovePreview = 0;
       this.activeSection = 'overview';
       this.chatMessages = [];
+      this.cameraPreferenceKey = `${this.storageKey}-allow-headmaster-camera`;
+      this.allowHeadmasterCamera = localStorage.getItem(this.cameraPreferenceKey) !== 'false';
       this.render();
       this.bind();
       this.restoreLayout();
@@ -198,6 +202,11 @@
         }
       });
       window.addEventListener('blur', () => { this.mapCameraDrag = null; });
+      window.addEventListener('pagehide', () => {
+        this.mapCameraSaveTimers.forEach(timer => clearTimeout(timer));
+        this.mapCameraSaveTimers.clear();
+        this.mapCameraStates.forEach((_state, mapId) => this.saveCameraNow(mapId));
+      });
     }
 
     element(name) {
@@ -410,11 +419,17 @@
         this.element('avatar').textContent = player.trim().charAt(0).toUpperCase() || '?';
       } else if (message.type === 'board_snapshot' && message.board) {
         this.board = message.board;
+        (this.board.maps || []).forEach(map => {
+          if (!this.mapCameraStates.has(map.record_id) && map.camera) {
+            this.mapCameraStates.set(map.record_id, this.normalizedCamera(map.camera));
+          }
+        });
         const mapIds = new Set((this.board.maps || []).map(item => item.record_id));
         const controlled = (this.board.actors || []).find(actor =>
           (this.board.controlled_character_ids || []).includes(actor.actor_id)
         );
-        if (controlled && mapIds.has(controlled.map_id)) this.activeMapId = controlled.map_id;
+        if (mapIds.has(this.board.active_map_id)) this.activeMapId = this.board.active_map_id;
+        else if (controlled && mapIds.has(controlled.map_id)) this.activeMapId = controlled.map_id;
         else if (!mapIds.has(this.activeMapId)) this.activeMapId = this.board.maps?.[0]?.record_id || '';
         if (this.activeSection === 'board') this.renderBoardView();
       } else if (message.type === 'board_move_preview') {
@@ -424,6 +439,20 @@
           actor.x = Number(message.x);
           actor.y = Number(message.y);
           if (this.activeSection === 'board') this.positionBoardActors();
+        }
+      } else if (message.type === 'board_camera_focus' && message.camera) {
+        if (!this.allowHeadmasterCamera) {
+          this.showChatNotice('The Headmaster requested camera focus; your camera-control setting blocked it.');
+          return;
+        }
+        const mapId = String(message.map_id || '');
+        if (mapId) {
+          this.activeMapId = mapId;
+          this.mapCameraStates.set(mapId, this.normalizedCamera(message.camera));
+          if (this.activeSection !== 'board') this.openSection('board');
+          else this.renderBoardView();
+          this.queueCameraSave(mapId, 0);
+          this.showBoardNotice('The Headmaster focused your view here.');
         }
       } else if (message.type === 'access_revoked') {
         this.releaseAssets();
@@ -529,6 +558,27 @@
       }
       const content = this.element('section-content');
       content.className = 'ccgb-panel-grid';
+      if (item[0] === 'settings') {
+        content.innerHTML = `
+          <details class="ccgb-content-panel" open>
+            <summary>Game Board settings</summary>
+            <div>
+              <label class="ccgb-setting-toggle">
+                <input type="checkbox" data-ccgb-camera-lock>
+                <span>Don't allow Headmaster to control my camera</span>
+              </label>
+              <p>You can still pan and zoom normally. When enabled, Headmaster focus requests will be ignored.</p>
+            </div>
+          </details>`;
+        const cameraLock = content.querySelector('[data-ccgb-camera-lock]');
+        cameraLock.checked = !this.allowHeadmasterCamera;
+        cameraLock.addEventListener('change', () => {
+          this.allowHeadmasterCamera = !cameraLock.checked;
+          localStorage.setItem(this.cameraPreferenceKey, String(this.allowHeadmasterCamera));
+        });
+        this.search(this.element('search').value);
+        return;
+      }
       content.innerHTML = `
         <details class="ccgb-content-panel" open>
           <summary>${item[1]} summary</summary>
@@ -593,6 +643,7 @@
         button.addEventListener('click', () => {
           this.activeMapId = map.record_id;
           this.renderBoardView();
+          this.queueCameraSave(map.record_id, 100);
         });
         tabs.appendChild(button);
       });
@@ -631,7 +682,13 @@
         .filter(actor => actor.map_id === this.activeMapId)
         .forEach(actor => this.createBoardActor(stage, actor));
       this.createBoardObscurationLayer(stage, map);
-      this.setupMapCamera(viewport, stage, map.record_id, Number(map.token_scale || 0.0055));
+      this.setupMapCamera(
+        viewport,
+        stage,
+        map.record_id,
+        Number(map.token_scale || DEFAULT_TOKEN_SCALE),
+        map.camera
+      );
     }
 
     createBoardRegionLayer(stage, map) {
@@ -717,14 +774,35 @@
       this.boardNoticeTimer = setTimeout(() => { if (notice.isConnected) notice.hidden = true; }, 5000);
     }
 
-    cameraState(mapId) {
+    normalizedCamera(camera) {
+      return {
+        scale: Math.max(1, Math.min(MAP_MAX_ZOOM, Number(camera?.zoom || camera?.scale || 1))),
+        centerX: Math.max(0, Math.min(1, Number(camera?.center_x ?? camera?.centerX ?? 0.5))),
+        centerY: Math.max(0, Math.min(1, Number(camera?.center_y ?? camera?.centerY ?? 0.5))),
+        x: 0,
+        y: 0
+      };
+    }
+
+    cameraState(mapId, initialCamera = null) {
       if (!this.mapCameraStates.has(mapId)) {
-        this.mapCameraStates.set(mapId, { scale: 1, x: 0, y: 0 });
+        this.mapCameraStates.set(mapId, this.normalizedCamera(initialCamera));
       }
       return this.mapCameraStates.get(mapId);
     }
 
-    setupMapCamera(viewport, stage, mapId, tokenScale = 0.0055) {
+    syncCameraCenter(state, stage) {
+      const scale = Math.max(1, Number(state.scale || 1));
+      state.centerX = Math.max(0, Math.min(
+        1, 0.5 - Number(state.x || 0) / Math.max(1, stage.offsetWidth * scale)
+      ));
+      state.centerY = Math.max(0, Math.min(
+        1, 0.5 - Number(state.y || 0) / Math.max(1, stage.offsetHeight * scale)
+      ));
+    }
+
+    setupMapCamera(viewport, stage, mapId, tokenScale = DEFAULT_TOKEN_SCALE, initialCamera = null) {
+      this.cameraState(mapId, initialCamera);
       const sizeStage = () => {
         cancelAnimationFrame(this.mapCameraFrame);
         this.mapCameraFrame = requestAnimationFrame(() => {
@@ -741,6 +819,10 @@
           stage.style.height = `${Math.floor(height * 100) / 100}px`;
           const tokenSize = Math.max(6, width * Math.max(0.002, Math.min(0.03, tokenScale)));
           stage.dataset.tokenSize = String(tokenSize);
+          stage.dataset.maxActorScreenSize = String(Math.max(
+            18,
+            Math.min(160, MAX_ACTOR_SCREEN_SIZE * tokenScale / DEFAULT_TOKEN_SCALE)
+          ));
           stage.style.setProperty('--map-token-size', `${tokenSize}px`);
           stage.style.setProperty('--map-dot-size', `${Math.max(5, tokenSize * 0.9)}px`);
           stage.style.setProperty('--map-nameplate-width', `${Math.max(3, tokenSize * 2.5)}px`);
@@ -785,7 +867,9 @@
         } else {
           state.y += direction * MAP_PAN_STEP;
         }
+        this.syncCameraCenter(state, stage);
         this.applyMapCamera(viewport, stage, mapId);
+        this.queueCameraSave(mapId);
       }, { passive: false });
       viewport.addEventListener('pointerdown', event => {
         if (event.button !== 1) return;
@@ -800,6 +884,7 @@
         const state = this.cameraState(mapId);
         state.x = this.mapCameraDrag.x + event.clientX - this.mapCameraDrag.startX;
         state.y = this.mapCameraDrag.y + event.clientY - this.mapCameraDrag.startY;
+        this.syncCameraCenter(state, stage);
         this.applyMapCamera(viewport, stage, mapId);
       });
       const endPan = event => {
@@ -807,6 +892,7 @@
         this.mapCameraDrag = null;
         viewport.classList.remove('is-camera-panning');
         if (viewport.hasPointerCapture(event.pointerId)) viewport.releasePointerCapture(event.pointerId);
+        this.queueCameraSave(mapId, 100);
       };
       viewport.addEventListener('pointerup', endPan);
       viewport.addEventListener('pointercancel', endPan);
@@ -821,28 +907,53 @@
 
     applyMapCamera(viewport, stage, mapId) {
       const state = this.cameraState(mapId);
+      state.x = (0.5 - Number(state.centerX ?? 0.5)) * stage.offsetWidth * state.scale;
+      state.y = (0.5 - Number(state.centerY ?? 0.5)) * stage.offsetHeight * state.scale;
       const boundX = Math.max(0, (stage.offsetWidth * state.scale - viewport.clientWidth) / 2);
       const boundY = Math.max(0, (stage.offsetHeight * state.scale - viewport.clientHeight) / 2);
       state.x = Math.max(-boundX, Math.min(boundX, state.x));
       state.y = Math.max(-boundY, Math.min(boundY, state.y));
+      this.syncCameraCenter(state, stage);
       const tokenSize = Math.max(1, Number(stage.dataset.tokenSize || 6));
       const actorScreenSize = tokenSize * state.scale;
-      const actorCameraScale = Math.min(1, MAX_ACTOR_SCREEN_SIZE / actorScreenSize);
+      const maxActorScreenSize = Math.max(18, Number(stage.dataset.maxActorScreenSize || MAX_ACTOR_SCREEN_SIZE));
+      const actorCameraScale = Math.min(1, maxActorScreenSize / actorScreenSize);
       stage.style.setProperty('--map-actor-camera-scale', String(actorCameraScale));
       stage.style.transform = `translate(-50%, -50%) translate(${state.x}px, ${state.y}px) scale(${state.scale})`;
     }
 
     resetMapCamera(mapId) {
       if (!mapId) return;
-      this.mapCameraStates.set(mapId, { scale: 1, x: 0, y: 0 });
+      this.mapCameraStates.set(mapId, this.normalizedCamera(null));
       const viewport = this.root.querySelector('.ccgb-map-viewport');
       const stage = this.root.querySelector('.ccgb-map-stage');
       if (viewport && stage) this.applyMapCamera(viewport, stage, mapId);
+      this.queueCameraSave(mapId, 100);
+    }
+
+    queueCameraSave(mapId, delay = 450) {
+      clearTimeout(this.mapCameraSaveTimers.get(mapId));
+      this.mapCameraSaveTimers.set(mapId, setTimeout(() => {
+        this.mapCameraSaveTimers.delete(mapId);
+        this.saveCameraNow(mapId);
+      }, delay));
+    }
+
+    saveCameraNow(mapId) {
+      const state = this.mapCameraStates.get(mapId);
+      if (!state) return;
+      this.send({
+        v: VERSION,
+        type: 'board_camera',
+        map_id: mapId,
+        zoom: Number(state.scale || 1),
+        center_x: Number(state.centerX ?? 0.5),
+        center_y: Number(state.centerY ?? 0.5)
+      });
     }
 
     createBoardActor(stage, actor) {
-      const piece = document.createElement('button');
-      piece.type = 'button';
+      const piece = document.createElement('div');
       piece.className = `ccgb-board-actor is-${actor.display_mode || 'dot'}`;
       piece.dataset.actorId = actor.actor_id;
       piece.style.setProperty('--actor-color', actor.faction_color || '#808080');
@@ -851,6 +962,11 @@
         : (actor.name || 'Unknown');
       const controlled = (this.board.controlled_character_ids || []).includes(actor.actor_id);
       piece.classList.toggle('is-controlled', controlled);
+      if (controlled) {
+        piece.tabIndex = 0;
+        piece.setAttribute('role', 'button');
+        piece.setAttribute('aria-label', `Move ${actor.name || 'character'}`);
+      }
 
       const indicators = document.createElement('span');
       indicators.className = 'ccgb-actor-indicators';

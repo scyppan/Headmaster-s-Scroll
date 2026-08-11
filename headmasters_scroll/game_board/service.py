@@ -25,7 +25,7 @@ from ..board import (
     normalize_person_board,
     point_in_polygon,
 )
-from ..campaigns import CampaignRepository
+from ..campaigns import CampaignRepository, normalize_board_camera
 from .storage import GameBoardRepository
 
 
@@ -176,6 +176,8 @@ class GameBoardService:
                     "obscuration_preview_color": "#ff0000",
                     "token_scale": DEFAULT_MAP_TOKEN_SCALE,
                     "start_point": None,
+                    "headmaster_camera": normalize_board_camera(None),
+                    "player_cameras": {},
                 })
         people_state = state.get("people", {})
         for person in world.get("people", []):
@@ -202,6 +204,10 @@ class GameBoardService:
                 "obscuration_preview_color": str(item.get("obscuration_preview_color", "#ff0000") or "#ff0000"),
                 "token_scale": float(item.get("token_scale", DEFAULT_MAP_TOKEN_SCALE)),
                 "start_point": deepcopy(item.get("start_point")),
+                "headmaster_camera": normalize_board_camera(
+                    item.get("headmaster_camera")
+                ),
+                "player_cameras": deepcopy(item.get("player_cameras", {}) or {}),
             }
             for item in assigned_maps
         }
@@ -769,6 +775,7 @@ class GameBoardService:
         session_id: str | None = None,
         *,
         for_players: bool = False,
+        contact_id: str | None = None,
     ) -> dict[str, Any]:
         with self._lock:
             wrapper, session = self._active(session_id)
@@ -793,6 +800,36 @@ class GameBoardService:
             snapshot["active_map_id"] = str(
                 campaign["game_state"].get("active_map_id", "") or ""
             )
+            if for_players and contact_id:
+                player_active = str(
+                    campaign["game_state"].get("player_active_map_ids", {}).get(
+                        contact_id, ""
+                    ) or ""
+                )
+                visible_ids = {
+                    str(item.get("record_id", "") or "")
+                    for item in snapshot.get("maps", [])
+                }
+                if player_active in visible_ids:
+                    snapshot["active_map_id"] = player_active
+            campaign_maps = campaign["game_state"].get("maps", {})
+            for map_record in snapshot.get("maps", []):
+                map_id = str(map_record.get("record_id", "") or "")
+                map_state = campaign_maps.get(map_id, {})
+                headmaster_camera = normalize_board_camera(
+                    map_state.get("headmaster_camera")
+                )
+                if for_players and contact_id:
+                    camera = (map_state.get("player_cameras", {}) or {}).get(
+                        contact_id, headmaster_camera
+                    )
+                else:
+                    camera = headmaster_camera
+                map_record["camera"] = normalize_board_camera(camera)
+                # Camera ownership is private. A snapshot contains only the
+                # camera selected for its viewer, never every player's view.
+                map_record.pop("headmaster_camera", None)
+                map_record.pop("player_cameras", None)
             return snapshot
 
     def controlled_character_ids(
@@ -1019,6 +1056,33 @@ class GameBoardService:
 
             saved = self.campaign_repository.update_game_state(campaign["record_id"], update)
             return deepcopy(saved["game_state"])
+
+    def set_board_camera(
+        self,
+        session_id: str,
+        map_id: str,
+        camera: dict[str, Any],
+        *,
+        contact_id: str | None = None,
+    ) -> dict[str, float]:
+        normalized_camera = normalize_board_camera(camera)
+        with self._lock:
+            _wrapper, session = self._active(session_id)
+            if contact_id is not None:
+                self._player(session, contact_id)
+            campaign, document = self._campaign_document(session)
+            self._campaign_map(document, map_id)
+
+            def update(state: dict[str, Any]) -> None:
+                map_state = state.setdefault("maps", {}).setdefault(map_id, {})
+                if contact_id is None:
+                    map_state["headmaster_camera"] = normalized_camera
+                else:
+                    map_state.setdefault("player_cameras", {})[contact_id] = normalized_camera
+                    state.setdefault("player_active_map_ids", {})[contact_id] = map_id
+
+            self.campaign_repository.update_game_state(campaign["record_id"], update)
+            return deepcopy(normalized_camera)
 
     def set_map_presentation(
         self,

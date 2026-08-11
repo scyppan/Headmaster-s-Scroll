@@ -100,6 +100,7 @@ class BoardMoveBody(BaseModel):
 
 
 class BoardPersonBody(BaseModel):
+    session_id: str = Field(min_length=1, max_length=100)
     visibility: str | None = Field(default=None, max_length=20)
     display_mode: str | None = Field(default=None, max_length=20)
     name_revealed: bool | None = None
@@ -108,10 +109,12 @@ class BoardPersonBody(BaseModel):
 
 
 class MapVisibilityBody(BaseModel):
+    session_id: str = Field(min_length=1, max_length=100)
     published: bool
 
 
 class MapPresentationBody(BaseModel):
+    session_id: str = Field(min_length=1, max_length=100)
     published: bool
     obscurations: list[dict[str, Any]] = Field(default_factory=list, max_length=500)
     preview_opacity: float = Field(default=0.35, ge=0.05, le=1.0)
@@ -119,12 +122,14 @@ class MapPresentationBody(BaseModel):
 
 
 class MapBoardSettingsBody(BaseModel):
-    token_scale: float | None = Field(default=None, ge=0.02, le=0.12)
+    session_id: str = Field(min_length=1, max_length=100)
+    token_scale: float | None = Field(default=None, ge=0.002, le=0.03)
     start_point: dict[str, float] | None = None
     update_start_point: bool = False
 
 
 class BoardGroupBody(BaseModel):
+    session_id: str = Field(min_length=1, max_length=100)
     name: str = Field(min_length=1, max_length=100)
     location_id: str = Field(min_length=1, max_length=100)
     person_ids: list[str] = Field(min_length=2, max_length=100)
@@ -138,7 +143,14 @@ class ControlGrantBody(BaseModel):
 
 
 class GroupMembershipBody(BaseModel):
+    session_id: str = Field(min_length=1, max_length=100)
     group_id: str | None = Field(default=None, max_length=100)
+
+
+class BoardWorkspaceBody(BaseModel):
+    session_id: str = Field(min_length=1, max_length=100)
+    loaded_map_ids: list[str] = Field(default_factory=list, max_length=200)
+    active_map_id: str = Field(default="", max_length=100)
 
 
 @dataclass
@@ -619,10 +631,11 @@ def create_apps(
         updates = {
             key: value
             for key, value in body.model_dump().items()
-            if value is not None
+            if key != "session_id" and value is not None
         }
         result = admin_result(
             service.update_person_board,
+            body.session_id,
             person_id,
             updates,
         )
@@ -637,6 +650,7 @@ def create_apps(
     async def publish_board_map(map_id: str, body: MapVisibilityBody):
         result = admin_result(
             service.set_map_published,
+            body.session_id,
             map_id,
             body.published,
         )
@@ -651,6 +665,7 @@ def create_apps(
     async def update_board_map_presentation(map_id: str, body: MapPresentationBody):
         result = admin_result(
             service.set_map_presentation,
+            body.session_id,
             map_id,
             published=body.published,
             obscurations=body.obscurations,
@@ -668,6 +683,7 @@ def create_apps(
     async def update_board_map_settings(map_id: str, body: MapBoardSettingsBody):
         result = admin_result(
             service.set_map_settings,
+            body.session_id,
             map_id,
             token_scale=body.token_scale,
             start_point=body.start_point,
@@ -684,6 +700,7 @@ def create_apps(
     async def create_board_group(body: BoardGroupBody):
         result = admin_result(
             service.create_board_group,
+            body.session_id,
             body.name,
             body.location_id,
             body.person_ids,
@@ -697,10 +714,26 @@ def create_apps(
         dependencies=[Depends(admin_guard)],
     )
     async def set_board_group(person_id: str, body: GroupMembershipBody):
-        result = admin_result(service.set_board_group, person_id, body.group_id)
+        result = admin_result(
+            service.set_board_group, body.session_id, person_id, body.group_id
+        )
         for session in service.sessions_view():
             await runtime.broadcast_board(session["id"])
         return {"group": result}
+
+    @admin_app.put(
+        "/api/admin/board/workspace",
+        dependencies=[Depends(admin_guard)],
+    )
+    async def update_board_workspace(body: BoardWorkspaceBody):
+        result = admin_result(
+            service.set_board_workspace,
+            body.session_id,
+            body.loaded_map_ids,
+            body.active_map_id,
+        )
+        await runtime.notify_admins()
+        return result
 
     @admin_app.put(
         "/api/admin/board/control",

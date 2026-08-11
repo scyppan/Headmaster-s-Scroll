@@ -1180,17 +1180,18 @@ class MapperWindow(tk.Tk):
         point = self.canvas_to_normal(event.x, event.y)
         if not 0 <= point["x"] <= 1 or not 0 <= point["y"] <= 1:
             return
+        existing_warp = self.warp_point_at(event.x, event.y)
+        if existing_warp is not None and self.mode in {"select", "edit", "warp"}:
+            self.selected_warp_point_id = str(existing_warp["record_id"])
+            self.drag_state = {
+                "kind": "warp",
+                "record_id": self.selected_warp_point_id,
+                "changed": False,
+            }
+            self.render_canvas()
+            return
         if self.mode == "warp":
-            existing = self.warp_point_at(event.x, event.y)
-            if existing is not None:
-                self.selected_warp_point_id = str(existing["record_id"])
-                self.drag_state = {
-                    "kind": "warp",
-                    "record_id": self.selected_warp_point_id,
-                    "changed": False,
-                }
-                self.render_canvas()
-            else:
+            if existing_warp is None:
                 self.add_warp_point(point)
             return
         if self.mode == "draw":
@@ -1224,6 +1225,7 @@ class MapperWindow(tk.Tk):
                 self.render_canvas()
                 self.autosave_map("Added node")
                 return
+        self.selected_warp_point_id = ""
         hit = next((candidate for candidate in reversed(self.regions) if point_in_polygon(point["x"], point["y"], candidate["points"])), None)
         if hit:
             self.select_region(str(hit["record_id"]))
@@ -1291,28 +1293,10 @@ class MapperWindow(tk.Tk):
             self.autosave_map("Polygon geometry")
 
     def canvas_right_click(self, event: tk.Event) -> str:
-        if self.mode == "warp":
-            warp_point = self.warp_point_at(event.x, event.y)
-            if warp_point is None:
-                return "break"
-            if messagebox.askyesno(
-                "Remove warp point",
-                f"Remove {warp_point.get('name', 'this warp point')}?",
-                parent=self,
-            ):
-                warp_id = str(warp_point.get("record_id"))
-                self.warp_points = [
-                    item for item in self.warp_points
-                    if str(item.get("record_id")) != warp_id
-                ]
-                for region in self.regions:
-                    if str(region.get("target_warp_point_id", "")) == warp_id:
-                        region["target_warp_point_id"] = ""
-                self.selected_warp_point_id = ""
-                self.editor_dirty = True
-                self.render_region_list()
-                self.render_canvas()
-                self.autosave_map("Removed warp point")
+        warp_point = self.warp_point_at(event.x, event.y)
+        if warp_point is not None:
+            self.selected_warp_point_id = str(warp_point.get("record_id"))
+            self.remove_selected_warp_point()
             return "break"
         if self.mode != "edit":
             return ""
@@ -1333,7 +1317,41 @@ class MapperWindow(tk.Tk):
         if self.mode == "edit" and self.selected_vertex is not None:
             self.delete_node()
             return "break"
+        if self.selected_warp_point_id:
+            self.remove_selected_warp_point()
+            return "break"
         return ""
+
+    def remove_selected_warp_point(self) -> None:
+        warp_point = next(
+            (
+                item for item in self.warp_points
+                if str(item.get("record_id")) == self.selected_warp_point_id
+            ),
+            None,
+        )
+        if warp_point is None:
+            return
+        if not messagebox.askyesno(
+            "Remove warp point",
+            f"Remove {warp_point.get('name', 'this warp point')}?",
+            parent=self,
+        ):
+            return
+        warp_id = str(warp_point.get("record_id"))
+        self.warp_points = [
+            item for item in self.warp_points
+            if str(item.get("record_id")) != warp_id
+        ]
+        for region in self.regions:
+            if str(region.get("target_warp_point_id", "")) == warp_id:
+                region["target_warp_point_id"] = ""
+                region["last_updated"] = utc_now()
+        self.selected_warp_point_id = ""
+        self.editor_dirty = True
+        self.render_region_list()
+        self.render_canvas()
+        self.autosave_map("Removed warp point")
 
     def canvas_double_click(self, _event: tk.Event) -> None:
         if self.mode == "draw":

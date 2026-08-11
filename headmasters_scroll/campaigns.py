@@ -4,7 +4,7 @@ import calendar
 import re
 from copy import deepcopy
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable
 from uuid import uuid4
 
 if TYPE_CHECKING:
@@ -14,6 +14,7 @@ if TYPE_CHECKING:
 GAME_WORLD_DATE = re.compile(
     r"^(?P<year>-?[1-9]\d*)-(?P<month>\d{2})-(?P<day>\d{2})$"
 )
+GAME_WORLD_DATETIME = re.compile(r"^-?[1-9]\d*-\d{2}-\d{2}T\d{2}:\d{2}$")
 
 
 def utc_now() -> str:
@@ -51,6 +52,102 @@ def format_game_world_date(value: Any) -> str:
     return f"{day:02d} {calendar.month_abbr[month]} {shown_year}"
 
 
+def normalize_campaign_game_state(
+    value: Any,
+    game_world_start_date: str,
+) -> dict[str, Any]:
+    from .board import (
+        DEFAULT_MAP_TOKEN_SCALE,
+        MIN_MAP_TOKEN_SCALE,
+        normalize_group,
+        normalize_obscuration,
+        normalize_person_board,
+        normalize_map_point,
+    )
+
+    raw = deepcopy(value) if isinstance(value, dict) else {}
+    current = str(
+        raw.get("current_game_datetime")
+        or f"{game_world_start_date}T08:00"
+    ).strip()
+    if not GAME_WORLD_DATETIME.fullmatch(current):
+        raise ValueError("Campaign Game World Date and time must use YYYY-MM-DDTHH:MM")
+
+    loaded_map_ids: list[str] = []
+    for map_id in raw.get("loaded_map_ids", []) or []:
+        map_id = str(map_id or "").strip()
+        if map_id and map_id not in loaded_map_ids:
+            loaded_map_ids.append(map_id)
+    active_map_id = str(raw.get("active_map_id", "") or "").strip()
+    if active_map_id and active_map_id not in loaded_map_ids:
+        loaded_map_ids.append(active_map_id)
+
+    map_states: dict[str, dict[str, Any]] = {}
+    maps = raw.get("maps", {}) or {}
+    if not isinstance(maps, dict):
+        raise ValueError("Campaign map state must be an object keyed by map ID")
+    for raw_map_id, raw_state in maps.items():
+        map_id = str(raw_map_id or "").strip()
+        if not map_id or not isinstance(raw_state, dict):
+            raise ValueError("Every campaign map state requires a stable map ID")
+        token_scale = float(raw_state.get("token_scale", DEFAULT_MAP_TOKEN_SCALE))
+        if not MIN_MAP_TOKEN_SCALE <= token_scale <= 0.03:
+            raise ValueError("Campaign token size is outside the supported range")
+        obscurations = [
+            normalize_obscuration(item)
+            for item in (raw_state.get("obscurations", []) or [])
+        ]
+        if len({item["record_id"] for item in obscurations}) != len(obscurations):
+            raise ValueError("Campaign obscuration IDs must be unique within a map")
+        opacity = float(raw_state.get("obscuration_preview_opacity", 0.35))
+        if not 0.05 <= opacity <= 1.0:
+            raise ValueError("Campaign obscuration preview opacity is invalid")
+        color = str(raw_state.get("obscuration_preview_color", "#ff0000") or "#ff0000").lower()
+        if not re.fullmatch(r"#[0-9a-f]{6}", color):
+            raise ValueError("Campaign obscuration preview color is invalid")
+        map_states[map_id] = {
+            "players_published": bool(raw_state.get("players_published", False)),
+            "obscurations": obscurations,
+            "obscuration_preview_opacity": opacity,
+            "obscuration_preview_color": color,
+            "token_scale": token_scale,
+            "start_point": normalize_map_point(
+                raw_state.get("start_point"), "Campaign map start point", optional=True
+            ),
+        }
+
+    people: dict[str, dict[str, Any]] = {}
+    raw_people = raw.get("people", {}) or {}
+    if not isinstance(raw_people, dict):
+        raise ValueError("Campaign person state must be an object keyed by person ID")
+    for raw_person_id, raw_state in raw_people.items():
+        person_id = str(raw_person_id or "").strip()
+        if not person_id or not isinstance(raw_state, dict):
+            raise ValueError("Every campaign person state requires a stable person ID")
+        board = normalize_person_board({**raw_state, "portrait": None})
+        people[person_id] = {
+            "placement": deepcopy(board["placement"]),
+            "visibility": board["visibility"],
+            "display_mode": board["display_mode"],
+            "name_revealed": board["name_revealed"],
+            "faction_revealed": board["faction_revealed"],
+            "faction_organization_id": board["faction_organization_id"],
+        }
+
+    groups = [normalize_group(item) for item in (raw.get("groups", []) or [])]
+    if len({item["record_id"] for item in groups}) != len(groups):
+        raise ValueError("Campaign board group IDs must be unique")
+    return {
+        "initialized": bool(raw.get("initialized", False)),
+        "current_game_datetime": current,
+        "loaded_map_ids": loaded_map_ids,
+        "active_map_id": active_map_id,
+        "maps": map_states,
+        "people": people,
+        "groups": groups,
+    }
+
+
 def normalize_campaign(value: Any) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError("Every campaign must be an object")
@@ -70,6 +167,9 @@ def normalize_campaign(value: Any) -> dict[str, Any]:
         "created_at": str(value.get("created_at", "") or "").strip(),
         "last_updated": str(value.get("last_updated", "") or "").strip(),
     })
+    result["game_state"] = normalize_campaign_game_state(
+        value.get("game_state"), result["game_world_start_date"]
+    )
     return result
 
 
@@ -106,6 +206,111 @@ class CampaignRepository:
         if campaign is None:
             raise KeyError("Unknown campaign")
         return campaign
+
+    @staticmethod
+    def _person_state(board: dict[str, Any]) -> dict[str, Any]:
+        from .board import normalize_person_board
+
+        normalized = normalize_person_board(board)
+        return {
+            "placement": deepcopy(normalized["placement"]),
+            "visibility": normalized["visibility"],
+            "display_mode": normalized["display_mode"],
+            "name_revealed": normalized["name_revealed"],
+            "faction_revealed": normalized["faction_revealed"],
+            "faction_organization_id": normalized["faction_organization_id"],
+        }
+
+    def ensure_game_state(
+        self,
+        campaign_id: str,
+        world_document: dict[str, Any],
+        current_game_datetime: str | None = None,
+    ) -> dict[str, Any]:
+        from .board import DEFAULT_MAP_TOKEN_SCALE, WorldBoardRepository, normalize_person_board
+
+        session = self.store.load("campaign.json")
+        campaign = next(
+            (item for item in session.data["campaigns"] if item.get("record_id") == campaign_id),
+            None,
+        )
+        if campaign is None:
+            raise KeyError("Unknown campaign")
+        normalized = normalize_campaign(campaign)
+        if normalized["game_state"]["initialized"]:
+            return normalized
+
+        maps = WorldBoardRepository._location_maps(world_document)
+        assigned_ids = {item["record_id"] for item in maps}
+        map_states = {
+            item["record_id"]: {
+                "players_published": bool(item.get("players_published", False)),
+                "obscurations": deepcopy(item.get("obscurations", []) or []),
+                "obscuration_preview_opacity": float(item.get("obscuration_preview_opacity", 0.35)),
+                "obscuration_preview_color": str(item.get("obscuration_preview_color", "#ff0000") or "#ff0000"),
+                "token_scale": DEFAULT_MAP_TOKEN_SCALE,
+                "start_point": deepcopy(item.get("start_point")),
+            }
+            for item in maps
+        }
+        people = {}
+        occupied_map_ids: list[str] = []
+        for person in world_document.get("people", []):
+            if not isinstance(person, dict) or not person.get("record_id"):
+                continue
+            board = normalize_person_board(person.get("board"))
+            people[str(person["record_id"])] = self._person_state(board)
+            placement = board.get("placement")
+            if placement and placement["map_id"] in assigned_ids:
+                occupied_map_ids.append(placement["map_id"])
+        loaded = [item["record_id"] for item in maps if item.get("players_published")]
+        for map_id in occupied_map_ids:
+            if map_id not in loaded:
+                loaded.append(map_id)
+        state = {
+            "initialized": True,
+            "current_game_datetime": (
+                current_game_datetime
+                or normalized["game_state"]["current_game_datetime"]
+            ),
+            "loaded_map_ids": loaded,
+            "active_map_id": loaded[0] if loaded else "",
+            "maps": map_states,
+            "people": people,
+            "groups": deepcopy(world_document.get("board_groups", []) or []),
+        }
+        campaign["game_state"] = normalize_campaign_game_state(
+            state, normalized["game_world_start_date"]
+        )
+        campaign["last_updated"] = utc_now()
+        outcome = self.store.save(session, "game-board")
+        if not outcome.saved:
+            raise RuntimeError("The campaign changed elsewhere; reload before saving")
+        return normalize_campaign(campaign)
+
+    def update_game_state(
+        self,
+        campaign_id: str,
+        updater: Callable[[dict[str, Any]], None],
+    ) -> dict[str, Any]:
+        session = self.store.load("campaign.json")
+        campaign = next(
+            (item for item in session.data["campaigns"] if item.get("record_id") == campaign_id),
+            None,
+        )
+        if campaign is None:
+            raise KeyError("Unknown campaign")
+        normalized = normalize_campaign(campaign)
+        state = deepcopy(normalized["game_state"])
+        updater(state)
+        campaign["game_state"] = normalize_campaign_game_state(
+            state, normalized["game_world_start_date"]
+        )
+        campaign["last_updated"] = utc_now()
+        outcome = self.store.save(session, "game-board")
+        if not outcome.saved:
+            raise RuntimeError("The campaign changed elsewhere; reload before saving")
+        return normalize_campaign(campaign)
 
     def save_campaign(
         self,

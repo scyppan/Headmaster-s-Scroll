@@ -15,8 +15,8 @@ VISIBILITY_MODES = {"players", "headmaster"}
 REGION_BEHAVIOR_TYPES = {"area", "shop", "travel", "library", "other"}
 OBSCURATION_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 OFF_LIMITS_MESSAGE = "This area is off limits for now. Speak with your Headmaster."
-DEFAULT_MAP_TOKEN_SCALE = 0.055
-MIN_MAP_TOKEN_SCALE = 0.02
+DEFAULT_MAP_TOKEN_SCALE = 0.0055
+MIN_MAP_TOKEN_SCALE = 0.002
 MAX_MAP_TOKEN_SCALE = 0.12
 
 
@@ -623,8 +623,13 @@ class WorldBoardRepository:
         *,
         player_character_ids: Iterable[str] = (),
         for_players: bool = False,
+        document_override: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        document = self.load().data
+        document = (
+            deepcopy(document_override)
+            if document_override is not None
+            else self.load().data
+        )
         player_ids = {str(value) for value in player_character_ids if value}
         maps = self._location_maps(document)
         locations = {
@@ -907,7 +912,7 @@ class WorldBoardRepository:
             placement = normalize_person_board(candidate.get("board")).get("placement")
             if placement and placement["map_id"] == target["record_id"]:
                 occupied.append((float(placement["x"]), float(placement["y"])))
-        spacing = max(0.025, float(target.get("token_scale", DEFAULT_MAP_TOKEN_SCALE)) * 1.15)
+        spacing = max(0.006, float(target.get("token_scale", DEFAULT_MAP_TOKEN_SCALE)) * 1.15)
         candidates = [(start["x"], start["y"])]
         for ring in range(1, 6):
             radius = spacing * ring

@@ -630,7 +630,7 @@
         .filter(actor => actor.map_id === this.activeMapId)
         .forEach(actor => this.createBoardActor(stage, actor));
       this.createBoardObscurationLayer(stage, map);
-      this.setupMapCamera(viewport, stage, map.record_id, Number(map.token_scale || 0.055));
+      this.setupMapCamera(viewport, stage, map.record_id, Number(map.token_scale || 0.0055));
     }
 
     createBoardRegionLayer(stage, map) {
@@ -723,7 +723,7 @@
       return this.mapCameraStates.get(mapId);
     }
 
-    setupMapCamera(viewport, stage, mapId, tokenScale = 0.055) {
+    setupMapCamera(viewport, stage, mapId, tokenScale = 0.0055) {
       const sizeStage = () => {
         cancelAnimationFrame(this.mapCameraFrame);
         this.mapCameraFrame = requestAnimationFrame(() => {
@@ -738,10 +738,10 @@
           const height = width / MAP_ASPECT_RATIO;
           stage.style.width = `${Math.floor(width * 100) / 100}px`;
           stage.style.height = `${Math.floor(height * 100) / 100}px`;
-          const tokenSize = Math.max(18, width * Math.max(0.02, Math.min(0.12, tokenScale)));
+          const tokenSize = Math.max(6, width * Math.max(0.002, Math.min(0.03, tokenScale)));
           stage.style.setProperty('--map-token-size', `${tokenSize}px`);
-          stage.style.setProperty('--map-dot-size', `${Math.max(10, tokenSize * 0.35)}px`);
-          stage.style.setProperty('--map-nameplate-width', `${Math.max(92, tokenSize * 1.45)}px`);
+          stage.style.setProperty('--map-dot-size', `${Math.max(4, tokenSize * 0.55)}px`);
+          stage.style.setProperty('--map-nameplate-width', `${Math.max(46, tokenSize * 3)}px`);
           stage.dataset.renderWidth = String(Math.round(width));
           this.applyMapCamera(viewport, stage, mapId);
         });
@@ -831,6 +831,21 @@
         : (actor.name || 'Unknown');
       const controlled = (this.board.controlled_character_ids || []).includes(actor.actor_id);
       piece.classList.toggle('is-controlled', controlled);
+
+      const indicators = document.createElement('span');
+      indicators.className = 'ccgb-actor-indicators';
+      [
+        ['heavy', 'Heavy wounds — details coming soon'],
+        ['medium', 'Medium wounds — details coming soon'],
+        ['light', 'Light wounds — details coming soon'],
+        ['status', 'Status — details coming soon']
+      ].forEach(([kind, title]) => {
+        const indicator = document.createElement('span');
+        indicator.className = `is-${kind}`;
+        indicator.title = title;
+        indicators.appendChild(indicator);
+      });
+      piece.appendChild(indicators);
 
       if (actor.display_mode === 'token' && actor.portrait_asset_id) {
         const image = document.createElement('img');

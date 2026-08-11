@@ -19,6 +19,7 @@ from headmasters_scroll.board import (
 )
 from headmasters_scroll.store import SharedJsonStore
 from headmasters_scroll.game_board.server import create_apps
+from headmasters_scroll.game_board.service import GameBoardService
 from headmasters_scroll.game_board.storage import GameBoardRepository
 
 
@@ -505,6 +506,7 @@ class ProtectedAssetApiTests(unittest.TestCase):
         source = self.directory / "map.png"
         Image.new("RGB", (320, 180), "purple").save(source)
         assets = AssetStore(self.directory / "assets")
+        self.assets = assets
         world["maps"][0]["asset"] = assets.import_map("map-1", source)
         (self.directory / "world.json").write_text(json.dumps(world), encoding="utf-8")
         campaign_data = {
@@ -526,6 +528,7 @@ class ProtectedAssetApiTests(unittest.TestCase):
             json.dumps(campaign_data), encoding="utf-8"
         )
         private = GameBoardRepository(self.directory / "private")
+        self.private = private
         settings = private.settings()
         settings.update(
             wordpress_player_url=f"{self.ORIGIN}/game-board/",
@@ -534,8 +537,10 @@ class ProtectedAssetApiTests(unittest.TestCase):
         )
         private.save_settings(settings)
         shared = SharedJsonStore(self.directory)
+        self.shared = shared
+        self.campaigns = CampaignRepository(shared)
         admin_app, player_app, self.runtime = create_apps(
-            private, CampaignRepository(shared)
+            private, self.campaigns
         )
         self.runtime.service.shared_store = shared
         self.runtime.service.world_board = WorldBoardRepository(shared, assets)
@@ -545,12 +550,13 @@ class ProtectedAssetApiTests(unittest.TestCase):
         self.origin_headers = {"Origin": self.ORIGIN}
         contact = self.runtime.service.add_contact("Alice", "alice@example.com")
         self.runtime.service.assign_character(contact["id"], "pc-1")
-        self.runtime.service.create_session(
+        session = self.runtime.service.create_session(
             "Board",
             (date.today() + timedelta(days=1)).isoformat(),
             [contact["id"]],
             campaign_id="campaign-1",
         )
+        self.session_id = session["id"]
         self.invite, _link, _entry = self.runtime.service.prepare_invite(contact["id"])
 
     def tearDown(self):
@@ -590,6 +596,93 @@ class ProtectedAssetApiTests(unittest.TestCase):
             self.assertEqual(self.player.get("/v1/assets/map%3Asecret", headers=headers).status_code, 403)
         headers = {**self.origin_headers, "Authorization": f"Bearer {credential}"}
         self.assertEqual(self.player.get("/v1/assets/map%3Amap-1", headers=headers).status_code, 403)
+
+    def test_campaign_restores_workspace_clock_maps_groups_positions_and_sizes(self):
+        world_before = (self.directory / "world.json").read_bytes()
+        requests = (
+            self.admin.put(
+                "/api/admin/board/workspace",
+                headers=self.admin_headers,
+                json={
+                    "session_id": self.session_id,
+                    "loaded_map_ids": ["map-1"],
+                    "active_map_id": "map-1",
+                },
+            ),
+            self.admin.put(
+                "/api/admin/board/maps/map-1/settings",
+                headers=self.admin_headers,
+                json={
+                    "session_id": self.session_id,
+                    "token_scale": 0.007,
+                    "start_point": {"x": 0.35, "y": 0.45},
+                    "update_start_point": True,
+                },
+            ),
+            self.admin.put(
+                "/api/admin/board/maps/map-1/presentation",
+                headers=self.admin_headers,
+                json={
+                    "session_id": self.session_id,
+                    "published": True,
+                    "obscurations": [],
+                    "preview_opacity": 0.35,
+                    "preview_color": "#ff0000",
+                },
+            ),
+            self.admin.post(
+                "/api/admin/board/move",
+                headers=self.admin_headers,
+                json={
+                    "session_id": self.session_id,
+                    "person_id": "pc-1",
+                    "map_id": "map-1",
+                    "x": 0.41,
+                    "y": 0.62,
+                },
+            ),
+            self.admin.post(
+                "/api/admin/board/groups",
+                headers=self.admin_headers,
+                json={
+                    "session_id": self.session_id,
+                    "name": "Party",
+                    "location_id": "castle",
+                    "person_ids": ["pc-1", "npc-1"],
+                },
+            ),
+            self.admin.put(
+                f"/api/admin/sessions/{self.session_id}/game-datetime",
+                headers=self.admin_headers,
+                json={"game_datetime": "2000-06-02T14:35"},
+            ),
+        )
+        for response in requests:
+            self.assertEqual(response.status_code, 200, response.text)
+
+        state = self.campaigns.get("campaign-1")["game_state"]
+        self.assertEqual(state["current_game_datetime"], "2000-06-02T14:35")
+        self.assertEqual(state["loaded_map_ids"], ["map-1"])
+        self.assertEqual(state["active_map_id"], "map-1")
+        self.assertTrue(state["maps"]["map-1"]["players_published"])
+        self.assertEqual(state["maps"]["map-1"]["token_scale"], 0.007)
+        self.assertEqual(state["maps"]["map-1"]["start_point"], {"x": 0.35, "y": 0.45})
+        placement = state["people"]["pc-1"]["placement"]
+        self.assertEqual((placement["x"], placement["y"]), (0.41, 0.62))
+        self.assertEqual(state["groups"][0]["name"], "Party")
+        self.assertEqual((self.directory / "world.json").read_bytes(), world_before)
+
+        resumed = GameBoardService(self.private, self.campaigns)
+        resumed.shared_store = self.shared
+        resumed.world_board = WorldBoardRepository(self.shared, self.assets)
+        snapshot = resumed.board_snapshot(self.session_id)
+        actor = next(item for item in snapshot["actors"] if item["actor_id"] == "pc-1")
+        map_record = next(item for item in snapshot["maps"] if item["record_id"] == "map-1")
+        self.assertEqual(snapshot["game_datetime"], "2000-06-02T14:35")
+        self.assertEqual(snapshot["loaded_map_ids"], ["map-1"])
+        self.assertEqual((actor["x"], actor["y"]), (0.41, 0.62))
+        self.assertEqual(map_record["token_scale"], 0.007)
+        self.assertEqual(snapshot["groups"][0]["name"], "Party")
 
 
 if __name__ == "__main__":

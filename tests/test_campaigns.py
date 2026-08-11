@@ -44,6 +44,16 @@ class CampaignTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             normalize_game_world_date("1943-02-30")
 
+    def test_new_campaign_has_a_backward_compatible_board_state(self):
+        created = self.repository.save_campaign("Board Campaign", "1943-09-01")
+        state = created["game_state"]
+        self.assertFalse(state["initialized"])
+        self.assertEqual(state["current_game_datetime"], "1943-09-01T08:00")
+        self.assertEqual(state["loaded_map_ids"], [])
+        self.assertEqual(state["maps"], {})
+        self.assertEqual(state["people"], {})
+        self.assertEqual(state["groups"], [])
+
 
 if __name__ == "__main__":
     unittest.main()

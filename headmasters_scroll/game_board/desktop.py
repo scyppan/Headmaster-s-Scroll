@@ -724,6 +724,7 @@ class GameBoardWindow(tk.Tk):
         self.board_snapshot: dict[str, Any] = {}
         self.board_map_label_to_id: dict[str, str] = {}
         self.board_open_map_ids: list[str] = []
+        self.board_workspace_campaign_id = ""
         self.board_map_drafts: dict[str, dict[str, Any]] = {}
         self.board_view_states: dict[str, dict[str, float | bool]] = {}
         self.selected_board_map_id = ""
@@ -1133,6 +1134,7 @@ class GameBoardWindow(tk.Tk):
         self.board_search_value.set("")
         self._close_board_search_suggestions()
         self._render_board(self.board_snapshot)
+        self._save_board_workspace()
 
     def remove_current_board_map(self) -> None:
         map_id = self.selected_board_map_id
@@ -1149,6 +1151,20 @@ class GameBoardWindow(tk.Tk):
         self.board_map_drafts.pop(map_id, None)
         self.selected_board_map_id = self.board_open_map_ids[-1] if self.board_open_map_ids else ""
         self._render_board(self.board_snapshot)
+        self._save_board_workspace()
+
+    def _save_board_workspace(self) -> None:
+        if not self.selected_session_id:
+            return
+        payload = {
+            "session_id": self.selected_session_id,
+            "loaded_map_ids": list(self.board_open_map_ids),
+            "active_map_id": self.selected_board_map_id,
+        }
+        self._background(
+            lambda: self.client.request("PUT", "/api/admin/board/workspace", payload),
+            quiet=True,
+        )
 
     def open_board_explorer(self) -> None:
         dialog = tk.Toplevel(self)
@@ -1531,6 +1547,7 @@ class GameBoardWindow(tk.Tk):
         self.cancel_board_obscuration()
         self._sync_board_presentation_controls()
         self._render_board_actor_list()
+        self._save_board_workspace()
 
     def _current_board_map(self) -> dict[str, Any] | None:
         return next(
@@ -1542,6 +1559,19 @@ class GameBoardWindow(tk.Tk):
         self.board_snapshot = snapshot or {}
         all_maps = list(self.board_snapshot.get("maps", []))
         valid_ids = {str(item.get("record_id")) for item in all_maps}
+        campaign_id = str(self.board_snapshot.get("campaign_id", "") or "")
+        if campaign_id and campaign_id != self.board_workspace_campaign_id:
+            self.board_workspace_campaign_id = campaign_id
+            self.board_open_map_ids = [
+                str(map_id) for map_id in self.board_snapshot.get("loaded_map_ids", [])
+                if str(map_id) in valid_ids
+            ]
+            active_map_id = str(self.board_snapshot.get("active_map_id", "") or "")
+            self.selected_board_map_id = (
+                active_map_id
+                if active_map_id in self.board_open_map_ids
+                else (self.board_open_map_ids[0] if self.board_open_map_ids else "")
+            )
         self.board_open_map_ids = [map_id for map_id in self.board_open_map_ids if map_id in valid_ids]
         maps_by_id = {str(item.get("record_id")): item for item in all_maps}
         maps = [maps_by_id[map_id] for map_id in self.board_open_map_ids if map_id in maps_by_id]
@@ -1631,8 +1661,8 @@ class GameBoardWindow(tk.Tk):
         self.board_obscure_opacity.set(str(round(float(draft["preview_opacity"]) * 100)))
         self.board_obscure_color = str(draft["preview_color"])
         record = self._current_board_map() or {}
-        token_scale = float(record.get("token_scale", 0.055))
-        self.board_token_size_label.configure(text=f"{round(token_scale / 0.055 * 100):d}%")
+        token_scale = float(record.get("token_scale", 0.0055))
+        self.board_token_size_label.configure(text=f"{round(token_scale / 0.0055 * 100):d}%")
         if draft.get("dirty"):
             self.board_draft_status.configure(
                 text="Not sent — these changes are visible only to you.",
@@ -1720,16 +1750,17 @@ class GameBoardWindow(tk.Tk):
         map_id = self.selected_board_map_id
         if record is None or not map_id:
             return
-        current = float(record.get("token_scale", 0.055))
-        value = max(0.02, min(0.12, round(current + 0.005 * direction, 3)))
+        current = float(record.get("token_scale", 0.0055))
+        value = max(0.002, min(0.03, round(current + 0.001 * direction, 4)))
         if value == current:
             return
         record["token_scale"] = value
-        self.board_token_size_label.configure(text=f"{round(value / 0.055 * 100):d}%")
+        self.board_token_size_label.configure(text=f"{round(value / 0.0055 * 100):d}%")
         self._draw_board_map(map_id)
         self._background(
             lambda: self.client.request(
-                "PUT", f"/api/admin/board/maps/{map_id}/settings", {"token_scale": value}
+                "PUT", f"/api/admin/board/maps/{map_id}/settings",
+                {"session_id": self.selected_session_id, "token_scale": value}
             ),
             lambda _result: self.refresh(silent=True),
         )
@@ -1775,7 +1806,11 @@ class GameBoardWindow(tk.Tk):
             lambda: self.client.request(
                 "PUT",
                 f"/api/admin/board/maps/{map_id}/settings",
-                {"start_point": {"x": x, "y": y}, "update_start_point": True},
+                {
+                    "session_id": self.selected_session_id,
+                    "start_point": {"x": x, "y": y},
+                    "update_start_point": True,
+                },
             ),
             lambda _result: self.refresh(silent=True),
         )
@@ -1862,6 +1897,7 @@ class GameBoardWindow(tk.Tk):
             )
             return
         payload = {
+            "session_id": self.selected_session_id,
             "published": bool(draft["published"]),
             "obscurations": deepcopy(draft["obscurations"]),
             "preview_opacity": float(draft["preview_opacity"]),
@@ -1968,10 +2004,10 @@ class GameBoardWindow(tk.Tk):
         else:
             canvas.create_text(width / 2, height / 2, text="No map image imported", fill="#f8edcf", font=("Segoe UI", 14, "bold"))
         self.board_canvas_geometry[map_id] = (left, top, draw_width, draw_height)
-        token_scale = max(0.02, min(0.12, float(record.get("token_scale", 0.055))))
-        token_diameter = max(18, round(draw_width * token_scale))
-        portrait_diameter = max(12, token_diameter - max(6, round(token_diameter * 0.14)))
-        dot_diameter = max(10, round(token_diameter * 0.35))
+        token_scale = max(0.002, min(0.03, float(record.get("token_scale", 0.0055))))
+        token_diameter = max(6, round(draw_width * token_scale))
+        portrait_diameter = token_diameter
+        dot_diameter = max(4, round(token_diameter * 0.55))
         for key in [key for key in self._board_portraits if key.startswith(f"{map_id}:")]:
             self._board_portraits.pop(key, None)
         for actor in self.board_snapshot.get("actors", []):
@@ -1986,30 +2022,67 @@ class GameBoardWindow(tk.Tk):
                 try:
                     portrait_path = self.asset_store.resolve(str(actor["portrait_asset_id"]))
                     with Image.open(portrait_path) as opened:
-                        portrait = opened.convert("RGB").resize((portrait_diameter, portrait_diameter), Image.Resampling.LANCZOS)
+                        portrait = opened.convert("RGBA").resize((portrait_diameter, portrait_diameter), Image.Resampling.LANCZOS)
                     photo = ImageTk.PhotoImage(portrait)
                     self._board_portraits[f"{map_id}:{actor_id}:{token_diameter}"] = photo
-                    radius = token_diameter / 2
-                    canvas.create_oval(x - radius, y - radius, x + radius, y + radius, fill=color, outline="#fff3cf" if selected else self.INK, width=4 if selected else 2)
                     item = canvas.create_image(x, y, image=photo)
+                    if selected:
+                        radius = token_diameter / 2 + 2
+                        canvas.create_rectangle(
+                            x - radius, y - radius, x + radius, y + radius,
+                            outline="#d6ad52", width=2,
+                        )
                 except (FileNotFoundError, OSError, ValueError):
                     radius = dot_diameter / 2
-                    item = canvas.create_oval(x - radius, y - radius, x + radius, y + radius, fill=color, outline="white" if selected else self.INK, width=3)
+                    item = canvas.create_oval(x - radius, y - radius, x + radius, y + radius, fill=color, outline="#d6ad52" if selected else self.INK, width=2)
             elif actor.get("display_mode") == "nameplate":
                 name = str(actor.get("name") or "Character")
                 text_item = canvas.create_text(x, y, text=name, fill=self.INK, font=("Segoe UI", 9, "bold"))
                 box = canvas.bbox(text_item) or (x - 25, y - 10, x + 25, y + 10)
-                item = canvas.create_rectangle(box[0] - 6, box[1] - 4, box[2] + 6, box[3] + 4, fill="#f8edcf", outline=color, width=3 if selected else 2)
+                item = canvas.create_rectangle(box[0] - 6, box[1] - 4, box[2] + 6, box[3] + 4, fill="#d6ad52", outline="#fff3cf" if selected else self.INK, width=2)
                 canvas.tag_raise(text_item)
                 self._board_canvas_actors[(map_id, text_item)] = actor_id
             else:
                 radius = dot_diameter / 2
-                item = canvas.create_oval(x - radius, y - radius, x + radius, y + radius, fill=color, outline="#fff3cf" if selected else self.INK, width=3 if selected else 2)
+                item = canvas.create_oval(x - radius, y - radius, x + radius, y + radius, fill=color, outline="#fff3cf" if selected else self.INK, width=2)
             self._board_canvas_actors[(map_id, item)] = actor_id
             name = str(actor.get("name") or "Unknown")
-            label_offset = token_diameter / 2 + 12 if actor.get("display_mode") == "token" else dot_diameter / 2 + 10
-            label = canvas.create_text(x, y + label_offset, text=name, fill="#fff8e7", font=("Segoe UI", 9, "bold"))
-            self._board_canvas_actors[(map_id, label)] = actor_id
+            if actor.get("display_mode") != "nameplate":
+                label_offset = max(token_diameter, dot_diameter) / 2 + 10
+                label = canvas.create_text(x, y + label_offset, text=name, fill="#000000", font=("Segoe UI", 8, "bold"))
+                label_box = canvas.bbox(label) or (x - 20, y + label_offset - 7, x + 20, y + label_offset + 7)
+                label_bg = canvas.create_rectangle(
+                    label_box[0] - 4, label_box[1] - 2,
+                    label_box[2] + 4, label_box[3] + 2,
+                    fill="#d6ad52", outline=self.INK, width=1,
+                )
+                canvas.tag_raise(label)
+                self._board_canvas_actors[(map_id, label_bg)] = actor_id
+                self._board_canvas_actors[(map_id, label)] = actor_id
+
+            indicator_y = y - max(token_diameter, dot_diameter) / 2 - 7
+            indicators = (
+                ("Heavy wounds", "#c62828", "#ffffff"),
+                ("Medium wounds", "#f2d13d", "#000000"),
+                ("Light wounds", "#ffffff", "#000000"),
+                ("Status", "#000000", "#ffffff"),
+            )
+            total_width = len(indicators) * 6 - 1
+            start_x = x - total_width / 2
+            for index, (label_text, fill, outline) in enumerate(indicators):
+                cx = start_x + index * 6 + 2.5
+                indicator = canvas.create_oval(
+                    cx - 2.5, indicator_y - 2.5, cx + 2.5, indicator_y + 2.5,
+                    fill=fill, outline=outline, width=1,
+                )
+                self._board_canvas_actors[(map_id, indicator)] = actor_id
+                canvas.tag_bind(
+                    indicator,
+                    "<Enter>",
+                    lambda _event, actor_name=name, status_name=label_text: self.set_notice(
+                        f"{actor_name}: {status_name} details will appear here."
+                    ),
+                )
 
         start_point = record.get("start_point")
         if isinstance(start_point, dict):
@@ -2732,8 +2805,9 @@ class GameBoardWindow(tk.Tk):
         if not self.selected_board_actor_id:
             messagebox.showinfo("Board", "Select a character first.", parent=self)
             return
+        payload = {"session_id": self.selected_session_id, **updates}
         self._background(
-            lambda: self.client.request("PUT", f"/api/admin/board/people/{self.selected_board_actor_id}", updates),
+            lambda: self.client.request("PUT", f"/api/admin/board/people/{self.selected_board_actor_id}", payload),
             lambda _result: self.refresh(silent=True),
         )
 
@@ -2815,9 +2889,13 @@ class GameBoardWindow(tk.Tk):
             def work() -> None:
                 self.client.request("POST", "/api/admin/board/move", move_payload)
                 if selected.startswith("group:"):
-                    self.client.request("PUT", f"/api/admin/board/groups/people/{actor['actor_id']}", {"group_id": selected.split(':', 1)[1]})
+                    self.client.request("PUT", f"/api/admin/board/groups/people/{actor['actor_id']}", {
+                        "session_id": self.selected_session_id,
+                        "group_id": selected.split(':', 1)[1],
+                    })
                 elif selected.startswith("create:"):
                     self.client.request("POST", "/api/admin/board/groups", {
+                        "session_id": self.selected_session_id,
                         "name": f"{actor.get('name', 'New')} group",
                         "location_id": location_id,
                         "person_ids": [actor["actor_id"], selected.split(':', 1)[1]],
@@ -2877,7 +2955,12 @@ class GameBoardWindow(tk.Tk):
             if len(person_ids) < 2 or not current_map:
                 messagebox.showerror("Groups", "Choose at least two people.", parent=dialog)
                 return
-            payload = {"name": name.get().strip() or "Group", "location_id": current_map["location_id"], "person_ids": person_ids}
+            payload = {
+                "session_id": self.selected_session_id,
+                "name": name.get().strip() or "Group",
+                "location_id": current_map["location_id"],
+                "person_ids": person_ids,
+            }
             self._background(lambda: self.client.request("POST", "/api/admin/board/groups", payload), lambda _result: self.refresh(silent=True))
             dialog.destroy()
         ttk.Button(dialog, text="Create group", command=save).pack(pady=10)
@@ -2908,7 +2991,10 @@ class GameBoardWindow(tk.Tk):
             ttk.Radiobutton(dialog, text=str(group.get("name") or "Group"), variable=value, value=str(group.get("record_id"))).pack(anchor="w", padx=10, pady=2)
         def save() -> None:
             self._background(
-                lambda: self.client.request("PUT", f"/api/admin/board/groups/people/{actor['actor_id']}", {"group_id": value.get() or None}),
+                lambda: self.client.request("PUT", f"/api/admin/board/groups/people/{actor['actor_id']}", {
+                    "session_id": self.selected_session_id,
+                    "group_id": value.get() or None,
+                }),
                 lambda _result: self.refresh(silent=True),
             )
             dialog.destroy()
@@ -3870,13 +3956,8 @@ class GameBoardWindow(tk.Tk):
         board = deepcopy(
             (state.get("boards") or {}).get(self.selected_session_id or "", {})
         )
-        location_maps = list(state.get("location_maps") or [])
-        if not location_maps:
-            try:
-                location_maps = self.world_board.location_maps()
-            except (KeyError, OSError, RuntimeError, ValueError):
-                location_maps = []
-        board["maps"] = location_maps
+        if not board.get("maps"):
+            board["maps"] = list(state.get("location_maps") or [])
         self._render_board(board)
 
         pending_rows: list[tuple[str, tuple[Any, ...]]] = []

@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
   "_headmasters_scroll": {
-    "revision_id": "66e9dd64-4217-49ea-8c85-70d334b0a870",
-    "last_modified_at": "2026-08-11T08:20:06.665953Z",
-    "last_modified_by": "campaigner"
+    "revision_id": "351a1776-6e2e-4210-ac33-03d2554d07fd",
+    "last_modified_at": "2026-08-11T12:09:10.718321Z",
+    "last_modified_by": "game-board"
   },
   "campaigns": [
     {
@@ -11,14 +11,2436 @@
       "created_at": "2026-08-11T08:19:23.069609Z",
       "name": "Test camp",
       "game_world_start_date": "2000-08-27",
-      "last_updated": "2026-08-11T08:19:23.069609Z"
+      "last_updated": "2026-08-11T12:09:10.716621Z",
+      "game_state": {
+        "initialized": true,
+        "current_game_datetime": "2000-08-27T08:00",
+        "loaded_map_ids": [
+          "4fc2ff78-e528-4ebd-b4db-9b34fc803622"
+        ],
+        "active_map_id": "4fc2ff78-e528-4ebd-b4db-9b34fc803622",
+        "maps": {
+          "4fc2ff78-e528-4ebd-b4db-9b34fc803622": {
+            "players_published": true,
+            "obscurations": [
+              {
+                "record_id": "6073ef63-5082-46f1-a1a1-0c806b8f1a72",
+                "points": [
+                  {
+                    "x": 0.28841696896412733,
+                    "y": 0.19226118500604594
+                  },
+                  {
+                    "x": 0.32570032245062475,
+                    "y": 0.2140266021765417
+                  },
+                  {
+                    "x": 0.60718964127368,
+                    "y": 0.17896009673518742
+                  },
+                  {
+                    "x": 0.8150443369609028,
+                    "y": 0.13663845223700122
+                  },
+                  {
+                    "x": 0.9166414752116082,
+                    "y": 0.1523579201934704
+                  },
+                  {
+                    "x": 0.9969325153374233,
+                    "y": 0.30102802188691774
+                  },
+                  {
+                    "x": 0.9641937267189815,
+                    "y": 0.2952698368556781
+                  },
+                  {
+                    "x": 0.9469536692133059,
+                    "y": 0.32967826763623637
+                  },
+                  {
+                    "x": 0.9933692086516632,
+                    "y": 0.3623662768777668
+                  },
+                  {
+                    "x": 0.9940044336960905,
+                    "y": 0.8403869407496977
+                  },
+                  {
+                    "x": 0.7153113663845224,
+                    "y": 0.8657799274486094
+                  },
+                  {
+                    "x": 0.257658202337767,
+                    "y": 0.8597339782345829
+                  },
+                  {
+                    "x": 0.028365578395808107,
+                    "y": 0.7351874244256348
+                  },
+                  {
+                    "x": 0.005063482466747243,
+                    "y": 0.6251511487303507
+                  },
+                  {
+                    "x": 0.011588069326884285,
+                    "y": 0.5102781136638452
+                  },
+                  {
+                    "x": 0.005995566303909677,
+                    "y": 0.4570737605804111
+                  },
+                  {
+                    "x": 0.035822249093107585,
+                    "y": 0.25634824667472794
+                  },
+                  {
+                    "x": 0.2306277710600564,
+                    "y": 0.21281741233373638
+                  }
+                ],
+                "created_at": "2026-08-11T07:39:53.499583Z",
+                "last_updated": "2026-08-11T08:42:17.930553Z"
+              }
+            ],
+            "obscuration_preview_opacity": 0.35,
+            "obscuration_preview_color": "#ffa6a6",
+            "token_scale": 0.0055,
+            "start_point": null
+          }
+        },
+        "people": {
+          "1ef136a2-d6bd-4c91-af2e-3ec04770bf99": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "6cea2c79-66b4-4018-88f1-6238ad15ebd7": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "6882e7fb-529a-4b3e-8929-a795b91b816d": {
+            "placement": {
+              "location_id": "de9bca8f-8fea-4db4-a040-131af6804693",
+              "floor_id": "",
+              "map_id": "4fc2ff78-e528-4ebd-b4db-9b34fc803622",
+              "x": 0.9872824412370469,
+              "y": 0.3146926369595356
+            },
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "ccde7cef-2aff-4be4-974f-c72ffe652c71": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "7bd4ae68-1b41-43d9-8949-a6a9160517f8": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "da621804-0d7d-4af5-8cd1-54e535323c8b": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "bf8fda89-3eaa-4603-832d-498431b15447": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "f812561f-6caa-4c1e-a5dc-6764288ed90a": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "a42cd75f-b0d3-4771-8530-c9568102bedf": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "8cf308b5-afae-4323-a4fd-209dd5b63c7c": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "1106d8d9-ff8b-4378-a9f9-9cad3fbdfee9": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "6cd8d366-28a4-4199-9c5c-ff55362851b2": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "fd2e3f62-3530-4fe5-a618-da26accca07f": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "a94e7b2e-2faa-49e3-83ef-cdc136502f54": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "765c03a4-9624-4cd0-9695-419cf59c043a": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "bfc92f8c-9704-4ee5-89c1-4d6cfe9cd392": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "731751aa-a668-4887-840f-c8e5d624c655": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "0164a838-659c-40f7-b201-ff20fef4679d": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "bcfff484-a85f-43e0-96e3-e20796e5396f": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "0ae645e6-63a4-4f69-bf04-3aaf431fad3c": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "2c6d4b9f-3607-4acc-8ca4-2c479fd116c8": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "f66d30d0-6b77-4ec8-b3d9-5e90428b0cc3": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "6d9eaf12-05a9-4366-b787-1ecb3ce7fcc3": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "370ab1c3-6d64-4b89-afc4-90858a032cc4": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "c596f72c-5362-4594-bfc9-1f1ee4cd689e": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "c10787b3-5209-47a1-b904-ff559a92f673": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "8fdc0319-05bd-4483-a496-0520f15cdd7b": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "022e5fe4-3329-44d2-861d-ef019f52866b": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "19c79a0e-0fb7-4c23-9e2d-7dd29d3f5a3e": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "9ceae05f-0da6-4206-98e8-6a008e3c9c06": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "f6ceeb9d-5c55-4086-8759-e123962c2140": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "471a48da-be48-455a-9732-fa5f318e24f1": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "bb2fc265-d4db-4d5a-b125-536f1f097a9a": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "ff853e34-62a4-482d-8871-59c4fb1942fa": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "80d314c6-60a4-4fdb-96cc-8d643d9fb18c": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "62ca5c0d-a14f-4450-9581-f36c9396fbcb": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "92b946e9-eecd-4a82-9391-26f9d26986ce": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "61a91b1f-d41d-4c6c-b8dd-484d12973dc4": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "4156b78e-89f1-4c97-8211-b0e1ae013115": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "2c1675c1-4f61-491b-a7b7-9b5e1f6010d1": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "fd83ae13-a59a-46b9-96a6-c8dc92cd8ae0": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "594ad00f-0b79-4118-ba66-a875f7ba9811": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "38a03510-bc09-4620-9f90-6a9ae207d799": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "e040f41f-13dd-418a-953f-ebc2988446b6": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "91025900-cbe7-4f88-a881-12f0a6500815": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "0134d21e-c638-4707-9909-a673fe05a238": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "e1b2ee79-98ed-4304-b14f-b80f2c4046c1": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "d39df4b0-eec5-4069-b065-e81c0a62f03c": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "176b841b-540b-434e-add7-5120223b7f6f": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "123d9889-e0dd-457f-9cbb-8363a6444c29": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "17af755b-e7ec-4d6a-bc63-70f51b7ad898": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "a711ec2a-e501-4921-a7f6-1e622832034c": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "a8fc8d1a-7604-4e69-ac10-c01b354865ac": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "015ddb5b-ce96-4b8e-9e13-79117199f292": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "8d725029-e682-4691-b9c3-0afb04b2ba74": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "c1c24da7-af71-44c1-ae51-052259c25383": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "305a05a2-7ec1-403b-b00d-8678bb896fcb": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "135c0ffb-6c82-4918-94c5-dde857c2ed5f": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "afa0f6ae-5267-481b-9f8d-7891b0e7653c": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "0b355b5f-1659-43fa-b7bf-7f3838959c9a": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "8f2a492b-7158-4ab7-8c31-a32e5cd25f88": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "54cb26f5-233b-40a4-9a29-eb4d70eb7b86": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "34b97744-6b58-4b74-a3e7-138b5524919c": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "1ed2c18c-fbba-40db-925a-9cd4236416e2": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "6852cb5c-e0c3-4146-8820-f976587c8481": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "ceabdad2-445f-45f8-ad12-9eec36befb16": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "1c2e6c15-b2d9-4981-856b-505f2a462b4f": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "3ff72a1f-1263-4e79-ad92-d1b9ed350ee3": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "8bbf7198-4379-408a-aef6-c1f6273c2ccb": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "175f1474-7db6-4ac1-9ea7-38038a81edf3": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "1b45533f-1445-43e9-ac87-40104c33a169": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "78ad93b3-82d8-4592-bb78-2b229e5b3857": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "4e83492f-582d-4907-af20-6a44fca03bdc": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "024dde35-66df-4b86-a098-57a5a5980ffa": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "d2f63d30-b1fc-4d75-a342-75c16c9db0b2": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "fa1e0297-4fc5-4e77-a992-381306d84881": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "c35c9332-dbd4-4680-8d5a-eb9872d9026f": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "9eb7c539-cfb4-4661-b3bb-8f4ab75bb69a": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "16622042-6bfb-49a3-bedb-6e4f367181d0": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "6e99daab-6798-4ce1-b451-060437fc037f": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "791b1974-8526-404a-98b5-d3e6c3621ff0": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "5332d254-a7aa-4eb0-aed0-4af9e753d541": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "3d61c37f-cdb8-4e18-96ab-72d62f79e9d0": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "2c201c76-f914-4d0e-bb49-5f7573ad474b": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "eefeb5ed-89b5-439e-ab4e-e8bfe1ed8537": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "6686563e-1590-4ca4-aff3-e25634b78b5b": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "0c685dc2-b174-43f4-986e-ed47de6d2bbf": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "dd85b9d7-6917-4176-a997-ea8dd3058b7f": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "a2b6515b-0e9a-477d-ad92-e8dbab58c6d8": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "ef35ad49-54a8-4a34-aca8-a46dd3e55266": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "f7478a34-1f5f-4922-beec-cf9acafc689f": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "c5931c31-a3ec-4f50-a12c-739c83f39dad": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "9778cba2-2b79-4f17-b5ab-091550cc59dd": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "76cab833-aa83-4279-8827-eec8a996e825": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "7e5d8c0f-2f5e-432d-86f2-674f4d0fadeb": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "6314898b-0048-4ccc-a069-ad688a0731af": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "8eac296b-8a57-40ca-ac6b-c79cd3911c6e": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "61468d57-8dad-444e-a385-1ec9aaa91ea0": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "c8f68ed2-7229-4e88-bf1b-cf09708c77e9": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "880584a7-7ab2-439b-98ce-69a456409a06": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "2cb4346d-23a5-49e6-9819-4dada5fc5592": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "13dc5c00-a594-492c-8c9d-b6287faf7d84": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "c33f468a-a613-4957-ba2a-a948aaef5322": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "da681ceb-a1e4-4537-93cf-2899d90a4c47": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "3219ca53-4bf9-4d6a-908a-ea866cbabc65": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "b878caf9-c43e-4401-8974-7021bc69a6b5": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "f6eb042e-8c9a-4b7f-aa71-c4c11e620985": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "81db9059-18de-49c6-9fd8-e11b548f2923": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "b8747bd3-d920-40ec-9f17-1c6f82bcca84": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "b482b084-c3b4-4401-b41e-5f7b60fdabfe": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "07068190-b21c-4298-a605-01b1ef1af6d4": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "c1f15bec-2ca2-4ef7-8c0f-3a5b7f07ac48": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "56e47a6a-edca-412b-94b5-7a86ac178c30": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "7af558cc-d463-42f9-a8f7-2c17c4c06a49": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "5c5e0ee0-0342-49a4-825e-e8b287353bc5": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "28a2e1be-2372-493c-b405-fd3cbb9164f8": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "47987fae-a66f-420d-bb23-5e00a257706c": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "0cd4db0f-6bdc-4b96-96cb-67aba11cb87f": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "27e9fe68-45b2-43ad-8b9e-650677517f5a": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "12a79490-e6be-42f9-99e8-01132d7933a0": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "c4ef853e-17ba-486c-9621-3a3664da8803": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "2795a527-6daa-408e-8248-b43ef3a5e2dd": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "7a2e07ad-13f4-4567-83d9-276410465bf8": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "79ad14bb-26fc-4b27-ae65-3196762c680b": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "c321bb6c-57ba-4224-b62a-24968d62f36e": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "ee2b39ed-706b-462f-9d1a-9bb5a84679b1": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "5df6d22c-bf6e-434b-b865-0849bf1f4f66": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "0ce7ff22-29a8-405e-863a-394a301380c3": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "40e92c23-602e-4f69-b944-86cb78e1088c": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "6bfae378-3a03-4d25-a276-1e10596d897b": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "833049f6-2ac3-4029-af7d-a55eeaf3c04b": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "be1c32f5-173f-4f8d-bbf7-44afed7af7e5": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "b06ed514-fff6-4b58-99e2-f35895b030d8": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "297c3442-1fc1-45bb-8ec7-b88efa8f10e9": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "0f9cad39-6abd-465a-99ec-1f67b8a0768e": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "e4e4c105-eb42-440b-8db3-1fe5212375e5": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "834260f1-6a1a-40d4-85f6-93a9e9b20ad1": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "a7bc9826-202b-47c5-876e-bed43ac5c92d": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          }
+        },
+        "groups": []
+      }
     },
     {
       "record_id": "3551edc0-df7c-4ad7-8c41-c997c0c1d3d2",
       "created_at": "2026-08-11T08:19:52.057462Z",
       "name": "Charms Check",
       "game_world_start_date": "2005-08-27",
-      "last_updated": "2026-08-11T08:20:06.665528Z"
+      "last_updated": "2026-08-11T12:09:10.635088Z",
+      "game_state": {
+        "initialized": true,
+        "current_game_datetime": "2005-08-27T08:00",
+        "loaded_map_ids": [
+          "4fc2ff78-e528-4ebd-b4db-9b34fc803622"
+        ],
+        "active_map_id": "4fc2ff78-e528-4ebd-b4db-9b34fc803622",
+        "maps": {
+          "4fc2ff78-e528-4ebd-b4db-9b34fc803622": {
+            "players_published": true,
+            "obscurations": [
+              {
+                "record_id": "6073ef63-5082-46f1-a1a1-0c806b8f1a72",
+                "points": [
+                  {
+                    "x": 0.28841696896412733,
+                    "y": 0.19226118500604594
+                  },
+                  {
+                    "x": 0.32570032245062475,
+                    "y": 0.2140266021765417
+                  },
+                  {
+                    "x": 0.60718964127368,
+                    "y": 0.17896009673518742
+                  },
+                  {
+                    "x": 0.8150443369609028,
+                    "y": 0.13663845223700122
+                  },
+                  {
+                    "x": 0.9166414752116082,
+                    "y": 0.1523579201934704
+                  },
+                  {
+                    "x": 0.9969325153374233,
+                    "y": 0.30102802188691774
+                  },
+                  {
+                    "x": 0.9641937267189815,
+                    "y": 0.2952698368556781
+                  },
+                  {
+                    "x": 0.9469536692133059,
+                    "y": 0.32967826763623637
+                  },
+                  {
+                    "x": 0.9933692086516632,
+                    "y": 0.3623662768777668
+                  },
+                  {
+                    "x": 0.9940044336960905,
+                    "y": 0.8403869407496977
+                  },
+                  {
+                    "x": 0.7153113663845224,
+                    "y": 0.8657799274486094
+                  },
+                  {
+                    "x": 0.257658202337767,
+                    "y": 0.8597339782345829
+                  },
+                  {
+                    "x": 0.028365578395808107,
+                    "y": 0.7351874244256348
+                  },
+                  {
+                    "x": 0.005063482466747243,
+                    "y": 0.6251511487303507
+                  },
+                  {
+                    "x": 0.011588069326884285,
+                    "y": 0.5102781136638452
+                  },
+                  {
+                    "x": 0.005995566303909677,
+                    "y": 0.4570737605804111
+                  },
+                  {
+                    "x": 0.035822249093107585,
+                    "y": 0.25634824667472794
+                  },
+                  {
+                    "x": 0.2306277710600564,
+                    "y": 0.21281741233373638
+                  }
+                ],
+                "created_at": "2026-08-11T07:39:53.499583Z",
+                "last_updated": "2026-08-11T08:42:17.930553Z"
+              }
+            ],
+            "obscuration_preview_opacity": 0.35,
+            "obscuration_preview_color": "#ffa6a6",
+            "token_scale": 0.0055,
+            "start_point": null
+          }
+        },
+        "people": {
+          "1ef136a2-d6bd-4c91-af2e-3ec04770bf99": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "6cea2c79-66b4-4018-88f1-6238ad15ebd7": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "6882e7fb-529a-4b3e-8929-a795b91b816d": {
+            "placement": {
+              "location_id": "de9bca8f-8fea-4db4-a040-131af6804693",
+              "floor_id": "",
+              "map_id": "4fc2ff78-e528-4ebd-b4db-9b34fc803622",
+              "x": 0.9872824412370469,
+              "y": 0.3146926369595356
+            },
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "ccde7cef-2aff-4be4-974f-c72ffe652c71": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "7bd4ae68-1b41-43d9-8949-a6a9160517f8": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "da621804-0d7d-4af5-8cd1-54e535323c8b": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "bf8fda89-3eaa-4603-832d-498431b15447": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "f812561f-6caa-4c1e-a5dc-6764288ed90a": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "a42cd75f-b0d3-4771-8530-c9568102bedf": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "8cf308b5-afae-4323-a4fd-209dd5b63c7c": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "1106d8d9-ff8b-4378-a9f9-9cad3fbdfee9": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "6cd8d366-28a4-4199-9c5c-ff55362851b2": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "fd2e3f62-3530-4fe5-a618-da26accca07f": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "a94e7b2e-2faa-49e3-83ef-cdc136502f54": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "765c03a4-9624-4cd0-9695-419cf59c043a": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "bfc92f8c-9704-4ee5-89c1-4d6cfe9cd392": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "731751aa-a668-4887-840f-c8e5d624c655": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "0164a838-659c-40f7-b201-ff20fef4679d": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "bcfff484-a85f-43e0-96e3-e20796e5396f": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "0ae645e6-63a4-4f69-bf04-3aaf431fad3c": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "2c6d4b9f-3607-4acc-8ca4-2c479fd116c8": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "f66d30d0-6b77-4ec8-b3d9-5e90428b0cc3": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "6d9eaf12-05a9-4366-b787-1ecb3ce7fcc3": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "370ab1c3-6d64-4b89-afc4-90858a032cc4": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "c596f72c-5362-4594-bfc9-1f1ee4cd689e": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "c10787b3-5209-47a1-b904-ff559a92f673": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "8fdc0319-05bd-4483-a496-0520f15cdd7b": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "022e5fe4-3329-44d2-861d-ef019f52866b": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "19c79a0e-0fb7-4c23-9e2d-7dd29d3f5a3e": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "9ceae05f-0da6-4206-98e8-6a008e3c9c06": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "f6ceeb9d-5c55-4086-8759-e123962c2140": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "471a48da-be48-455a-9732-fa5f318e24f1": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "bb2fc265-d4db-4d5a-b125-536f1f097a9a": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "ff853e34-62a4-482d-8871-59c4fb1942fa": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "80d314c6-60a4-4fdb-96cc-8d643d9fb18c": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "62ca5c0d-a14f-4450-9581-f36c9396fbcb": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "92b946e9-eecd-4a82-9391-26f9d26986ce": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "61a91b1f-d41d-4c6c-b8dd-484d12973dc4": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "4156b78e-89f1-4c97-8211-b0e1ae013115": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "2c1675c1-4f61-491b-a7b7-9b5e1f6010d1": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "fd83ae13-a59a-46b9-96a6-c8dc92cd8ae0": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "594ad00f-0b79-4118-ba66-a875f7ba9811": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "38a03510-bc09-4620-9f90-6a9ae207d799": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "e040f41f-13dd-418a-953f-ebc2988446b6": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "91025900-cbe7-4f88-a881-12f0a6500815": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "0134d21e-c638-4707-9909-a673fe05a238": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "e1b2ee79-98ed-4304-b14f-b80f2c4046c1": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "d39df4b0-eec5-4069-b065-e81c0a62f03c": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "176b841b-540b-434e-add7-5120223b7f6f": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "123d9889-e0dd-457f-9cbb-8363a6444c29": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "17af755b-e7ec-4d6a-bc63-70f51b7ad898": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "a711ec2a-e501-4921-a7f6-1e622832034c": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "a8fc8d1a-7604-4e69-ac10-c01b354865ac": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "015ddb5b-ce96-4b8e-9e13-79117199f292": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "8d725029-e682-4691-b9c3-0afb04b2ba74": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "c1c24da7-af71-44c1-ae51-052259c25383": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "305a05a2-7ec1-403b-b00d-8678bb896fcb": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "135c0ffb-6c82-4918-94c5-dde857c2ed5f": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "afa0f6ae-5267-481b-9f8d-7891b0e7653c": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "0b355b5f-1659-43fa-b7bf-7f3838959c9a": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "8f2a492b-7158-4ab7-8c31-a32e5cd25f88": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "54cb26f5-233b-40a4-9a29-eb4d70eb7b86": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "34b97744-6b58-4b74-a3e7-138b5524919c": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "1ed2c18c-fbba-40db-925a-9cd4236416e2": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "6852cb5c-e0c3-4146-8820-f976587c8481": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "ceabdad2-445f-45f8-ad12-9eec36befb16": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "1c2e6c15-b2d9-4981-856b-505f2a462b4f": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "3ff72a1f-1263-4e79-ad92-d1b9ed350ee3": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "8bbf7198-4379-408a-aef6-c1f6273c2ccb": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "175f1474-7db6-4ac1-9ea7-38038a81edf3": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "1b45533f-1445-43e9-ac87-40104c33a169": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "78ad93b3-82d8-4592-bb78-2b229e5b3857": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "4e83492f-582d-4907-af20-6a44fca03bdc": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "024dde35-66df-4b86-a098-57a5a5980ffa": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "d2f63d30-b1fc-4d75-a342-75c16c9db0b2": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "fa1e0297-4fc5-4e77-a992-381306d84881": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "c35c9332-dbd4-4680-8d5a-eb9872d9026f": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "9eb7c539-cfb4-4661-b3bb-8f4ab75bb69a": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "16622042-6bfb-49a3-bedb-6e4f367181d0": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "6e99daab-6798-4ce1-b451-060437fc037f": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "791b1974-8526-404a-98b5-d3e6c3621ff0": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "5332d254-a7aa-4eb0-aed0-4af9e753d541": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "3d61c37f-cdb8-4e18-96ab-72d62f79e9d0": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "2c201c76-f914-4d0e-bb49-5f7573ad474b": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "eefeb5ed-89b5-439e-ab4e-e8bfe1ed8537": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "6686563e-1590-4ca4-aff3-e25634b78b5b": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "0c685dc2-b174-43f4-986e-ed47de6d2bbf": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "dd85b9d7-6917-4176-a997-ea8dd3058b7f": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "a2b6515b-0e9a-477d-ad92-e8dbab58c6d8": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "ef35ad49-54a8-4a34-aca8-a46dd3e55266": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "f7478a34-1f5f-4922-beec-cf9acafc689f": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "c5931c31-a3ec-4f50-a12c-739c83f39dad": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "9778cba2-2b79-4f17-b5ab-091550cc59dd": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "76cab833-aa83-4279-8827-eec8a996e825": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "7e5d8c0f-2f5e-432d-86f2-674f4d0fadeb": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "6314898b-0048-4ccc-a069-ad688a0731af": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "8eac296b-8a57-40ca-ac6b-c79cd3911c6e": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "61468d57-8dad-444e-a385-1ec9aaa91ea0": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "c8f68ed2-7229-4e88-bf1b-cf09708c77e9": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "880584a7-7ab2-439b-98ce-69a456409a06": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "2cb4346d-23a5-49e6-9819-4dada5fc5592": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "13dc5c00-a594-492c-8c9d-b6287faf7d84": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "c33f468a-a613-4957-ba2a-a948aaef5322": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "da681ceb-a1e4-4537-93cf-2899d90a4c47": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "3219ca53-4bf9-4d6a-908a-ea866cbabc65": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "b878caf9-c43e-4401-8974-7021bc69a6b5": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "f6eb042e-8c9a-4b7f-aa71-c4c11e620985": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "81db9059-18de-49c6-9fd8-e11b548f2923": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "b8747bd3-d920-40ec-9f17-1c6f82bcca84": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "b482b084-c3b4-4401-b41e-5f7b60fdabfe": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "07068190-b21c-4298-a605-01b1ef1af6d4": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "c1f15bec-2ca2-4ef7-8c0f-3a5b7f07ac48": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "56e47a6a-edca-412b-94b5-7a86ac178c30": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "7af558cc-d463-42f9-a8f7-2c17c4c06a49": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "5c5e0ee0-0342-49a4-825e-e8b287353bc5": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "28a2e1be-2372-493c-b405-fd3cbb9164f8": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "47987fae-a66f-420d-bb23-5e00a257706c": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "0cd4db0f-6bdc-4b96-96cb-67aba11cb87f": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "27e9fe68-45b2-43ad-8b9e-650677517f5a": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "12a79490-e6be-42f9-99e8-01132d7933a0": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "c4ef853e-17ba-486c-9621-3a3664da8803": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "2795a527-6daa-408e-8248-b43ef3a5e2dd": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "7a2e07ad-13f4-4567-83d9-276410465bf8": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "79ad14bb-26fc-4b27-ae65-3196762c680b": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "c321bb6c-57ba-4224-b62a-24968d62f36e": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "ee2b39ed-706b-462f-9d1a-9bb5a84679b1": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "5df6d22c-bf6e-434b-b865-0849bf1f4f66": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "0ce7ff22-29a8-405e-863a-394a301380c3": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "40e92c23-602e-4f69-b944-86cb78e1088c": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "6bfae378-3a03-4d25-a276-1e10596d897b": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "833049f6-2ac3-4029-af7d-a55eeaf3c04b": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "be1c32f5-173f-4f8d-bbf7-44afed7af7e5": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "b06ed514-fff6-4b58-99e2-f35895b030d8": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "297c3442-1fc1-45bb-8ec7-b88efa8f10e9": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "0f9cad39-6abd-465a-99ec-1f67b8a0768e": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "e4e4c105-eb42-440b-8db3-1fe5212375e5": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "834260f1-6a1a-40d4-85f6-93a9e9b20ad1": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          },
+          "a7bc9826-202b-47c5-876e-bed43ac5c92d": {
+            "placement": null,
+            "visibility": "players",
+            "display_mode": "dot",
+            "name_revealed": false,
+            "faction_revealed": false,
+            "faction_organization_id": ""
+          }
+        },
+        "groups": []
+      }
     }
   ]
 }

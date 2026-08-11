@@ -156,6 +156,40 @@ class MapperGeometryTests(unittest.TestCase):
         )
         self.assertEqual(saves, ["Added warp point"])
 
+    def test_placed_warp_is_selectable_and_draggable_in_select_mode(self):
+        class Canvas:
+            def focus_set(self):
+                pass
+
+        class Event:
+            x = 20
+            y = 30
+
+        window = mapper.MapperWindow.__new__(mapper.MapperWindow)
+        window.canvas = Canvas()
+        window.pan_state = None
+        window.map_image = object()
+        window.mode = "select"
+        window.warp_points = [{"record_id": "warp-1", "name": "Stair", "x": 0.2, "y": 0.3}]
+        window.selected_warp_point_id = ""
+        window.drag_state = None
+        window.canvas_to_normal = lambda *_args, **_kwargs: {"x": 0.2, "y": 0.3}
+        window.warp_point_at = lambda *_args: window.warp_points[0]
+        window.render_canvas = lambda: None
+
+        window.canvas_press(Event())
+        self.assertEqual(window.selected_warp_point_id, "warp-1")
+        self.assertEqual(window.drag_state["kind"], "warp")
+
+        window.canvas_to_normal = lambda *_args, **_kwargs: {"x": 0.44, "y": 0.55}
+        window.editor_dirty = False
+        window.canvas_drag(Event())
+        self.assertEqual((window.warp_points[0]["x"], window.warp_points[0]["y"]), (0.44, 0.55))
+        saves = []
+        window.autosave_map = lambda reason: saves.append(reason) or True
+        window.canvas_release(Event())
+        self.assertEqual(saves, ["Moved warp point"])
+
 
 if __name__ == "__main__":
     unittest.main()

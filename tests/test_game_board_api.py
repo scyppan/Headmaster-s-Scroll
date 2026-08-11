@@ -24,6 +24,7 @@ from headmasters_scroll.game_board.desktop import (
 from headmasters_scroll.game_board.gmail import GmailSender, GmailUnavailable
 from headmasters_scroll.game_board.server import create_apps
 from headmasters_scroll.game_board.service import (
+    GameBoardService,
     format_game_datetime_for_people,
     normalize_game_datetime,
 )
@@ -80,12 +81,13 @@ class GameBoardApiTests(unittest.TestCase):
         self.admin_headers = {"X-Admin-Key": settings["admin_key"]}
         self.origin_headers = {"Origin": ORIGIN}
         self.contact = self.runtime.service.add_contact("Alice", "alice@example.com")
-        self.runtime.service.create_session(
+        session = self.runtime.service.create_session(
             "API Test",
             (date.today() + timedelta(days=1)).isoformat(),
             [self.contact["id"]],
             campaign_id="campaign-1",
         )
+        self.session_id = session["id"]
         self.invite, _link, _entry = self.runtime.service.prepare_invite(self.contact["id"])
 
     def tearDown(self):
@@ -446,7 +448,7 @@ class GameBoardAssetTests(unittest.TestCase):
         self.assertIn("scyppan/Headmaster-s-Scroll", loader)
         self.assertIn("apps/charms-check-game-board-weblink/", loader)
         self.assertIn("https://beast.tail102829.ts.net", loader)
-        self.assertIn("a26.8.11.002", loader)
+        self.assertIn("a26.8.11.003", loader)
         self.assertNotIn("https://game.example.com", loader)
         self.assertIn("getElementById('gameboard')", loader)
         self.assertNotIn("<script>", loader)
@@ -480,6 +482,8 @@ class GameBoardAssetTests(unittest.TestCase):
         self.assertIn("event.button !== 1", client)
         self.assertIn("event.ctrlKey || event.metaKey", client)
         self.assertIn("--map-token-size", client)
+        self.assertIn("ccgb-actor-indicators", client)
+        self.assertIn("background: #d6ad52", stylesheet)
         for section in ("Overview", "Attributes", "Spells", "Proficiencies", "Potions", "Pets", "Inventory", "Relationships", "Wounds", "Settings"):
             self.assertIn(section, client)
         self.assertNotIn("world.json", loader + client)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import calendar
 import hashlib
+import math
 import re
 import threading
 from copy import deepcopy
@@ -13,7 +14,17 @@ from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 from ..store import SharedJsonStore
-from ..board import WorldBoardRepository
+from ..board import (
+    DEFAULT_MAP_TOKEN_SCALE,
+    OFF_LIMITS_MESSAGE,
+    WorldBoardRepository,
+    normalize_group,
+    normalize_map,
+    normalize_map_point,
+    normalize_obscuration,
+    normalize_person_board,
+    point_in_polygon,
+)
 from ..campaigns import CampaignRepository
 from .storage import GameBoardRepository
 
@@ -136,6 +147,95 @@ class GameBoardService:
 
     def list_campaigns(self) -> list[dict[str, Any]]:
         return self.campaign_repository.list()
+
+    def _campaign_document(
+        self,
+        session: dict[str, Any],
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        world = deepcopy(self.shared_store.load("world.json").data)
+        campaign_id = str(session.get("campaign_id", "") or "")
+        if not campaign_id:
+            raise ValueError("This session is not linked to a campaign")
+        campaign = self.campaign_repository.ensure_game_state(
+            campaign_id,
+            world,
+            str(session.get("game_datetime") or "") or None,
+        )
+        state = campaign["game_state"]
+        map_states = state.get("maps", {})
+        for map_record in world.get("maps", []):
+            map_id = str(map_record.get("record_id", "") or "")
+            override = map_states.get(map_id)
+            if override:
+                map_record.update(deepcopy(override))
+            else:
+                map_record.update({
+                    "players_published": False,
+                    "obscurations": [],
+                    "obscuration_preview_opacity": 0.35,
+                    "obscuration_preview_color": "#ff0000",
+                    "token_scale": DEFAULT_MAP_TOKEN_SCALE,
+                    "start_point": None,
+                })
+        people_state = state.get("people", {})
+        for person in world.get("people", []):
+            person_id = str(person.get("record_id", "") or "")
+            base = normalize_person_board(person.get("board"))
+            override = people_state.get(person_id)
+            if override:
+                base.update(deepcopy(override))
+            person["board"] = normalize_person_board(base)
+        world["board_groups"] = deepcopy(state.get("groups", []))
+        return campaign, world
+
+    def _persist_campaign_document(
+        self,
+        campaign_id: str,
+        document: dict[str, Any],
+    ) -> dict[str, Any]:
+        assigned_maps = self.world_board._location_maps(document)
+        map_states = {
+            item["record_id"]: {
+                "players_published": bool(item.get("players_published", False)),
+                "obscurations": deepcopy(item.get("obscurations", []) or []),
+                "obscuration_preview_opacity": float(item.get("obscuration_preview_opacity", 0.35)),
+                "obscuration_preview_color": str(item.get("obscuration_preview_color", "#ff0000") or "#ff0000"),
+                "token_scale": float(item.get("token_scale", DEFAULT_MAP_TOKEN_SCALE)),
+                "start_point": deepcopy(item.get("start_point")),
+            }
+            for item in assigned_maps
+        }
+        people = {
+            str(item["record_id"]): self.campaign_repository._person_state(
+                normalize_person_board(item.get("board"))
+            )
+            for item in document.get("people", [])
+            if isinstance(item, dict) and item.get("record_id")
+        }
+        groups = deepcopy(document.get("board_groups", []) or [])
+
+        def update(state: dict[str, Any]) -> None:
+            state["initialized"] = True
+            state["maps"] = map_states
+            state["people"] = people
+            state["groups"] = groups
+
+        return self.campaign_repository.update_game_state(campaign_id, update)
+
+    @staticmethod
+    def _campaign_map(document: dict[str, Any], map_id: str) -> dict[str, Any]:
+        assigned = {
+            item["record_id"] for item in WorldBoardRepository._location_maps(document)
+        }
+        if map_id not in assigned:
+            raise KeyError("That map is not assigned to a location or floor")
+        record = next(
+            (item for item in document.get("maps", []) if item.get("record_id") == map_id),
+            None,
+        )
+        if record is None:
+            raise KeyError("Unknown map")
+        return record
 
     def add_contact(self, name: str, email: str) -> dict[str, str]:
         name, email = name.strip(), email.strip().lower()
@@ -328,9 +428,12 @@ class GameBoardService:
         campaign_id = str(campaign_id or "").strip()
         if not campaign_id:
             raise ValueError("Choose a campaign before creating a session")
-        campaign = self.campaign_repository.get(campaign_id)
+        campaign = self.campaign_repository.ensure_game_state(
+            campaign_id,
+            self.shared_store.load("world.json").data,
+        )
         cleaned_game_datetime = normalize_game_datetime(
-            f"{campaign['game_world_start_date']}T08:00",
+            campaign["game_state"]["current_game_datetime"],
             campaign["game_world_start_date"],
         )
         settings = self.repository.settings()
@@ -651,7 +754,7 @@ class GameBoardService:
             self.repository.save_active(wrapper)
             character_id = player.get("character_id")
             if character_id:
-                self.world_board.ensure_person_placement(str(character_id))
+                self.ensure_person_placement(session["id"], str(character_id))
             return {
                 "request_id": request["id"],
                 "contact_id": player["contact_id"],
@@ -669,17 +772,27 @@ class GameBoardService:
     ) -> dict[str, Any]:
         with self._lock:
             wrapper, session = self._active(session_id)
+            campaign, document = self._campaign_document(session)
+            game_datetime = str(campaign["game_state"]["current_game_datetime"])
             character_ids = [
                 str(player.get("character_id"))
                 for player in session.get("roster", [])
                 if player.get("character_id")
             ]
             snapshot = self.world_board.snapshot(
-                str(session.get("game_datetime")),
+                game_datetime,
                 player_character_ids=character_ids,
                 for_players=for_players,
+                document_override=document,
             )
             snapshot["session_id"] = session["id"]
+            snapshot["campaign_id"] = campaign["record_id"]
+            snapshot["loaded_map_ids"] = deepcopy(
+                campaign["game_state"]["loaded_map_ids"]
+            )
+            snapshot["active_map_id"] = str(
+                campaign["game_state"].get("active_map_id", "") or ""
+            )
             return snapshot
 
     def controlled_character_ids(
@@ -717,38 +830,199 @@ class GameBoardService:
             contact_id,
         ):
             raise PermissionError("You do not control that token")
-        return self.world_board.move_person(person_id, map_id, x, y)
+        with self._lock:
+            _wrapper, session = self._active(session_id)
+            campaign, document = self._campaign_document(session)
+            map_record = self._campaign_map(document, map_id)
+            person = next(
+                (item for item in document.get("people", []) if item.get("record_id") == person_id),
+                None,
+            )
+            if person is None:
+                raise KeyError("Unknown person")
+            board = normalize_person_board(person.get("board"))
+            board["placement"] = {
+                "location_id": str(map_record["location_id"]),
+                "floor_id": str(map_record.get("floor_id", "") or ""),
+                "map_id": str(map_id),
+                "x": max(0.0, min(1.0, float(x))),
+                "y": max(0.0, min(1.0, float(y))),
+            }
+            person["board"] = board
+            self.world_board._remove_from_incompatible_groups(
+                document, person_id, board["placement"]["location_id"]
+            )
+            self._persist_campaign_document(campaign["record_id"], document)
+            return deepcopy(board["placement"])
+
+    def ensure_person_placement(
+        self,
+        session_id: str,
+        person_id: str,
+    ) -> dict[str, Any] | None:
+        with self._lock:
+            _wrapper, session = self._active(session_id)
+            campaign, document = self._campaign_document(session)
+            person = next(
+                (item for item in document.get("people", []) if item.get("record_id") == person_id),
+                None,
+            )
+            if person is None:
+                raise KeyError("Unknown person")
+            board = normalize_person_board(person.get("board"))
+            if board.get("placement"):
+                return deepcopy(board["placement"])
+            state = campaign["game_state"]
+            maps_by_id = {
+                item["record_id"]: item for item in self.world_board._location_maps(document)
+            }
+            candidates = [
+                maps_by_id[map_id]
+                for map_id in state.get("loaded_map_ids", [])
+                if map_id in maps_by_id and maps_by_id[map_id].get("players_published")
+            ]
+            if not candidates:
+                candidates = [item for item in maps_by_id.values() if item.get("players_published")]
+            if not candidates:
+                return None
+            target = candidates[0]
+            start = normalize_map_point(
+                target.get("start_point") or {"x": 0.5, "y": 0.5},
+                "Map start point",
+            )
+            occupied = []
+            for other in document.get("people", []):
+                if not isinstance(other, dict) or other is person:
+                    continue
+                placement = normalize_person_board(other.get("board")).get("placement")
+                if placement and placement["map_id"] == target["record_id"]:
+                    occupied.append((float(placement["x"]), float(placement["y"])))
+            spacing = max(0.006, float(target.get("token_scale", DEFAULT_MAP_TOKEN_SCALE)) * 1.15)
+            points = [(start["x"], start["y"])]
+            for ring in range(1, 7):
+                radius = spacing * ring
+                count = max(8, ring * 8)
+                for index in range(count):
+                    angle = (2.0 * math.pi * index) / count
+                    points.append((
+                        max(0.005, min(0.995, start["x"] + math.cos(angle) * radius)),
+                        max(0.005, min(0.995, start["y"] + math.sin(angle) * radius)),
+                    ))
+            px, py = next(
+                (
+                    point for point in points
+                    if all(math.hypot(point[0] - ox, point[1] - oy) >= spacing for ox, oy in occupied)
+                ),
+                points[-1],
+            )
+            board["placement"] = {
+                "location_id": str(target["location_id"]),
+                "floor_id": str(target.get("floor_id", "") or ""),
+                "map_id": str(target["record_id"]),
+                "x": px,
+                "y": py,
+            }
+            person["board"] = board
+            self._persist_campaign_document(campaign["record_id"], document)
+            return deepcopy(board["placement"])
 
     def update_person_board(
         self,
+        session_id: str,
         person_id: str,
         updates: dict[str, Any],
     ) -> dict[str, Any]:
-        return self.world_board.update_person_board(person_id, updates)
+        with self._lock:
+            _wrapper, session = self._active(session_id)
+            campaign, document = self._campaign_document(session)
+            person = next(
+                (item for item in document.get("people", []) if item.get("record_id") == person_id),
+                None,
+            )
+            if person is None:
+                raise KeyError("Unknown person")
+            board = normalize_person_board(person.get("board"))
+            board.update(deepcopy(updates))
+            board = normalize_person_board(board)
+            if board["display_mode"] == "token" and not board.get("portrait") and not person.get("player_character"):
+                raise ValueError("An NPC needs a prepared portrait before becoming a portrait token")
+            person["board"] = board
+            self._persist_campaign_document(campaign["record_id"], document)
+            return deepcopy(board)
 
-    def set_map_published(self, map_id: str, published: bool) -> dict[str, Any]:
-        return self.world_board.set_map_published(map_id, published)
+    def set_map_published(self, session_id: str, map_id: str, published: bool) -> dict[str, Any]:
+        with self._lock:
+            _wrapper, session = self._active(session_id)
+            campaign, document = self._campaign_document(session)
+            record = self._campaign_map(document, map_id)
+            record["players_published"] = bool(published)
+            self._persist_campaign_document(campaign["record_id"], document)
+            return deepcopy(record)
 
     def set_map_settings(
         self,
+        session_id: str,
         map_id: str,
         *,
         token_scale: float | None = None,
         start_point: dict[str, Any] | None = None,
         update_start_point: bool = False,
     ) -> dict[str, Any]:
-        return self.world_board.set_map_settings(
-            map_id,
-            token_scale=token_scale,
-            start_point=start_point,
-            update_start_point=update_start_point,
-        )
+        with self._lock:
+            _wrapper, session = self._active(session_id)
+            campaign, document = self._campaign_document(session)
+            record = self._campaign_map(document, map_id)
+            if token_scale is not None:
+                record["token_scale"] = float(token_scale)
+            if update_start_point:
+                record["start_point"] = normalize_map_point(
+                    start_point, "Map start point", optional=True
+                )
+            record.update(normalize_map(record))
+            self._persist_campaign_document(campaign["record_id"], document)
+            return deepcopy(record)
 
-    def location_maps(self) -> list[dict[str, Any]]:
+    def location_maps(self, session_id: str | None = None) -> list[dict[str, Any]]:
+        if session_id:
+            with self._lock:
+                _wrapper, session = self._active(session_id)
+                _campaign, document = self._campaign_document(session)
+                return self.world_board._location_maps(document)
         return self.world_board.location_maps()
+
+    def set_board_workspace(
+        self,
+        session_id: str,
+        loaded_map_ids: list[str],
+        active_map_id: str = "",
+    ) -> dict[str, Any]:
+        with self._lock:
+            _wrapper, session = self._active(session_id)
+            campaign, document = self._campaign_document(session)
+            valid_ids = {
+                item["record_id"] for item in self.world_board._location_maps(document)
+            }
+            loaded = []
+            for map_id in loaded_map_ids:
+                map_id = str(map_id or "")
+                if map_id not in valid_ids:
+                    raise KeyError("A loaded map is not assigned to a location or floor")
+                if map_id not in loaded:
+                    loaded.append(map_id)
+            active = str(active_map_id or "")
+            if active and active not in loaded:
+                raise ValueError("The active map must be loaded")
+
+            def update(state: dict[str, Any]) -> None:
+                state["loaded_map_ids"] = loaded
+                state["active_map_id"] = active
+
+            saved = self.campaign_repository.update_game_state(campaign["record_id"], update)
+            return deepcopy(saved["game_state"])
 
     def set_map_presentation(
         self,
+        session_id: str,
         map_id: str,
         *,
         published: bool,
@@ -756,13 +1030,17 @@ class GameBoardService:
         preview_opacity: float,
         preview_color: str,
     ) -> dict[str, Any]:
-        return self.world_board.set_map_presentation(
-            map_id,
-            published=published,
-            obscurations=obscurations,
-            preview_opacity=preview_opacity,
-            preview_color=preview_color,
-        )
+        with self._lock:
+            _wrapper, session = self._active(session_id)
+            campaign, document = self._campaign_document(session)
+            record = self._campaign_map(document, map_id)
+            record["players_published"] = bool(published)
+            record["obscurations"] = [normalize_obscuration(item) for item in obscurations]
+            record["obscuration_preview_opacity"] = float(preview_opacity)
+            record["obscuration_preview_color"] = str(preview_color).lower()
+            record.update(normalize_map(record))
+            self._persist_campaign_document(campaign["record_id"], document)
+            return deepcopy(record)
 
     def travel_person(
         self,
@@ -776,28 +1054,146 @@ class GameBoardService:
     ) -> dict[str, Any]:
         if person_id not in self.controlled_character_ids(session_id, contact_id):
             raise PermissionError("You do not control that token")
-        return self.world_board.travel_person(
-            person_id,
-            source_map_id,
-            region_id,
-            x,
-            y,
-        )
+        with self._lock:
+            _wrapper, session = self._active(session_id)
+            campaign, document = self._campaign_document(session)
+            source = normalize_map(self._campaign_map(document, source_map_id))
+            person = next(
+                (item for item in document.get("people", []) if item.get("record_id") == person_id),
+                None,
+            )
+            if person is None:
+                raise KeyError("Unknown person")
+            region = next((item for item in source["regions"] if item["record_id"] == region_id), None)
+            if region is None or region.get("behavior_type") != "travel":
+                raise ValueError("That area is not a travel destination")
+            if not point_in_polygon(float(x), float(y), region["points"]):
+                raise ValueError("The travel point is outside that area")
+            if any(point_in_polygon(float(x), float(y), item["points"]) for item in source["obscurations"]):
+                raise PermissionError("That part of the map is obscured")
+            board = normalize_person_board(person.get("board"))
+            placement = board.get("placement")
+            if not placement or placement["map_id"] != source_map_id:
+                raise PermissionError("Your character is not on that map")
+            target_location_id = str(region.get("target_location_id", "") or "")
+            warp_id = str(region.get("target_warp_point_id", "") or "")
+            target = None
+            warp = None
+            if warp_id:
+                for candidate in document.get("maps", []):
+                    point = next(
+                        (item for item in candidate.get("warp_points", []) or [] if str(item.get("record_id")) == warp_id),
+                        None,
+                    )
+                    if point is not None:
+                        target, warp = candidate, point
+                        break
+            if target is None:
+                location = next(
+                    (item for item in document.get("locations", []) if str(item.get("record_id")) == target_location_id),
+                    None,
+                )
+                target_map_id = str((location or {}).get("default_map_id", "") or "")
+                target = next(
+                    (item for item in document.get("maps", []) if item.get("record_id") == target_map_id),
+                    None,
+                )
+            if target is None or not bool(target.get("players_published", False)):
+                raise PermissionError(OFF_LIMITS_MESSAGE)
+            arrival = normalize_map_point(
+                warp or target.get("start_point") or {"x": 0.5, "y": 0.5},
+                "Travel arrival point",
+            )
+            board["placement"] = {
+                "location_id": str(target["location_id"]),
+                "floor_id": str(target.get("floor_id", "") or ""),
+                "map_id": str(target["record_id"]),
+                "x": arrival["x"],
+                "y": arrival["y"],
+            }
+            person["board"] = board
+            self.world_board._remove_from_incompatible_groups(
+                document, person_id, board["placement"]["location_id"]
+            )
+            self._persist_campaign_document(campaign["record_id"], document)
+            return deepcopy(board["placement"])
 
     def create_board_group(
         self,
+        session_id: str,
         name: str,
         location_id: str,
         person_ids: list[str],
     ) -> dict[str, Any]:
-        return self.world_board.create_group(name, location_id, person_ids)
+        with self._lock:
+            _wrapper, session = self._active(session_id)
+            campaign, document = self._campaign_document(session)
+            if len(set(person_ids)) < 2:
+                raise ValueError("A board group requires at least two people")
+            existing = {
+                member.get("actor_id")
+                for group in document.get("board_groups", [])
+                for member in group.get("members", [])
+                if member.get("actor_type", "person") == "person"
+            }
+            people = {str(item.get("record_id")): item for item in document.get("people", [])}
+            for person_id in person_ids:
+                placement = normalize_person_board(people.get(person_id, {}).get("board")).get("placement") if person_id in people else None
+                if person_id not in people or person_id in existing or not placement or placement["location_id"] != location_id:
+                    raise ValueError("Every group member must be an ungrouped person at this location")
+            now = iso_utc(utc_now())
+            group = normalize_group({
+                "record_id": str(uuid4()),
+                "name": str(name or "").strip(),
+                "location_id": str(location_id),
+                "members": [
+                    {"record_id": str(uuid4()), "actor_type": "person", "actor_id": person_id}
+                    for person_id in person_ids
+                ],
+                "created_at": now,
+                "last_updated": now,
+            })
+            document.setdefault("board_groups", []).append(group)
+            self._persist_campaign_document(campaign["record_id"], document)
+            return deepcopy(group)
 
     def set_board_group(
         self,
+        session_id: str,
         person_id: str,
         group_id: str | None,
     ) -> dict[str, Any] | None:
-        return self.world_board.set_group(person_id, group_id)
+        with self._lock:
+            _wrapper, session = self._active(session_id)
+            campaign, document = self._campaign_document(session)
+            person = next((item for item in document.get("people", []) if item.get("record_id") == person_id), None)
+            if person is None:
+                raise KeyError("Unknown person")
+            placement = normalize_person_board(person.get("board")).get("placement")
+            target = next(
+                (item for item in document.get("board_groups", []) if item.get("record_id") == group_id),
+                None,
+            ) if group_id else None
+            if group_id and target is None:
+                raise KeyError("Unknown board group")
+            if target and (not placement or str(target.get("location_id")) != placement["location_id"]):
+                raise ValueError("A person can only join a group at the same location")
+            for group in document.get("board_groups", []):
+                group["members"] = [
+                    member for member in group.get("members", [])
+                    if not (member.get("actor_type", "person") == "person" and member.get("actor_id") == person_id)
+                ]
+            if target is not None:
+                target.setdefault("members", []).append({
+                    "record_id": str(uuid4()), "actor_type": "person", "actor_id": person_id,
+                })
+                target["last_updated"] = iso_utc(utc_now())
+            document["board_groups"] = [
+                group for group in document.get("board_groups", [])
+                if len(group.get("members", [])) >= 2
+            ]
+            self._persist_campaign_document(campaign["record_id"], document)
+            return deepcopy(target) if target in document["board_groups"] else None
 
     def grant_board_control(
         self,
@@ -953,14 +1349,18 @@ class GameBoardService:
     def set_game_datetime(self, session_id: str, game_datetime: str) -> dict[str, Any]:
         with self._lock:
             wrapper, session = self._active(session_id)
-            fallback_date = (
-                session.get("event_date")
-                or session.get("game_day")
-                or date.today().isoformat()
+            campaign = self.campaign_repository.get(str(session.get("campaign_id", "")))
+            normalized = normalize_game_datetime(
+                game_datetime, campaign["game_world_start_date"]
             )
-            session["game_datetime"] = normalize_game_datetime(
-                game_datetime, fallback_date
-            )
+
+            def update(state: dict[str, Any]) -> None:
+                state["current_game_datetime"] = normalized
+
+            self.campaign_repository.update_game_state(campaign["record_id"], update)
+            for active_session in wrapper.get("sessions", []):
+                if active_session.get("campaign_id") == campaign["record_id"]:
+                    active_session["game_datetime"] = normalized
             self.repository.save_active(wrapper)
             return self._public_session(session)
 

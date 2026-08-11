@@ -9,6 +9,7 @@ from PIL import Image
 from fastapi.testclient import TestClient
 
 from headmasters_scroll.assets import AssetStore, MAP_CANVAS_SIZE
+from headmasters_scroll.campaigns import CampaignRepository
 from headmasters_scroll.board import (
     OFF_LIMITS_MESSAGE,
     WorldBoardRepository,
@@ -298,6 +299,49 @@ class BoardFoundationTests(unittest.TestCase):
     def test_legacy_map_normalizes_to_empty_regions(self):
         self.assertEqual(normalize_map(world_document()["maps"][0])["regions"], [])
 
+    def test_only_location_assigned_maps_are_available_without_a_game_session(self):
+        session = self.repository.load()
+        session.data["maps"].append({
+            "record_id": "orphan-map",
+            "name": "Defunct catalog entry",
+            "location_id": "castle",
+            "floor_id": "",
+            "players_published": False,
+            "asset": None,
+        })
+        self.repository.save(session, "test")
+        location_maps = self.repository.location_maps()
+        self.assertEqual([item["record_id"] for item in location_maps], ["map-1"])
+        self.assertEqual(location_maps[0]["location_name"], "Castle")
+        self.assertEqual(
+            location_maps[0]["location_ancestry"],
+            [{"record_id": "castle", "name": "Castle"}],
+        )
+        self.assertEqual(location_maps[0]["floor_name"], "First Floor")
+        self.assertTrue(location_maps[0]["is_location_default"])
+        self.assertTrue(location_maps[0]["is_floor_primary"])
+
+    def test_orphan_maps_and_their_occupants_do_not_enter_board_snapshots(self):
+        session = self.repository.load()
+        session.data["maps"].append({
+            "record_id": "orphan-map",
+            "name": "Defunct catalog entry",
+            "location_id": "castle",
+            "floor_id": "",
+            "players_published": True,
+            "asset": None,
+        })
+        session.data["people"][0]["board"]["placement"].update({
+            "map_id": "orphan-map",
+            "floor_id": "",
+        })
+        self.repository.save(session, "test")
+        snapshot = self.repository.snapshot(
+            "2000-06-01T08:00", player_character_ids=["pc-1"]
+        )
+        self.assertEqual([item["record_id"] for item in snapshot["maps"]], ["map-1"])
+        self.assertNotIn("pc-1", [item["actor_id"] for item in snapshot["actors"]])
+
     def test_location_records_are_unique_for_single_default_map_ownership(self):
         document = world_document()
         document["locations"].append(dict(document["locations"][0]))
@@ -376,6 +420,24 @@ class ProtectedAssetApiTests(unittest.TestCase):
         assets = AssetStore(self.directory / "assets")
         world["maps"][0]["asset"] = assets.import_map("map-1", source)
         (self.directory / "world.json").write_text(json.dumps(world), encoding="utf-8")
+        campaign_data = {
+            "schema_version": 1,
+            "_headmasters_scroll": {
+                "revision_id": "campaign-board-revision",
+                "last_modified_at": "2026-08-11T00:00:00Z",
+                "last_modified_by": "test",
+            },
+            "campaigns": [{
+                "record_id": "campaign-1",
+                "name": "Board Campaign",
+                "game_world_start_date": "2000-06-01",
+                "created_at": "2026-08-11T00:00:00Z",
+                "last_updated": "2026-08-11T00:00:00Z",
+            }],
+        }
+        (self.directory / "campaign.json").write_text(
+            json.dumps(campaign_data), encoding="utf-8"
+        )
         private = GameBoardRepository(self.directory / "private")
         settings = private.settings()
         settings.update(
@@ -384,8 +446,10 @@ class ProtectedAssetApiTests(unittest.TestCase):
             public_api_base="https://board.example.com",
         )
         private.save_settings(settings)
-        admin_app, player_app, self.runtime = create_apps(private)
         shared = SharedJsonStore(self.directory)
+        admin_app, player_app, self.runtime = create_apps(
+            private, CampaignRepository(shared)
+        )
         self.runtime.service.shared_store = shared
         self.runtime.service.world_board = WorldBoardRepository(shared, assets)
         self.admin = TestClient(admin_app)
@@ -398,7 +462,7 @@ class ProtectedAssetApiTests(unittest.TestCase):
             "Board",
             (date.today() + timedelta(days=1)).isoformat(),
             [contact["id"]],
-            game_datetime="2000-06-01T12:00",
+            campaign_id="campaign-1",
         )
         self.invite, _link, _entry = self.runtime.service.prepare_invite(contact["id"])
 

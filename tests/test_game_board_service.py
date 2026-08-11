@@ -4,8 +4,10 @@ import unittest
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
+from headmasters_scroll.campaigns import CampaignRepository
 from headmasters_scroll.game_board.service import GameBoardService, iso_utc, utc_now
 from headmasters_scroll.game_board.storage import GameBoardRepository
+from headmasters_scroll.store import SharedJsonStore
 
 
 class GameBoardServiceTests(unittest.TestCase):
@@ -19,7 +21,27 @@ class GameBoardServiceTests(unittest.TestCase):
             public_api_base="https://game.example.com",
         )
         self.repository.save_settings(settings)
-        self.service = GameBoardService(self.repository)
+        campaign_data = {
+            "schema_version": 1,
+            "_headmasters_scroll": {
+                "revision_id": "campaign-test-revision",
+                "last_modified_at": "2026-08-11T00:00:00Z",
+                "last_modified_by": "test",
+            },
+            "campaigns": [{
+                "record_id": "campaign-1",
+                "name": "Test Campaign",
+                "game_world_start_date": "1943-09-01",
+                "created_at": "2026-08-11T00:00:00Z",
+                "last_updated": "2026-08-11T00:00:00Z",
+            }],
+        }
+        (Path(self.temporary.name) / "campaign.json").write_text(
+            json.dumps(campaign_data), encoding="utf-8"
+        )
+        campaigns = CampaignRepository(SharedJsonStore(Path(self.temporary.name)))
+        self.service = GameBoardService(self.repository, campaigns)
+        self.campaign_id = "campaign-1"
         self.alice = self.service.add_contact("Alice", "Alice@example.com")
 
     def tearDown(self):
@@ -28,7 +50,10 @@ class GameBoardServiceTests(unittest.TestCase):
     def create_session(self, contacts=None):
         contacts = contacts or [self.alice["id"]]
         return self.service.create_session(
-            "Saturday Game", (date.today() + timedelta(days=1)).isoformat(), contacts
+            "Saturday Game",
+            (date.today() + timedelta(days=1)).isoformat(),
+            contacts,
+            campaign_id=self.campaign_id,
         )
 
     def invite(self, contact_id=None):
@@ -149,18 +174,26 @@ class GameBoardServiceTests(unittest.TestCase):
     def test_in_world_game_datetime_is_persisted_validated_and_summarized(self):
         game_day = (date.today() + timedelta(days=1)).isoformat()
         created = self.service.create_session(
-            "Game Clock",
-            game_day,
-            [self.alice["id"]],
-            game_datetime="1943-09-01T08:00",
+            "Game Clock", game_day, [self.alice["id"]], campaign_id=self.campaign_id
         )
         self.assertEqual(created["game_datetime"], "1943-09-01T08:00")
+        self.assertEqual(created["campaign_id"], self.campaign_id)
+        self.assertEqual(created["campaign_name"], "Test Campaign")
         updated = self.service.set_game_datetime(created["id"], "1943-09-01T17:45")
         self.assertEqual(updated["game_datetime"], "1943-09-01T17:45")
         with self.assertRaisesRegex(ValueError, "24-hour"):
             self.service.set_game_datetime(created["id"], "September 1 at supper")
         summary = self.service.end_session("ended", created["id"])
         self.assertEqual(summary["game_datetime"], "1943-09-01T17:45")
+        self.assertEqual(summary["campaign_id"], self.campaign_id)
+
+    def test_new_session_requires_a_campaign(self):
+        with self.assertRaisesRegex(ValueError, "Choose a campaign"):
+            self.service.create_session(
+                "No Campaign",
+                (date.today() + timedelta(days=1)).isoformat(),
+                [self.alice["id"]],
+            )
 
     def test_expiration_archives_summary_without_credentials_or_email(self):
         self.create_session()
@@ -227,7 +260,7 @@ class GameBoardServiceTests(unittest.TestCase):
         bob = self.service.add_contact("Bob", "bob@example.com")
         second = self.service.create_session(
             "Sunday Game", (date.today() + timedelta(days=2)).isoformat(), [bob["id"]],
-            event_date="1943-09-02",
+            event_date="1943-09-02", campaign_id=self.campaign_id,
         )
         self.assertEqual(len(self.service.sessions_view()), 2)
         raw, _link, _player = self.service.prepare_invite(bob["id"], second["id"])

@@ -10,7 +10,9 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
+from headmasters_scroll.campaigns import CampaignRepository
 from headmasters_scroll.game_board.desktop import (
+    GameBoardWindow,
     HistoricalDateTime,
     directional_minute_snap,
     format_date_display,
@@ -26,6 +28,7 @@ from headmasters_scroll.game_board.service import (
     normalize_game_datetime,
 )
 from headmasters_scroll.game_board.storage import GameBoardRepository
+from headmasters_scroll.store import SharedJsonStore
 
 
 ORIGIN = "https://players.example.com"
@@ -50,14 +53,38 @@ class GameBoardApiTests(unittest.TestCase):
             public_api_base="https://game.example.com",
         )
         self.repository.save_settings(settings)
-        self.admin_app, self.player_app, self.runtime = create_apps(self.repository)
+        campaign_data = {
+            "schema_version": 1,
+            "_headmasters_scroll": {
+                "revision_id": "campaign-api-revision",
+                "last_modified_at": "2026-08-11T00:00:00Z",
+                "last_modified_by": "test",
+            },
+            "campaigns": [{
+                "record_id": "campaign-1",
+                "name": "API Campaign",
+                "game_world_start_date": "1943-09-01",
+                "created_at": "2026-08-11T00:00:00Z",
+                "last_updated": "2026-08-11T00:00:00Z",
+            }],
+        }
+        (Path(self.temporary.name) / "campaign.json").write_text(
+            json.dumps(campaign_data), encoding="utf-8"
+        )
+        campaigns = CampaignRepository(SharedJsonStore(Path(self.temporary.name)))
+        self.admin_app, self.player_app, self.runtime = create_apps(
+            self.repository, campaigns
+        )
         self.admin = TestClient(self.admin_app)
         self.player = TestClient(self.player_app)
         self.admin_headers = {"X-Admin-Key": settings["admin_key"]}
         self.origin_headers = {"Origin": ORIGIN}
         self.contact = self.runtime.service.add_contact("Alice", "alice@example.com")
         self.runtime.service.create_session(
-            "API Test", (date.today() + timedelta(days=1)).isoformat(), [self.contact["id"]]
+            "API Test",
+            (date.today() + timedelta(days=1)).isoformat(),
+            [self.contact["id"]],
+            campaign_id="campaign-1",
         )
         self.invite, _link, _entry = self.runtime.service.prepare_invite(self.contact["id"])
 
@@ -386,6 +413,29 @@ class GmailAdapterTests(unittest.TestCase):
 
 
 class GameBoardAssetTests(unittest.TestCase):
+    def test_map_search_returns_typo_tolerant_near_matches(self):
+        window = object.__new__(GameBoardWindow)
+        window.board_snapshot = {
+            "maps": [
+                {
+                    "record_id": "map-hogshire",
+                    "name": "Hogshire",
+                    "location_name": "Hogshire",
+                    "floor_name": "",
+                },
+                {
+                    "record_id": "map-diagon",
+                    "name": "Diagon Alley",
+                    "location_name": "London",
+                    "floor_name": "",
+                },
+            ]
+        }
+        self.assertEqual(
+            [item["record_id"] for item in window.fuzzy_board_maps("Hogshre")],
+            ["map-hogshire"],
+        )
+
     def test_separate_weblink_loads_versioned_assets_and_waits_for_approval(self):
         root = Path(__file__).resolve().parents[1]
         app = root / "apps" / "charms-check-game-board-weblink"
@@ -396,7 +446,7 @@ class GameBoardAssetTests(unittest.TestCase):
         self.assertIn("scyppan/Headmaster-s-Scroll", loader)
         self.assertIn("apps/charms-check-game-board-weblink/", loader)
         self.assertIn("https://beast.tail102829.ts.net", loader)
-        self.assertIn("a26.8.10.003", loader)
+        self.assertIn("a26.8.11.001", loader)
         self.assertNotIn("https://game.example.com", loader)
         self.assertIn("getElementById('gameboard')", loader)
         self.assertNotIn("<script>", loader)
@@ -417,9 +467,18 @@ class GameBoardAssetTests(unittest.TestCase):
         self.assertIn("/v1/assets/", client)
         self.assertIn("ccgb-chat-rail", client)
         self.assertIn("is-own", client)
-        self.assertIn("chat-collapsed { --ccgb-chat-width: 52px; }", stylesheet)
+        self.assertIn("chat-collapsed { --ccgb-chat-width: 48px; }", stylesheet)
         self.assertIn(".ccgb-chat-message.is-own", stylesheet)
         self.assertIn("transform: none;", stylesheet)
+        self.assertIn("margin: 7px;", stylesheet)
+        self.assertIn("max-width: none;", stylesheet)
+        self.assertIn("aspect-ratio: 3840 / 2960", stylesheet)
+        self.assertIn("MAP_NATIVE_WIDTH = 3840", client)
+        self.assertIn("MAP_NATIVE_HEIGHT = 2960", client)
+        self.assertIn("MAP_ZOOM_STEP = 1.15", client)
+        self.assertIn("event.altKey", client)
+        self.assertIn("event.button !== 1", client)
+        self.assertIn("event.ctrlKey || event.metaKey", client)
         for section in ("Overview", "Attributes", "Spells", "Proficiencies", "Potions", "Pets", "Inventory", "Relationships", "Wounds", "Settings"):
             self.assertIn(section, client)
         self.assertNotIn("world.json", loader + client)
@@ -455,7 +514,17 @@ class GameBoardAssetTests(unittest.TestCase):
         self.assertNotIn("Publish map", desktop)
         self.assertIn('text="Confirm to players"', desktop)
         self.assertIn('text="Explore…"', desktop)
-        self.assertIn('text="Obscure  [O]"', desktop)
+        self.assertIn('text="Draw obfuscation  [O]"', desktop)
+        self.assertIn("board_search_results_panel", desktop)
+        self.assertIn("No close matches", desktop)
+        self.assertIn('window.title("Map Tools")', desktop)
+        self.assertIn('("map-tools", "▦", "Map Tools")', desktop)
+        self.assertIn('("board-settings", "⚙", "Game Board Settings")', desktop)
+        self.assertIn("board_obscuration_list", desktop)
+        self.assertIn("Changes sent to players ✓", desktop)
+        self.assertIn("def open_board_map_controls", desktop)
+        self.assertIn("window.deiconify()", desktop)
+        self.assertNotIn('map_controls.pack(side="left"', desktop)
         self.assertIn("def route_board_wheel", desktop)
         self.assertNotIn('unbind_all("<MouseWheel>")', desktop)
         self.assertIn("def open_board_explorer", desktop)
@@ -475,8 +544,10 @@ class GameBoardAssetTests(unittest.TestCase):
         self.assertNotIn("Invitation day", desktop)
         self.assertNotIn("game_day_field", desktop)
         self.assertIn('"game_day": event_date_field.get_iso()', desktop)
-        self.assertIn('text="Game World Date"', desktop)
-        self.assertIn('text="Game time (24-hour)"', desktop)
+        self.assertIn('text="Campaign"', desktop)
+        self.assertIn('text="Choose Campaign…"', desktop)
+        self.assertNotIn("game_date_field =", desktop)
+        self.assertNotIn('text="Game time (24-hour)"', desktop)
         self.assertIn("def _build_game_clock", desktop)
         self.assertIn('add_button("<<<"', desktop)
         self.assertIn('add_button(">>>"', desktop)

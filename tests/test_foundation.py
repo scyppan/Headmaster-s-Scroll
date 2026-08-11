@@ -14,7 +14,7 @@ from headmasters_scroll.validation import validate_document
 class FoundationTests(unittest.TestCase):
     def test_real_data_files_validate_and_period_ids_are_unique(self):
         root = Path(__file__).resolve().parents[1] / "data"
-        for name in ("db.json", "world.json", "periods.json"):
+        for name in ("db.json", "world.json", "periods.json", "campaign.json"):
             value = json.loads((root / name).read_text(encoding="utf-8"))
             validate_document(name, value)
         periods = json.loads((root / "periods.json").read_text(encoding="utf-8"))
@@ -28,11 +28,11 @@ class FoundationTests(unittest.TestCase):
         apps = load_manifests(root)
         self.assertEqual(
             {app.app_id for app in apps},
-            {"world-builder", "dbm", "game-board", "mapper"},
+            {"campaigner", "world-builder", "dbm", "game-board", "mapper"},
         )
         self.assertEqual(
             [app.app_id for app in apps],
-            ["game-board", "world-builder", "dbm", "mapper"],
+            ["campaigner", "game-board", "world-builder", "dbm", "mapper"],
         )
         states = {app.app_id: app.enabled for app in apps}
         self.assertTrue(all(states.values()))

@@ -2,7 +2,7 @@
   "_database": {
     "schema_version": 36,
     "database_version": "0.36.0",
-    "last_saved": "2026-08-09T00:31:11.609799+00:00"
+    "last_saved": "2026-08-11T08:37:23.952962+00:00"
   },
   "people": [
     {
@@ -3911,7 +3911,7 @@
       "imported_fields": {},
       "record_id": "6882e7fb-529a-4b3e-8929-a795b91b816d",
       "created_at": "2026-07-22T23:31:51.093967+00:00",
-      "last_updated": "2026-08-05T03:01:06.416561+00:00",
+      "last_updated": "2026-08-11T08:37:23.758078+00:00",
       "death_year": null,
       "death_month": null,
       "death_day": null,
@@ -5554,7 +5554,24 @@
         "fortitude": 3
       },
       "unfinished": false,
-      "does_not_have_children": false
+      "does_not_have_children": false,
+      "tags": [],
+      "board": {
+        "portrait": {
+          "asset_id": "portrait:6882e7fb-529a-4b3e-8929-a795b91b816d",
+          "sha256": "3ac91428c6d99180212b16b9496613e9b56c00c84b236217147919019ecc5e4d",
+          "width": 512,
+          "height": 512,
+          "mime_type": "image/webp",
+          "updated_at": "2026-08-11T08:37:19.972409Z"
+        },
+        "placement": null,
+        "visibility": "players",
+        "display_mode": "dot",
+        "name_revealed": false,
+        "faction_revealed": false,
+        "faction_organization_id": ""
+      }
     },
     {
       "displayed_name": "Cyneburga Gryffindor",
@@ -96834,7 +96851,9 @@
       "includes_library": true,
       "library_open_to_outsiders": true,
       "also_location": false,
-      "tags": []
+      "tags": [],
+      "is_faction": false,
+      "faction_color": "#808080"
     },
     {
       "name": "Division of Central Administration",
@@ -96884,7 +96903,9 @@
       "includes_library": false,
       "library_open_to_outsiders": false,
       "also_location": false,
-      "tags": []
+      "tags": [],
+      "is_faction": false,
+      "faction_color": "#808080"
     },
     {
       "name": "Division of International Engagement",
@@ -96936,7 +96957,9 @@
       "includes_library": false,
       "library_open_to_outsiders": false,
       "also_location": false,
-      "tags": []
+      "tags": [],
+      "is_faction": false,
+      "faction_color": "#808080"
     },
     {
       "name": "Department of International Magical Cooperation",
@@ -96986,7 +97009,9 @@
       "includes_library": false,
       "library_open_to_outsiders": false,
       "also_location": false,
-      "tags": []
+      "tags": [],
+      "is_faction": false,
+      "faction_color": "#808080"
     },
     {
       "name": "Division of Law and Justice",
@@ -97034,7 +97059,9 @@
       "includes_library": false,
       "library_open_to_outsiders": false,
       "also_location": false,
-      "tags": []
+      "tags": [],
+      "is_faction": false,
+      "faction_color": "#808080"
     },
     {
       "name": "Department of Magical Law Enforcement",
@@ -97098,7 +97125,9 @@
       "includes_library": false,
       "library_open_to_outsiders": false,
       "also_location": false,
-      "tags": []
+      "tags": [],
+      "is_faction": false,
+      "faction_color": "#808080"
     },
     {
       "name": "Wizengamot",
@@ -97175,7 +97204,9 @@
       "includes_library": false,
       "library_open_to_outsiders": false,
       "also_location": false,
-      "tags": []
+      "tags": [],
+      "is_faction": false,
+      "faction_color": "#808080"
     },
     {
       "name": "Division of Research",
@@ -97223,7 +97254,9 @@
       "includes_library": false,
       "library_open_to_outsiders": false,
       "also_location": false,
-      "tags": []
+      "tags": [],
+      "is_faction": false,
+      "faction_color": "#808080"
     },
     {
       "name": "Department of Mysteries",
@@ -97301,7 +97334,9 @@
       "includes_library": false,
       "library_open_to_outsiders": false,
       "also_location": false,
-      "tags": []
+      "tags": [],
+      "is_faction": false,
+      "faction_color": "#808080"
     },
     {
       "name": "Division of Domestic Affairs",
@@ -97351,7 +97386,9 @@
       "includes_library": false,
       "library_open_to_outsiders": false,
       "also_location": false,
-      "tags": []
+      "tags": [],
+      "is_faction": false,
+      "faction_color": "#808080"
     },
     {
       "name": "Division for the Regulation of the Use of Magic",
@@ -97403,7 +97440,9 @@
       "includes_library": false,
       "library_open_to_outsiders": false,
       "also_location": false,
-      "tags": []
+      "tags": [],
+      "is_faction": false,
+      "faction_color": "#808080"
     },
     {
       "name": "Investigations Department",
@@ -97451,7 +97490,9 @@
       "includes_library": false,
       "library_open_to_outsiders": false,
       "also_location": false,
-      "tags": []
+      "tags": [],
+      "is_faction": false,
+      "faction_color": "#808080"
     },
     {
       "name": "Hit Wizards Squad",
@@ -97499,7 +97540,9 @@
       "includes_library": false,
       "library_open_to_outsiders": false,
       "also_location": false,
-      "tags": []
+      "tags": [],
+      "is_faction": false,
+      "faction_color": "#808080"
     },
     {
       "name": "Auror's Office",
@@ -97777,7 +97820,9 @@
       "includes_library": false,
       "library_open_to_outsiders": false,
       "also_location": false,
-      "tags": []
+      "tags": [],
+      "is_faction": false,
+      "faction_color": "#808080"
     },
     {
       "name": "Hogwarts",
@@ -98142,7 +98187,9 @@
       "includes_library": true,
       "library_open_to_outsiders": true,
       "also_location": true,
-      "tags": []
+      "tags": [],
+      "is_faction": false,
+      "faction_color": "#808080"
     },
     {
       "name": "British Wizards Council",
@@ -98360,7 +98407,9 @@
       "includes_library": false,
       "library_open_to_outsiders": false,
       "also_location": false,
-      "tags": []
+      "tags": [],
+      "is_faction": false,
+      "faction_color": "#808080"
     },
     {
       "name": "Crucethu",
@@ -98408,7 +98457,9 @@
       "includes_library": false,
       "library_open_to_outsiders": false,
       "also_location": true,
-      "tags": []
+      "tags": [],
+      "is_faction": false,
+      "faction_color": "#808080"
     },
     {
       "name": "Department for the Regulation and Control of Magical Creatures",
@@ -98589,7 +98640,9 @@
       "includes_library": false,
       "library_open_to_outsiders": false,
       "also_location": false,
-      "tags": []
+      "tags": [],
+      "is_faction": false,
+      "faction_color": "#808080"
     },
     {
       "name": "Weasley's Wizard Wheezes",
@@ -98681,7 +98734,9 @@
       "created_at": "2026-08-07T05:27:25.807358+00:00",
       "last_updated": "2026-08-07T05:34:49.526208+00:00",
       "also_location": false,
-      "tags": []
+      "tags": [],
+      "is_faction": false,
+      "faction_color": "#808080"
     },
     {
       "name": "Department for the Regulation of Artefacts",
@@ -98730,7 +98785,9 @@
       "created_at": "2026-08-07T10:46:49.580680+00:00",
       "last_updated": "2026-08-07T10:52:49.543930+00:00",
       "also_location": false,
-      "tags": []
+      "tags": [],
+      "is_faction": false,
+      "faction_color": "#808080"
     },
     {
       "name": "Office of Muggle Artefacts",
@@ -98779,7 +98836,9 @@
       "created_at": "2026-08-07T10:47:10.629243+00:00",
       "last_updated": "2026-08-07T10:53:14.028565+00:00",
       "also_location": false,
-      "tags": []
+      "tags": [],
+      "is_faction": false,
+      "faction_color": "#808080"
     },
     {
       "name": "Office of Magical Artefacts",
@@ -98828,7 +98887,9 @@
       "created_at": "2026-08-07T10:48:38.434514+00:00",
       "last_updated": "2026-08-07T10:53:02.341818+00:00",
       "also_location": false,
-      "tags": []
+      "tags": [],
+      "is_faction": false,
+      "faction_color": "#808080"
     },
     {
       "name": "Department for the Regulation of Spells",
@@ -98956,7 +99017,9 @@
       "created_at": "2026-08-07T10:49:20.608932+00:00",
       "last_updated": "2026-08-07T10:57:47.906675+00:00",
       "also_location": false,
-      "tags": []
+      "tags": [],
+      "is_faction": false,
+      "faction_color": "#808080"
     },
     {
       "name": "Department for the Regulation of Potions",
@@ -99005,7 +99068,9 @@
       "created_at": "2026-08-07T10:49:41.004563+00:00",
       "last_updated": "2026-08-07T10:53:47.187988+00:00",
       "also_location": false,
-      "tags": []
+      "tags": [],
+      "is_faction": false,
+      "faction_color": "#808080"
     },
     {
       "name": "Department for the Regulation of Magical Materials",
@@ -99054,7 +99119,9 @@
       "created_at": "2026-08-07T10:49:53.773281+00:00",
       "last_updated": "2026-08-07T10:53:38.810396+00:00",
       "also_location": false,
-      "tags": []
+      "tags": [],
+      "is_faction": false,
+      "faction_color": "#808080"
     },
     {
       "name": "International Confederation of Wizards",
@@ -99884,7 +99951,9 @@
       "created_at": "2026-08-08T00:20:31.520601+00:00",
       "last_updated": "2026-08-08T14:38:20.600206+00:00",
       "also_location": true,
-      "tags": []
+      "tags": [],
+      "is_faction": false,
+      "faction_color": "#808080"
     },
     {
       "name": "Incarceration Committee",
@@ -99931,7 +100000,9 @@
       "campus_location_id": "",
       "record_id": "2a2fe588-ebb6-48b8-9c83-17881443525c",
       "created_at": "2026-08-08T14:40:49.334198+00:00",
-      "last_updated": "2026-08-08T14:41:05.707472+00:00"
+      "last_updated": "2026-08-08T14:41:05.707472+00:00",
+      "is_faction": false,
+      "faction_color": "#808080"
     },
     {
       "name": "Quidditch Committee",
@@ -99978,7 +100049,9 @@
       "campus_location_id": "",
       "record_id": "6a55cba5-94b7-495f-bc74-29903872c823",
       "created_at": "2026-08-08T14:41:09.312355+00:00",
-      "last_updated": "2026-08-08T14:41:24.198131+00:00"
+      "last_updated": "2026-08-08T14:41:24.198131+00:00",
+      "is_faction": false,
+      "faction_color": "#808080"
     },
     {
       "name": "Statute of Secrecy",
@@ -100025,7 +100098,9 @@
       "campus_location_id": "",
       "record_id": "a08e15c8-c8e7-4153-be0e-6198ce55c629",
       "created_at": "2026-08-08T14:41:42.747667+00:00",
-      "last_updated": "2026-08-08T14:41:51.876686+00:00"
+      "last_updated": "2026-08-08T14:41:51.876686+00:00",
+      "is_faction": false,
+      "faction_color": "#808080"
     }
   ],
   "events": [
@@ -120135,8 +120210,9 @@
     }
   ],
   "_recent_people": [
-    "a7bc9826-202b-47c5-876e-bed43ac5c92d",
+    "6882e7fb-529a-4b3e-8929-a795b91b816d",
     "62ca5c0d-a14f-4450-9581-f36c9396fbcb",
+    "a7bc9826-202b-47c5-876e-bed43ac5c92d",
     "834260f1-6a1a-40d4-85f6-93a9e9b20ad1",
     "0f9cad39-6abd-465a-99ec-1f67b8a0768e",
     "833049f6-2ac3-4029-af7d-a55eeaf3c04b",
@@ -120145,8 +120221,7 @@
     "6bfae378-3a03-4d25-a276-1e10596d897b",
     "b06ed514-fff6-4b58-99e2-f35895b030d8",
     "be1c32f5-173f-4f8d-bbf7-44afed7af7e5",
-    "56858d54-6ba3-4d4d-926d-292954205034",
-    "297c3442-1fc1-45bb-8ec7-b88efa8f10e9"
+    "56858d54-6ba3-4d4d-926d-292954205034"
   ],
   "_recent_locations": [
     "11754304-c8d2-43c7-8d55-41cca80b441b",
@@ -123838,14 +123913,85 @@
       "name": "Hogshire",
       "location_id": "de9bca8f-8fea-4db4-a040-131af6804693",
       "floor_id": "",
-      "players_published": false,
-      "last_updated": "2026-08-11T01:23:10.505688Z"
+      "players_published": true,
+      "last_updated": "2026-08-11T08:22:57.383046Z",
+      "obscurations": [
+        {
+          "record_id": "6073ef63-5082-46f1-a1a1-0c806b8f1a72",
+          "points": [
+            {
+              "x": 0.28841696896412733,
+              "y": 0.19226118500604594
+            },
+            {
+              "x": 0.32570032245062475,
+              "y": 0.2140266021765417
+            },
+            {
+              "x": 0.60718964127368,
+              "y": 0.17896009673518742
+            },
+            {
+              "x": 0.8150443369609028,
+              "y": 0.13663845223700122
+            },
+            {
+              "x": 0.9166414752116082,
+              "y": 0.1523579201934704
+            },
+            {
+              "x": 0.9986648528819027,
+              "y": 0.2672309552599758
+            },
+            {
+              "x": 0.9940044336960905,
+              "y": 0.8403869407496977
+            },
+            {
+              "x": 0.7153113663845224,
+              "y": 0.8657799274486094
+            },
+            {
+              "x": 0.257658202337767,
+              "y": 0.8597339782345829
+            },
+            {
+              "x": 0.028365578395808107,
+              "y": 0.7351874244256348
+            },
+            {
+              "x": 0.005063482466747243,
+              "y": 0.6251511487303507
+            },
+            {
+              "x": 0.011588069326884285,
+              "y": 0.5102781136638452
+            },
+            {
+              "x": 0.005995566303909677,
+              "y": 0.4570737605804111
+            },
+            {
+              "x": 0.035822249093107585,
+              "y": 0.25634824667472794
+            },
+            {
+              "x": 0.2306277710600564,
+              "y": 0.21281741233373638
+            }
+          ],
+          "created_at": "2026-08-11T07:39:53.499583Z",
+          "last_updated": "2026-08-11T07:40:48.716497Z"
+        }
+      ],
+      "obscuration_preview_opacity": 0.35,
+      "obscuration_preview_color": "#ffa6a6"
     }
   ],
   "board_groups": [],
   "_headmasters_scroll": {
-    "revision_id": "e83d35b8-bca3-4870-a2cf-af4e91c2a42b",
-    "last_modified_at": "2026-08-11T01:23:10.561436Z",
-    "last_modified_by": "mapper"
+    "revision_id": "204e6569-97c6-4d5c-8f52-f7f8920c8005",
+    "last_modified_at": "2026-08-11T08:37:24.025790Z",
+    "last_modified_by": "world-builder"
   }
 }

@@ -16,6 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
+from ..campaigns import CampaignRepository
 from .gmail import GmailSender, GmailUnavailable
 from .service import (
     GameBoardService,
@@ -55,10 +56,10 @@ class GmailAuthorizeBody(BaseModel):
 
 class SessionBody(BaseModel):
     title: str = Field(min_length=1, max_length=120)
+    campaign_id: str = Field(min_length=1, max_length=100)
     game_day: str
     expiration_time: str = "23:59"
     event_date: str | None = Field(default=None, max_length=32)
-    game_datetime: str | None = Field(default=None, max_length=32)
     contact_ids: list[str] = Field(min_length=1, max_length=9)
 
 
@@ -204,14 +205,20 @@ class GameBoardRuntime:
                 )
             except (KeyError, ValueError):
                 continue
+        try:
+            location_maps = self.service.location_maps()
+        except (KeyError, ValueError):
+            location_maps = []
         return {
             "contacts": self.service.list_contacts(),
             "characters": self.service.list_characters(),
+            "campaigns": self.service.list_campaigns(),
             "settings": self.service.settings(),
             "sessions": sessions,
             "session": sessions[0] if sessions else None,
             "connections": [item.public(self.service) for item in self.connections.values()],
             "boards": boards,
+            "location_maps": location_maps,
             "gmail": self.gmail().status(),
         }
 
@@ -396,8 +403,11 @@ class GameBoardRuntime:
         )
 
 
-def create_apps(repository: GameBoardRepository | None = None):
-    service = GameBoardService(repository)
+def create_apps(
+    repository: GameBoardRepository | None = None,
+    campaign_repository: CampaignRepository | None = None,
+):
+    service = GameBoardService(repository, campaign_repository)
     runtime = GameBoardRuntime(service)
     settings = service.settings(include_private=True)
 
@@ -513,7 +523,7 @@ def create_apps(repository: GameBoardRepository | None = None):
     async def create_session(body: SessionBody):
         result = admin_result(
             service.create_session, body.title, body.game_day, body.contact_ids,
-            body.expiration_time, body.event_date, body.game_datetime,
+            body.expiration_time, body.event_date, body.campaign_id,
         )
         await runtime.notify_admins()
         return result

@@ -14,6 +14,7 @@ from zoneinfo import ZoneInfo
 
 from ..store import SharedJsonStore
 from ..board import WorldBoardRepository
+from ..campaigns import CampaignRepository
 from .storage import GameBoardRepository
 
 
@@ -80,10 +81,15 @@ def token_hash(value: str) -> str:
 
 
 class GameBoardService:
-    def __init__(self, repository: GameBoardRepository | None = None):
+    def __init__(
+        self,
+        repository: GameBoardRepository | None = None,
+        campaign_repository: CampaignRepository | None = None,
+    ):
         self.repository = repository or GameBoardRepository()
         self.shared_store = SharedJsonStore()
         self.world_board = WorldBoardRepository(self.shared_store)
+        self.campaign_repository = campaign_repository or CampaignRepository()
         self._lock = threading.RLock()
         self._tickets: dict[str, dict[str, Any]] = {}
         self._ticket_by_request: dict[str, str] = {}
@@ -127,6 +133,9 @@ class GameBoardService:
             if isinstance(record_id, str) and record_id and name:
                 characters.append({"id": record_id, "name": name})
         return sorted(characters, key=lambda item: (item["name"].casefold(), item["id"]))
+
+    def list_campaigns(self) -> list[dict[str, Any]]:
+        return self.campaign_repository.list()
 
     def add_contact(self, name: str, email: str) -> dict[str, str]:
         name, email = name.strip(), email.strip().lower()
@@ -301,7 +310,7 @@ class GameBoardService:
         contact_ids: list[str],
         expiration_time: str = "23:59",
         event_date: str | None = None,
-        game_datetime: str | None = None,
+        campaign_id: str | None = None,
     ) -> dict[str, Any]:
         title = title.strip()
         if not title:
@@ -316,8 +325,13 @@ class GameBoardService:
                 date.fromisoformat(cleaned_event_date)
             except ValueError as error:
                 raise ValueError("Event date must use YYYY-MM-DD") from error
+        campaign_id = str(campaign_id or "").strip()
+        if not campaign_id:
+            raise ValueError("Choose a campaign before creating a session")
+        campaign = self.campaign_repository.get(campaign_id)
         cleaned_game_datetime = normalize_game_datetime(
-            game_datetime, cleaned_event_date or game_day
+            f"{campaign['game_world_start_date']}T08:00",
+            campaign["game_world_start_date"],
         )
         settings = self.repository.settings()
         local_expiration = datetime.combine(
@@ -333,6 +347,8 @@ class GameBoardService:
             session = {
                 "id": str(uuid4()),
                 "title": title,
+                "campaign_id": campaign["record_id"],
+                "campaign_name": campaign["name"],
                 "status": "active",
                 "event_date": cleaned_event_date or None,
                 "game_datetime": cleaned_game_datetime,
@@ -437,7 +453,7 @@ class GameBoardService:
             [player["contact_id"] for player in original["roster"]],
             original.get("expiration_time") or local_expiration.strftime("%H:%M"),
             original.get("event_date"),
-            original.get("game_datetime"),
+            original.get("campaign_id"),
         )
 
     def delete_session(self, session_id: str) -> dict[str, Any]:
@@ -710,6 +726,9 @@ class GameBoardService:
     def set_map_published(self, map_id: str, published: bool) -> dict[str, Any]:
         return self.world_board.set_map_published(map_id, published)
 
+    def location_maps(self) -> list[dict[str, Any]]:
+        return self.world_board.location_maps()
+
     def set_map_presentation(
         self,
         map_id: str,
@@ -959,6 +978,8 @@ class GameBoardService:
             ended_at = iso_utc(utc_now())
             summary = {
                 "id": session["id"], "title": session["title"], "created_at": session["created_at"],
+                "campaign_id": session.get("campaign_id"),
+                "campaign_name": session.get("campaign_name"),
                 "event_date": session.get("event_date"),
                 "game_datetime": session.get("game_datetime"),
                 "expires_at": session["expires_at"], "ended_at": ended_at, "reason": reason,

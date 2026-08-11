@@ -4,6 +4,12 @@
   const VERSION = 1;
   const POLL_DELAY_MS = 2000;
   const REQUEST_TIMEOUT_MS = 10000;
+  const MAP_NATIVE_WIDTH = 3840;
+  const MAP_NATIVE_HEIGHT = 2960;
+  const MAP_ASPECT_RATIO = MAP_NATIVE_WIDTH / MAP_NATIVE_HEIGHT;
+  const MAP_ZOOM_STEP = 1.15;
+  const MAP_MAX_ZOOM = 32;
+  const MAP_PAN_STEP = 24;
   const SECTIONS = [
     ['board', 'Game Board', '▦'],
     ['overview', 'Overview', '⌂'],
@@ -45,6 +51,7 @@
       this.mapCameraStates = new Map();
       this.mapCameraDrag = null;
       this.mapResizeObserver = null;
+      this.mapCameraFrame = 0;
       this.dragging = null;
       this.lastMovePreview = 0;
       this.activeSection = 'overview';
@@ -184,11 +191,12 @@
         button.addEventListener('click', () => this.openSection(button.dataset.section));
       });
       window.addEventListener('keydown', event => {
-        if (this.activeSection === 'board' && event.ctrlKey && event.key === '0') {
+        if (this.activeSection === 'board' && (event.ctrlKey || event.metaKey) && event.key === '0') {
           event.preventDefault();
           this.resetMapCamera(this.activeMapId);
         }
       });
+      window.addEventListener('blur', () => { this.mapCameraDrag = null; });
     }
 
     element(name) {
@@ -599,9 +607,6 @@
       const map = maps.find(item => item.record_id === this.activeMapId) || maps[0];
       this.activeMapId = map.record_id;
       const metadata = map.asset || null;
-      if (metadata?.width && metadata?.height) {
-        stage.style.aspectRatio = `${metadata.width} / ${metadata.height}`;
-      }
       if (metadata?.asset_id) {
         const image = document.createElement('img');
         image.alt = map.name || 'Game map';
@@ -720,13 +725,22 @@
 
     setupMapCamera(viewport, stage, mapId) {
       const sizeStage = () => {
-        const ratio = 3840 / 2960;
-        const availableWidth = Math.max(1, viewport.clientWidth - 16);
-        const availableHeight = Math.max(1, viewport.clientHeight - 16);
-        const width = Math.min(availableWidth, availableHeight * ratio);
-        stage.style.width = `${width}px`;
-        stage.style.height = `${width / ratio}px`;
-        this.applyMapCamera(viewport, stage, mapId);
+        cancelAnimationFrame(this.mapCameraFrame);
+        this.mapCameraFrame = requestAnimationFrame(() => {
+          if (!viewport.isConnected || !stage.isConnected) return;
+          const availableWidth = Math.max(1, viewport.clientWidth);
+          const availableHeight = Math.max(1, viewport.clientHeight);
+          const width = Math.min(
+            MAP_NATIVE_WIDTH,
+            availableWidth,
+            availableHeight * MAP_ASPECT_RATIO
+          );
+          const height = width / MAP_ASPECT_RATIO;
+          stage.style.width = `${Math.floor(width * 100) / 100}px`;
+          stage.style.height = `${Math.floor(height * 100) / 100}px`;
+          stage.dataset.renderWidth = String(Math.round(width));
+          this.applyMapCamera(viewport, stage, mapId);
+        });
       };
       this.mapResizeObserver = new ResizeObserver(sizeStage);
       this.mapResizeObserver.observe(viewport);
@@ -734,21 +748,22 @@
       viewport.addEventListener('wheel', event => {
         event.preventDefault();
         const state = this.cameraState(mapId);
-        const steps = -Math.sign(event.deltaY || 0);
-        if (event.ctrlKey) {
+        const direction = -Math.sign(event.deltaY || event.deltaX || 0);
+        if (!direction) return;
+        if (event.ctrlKey || event.metaKey) {
           const bounds = viewport.getBoundingClientRect();
           const cursorX = event.clientX - (bounds.left + bounds.width / 2);
           const cursorY = event.clientY - (bounds.top + bounds.height / 2);
           const worldX = (cursorX - state.x) / state.scale;
           const worldY = (cursorY - state.y) / state.scale;
-          const next = Math.max(1, Math.min(32, state.scale * (1.15 ** steps)));
+          const next = Math.max(1, Math.min(MAP_MAX_ZOOM, state.scale * (MAP_ZOOM_STEP ** direction)));
           state.x = cursorX - worldX * next;
           state.y = cursorY - worldY * next;
           state.scale = next;
         } else if (event.altKey) {
-          state.x += steps * 24;
+          state.x += direction * MAP_PAN_STEP;
         } else {
-          state.y += steps * 24;
+          state.y += direction * MAP_PAN_STEP;
         }
         this.applyMapCamera(viewport, stage, mapId);
       }, { passive: false });
@@ -756,6 +771,7 @@
         if (event.button !== 1) return;
         event.preventDefault();
         viewport.setPointerCapture(event.pointerId);
+        viewport.classList.add('is-camera-panning');
         const state = this.cameraState(mapId);
         this.mapCameraDrag = { mapId, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, x: state.x, y: state.y };
       });
@@ -767,10 +783,20 @@
         this.applyMapCamera(viewport, stage, mapId);
       });
       const endPan = event => {
-        if (this.mapCameraDrag?.pointerId === event.pointerId) this.mapCameraDrag = null;
+        if (this.mapCameraDrag?.pointerId !== event.pointerId) return;
+        this.mapCameraDrag = null;
+        viewport.classList.remove('is-camera-panning');
+        if (viewport.hasPointerCapture(event.pointerId)) viewport.releasePointerCapture(event.pointerId);
       };
       viewport.addEventListener('pointerup', endPan);
       viewport.addEventListener('pointercancel', endPan);
+      viewport.addEventListener('lostpointercapture', () => {
+        this.mapCameraDrag = null;
+        viewport.classList.remove('is-camera-panning');
+      });
+      viewport.addEventListener('contextmenu', event => {
+        if (this.mapCameraDrag) event.preventDefault();
+      });
     }
 
     applyMapCamera(viewport, stage, mapId) {

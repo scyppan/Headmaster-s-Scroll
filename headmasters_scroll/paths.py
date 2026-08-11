@@ -9,7 +9,7 @@ MAP_ASSETS_DIRECTORY = ASSETS_DIRECTORY / "maps"
 APPS_DIRECTORY = PROJECT_ROOT / "apps"
 RUNTIME_DIRECTORY = PROJECT_ROOT / "runtime"
 PREFERENCES_DIRECTORY = RUNTIME_DIRECTORY / "preferences"
-ALLOWED_DATA_FILES = frozenset({"db.json", "world.json", "periods.json"})
+ALLOWED_DATA_FILES = frozenset({"db.json", "world.json", "periods.json", "campaign.json"})
 
 
 def data_path(filename: str) -> Path:

@@ -1,0 +1,10 @@
+{
+  "id": "campaigner",
+  "name": "Campaigner",
+  "order": 5,
+  "enabled": true,
+  "entry_command": [
+    "{python}",
+    "{root}/apps/campaigner/main.py"
+  ]
+}

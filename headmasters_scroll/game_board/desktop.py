@@ -23,6 +23,8 @@ from uuid import uuid4
 from PIL import Image, ImageDraw, ImageOps, ImageTk
 
 from ..assets import AssetStore, MAP_CANVAS_HEIGHT, MAP_CANVAS_WIDTH, MAP_CANVAS_SIZE
+from ..board import WorldBoardRepository
+from ..campaigns import format_game_world_date
 from ..paths import PROJECT_ROOT
 from ..windowing import GAME_BOARD_ICON, apply_window_icon, configure_windows_app_id, maximize_window
 from .storage import GameBoardRepository
@@ -546,6 +548,9 @@ class GameWorldDateField(ttk.Frame):
         year = f"-{abs(self._year):04d}" if self._year < 0 else f"{self._year:04d}"
         return f"{year}-{self._month:02d}-{self._day:02d}"
 
+    def set_iso(self, value: str) -> None:
+        self._set(*self._parse_text(str(value).strip()))
+
     def _set(self, year: int, month: int, day_number: int) -> None:
         HistoricalDateTime(year, month, day_number)
         self._year, self._month, self._day = year, month, day_number
@@ -715,6 +720,7 @@ class GameBoardWindow(tk.Tk):
         self.closing = False
         self.settings_dirty = False
         self.asset_store = AssetStore()
+        self.world_board = WorldBoardRepository(assets=self.asset_store)
         self.board_snapshot: dict[str, Any] = {}
         self.board_map_label_to_id: dict[str, str] = {}
         self.board_open_map_ids: list[str] = []
@@ -728,15 +734,22 @@ class GameBoardWindow(tk.Tk):
         self._board_map_sources: dict[str, Image.Image] = {}
         self._board_obscure_images: dict[str, ImageTk.PhotoImage] = {}
         self.board_obscure_mode = False
+        self.board_obscure_drawing = False
         self.board_obscure_draft_points: list[dict[str, float]] = []
         self.board_selected_obscuration_id = ""
         self.board_selected_obscuration_node: int | None = None
+        self.board_obscuration_list_ids: list[str] = []
+        self.board_obscure_opacity = tk.StringVar(value="35")
+        self.board_obscure_color = "#ff0000"
+        self.board_confirmation_message_until = 0.0
         self._board_obscure_drag: dict[str, Any] | None = None
         self._board_pan_state: tuple[str, float, float, float, float] | None = None
         self._board_pan_watchdog_id: str | None = None
         self._drag_actor_id = ""
         self._drag_start_point: tuple[float, float] | None = None
         self._piece_popup: tk.Toplevel | None = None
+        self.board_map_controls_window: tk.Toplevel | None = None
+        self.board_settings_window: tk.Toplevel | None = None
         self._known_pending_ids: set[str] = set()
         self.title("Game Board — Headmaster Controls")
         self.geometry("1240x800")
@@ -942,21 +955,70 @@ class GameBoardWindow(tk.Tk):
     def _build_board_search(self, parent: tk.Misc) -> None:
         search = ttk.Frame(parent)
         search.pack(side="left", fill="x", expand=True, padx=(0, 8))
+        entry_row = ttk.Frame(search)
+        entry_row.pack(fill="x")
         self.board_search_value = tk.StringVar()
-        self.board_search_entry = ttk.Entry(search, textvariable=self.board_search_value)
+        self.board_search_entry = ttk.Entry(entry_row, textvariable=self.board_search_value)
         self.board_search_entry.pack(side="left", fill="x", expand=True)
         self.board_search_entry.bind("<Return>", lambda _event: self.add_best_board_map())
         self.board_search_entry.bind("<KeyRelease>", self.show_board_search_suggestions)
         self.board_search_entry.bind("<Escape>", lambda _event: self._close_board_search_suggestions())
-        ttk.Button(search, text="Add map", command=self.add_best_board_map).pack(side="left", padx=(4, 0))
-        ttk.Button(search, text="Explore…", style="Quiet.TButton", command=self.open_board_explorer).pack(side="left", padx=(4, 0))
-        self.board_search_menu: tk.Toplevel | None = None
+        self.board_search_entry.bind("<FocusIn>", self.show_board_search_suggestions)
+        self.board_search_entry.bind("<Down>", self.focus_board_search_results)
+        ttk.Button(entry_row, text="Add map", command=self.add_best_board_map).pack(side="left", padx=(4, 0))
+        ttk.Button(entry_row, text="Explore…", style="Quiet.TButton", command=self.open_board_explorer).pack(side="left", padx=(4, 0))
+
+        self.board_search_results_panel = tk.Frame(
+            search,
+            background=self.LIGHT,
+            highlightbackground=self.ACCENT,
+            highlightthickness=1,
+        )
+        self.board_search_status = tk.Label(
+            self.board_search_results_panel,
+            text="",
+            anchor="w",
+            background=self.LIGHT,
+            foreground=self.MUTED,
+            font=("Segoe UI", 8),
+            padx=6,
+            pady=3,
+        )
+        self.board_search_status.pack(fill="x")
+        self.board_search_results = tk.Listbox(
+            self.board_search_results_panel,
+            activestyle="dotbox",
+            background="#fff8e6",
+            foreground=self.INK,
+            highlightthickness=0,
+            relief="flat",
+            selectbackground=self.ACCENT,
+            selectforeground="#fff8e7",
+            exportselection=False,
+            height=1,
+            font=("Segoe UI", 9),
+        )
+        self.board_search_results.pack(fill="x")
+        self.board_search_results.bind("<Double-Button-1>", self.add_selected_board_search_result)
+        self.board_search_results.bind("<Return>", self.add_selected_board_search_result)
+        self.board_search_results.bind("<Escape>", lambda _event: self._close_board_search_suggestions())
+        self.board_search_result_ids: list[str] = []
 
     def _board_map_search_text(self, record: dict[str, Any]) -> str:
-        return " ".join(
+        direct_fields = " ".join(
             str(record.get(field, "") or "")
-            for field in ("name", "location_name", "floor_name", "record_id")
+            for field in (
+                "location_name",
+                "floor_name",
+                "location_id",
+                "record_id",
+            )
         ).strip()
+        ancestor_names = " ".join(
+            str(location.get("name", "") or "")
+            for location in record.get("location_ancestry", []) or []
+        )
+        return f"{direct_fields} {ancestor_names}".strip()
 
     def fuzzy_board_maps(self, query: str, *, limit: int | None = None) -> list[dict[str, Any]]:
         needle = str(query or "").strip().casefold()
@@ -979,64 +1041,81 @@ class GameBoardWindow(tk.Tk):
         results = [item[2] for item in ranked]
         return results[:limit] if limit else results
 
-    def show_board_search_suggestions(self, event: tk.Event | None = None) -> None:
+    def _board_map_result_label(self, record: dict[str, Any]) -> str:
+        location = str(record.get("location_name") or "Location")
+        floor = str(record.get("floor_name") or "")
+        if record.get("is_location_default"):
+            detail = "Default map"
+            if record.get("is_floor_primary") and floor:
+                detail = f"Default map ({floor})"
+            return f"{location}  —  {detail}"
+        if record.get("is_floor_primary"):
+            return f"{floor or 'Floor'}  —  Floor map"
+        return f"{location}  —  Assigned map"
+
+    def show_board_search_suggestions(self, event: tk.Event | None = None) -> str:
         if event is not None and event.keysym in {"Return", "Escape", "Up", "Down"}:
-            return
-        self._close_board_search_suggestions()
+            return ""
         query = self.board_search_value.get().strip()
-        if not query:
-            return
-        matches = self.fuzzy_board_maps(query, limit=6)
+        matches = self.fuzzy_board_maps(query, limit=8)
+        self.board_search_results.delete(0, "end")
+        self.board_search_result_ids = [str(record.get("record_id")) for record in matches]
         if not matches:
-            return
-        popup = tk.Toplevel(self)
-        self.board_search_menu = popup
-        popup.overrideredirect(True)
-        popup.transient(self)
-        popup.configure(background=self.ACCENT)
-        choices = tk.Listbox(
-            popup,
-            activestyle="none",
-            background=self.LIGHT,
-            foreground=self.INK,
-            highlightbackground=self.ACCENT,
-            highlightthickness=1,
-            relief="flat",
-            selectbackground=self.ACCENT,
-            selectforeground="#fff8e7",
-            height=len(matches),
-            font=("Segoe UI", 9),
-        )
-        choices.pack(fill="both", expand=True)
+            self.board_search_results.pack_forget()
+            self.board_search_status.configure(
+                text="No close matches. Try fewer words, a different spelling, or Explore."
+            )
+            self.board_search_results_panel.pack(fill="x", pady=(3, 0))
+            return ""
         for record in matches:
-            label = str(record.get("name") or "Map")
-            detail = str(record.get("floor_name") or record.get("location_name") or "")
-            choices.insert("end", f"{label}  —  {detail}" if detail and detail != label else label)
-
-        def choose(_event: tk.Event | None = None) -> None:
-            selection = choices.curselection()
-            if selection:
-                self.add_board_map(str(matches[selection[0]].get("record_id")))
-
-        choices.bind("<ButtonRelease-1>", choose)
-        choices.bind("<Return>", choose)
-        width = max(320, self.board_search_entry.winfo_width())
-        popup.geometry(
-            f"{width}x{min(190, 24 * len(matches) + 4)}+"
-            f"{self.board_search_entry.winfo_rootx()}+"
-            f"{self.board_search_entry.winfo_rooty() + self.board_search_entry.winfo_height()}"
+            self.board_search_results.insert("end", self._board_map_result_label(record))
+        self.board_search_results.configure(height=min(6, len(matches)))
+        if not self.board_search_results.winfo_manager():
+            self.board_search_results.pack(fill="x")
+        self.board_search_results.selection_set(0)
+        self.board_search_results.activate(0)
+        self.board_search_status.configure(
+            text=(
+                f"{len(matches)} maps available — choose one below."
+                if not query
+                else f"{len(matches)} close {'match' if len(matches) == 1 else 'matches'} — double-click to add."
+            )
         )
+        self.board_search_results_panel.pack(fill="x", pady=(3, 0))
+        return ""
+
+    def focus_board_search_results(self, _event: tk.Event | None = None) -> str:
+        if not self.board_search_result_ids:
+            self.show_board_search_suggestions()
+        if self.board_search_result_ids:
+            self.board_search_results.focus_set()
+            self.board_search_results.selection_clear(0, "end")
+            self.board_search_results.selection_set(0)
+            self.board_search_results.activate(0)
+        return "break"
+
+    def add_selected_board_search_result(self, _event: tk.Event | None = None) -> str:
+        selection = self.board_search_results.curselection()
+        if selection and selection[0] < len(self.board_search_result_ids):
+            self.add_board_map(self.board_search_result_ids[selection[0]])
+        return "break"
 
     def _close_board_search_suggestions(self) -> None:
-        popup = self.board_search_menu
-        self.board_search_menu = None
-        if popup is not None and popup.winfo_exists():
-            popup.destroy()
+        self.board_search_results_panel.pack_forget()
+        self.board_search_result_ids = []
 
     def add_best_board_map(self) -> None:
-        matches = self.fuzzy_board_maps(self.board_search_value.get(), limit=1)
+        selection = self.board_search_results.curselection()
+        if selection and selection[0] < len(self.board_search_result_ids):
+            self.add_board_map(self.board_search_result_ids[selection[0]])
+            return
+        query = self.board_search_value.get().strip()
+        if not query:
+            self.show_board_search_suggestions()
+            return
+        matches = self.fuzzy_board_maps(query, limit=1)
         if not matches:
-            self.open_board_explorer()
+            self.show_board_search_suggestions()
             return
         self.add_board_map(str(matches[0].get("record_id")))
 
@@ -1068,7 +1147,7 @@ class GameBoardWindow(tk.Tk):
 
     def open_board_explorer(self) -> None:
         dialog = tk.Toplevel(self)
-        dialog.title("Explore maps")
+        dialog.title("Explore locations")
         dialog.transient(self)
         dialog.grab_set()
         dialog.geometry("820x650")
@@ -1077,35 +1156,29 @@ class GameBoardWindow(tk.Tk):
         shell = ttk.Frame(dialog, padding=10)
         shell.pack(fill="both", expand=True)
         query = tk.StringVar(value=self.board_search_value.get())
-        ttk.Label(shell, text="Search locations, floors, map names, or record IDs").pack(anchor="w")
+        ttk.Label(shell, text="Search the world location hierarchy").pack(anchor="w")
         entry = ttk.Entry(shell, textvariable=query)
         entry.pack(fill="x", pady=(2, 6))
         filters = ttk.Frame(shell)
         filters.pack(fill="x", pady=(0, 6))
         include_default = tk.BooleanVar(value=True)
         include_floors = tk.BooleanVar(value=True)
-        include_revealed = tk.BooleanVar(value=True)
-        include_hidden = tk.BooleanVar(value=True)
         for text, variable in (
             ("Default maps", include_default),
             ("Floor maps", include_floors),
-            ("Revealed", include_revealed),
-            ("Hidden", include_hidden),
         ):
             ttk.Checkbutton(filters, text=text, variable=variable).pack(side="left", padx=(0, 12))
         tree = ttk.Treeview(
             shell,
-            columns=("location", "floor", "visibility"),
+            columns=("assignment", "visibility"),
             show="tree headings",
             selectmode="browse",
         )
-        tree.heading("#0", text="Map")
-        tree.heading("location", text="Location")
-        tree.heading("floor", text="Floor")
+        tree.heading("#0", text="Location")
+        tree.heading("assignment", text="Assigned map")
         tree.heading("visibility", text="Players")
-        tree.column("#0", width=220)
-        tree.column("location", width=220)
-        tree.column("floor", width=130)
+        tree.column("#0", width=360)
+        tree.column("assignment", width=220)
         tree.column("visibility", width=90)
         tree.pack(fill="both", expand=True)
         count = tk.StringVar()
@@ -1114,36 +1187,68 @@ class GameBoardWindow(tk.Tk):
         def fill(*_args) -> None:
             tree.delete(*tree.get_children())
             matches = []
+            location_nodes: set[str] = set()
+
+            def ensure_location_nodes(record: dict[str, Any]) -> str:
+                parent = ""
+                for location in record.get("location_ancestry", []) or []:
+                    location_id = str(location.get("record_id", "") or "")
+                    if not location_id:
+                        continue
+                    tree_id = f"location:{location_id}"
+                    if tree_id not in location_nodes:
+                        tree.insert(
+                            parent,
+                            "end",
+                            iid=tree_id,
+                            text=str(location.get("name") or "Unnamed location"),
+                            open=True,
+                        )
+                        location_nodes.add(tree_id)
+                    parent = tree_id
+                return parent
+
             for record in self.fuzzy_board_maps(query.get()):
-                is_floor = bool(record.get("floor_id"))
+                is_default = bool(record.get("is_location_default"))
+                is_floor = bool(record.get("is_floor_primary"))
                 revealed = bool(record.get("players_published"))
-                if (is_floor and not include_floors.get()) or (not is_floor and not include_default.get()):
-                    continue
-                if (revealed and not include_revealed.get()) or (not revealed and not include_hidden.get()):
+                if not (
+                    (is_default and include_default.get())
+                    or (is_floor and include_floors.get())
+                ):
                     continue
                 matches.append(record)
+                parent = ensure_location_nodes(record)
+                roles = []
+                if record.get("is_location_default"):
+                    roles.append("Default")
+                if record.get("is_floor_primary"):
+                    roles.append(str(record.get("floor_name") or "Floor"))
                 tree.insert(
-                    "",
+                    parent,
                     "end",
-                    iid=str(record.get("record_id")),
-                    text=str(record.get("name") or "Map"),
+                    iid=f"map:{record.get('record_id')}",
+                    text="Assigned map",
                     values=(
-                        str(record.get("location_name") or ""),
-                        str(record.get("floor_name") or "—"),
+                        " / ".join(roles) or "Assigned",
                         "Revealed" if revealed else "Hidden",
                     ),
                 )
-            count.set(f"{len(matches):,} matching maps")
+            count.set(f"{len(matches):,} assigned location maps")
 
         def add_selected(*_args) -> None:
             selected = tree.selection()
             if not selected:
                 return
-            self.add_board_map(selected[0])
+            selected_id = selected[0]
+            if not selected_id.startswith("map:"):
+                tree.item(selected_id, open=not bool(tree.item(selected_id, "open")))
+                return
+            self.add_board_map(selected_id.removeprefix("map:"))
             dialog.destroy()
 
         query.trace_add("write", fill)
-        for variable in (include_default, include_floors, include_revealed, include_hidden):
+        for variable in (include_default, include_floors):
             variable.trace_add("write", fill)
         tree.bind("<Double-Button-1>", add_selected)
         actions = ttk.Frame(shell)
@@ -1157,38 +1262,10 @@ class GameBoardWindow(tk.Tk):
         board_panel = ttk.Frame(parent, style="Card.TFrame")
         board_panel.pack(fill="both", expand=True)
 
-        map_controls = ttk.Frame(board_panel, style="Card.TFrame", width=116, padding=5)
-        map_controls.pack(side="left", fill="y", padx=(0, 4))
-        map_controls.pack_propagate(False)
-        ttk.Label(map_controls, text="MAP", style="Card.TLabel", font=("Segoe UI", 8, "bold")).pack(fill="x", pady=(0, 4))
-        self.board_obscure_button = ttk.Button(map_controls, text="Obscure  [O]", command=self.toggle_board_obscure_mode)
-        self.board_obscure_button.pack(fill="x", pady=(0, 3))
-        self.board_reveal_value = tk.BooleanVar(value=False)
-        ttk.Checkbutton(
-            map_controls,
-            text="Reveal",
-            variable=self.board_reveal_value,
-            command=self.board_presentation_changed,
-        ).pack(anchor="w", pady=(1, 5))
-        ttk.Label(map_controls, text="HM opacity", style="Card.TLabel", font=("Segoe UI", 8)).pack(anchor="w")
-        self.board_obscure_opacity = tk.StringVar(value="35")
-        opacity = ttk.Spinbox(map_controls, from_=5, to=100, increment=5, textvariable=self.board_obscure_opacity, width=7)
-        opacity.pack(fill="x", pady=(0, 4))
-        opacity.bind("<FocusOut>", self.board_presentation_changed)
-        opacity.bind("<Return>", self.board_presentation_changed)
-        self.board_obscure_color = "#ff0000"
-        self.board_color_button = ttk.Button(map_controls, text="Red", style="Quiet.TButton", command=self.choose_board_obscure_color)
-        self.board_color_button.pack(fill="x", pady=(0, 6))
-        ttk.Button(map_controls, text="Delete shape", style="Quiet.TButton", command=self.delete_board_obscuration).pack(fill="x", pady=(0, 3))
-        ttk.Button(map_controls, text="Fit map", style="Quiet.TButton", command=self.fit_current_board_map).pack(fill="x", pady=(0, 3))
-        ttk.Button(map_controls, text="Remove map", style="Quiet.TButton", command=self.remove_current_board_map).pack(fill="x", pady=(0, 6))
-        self.board_confirm_button = ttk.Button(map_controls, text="Confirm to players", style="Good.TButton", command=self.confirm_board_presentation)
-        self.board_confirm_button.pack(fill="x")
-        self.board_draft_status = ttk.Label(map_controls, text="", style="Card.TLabel", wraplength=104, font=("Segoe UI", 8))
-        self.board_draft_status.pack(fill="x", pady=(5, 0))
+        self._create_board_map_controls()
 
         self.board_notebook = ttk.Notebook(board_panel)
-        self.board_notebook.pack(side="left", fill="both", expand=True)
+        self.board_notebook.pack(fill="both", expand=True)
         self.board_notebook.bind("<<NotebookTabChanged>>", self._board_tab_changed)
         self.board_empty = ttk.Label(
             board_panel,
@@ -1214,6 +1291,115 @@ class GameBoardWindow(tk.Tk):
         self.bind("<Escape>", lambda _event: self.cancel_board_obscuration(), add="+")
         self.bind("<Delete>", self.delete_board_obscuration_node, add="+")
         self.bind("<BackSpace>", self.delete_board_obscuration_node, add="+")
+
+    def _create_board_map_controls(self) -> None:
+        window = tk.Toplevel(self)
+        self.board_map_controls_window = window
+        window.title("Map Tools")
+        window.resizable(False, False)
+        window.configure(background=self.PAPER)
+        window.protocol("WM_DELETE_WINDOW", self.hide_board_map_controls)
+        window.bind("<Unmap>", self._board_tools_unmapped)
+        apply_window_icon(window, GAME_BOARD_ICON)
+        map_controls = ttk.Frame(window, style="Card.TFrame", padding=8)
+        map_controls.pack(fill="both", expand=True)
+        ttk.Label(
+            map_controls,
+            text="MAP CONTROLS",
+            style="Card.TLabel",
+            font=("Segoe UI", 8, "bold"),
+        ).pack(fill="x", pady=(0, 5))
+        self.board_obscure_button = ttk.Button(
+            map_controls,
+            text="Draw obfuscation  [O]",
+            command=self.start_board_obscuration_drawing,
+        )
+        self.board_obscure_button.pack(fill="x", pady=(0, 3))
+        self.board_reveal_value = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            map_controls,
+            text="Reveal",
+            variable=self.board_reveal_value,
+            command=self.board_presentation_changed,
+        ).pack(anchor="w", pady=(1, 5))
+        ttk.Label(
+            map_controls,
+            text="OBFUSCATIONS",
+            style="Card.TLabel",
+            font=("Segoe UI", 8, "bold"),
+        ).pack(fill="x", pady=(5, 2))
+        self.board_obscuration_list = tk.Listbox(
+            map_controls,
+            activestyle="dotbox",
+            background="#fff8e6",
+            foreground=self.INK,
+            highlightbackground=self.EDGE,
+            highlightthickness=1,
+            relief="flat",
+            selectbackground=self.ACCENT,
+            selectforeground="#fff8e7",
+            exportselection=False,
+            height=5,
+            font=("Segoe UI", 8),
+        )
+        self.board_obscuration_list.pack(fill="x", pady=(0, 4))
+        self.board_obscuration_list.bind(
+            "<<ListboxSelect>>", self.select_board_obscuration_from_list
+        )
+        ttk.Button(map_controls, text="Delete obfuscation", style="Quiet.TButton", command=self.delete_board_obscuration).pack(fill="x", pady=(0, 3))
+        ttk.Button(map_controls, text="Fit map", style="Quiet.TButton", command=self.fit_current_board_map).pack(fill="x", pady=(0, 3))
+        ttk.Button(map_controls, text="Remove map", style="Quiet.TButton", command=self.remove_current_board_map).pack(fill="x", pady=(0, 6))
+        self.board_confirm_button = ttk.Button(map_controls, text="Confirm to players", style="Good.TButton", command=self.confirm_board_presentation)
+        self.board_confirm_button.pack(fill="x")
+        self.board_draft_status = tk.Label(
+            map_controls,
+            text="",
+            anchor="w",
+            justify="left",
+            background=self.LIGHT,
+            foreground=self.MUTED,
+            wraplength=216,
+            font=("Segoe UI", 8, "bold"),
+        )
+        self.board_draft_status.pack(fill="x", pady=(5, 0))
+        window.update_idletasks()
+        width = max(240, window.winfo_reqwidth())
+        height = max(390, window.winfo_reqheight())
+        window.geometry(
+            f"{width}x{height}+{self.winfo_rootx() + 230}+{self.winfo_rooty() + 110}"
+        )
+        window.minsize(width, height)
+        window.maxsize(width, height)
+
+    def open_board_map_controls(self) -> None:
+        window = self.board_map_controls_window
+        if window is None or not window.winfo_exists():
+            self._create_board_map_controls()
+            window = self.board_map_controls_window
+        if window is None:
+            return
+        window.deiconify()
+        window.lift()
+
+    def hide_board_map_controls(self) -> None:
+        window = self.board_map_controls_window
+        if self.board_obscure_drawing:
+            if window is not None and window.winfo_exists():
+                window.deiconify()
+                window.lift()
+            self.bell()
+            self.board_draft_status.configure(
+                text="Finish or cancel the current obfuscation before hiding Map Tools.",
+                foreground=self.RED,
+            )
+            return
+        if window is not None and window.winfo_exists():
+            window.withdraw()
+
+    def _board_tools_unmapped(self, _event: tk.Event | None = None) -> None:
+        if not self.board_obscure_drawing or self.state() == "iconic":
+            return
+        self.after(50, self.open_board_map_controls)
 
     def open_occupants_dialog(self) -> None:
         if self.occupants_dialog is not None and self.occupants_dialog.winfo_exists():
@@ -1397,18 +1583,73 @@ class GameBoardWindow(tk.Tk):
         if draft is None:
             self.board_reveal_value.set(False)
             self.board_obscure_opacity.set("35")
-            self.board_color_button.configure(text="Red")
-            self.board_draft_status.configure(text="No map open")
+            self.board_obscure_color = "#ff0000"
+            self.board_draft_status.configure(text="No map open", foreground=self.MUTED)
+            self.board_confirm_button.configure(text="No changes to send", state="disabled")
+            self._refresh_board_obscuration_list()
             return
         self.board_reveal_value.set(bool(draft["published"]))
         self.board_obscure_opacity.set(str(round(float(draft["preview_opacity"]) * 100)))
         self.board_obscure_color = str(draft["preview_color"])
-        self.board_color_button.configure(text=self.board_obscure_color.upper())
-        self.board_draft_status.configure(
-            text="Unconfirmed changes" if draft.get("dirty") else (
-                "Revealed to players" if draft["published"] else "Hidden from players"
+        if draft.get("dirty"):
+            self.board_draft_status.configure(
+                text="Not sent — these changes are visible only to you.",
+                foreground=self.RED,
             )
-        )
+            self.board_confirm_button.configure(text="Send changes to players", state="normal")
+        elif time.monotonic() < self.board_confirmation_message_until:
+            self.board_draft_status.configure(
+                text="Changes sent to players ✓",
+                foreground=self.GREEN,
+            )
+            self.board_confirm_button.configure(text="Sent ✓", state="disabled")
+        else:
+            self.board_draft_status.configure(
+                text=(
+                    "Up to date — players have this version."
+                    if draft["published"]
+                    else "Up to date — this map is hidden from players."
+                ),
+                foreground=self.GREEN,
+            )
+            self.board_confirm_button.configure(text="No changes to send", state="disabled")
+        self._refresh_board_obscuration_list()
+
+    def _refresh_board_obscuration_list(self) -> None:
+        if not hasattr(self, "board_obscuration_list"):
+            return
+        draft = self._board_presentation_draft()
+        shapes = list((draft or {}).get("obscurations", []))
+        self.board_obscuration_list.delete(0, "end")
+        self.board_obscuration_list_ids = []
+        selected_index = None
+        for index, shape in enumerate(shapes, start=1):
+            shape_id = str(shape.get("record_id") or "")
+            self.board_obscuration_list_ids.append(shape_id)
+            node_count = len(shape.get("points", []))
+            self.board_obscuration_list.insert(
+                "end", f"Obfuscation {index}  —  {node_count} nodes"
+            )
+            if shape_id == self.board_selected_obscuration_id:
+                selected_index = index - 1
+        if selected_index is not None:
+            self.board_obscuration_list.selection_set(selected_index)
+            self.board_obscuration_list.activate(selected_index)
+
+    def select_board_obscuration_from_list(self, _event: tk.Event | None = None) -> None:
+        selection = self.board_obscuration_list.curselection()
+        if not selection or selection[0] >= len(self.board_obscuration_list_ids):
+            return
+        self.board_obscure_draft_points = []
+        self.board_obscure_drawing = False
+        self.board_obscure_mode = True
+        self.board_selected_obscuration_id = self.board_obscuration_list_ids[selection[0]]
+        self.board_selected_obscuration_node = None
+        self.board_obscure_button.configure(text="Draw obfuscation  [O]")
+        canvas = self.board_canvases.get(self.selected_board_map_id)
+        if canvas is not None and canvas.winfo_exists():
+            canvas.configure(cursor="arrow")
+            self._draw_board_map(self.selected_board_map_id)
 
     def board_presentation_changed(self, _event: tk.Event | None = None) -> None:
         draft = self._board_presentation_draft()
@@ -1423,21 +1664,83 @@ class GameBoardWindow(tk.Tk):
         draft["preview_opacity"] = opacity / 100.0
         draft["preview_color"] = self.board_obscure_color
         draft["dirty"] = True
-        self.board_draft_status.configure(text="Unconfirmed changes")
+        self.board_confirmation_message_until = 0.0
+        self.board_draft_status.configure(
+            text="Not sent — these changes are visible only to you.",
+            foreground=self.RED,
+        )
+        self.board_confirm_button.configure(text="Send changes to players", state="normal")
         if self.selected_board_map_id:
             self._draw_board_map(self.selected_board_map_id)
 
-    def choose_board_obscure_color(self) -> None:
-        color = colorchooser.askcolor(
-            color=self.board_obscure_color,
-            title="Headmaster obscuration color",
-            parent=self,
-        )[1]
-        if not color:
+    def open_board_settings(self) -> None:
+        if not self.selected_board_map_id:
+            messagebox.showinfo(
+                "Game Board Settings",
+                "Add and select a map before changing its display settings.",
+                parent=self,
+            )
             return
-        self.board_obscure_color = color.lower()
-        self.board_color_button.configure(text=self.board_obscure_color.upper())
-        self.board_presentation_changed()
+        window = self.board_settings_window
+        if window is not None and window.winfo_exists():
+            window.deiconify()
+            window.lift()
+            return
+        window = tk.Toplevel(self)
+        self.board_settings_window = window
+        window.title("Game Board Settings")
+        window.resizable(False, False)
+        window.configure(background=self.PAPER)
+        window.protocol("WM_DELETE_WINDOW", window.destroy)
+        apply_window_icon(window, GAME_BOARD_ICON)
+        shell = ttk.Frame(window, style="Card.TFrame", padding=12)
+        shell.pack(fill="both", expand=True)
+        ttk.Label(shell, text="OBFUSCATION PREVIEW", style="Section.TLabel").pack(anchor="w")
+        ttk.Label(
+            shell,
+            text="These settings affect only what the Headmaster sees while editing this map.",
+            style="Card.TLabel",
+            wraplength=300,
+        ).pack(anchor="w", pady=(2, 10))
+        ttk.Label(shell, text="Preview opacity (%)", style="Card.TLabel").pack(anchor="w")
+        opacity = tk.StringVar(value=self.board_obscure_opacity.get())
+        ttk.Spinbox(shell, from_=5, to=100, increment=5, textvariable=opacity, width=8).pack(
+            anchor="w", pady=(2, 10)
+        )
+        color = [self.board_obscure_color]
+        color_button = ttk.Button(shell, text=color[0].upper(), style="Quiet.TButton")
+
+        def choose_color() -> None:
+            selected = colorchooser.askcolor(
+                color=color[0], title="Headmaster obfuscation color", parent=window
+            )[1]
+            if selected:
+                color[0] = selected.lower()
+                color_button.configure(text=color[0].upper())
+
+        ttk.Label(shell, text="Preview color", style="Card.TLabel").pack(anchor="w")
+        color_button.configure(command=choose_color)
+        color_button.pack(fill="x", pady=(2, 12))
+
+        def apply() -> None:
+            try:
+                value = max(5, min(100, int(float(opacity.get()))))
+            except ValueError:
+                messagebox.showerror(
+                    "Game Board Settings", "Opacity must be a number from 5 to 100.", parent=window
+                )
+                return
+            self.board_obscure_opacity.set(str(value))
+            self.board_obscure_color = color[0]
+            self.board_presentation_changed()
+            window.destroy()
+
+        ttk.Button(shell, text="Apply", style="Good.TButton", command=apply).pack(fill="x")
+        window.update_idletasks()
+        window.geometry(
+            f"340x{max(260, window.winfo_reqheight())}+"
+            f"{self.winfo_rootx() + 300}+{self.winfo_rooty() + 150}"
+        )
 
     def confirm_board_presentation(self) -> None:
         map_id = self.selected_board_map_id
@@ -1460,9 +1763,26 @@ class GameBoardWindow(tk.Tk):
 
         def complete(_result: Any) -> None:
             draft["dirty"] = False
-            self.board_draft_status.configure(text="Confirmed for players")
+            self.board_confirmation_message_until = time.monotonic() + 5.0
+            self.board_draft_status.configure(
+                text="Changes sent to players ✓",
+                foreground=self.GREEN,
+            )
+            self.board_confirm_button.configure(text="Sent ✓", state="disabled")
             self.refresh(silent=True)
+            self.after(5100, self._sync_board_presentation_controls)
 
+        def failed(error: Exception) -> None:
+            draft["dirty"] = True
+            self.board_draft_status.configure(
+                text="Send failed — changes are still only visible to you.",
+                foreground=self.RED,
+            )
+            self.board_confirm_button.configure(text="Try sending again", state="normal")
+            self._failed(error, False)
+
+        self.board_draft_status.configure(text="Sending changes…", foreground=self.MUTED)
+        self.board_confirm_button.configure(text="Sending…", state="disabled")
         self._background(
             lambda: self.client.request(
                 "PUT",
@@ -1470,6 +1790,7 @@ class GameBoardWindow(tk.Tk):
                 payload,
             ),
             complete,
+            failure=failed,
         )
 
     def set_current_map_published(self, published: bool) -> None:
@@ -1794,28 +2115,52 @@ class GameBoardWindow(tk.Tk):
             self._board_pan_watchdog_id = None
         canvas = self.board_canvases.get(map_id)
         if canvas is not None and canvas.winfo_exists():
-            canvas.configure(cursor="crosshair" if self.board_obscure_mode else "arrow")
+            canvas.configure(cursor="crosshair" if self.board_obscure_drawing else "arrow")
         return True
 
     def board_pan_release(self, _event: tk.Event | None = None) -> str:
         return "break" if self._finish_board_pan() else ""
 
-    def toggle_board_obscure_mode(self) -> None:
+    def start_board_obscuration_drawing(self) -> None:
         if not self.selected_board_map_id:
+            messagebox.showinfo(
+                "Draw obfuscation",
+                "Add and select a map before drawing an obfuscation.",
+                parent=self,
+            )
             return
-        self.board_obscure_mode = not self.board_obscure_mode
-        self.board_obscure_button.configure(text="Select  [O]" if self.board_obscure_mode else "Obscure  [O]")
+        self.open_board_map_controls()
+        self.board_obscure_mode = True
+        self.board_obscure_drawing = True
+        self.board_obscure_draft_points = []
+        self.board_selected_obscuration_id = ""
+        self.board_selected_obscuration_node = None
+        self.board_obscuration_list.selection_clear(0, "end")
+        self.board_obscure_button.configure(text="Drawing… click the map")
+        self.board_draft_status.configure(
+            text="Pen active — click nodes on the map, then click the first node to finish.",
+            foreground=self.MUTED,
+        )
+        window = self.board_map_controls_window
+        if window is not None and window.winfo_exists():
+            window.attributes("-topmost", True)
+            window.deiconify()
+            window.lift()
         canvas = self.board_canvases.get(self.selected_board_map_id)
         if canvas is not None:
-            canvas.configure(cursor="crosshair" if self.board_obscure_mode else "arrow")
-        if not self.board_obscure_mode:
-            self.cancel_board_obscuration()
+            canvas.configure(cursor="crosshair")
+            canvas.focus_set()
         self._draw_board_map(self.selected_board_map_id)
+
+    def toggle_board_obscure_mode(self) -> None:
+        """Compatibility alias: O now explicitly starts the obfuscation pen."""
+
+        self.start_board_obscuration_drawing()
 
     def board_obscure_shortcut(self, event: tk.Event) -> str:
         if event.widget.winfo_class() in {"Entry", "TEntry", "Text", "TCombobox", "Spinbox", "TSpinbox"}:
             return ""
-        self.toggle_board_obscure_mode()
+        self.start_board_obscuration_drawing()
         return "break"
 
     def _board_pointer_start(self, event: tk.Event, map_id: str) -> None:
@@ -1857,7 +2202,12 @@ class GameBoardWindow(tk.Tk):
         draft = self._board_presentation_draft()
         if draft is not None:
             draft["dirty"] = True
-            self.board_draft_status.configure(text="Unconfirmed changes")
+            self.board_confirmation_message_until = 0.0
+            self.board_draft_status.configure(
+                text="Not sent — these changes are visible only to you.",
+                foreground=self.RED,
+            )
+            self.board_confirm_button.configure(text="Send changes to players", state="normal")
 
     def _board_obscuration_press(self, event: tk.Event, map_id: str) -> None:
         if map_id != self.selected_board_map_id:
@@ -1878,6 +2228,11 @@ class GameBoardWindow(tk.Tk):
                 self.board_obscure_draft_points.append(point)
             self._draw_board_map(map_id)
             return
+        if self.board_obscure_drawing:
+            self.board_obscure_draft_points = [point]
+            canvas.focus_set()
+            self._draw_board_map(map_id)
+            return
         draft = self._board_presentation_draft(map_id)
         obscurations = list((draft or {}).get("obscurations", []))
         selected = next((item for item in obscurations if str(item.get("record_id")) == self.board_selected_obscuration_id), None)
@@ -1895,6 +2250,7 @@ class GameBoardWindow(tk.Tk):
                 selected["last_updated"] = datetime.utcnow().isoformat() + "Z"
                 self.board_selected_obscuration_node = edge_index + 1
                 self._board_mark_presentation_dirty()
+                self._refresh_board_obscuration_list()
                 self._draw_board_map(map_id)
                 return
         hit = next((item for item in reversed(obscurations) if self._board_point_in_polygon(point["x"], point["y"], item["points"])), None)
@@ -1905,7 +2261,6 @@ class GameBoardWindow(tk.Tk):
         else:
             self.board_selected_obscuration_id = ""
             self.board_selected_obscuration_node = None
-            self.board_obscure_draft_points = [point]
         canvas.focus_set()
         self._draw_board_map(map_id)
 
@@ -1929,19 +2284,36 @@ class GameBoardWindow(tk.Tk):
         }
         draft["obscurations"].append(obscuration)
         self.board_obscure_draft_points = []
+        self.board_obscure_drawing = False
         self.board_selected_obscuration_id = obscuration["record_id"]
         self.board_selected_obscuration_node = None
+        self.board_obscure_button.configure(text="Draw obfuscation  [O]")
+        window = self.board_map_controls_window
+        if window is not None and window.winfo_exists():
+            window.attributes("-topmost", False)
+            window.lift()
         self._board_mark_presentation_dirty()
+        self._refresh_board_obscuration_list()
         self._draw_board_map(map_id)
         return "break"
 
     def cancel_board_obscuration(self) -> None:
         self.board_obscure_draft_points = []
         self._board_obscure_drag = None
+        if self.board_obscure_drawing:
+            self.board_obscure_drawing = False
+            self.board_obscure_button.configure(text="Draw obfuscation  [O]")
+            window = self.board_map_controls_window
+            if window is not None and window.winfo_exists():
+                window.attributes("-topmost", False)
+                window.lift()
+            if not self.board_selected_obscuration_id:
+                self.board_obscure_mode = False
+            self._sync_board_presentation_controls()
         canvas = self.board_canvases.get(self.selected_board_map_id)
         if canvas is not None and canvas.winfo_exists():
             canvas.delete("obscuration-close-cursor")
-            canvas.configure(cursor="crosshair" if self.board_obscure_mode else "arrow")
+            canvas.configure(cursor="crosshair" if self.board_obscure_drawing else "arrow")
             self._draw_board_map(self.selected_board_map_id)
 
     def board_obscure_motion(self, event: tk.Event, map_id: str) -> None:
@@ -1966,7 +2338,7 @@ class GameBoardWindow(tk.Tk):
         canvas = self.board_canvases.get(map_id)
         if canvas is not None:
             canvas.delete("obscuration-close-cursor")
-            canvas.configure(cursor="crosshair" if self.board_obscure_mode else "arrow")
+            canvas.configure(cursor="crosshair" if self.board_obscure_drawing else "arrow")
 
     def delete_board_obscuration(self) -> None:
         draft = self._board_presentation_draft()
@@ -1978,7 +2350,9 @@ class GameBoardWindow(tk.Tk):
         ]
         self.board_selected_obscuration_id = ""
         self.board_selected_obscuration_node = None
+        self.board_obscure_mode = False
         self._board_mark_presentation_dirty()
+        self._refresh_board_obscuration_list()
         self._draw_board_map(self.selected_board_map_id)
 
     def delete_board_obscuration_node(self, event: tk.Event | None = None) -> str:
@@ -1998,6 +2372,7 @@ class GameBoardWindow(tk.Tk):
         selected["last_updated"] = datetime.utcnow().isoformat() + "Z"
         self.board_selected_obscuration_node = None
         self._board_mark_presentation_dirty()
+        self._refresh_board_obscuration_list()
         self._draw_board_map(self.selected_board_map_id)
         return "break"
 
@@ -2420,7 +2795,7 @@ class GameBoardWindow(tk.Tk):
             highlightbackground=self.ACCENT,
             highlightthickness=1,
         )
-        shell.pack(side="right")
+        shell.pack(side="right", anchor="n")
         self.game_clock_buttons: list[tk.Button] = []
 
         def add_button(text: str, command: Callable[[], None] | None = None) -> tk.Button:
@@ -2500,12 +2875,13 @@ class GameBoardWindow(tk.Tk):
         self.headmaster_tool_buttons: dict[str, tk.Button] = {}
         tools = (
             ("select", "↖", "Select"),
+            ("map-tools", "▦", "Map Tools"),
             ("occupants", "●", "Occupants"),
             ("reveal", "✦", "Reveal"),
             ("roll", "⚄", "Roll"),
             ("target", "⌖", "Target"),
             ("marker", "◎", "Marker"),
-            ("tools", "⚙", "Tools"),
+            ("board-settings", "⚙", "Game Board Settings"),
         )
         for key, symbol, label in tools:
             button = tk.Button(
@@ -2540,6 +2916,16 @@ class GameBoardWindow(tk.Tk):
             self.open_occupants_dialog()
             if hasattr(self, "notice"):
                 self.set_notice("Occupant controls opened")
+            return
+        if key == "map-tools":
+            self.open_board_map_controls()
+            if hasattr(self, "notice"):
+                self.set_notice("Map Tools opened")
+            return
+        if key == "board-settings":
+            self.open_board_settings()
+            if hasattr(self, "notice"):
+                self.set_notice("Game Board Settings opened")
             return
         if hasattr(self, "notice"):
             self.set_notice(f"{label} tool selected — controls coming soon")
@@ -3061,13 +3447,14 @@ class GameBoardWindow(tk.Tk):
         sessions_card.grid(row=0, column=0, sticky="nsew", padx=(0, 8), pady=8)
         self.sessions_tree = ttk.Treeview(
             sessions_card,
-            columns=("title", "event_date", "game_date", "expires"),
+            columns=("title", "campaign", "event_date", "game_date", "expires"),
             show="headings",
             selectmode="browse",
             height=12,
         )
         for column, heading, width in (
             ("title", "Session", 145),
+            ("campaign", "Campaign", 125),
             ("event_date", "Event Date", 95),
             ("game_date", "Game World Date & Time", 145),
             ("expires", "Expires", 95),
@@ -3225,13 +3612,19 @@ class GameBoardWindow(tk.Tk):
         work: Callable[[], Any],
         success: Callable[[Any], None] | None = None,
         *,
+        failure: Callable[[Exception], None] | None = None,
         quiet: bool = False,
     ) -> None:
         def runner() -> None:
             try:
                 result = work()
             except Exception as error:
-                self.after(0, lambda captured=error: self._failed(captured, quiet))
+                self.after(
+                    0,
+                    lambda captured=error: (
+                        failure(captured) if failure else self._failed(captured, quiet)
+                    ),
+                )
             else:
                 if success:
                     self.after(0, lambda: success(result))
@@ -3301,6 +3694,7 @@ class GameBoardWindow(tk.Tk):
                 session["id"],
                 (
                     session["title"],
+                    session.get("campaign_name") or "Legacy session",
                     format_stored_date(session.get("event_date")),
                     format_stored_game_datetime(session.get("game_datetime")),
                     format_stored_date(session.get("expires_at")),
@@ -3319,7 +3713,17 @@ class GameBoardWindow(tk.Tk):
             (item for item in sessions if item["id"] == self.selected_session_id), None
         )
         self._render_game_clock(session)
-        self._render_board((state.get("boards") or {}).get(self.selected_session_id or "", {}))
+        board = deepcopy(
+            (state.get("boards") or {}).get(self.selected_session_id or "", {})
+        )
+        location_maps = list(state.get("location_maps") or [])
+        if not location_maps:
+            try:
+                location_maps = self.world_board.location_maps()
+            except (KeyError, OSError, RuntimeError, ValueError):
+                location_maps = []
+        board["maps"] = location_maps
+        self._render_board(board)
 
         pending_rows: list[tuple[str, tuple[Any, ...]]] = []
         invite_rows: list[tuple[str, tuple[Any, ...]]] = []
@@ -3337,7 +3741,8 @@ class GameBoardWindow(tk.Tk):
         if session:
             self.session_summary.configure(
                 text=(
-                    f"{session['title']}  •  Event date: {format_stored_date(session.get('event_date'))}"
+                    f"{session['title']}  •  Campaign: {session.get('campaign_name') or 'Legacy session'}"
+                    f"  •  Event date: {format_stored_date(session.get('event_date'))}"
                     f"  •  Game World Date: {format_stored_game_datetime(session.get('game_datetime'))}"
                     f"  •  Expires: {format_stored_date(session.get('expires_at'))}"
                 )
@@ -3659,11 +4064,19 @@ class GameBoardWindow(tk.Tk):
                 "Create session", "Add players before creating a session.", parent=self
             )
             return
+        campaigns = list(self.state_data.get("campaigns", []))
+        if not campaigns:
+            messagebox.showwarning(
+                "Create session",
+                "Create a campaign in Campaigner before starting a Game Board session.",
+                parent=self,
+            )
+            return
         dialog = tk.Toplevel(self)
         dialog.title("Create Session")
         dialog.transient(self)
-        dialog.geometry("650x650")
-        dialog.minsize(520, 500)
+        dialog.geometry("650x590")
+        dialog.minsize(520, 470)
         dialog.configure(background=self.PAPER)
         dialog.grab_set()
 
@@ -3690,18 +4103,102 @@ class GameBoardWindow(tk.Tk):
         ttk.Entry(body, textvariable=expiration_value, width=8).grid(
             row=2, column=2, sticky="ew", padx=(8, 0)
         )
-        ttk.Label(body, text="Game World Date", style="Card.TLabel").grid(
-            row=3, column=0, sticky="w", pady=(10, 0)
+        ttk.Label(body, text="Campaign", style="Card.TLabel").grid(
+            row=3, column=0, columnspan=3, sticky="w", pady=(10, 0)
         )
-        ttk.Label(body, text="Game time (24-hour)", style="Card.TLabel").grid(
-            row=3, column=1, sticky="w", padx=(8, 0), pady=(10, 0)
+        selected_campaign_id = tk.StringVar(
+            value=campaigns[0]["record_id"] if len(campaigns) == 1 else ""
         )
-        game_date_field = GameWorldDateField(body, date.today())
-        game_date_field.grid(row=4, column=0, sticky="ew")
-        game_time_value = tk.StringVar(value="08:00")
-        ttk.Entry(body, textvariable=game_time_value, width=8).grid(
-            row=4, column=1, sticky="ew", padx=(8, 0)
+        selected_campaign_text = tk.StringVar(
+            value=(
+                f"{campaigns[0]['name']} — starts "
+                f"{format_game_world_date(campaigns[0]['game_world_start_date'])} at 08:00"
+                if len(campaigns) == 1
+                else "No campaign chosen"
+            )
         )
+        campaign_row = ttk.Frame(body)
+        campaign_row.grid(row=4, column=0, columnspan=3, sticky="ew")
+        campaign_row.columnconfigure(0, weight=1)
+        ttk.Label(
+            campaign_row,
+            textvariable=selected_campaign_text,
+            style="Card.TLabel",
+            relief="solid",
+            padding=(7, 5),
+        ).grid(row=0, column=0, sticky="ew")
+
+        def choose_campaign() -> None:
+            picker = tk.Toplevel(dialog)
+            picker.title("Choose Campaign")
+            picker.transient(dialog)
+            picker.grab_set()
+            picker.geometry("520x420")
+            picker.configure(background=self.PAPER)
+            shell = ttk.Frame(picker, padding=12)
+            shell.pack(fill="both", expand=True)
+            ttk.Label(
+                shell,
+                text="Search campaigns",
+                style="Card.TLabel",
+            ).pack(anchor="w")
+            query = tk.StringVar()
+            entry = ttk.Entry(shell, textvariable=query)
+            entry.pack(fill="x", pady=(3, 7))
+            results = tk.Listbox(
+                shell,
+                exportselection=False,
+                background="#fff8e6",
+                foreground=self.INK,
+                selectbackground=self.ACCENT,
+                selectforeground="#fff8e7",
+            )
+            results.pack(fill="both", expand=True)
+            visible: list[dict[str, Any]] = []
+
+            def redraw(*_args) -> None:
+                needle = query.get().strip().casefold()
+                visible[:] = [
+                    item for item in campaigns if needle in item["name"].casefold()
+                ]
+                results.delete(0, "end")
+                for campaign in visible:
+                    results.insert(
+                        "end",
+                        f"{campaign['name']} — starts "
+                        f"{format_game_world_date(campaign['game_world_start_date'])} at 08:00",
+                    )
+                if visible:
+                    results.selection_set(0)
+
+            def accept(_event: tk.Event | None = None) -> None:
+                selected = results.curselection()
+                if not selected:
+                    return
+                campaign = visible[selected[0]]
+                selected_campaign_id.set(campaign["record_id"])
+                selected_campaign_text.set(
+                    f"{campaign['name']} — starts "
+                    f"{format_game_world_date(campaign['game_world_start_date'])} at 08:00"
+                )
+                picker.destroy()
+
+            query.trace_add("write", redraw)
+            results.bind("<Double-Button-1>", accept)
+            results.bind("<Return>", accept)
+            actions = ttk.Frame(shell)
+            actions.pack(fill="x", pady=(7, 0))
+            ttk.Button(actions, text="Cancel", style="Quiet.TButton", command=picker.destroy).pack(side="right")
+            ttk.Button(actions, text="Choose", command=accept).pack(side="right", padx=(0, 6))
+            redraw()
+            entry.focus_set()
+
+        ttk.Button(
+            campaign_row,
+            text="Choose Campaign…",
+            style="Quiet.TButton",
+            command=choose_campaign,
+        ).grid(row=0, column=1, padx=(8, 0))
 
         ttk.Label(body, text="Players", style="Section.TLabel").grid(
             row=5, column=0, columnspan=3, sticky="w", pady=(16, 6)
@@ -3776,13 +4273,16 @@ class GameBoardWindow(tk.Tk):
                     "Create session", "Check at least one player.", parent=dialog
                 )
                 return
+            if not selected_campaign_id.get():
+                messagebox.showwarning(
+                    "Create session", "Choose a campaign.", parent=dialog
+                )
+                return
             payload = {
                 "title": title_value.get().strip(),
+                "campaign_id": selected_campaign_id.get(),
                 "event_date": event_date_field.get_iso(),
                 "game_day": event_date_field.get_iso(),
-                "game_datetime": (
-                    f"{game_date_field.get_iso()}T{game_time_value.get().strip()}"
-                ),
                 "expiration_time": expiration_value.get().strip(),
                 "contact_ids": [contact_id for contact_id in contact_ids if contact_id in checked],
             }

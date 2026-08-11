@@ -4,12 +4,14 @@ from typing import Any
 
 from .errors import DataValidationError
 from .board import validate_world_board
+from .campaigns import validate_campaigns
 
 
 REQUIRED_COLLECTIONS = {
     "db.json": {"wand_woods", "wand_cores", "wands", "books", "spells"},
     "world.json": {"people", "locations", "organizations", "events"},
     "periods.json": {"period_groups"},
+    "campaign.json": {"campaigns"},
 }
 
 
@@ -53,10 +55,18 @@ def validate_document(filename: str, data: Any) -> None:
                 validate_world_board(data)
             except (TypeError, ValueError) as error:
                 raise DataValidationError(str(error)) from error
-    else:
+    elif filename == "periods.json":
         if not isinstance(data.get("schema_version"), int):
             raise DataValidationError("periods.json requires an integer schema_version")
         groups = data["period_groups"]
         _validate_record_list(groups, "period_groups")
         for group in groups:
             _validate_record_list(group.get("periods"), f"period_groups[{group['record_id']}].periods")
+    else:
+        if not isinstance(data.get("schema_version"), int):
+            raise DataValidationError("campaign.json requires an integer schema_version")
+        _validate_record_list(data["campaigns"], "campaigns")
+        try:
+            validate_campaigns(data)
+        except (TypeError, ValueError) as error:
+            raise DataValidationError(str(error)) from error

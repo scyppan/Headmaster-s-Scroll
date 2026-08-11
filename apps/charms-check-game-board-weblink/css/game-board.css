@@ -11,10 +11,10 @@
   --ccgb-green: #4e7d42;
   color: var(--ccgb-ink);
   font: 15px/1.45 "Segoe UI", system-ui, sans-serif;
-  margin: 18px auto;
-  max-width: 1780px;
+  margin: 7px;
+  max-width: none;
   transform: none;
-  width: 100%;
+  width: calc(100% - 14px);
 }
 
 #gameboard * { box-sizing: border-box; }
@@ -95,7 +95,11 @@
   background: var(--ccgb-paper-light);
   border: 1px solid #b99358;
   box-shadow: 0 10px 35px rgba(52, 31, 12, 0.25);
-  min-height: 720px;
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 76px);
+  height: calc(100dvh - 76px);
+  min-height: 620px;
   overflow: hidden;
   position: relative;
 }
@@ -105,6 +109,7 @@
   background: linear-gradient(180deg, #f7eac8, #e8d4a2);
   border-bottom: 1px solid #b9975f;
   display: grid;
+  flex: 0 0 auto;
   gap: 12px;
   grid-template-columns: auto minmax(165px, auto) minmax(240px, 1fr) auto auto auto;
   min-height: 72px;
@@ -179,13 +184,15 @@
 #gameboard .ccgb-quality-dot.disconnected { background: #777; }
 
 #gameboard .ccgb-workspace {
-  --ccgb-nav-width: 220px;
-  --ccgb-details-width: 250px;
-  --ccgb-chat-width: 330px;
+  --ccgb-nav-width: 196px;
+  --ccgb-details-width: 260px;
+  --ccgb-chat-width: 296px;
   display: grid;
-  grid-template-columns: var(--ccgb-nav-width) minmax(360px, 1fr) var(--ccgb-details-width) var(--ccgb-chat-width);
-  height: min(760px, calc(100vh - 150px));
-  min-height: 620px;
+  flex: 1 1 auto;
+  grid-template-columns: var(--ccgb-nav-width) minmax(0, 1fr) var(--ccgb-details-width) var(--ccgb-chat-width);
+  height: auto;
+  min-height: 0;
+  min-width: 0;
   position: relative;
   transition: grid-template-columns 180ms ease;
   z-index: 2;
@@ -193,8 +200,16 @@
 
 #gameboard .ccgb-workspace.nav-collapsed { --ccgb-nav-width: 68px; }
 #gameboard .ccgb-workspace.details-collapsed { --ccgb-details-width: 0px; }
-#gameboard .ccgb-workspace.chat-collapsed { --ccgb-chat-width: 52px; }
+#gameboard .ccgb-workspace.chat-collapsed { --ccgb-chat-width: 48px; }
 #gameboard .ccgb-workspace.details-collapsed .ccgb-details { display: none; }
+
+#gameboard.ccgb-board-active .ccgb-workspace {
+  grid-template-columns: var(--ccgb-nav-width) minmax(0, 1fr) var(--ccgb-chat-width);
+}
+
+#gameboard.ccgb-board-active .ccgb-details { display: none; }
+#gameboard.ccgb-board-active .ccgb-main { grid-column: 2; }
+#gameboard.ccgb-board-active .ccgb-chat { grid-column: 3; }
 
 #gameboard .ccgb-profile-nav,
 #gameboard .ccgb-details,
@@ -295,6 +310,8 @@
   background:
     radial-gradient(circle at 25% 10%, rgba(255, 255, 255, 0.54), transparent 30%),
     var(--ccgb-paper-light);
+  display: flex;
+  flex-direction: column;
   min-width: 0;
   overflow: auto;
   padding: 28px clamp(18px, 3vw, 42px);
@@ -543,13 +560,15 @@
 }
 
 #gameboard .ccgb-board-content {
-  height: min(650px, calc(100vh - 290px));
+  flex: 1 1 auto;
+  height: auto;
   min-height: 420px;
+  min-width: 0;
 }
 
 #gameboard.ccgb-board-active .ccgb-board-content {
-  height: calc(100vh - 138px);
-  min-height: 360px;
+  height: auto;
+  min-height: 0;
 }
 
 #gameboard .ccgb-map-shell {
@@ -559,6 +578,7 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
+  min-width: 0;
   overflow: hidden;
 }
 
@@ -599,6 +619,8 @@
   touch-action: none;
 }
 
+#gameboard .ccgb-map-viewport.is-camera-panning { cursor: grabbing; }
+
 #gameboard .ccgb-map-stage {
   aspect-ratio: 3840 / 2960;
   background: #30251c;
@@ -609,6 +631,7 @@
   transform-origin: center;
   touch-action: none;
   user-select: none;
+  will-change: transform;
 }
 
 #gameboard .ccgb-map-stage > img {
@@ -775,15 +798,30 @@
   padding: 1px 0;
 }
 
-@media (max-width: 1180px) {
-  #gameboard .ccgb-workspace { --ccgb-details-width: 0px; --ccgb-chat-width: 300px; }
+@media (max-width: 1500px) {
+  #gameboard .ccgb-workspace {
+    --ccgb-nav-width: 184px;
+    --ccgb-details-width: 0px;
+    --ccgb-chat-width: 288px;
+  }
   #gameboard .ccgb-details { display: none; }
+}
+
+@media (max-width: 1180px) {
+  #gameboard .ccgb-workspace {
+    --ccgb-nav-width: 168px;
+    --ccgb-chat-width: 272px;
+  }
   #gameboard .ccgb-toolbar { grid-template-columns: auto minmax(130px, auto) minmax(180px, 1fr) auto auto auto; }
 }
 
 @media (max-width: 820px) {
-  #gameboard { margin-top: 8px; width: 100%; }
-  #gameboard .ccgb-board { min-height: 650px; }
+  #gameboard { margin: 7px; width: calc(100% - 14px); }
+  #gameboard .ccgb-board {
+    height: calc(100vh - 70px);
+    height: calc(100dvh - 70px);
+    min-height: 600px;
+  }
   #gameboard .ccgb-toolbar {
     grid-template-columns: auto 1fr auto auto;
     padding: 10px 12px;
@@ -793,7 +831,7 @@
   #gameboard .ccgb-search { grid-column: 1 / -1; grid-row: 2; }
   #gameboard .ccgb-workspace {
     --ccgb-nav-width: 62px;
-    --ccgb-chat-width: 52px;
+    --ccgb-chat-width: 48px;
     grid-template-columns: var(--ccgb-nav-width) minmax(0, 1fr);
     height: auto;
     min-height: 620px;
@@ -806,12 +844,12 @@
     position: absolute;
     right: 0;
     top: 0;
-    width: 52px;
+    width: 48px;
     z-index: 8;
   }
   #gameboard .ccgb-workspace:not(.chat-collapsed) .ccgb-chat {
-    max-width: 340px;
-    width: calc(100vw - 78px);
+    max-width: 296px;
+    width: 296px;
   }
   #gameboard .ccgb-player-name,
   #gameboard .ccgb-nav-label { display: none; }

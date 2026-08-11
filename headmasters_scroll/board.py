@@ -452,6 +452,105 @@ class WorldBoardRepository:
             raise RuntimeError("The world changed in the same place; refresh before trying again")
         return deepcopy(session.data)
 
+    @staticmethod
+    def _location_maps(document: dict[str, Any]) -> list[dict[str, Any]]:
+        """Return only maps explicitly assigned by locations or their floors.
+
+        The top-level maps collection holds stable records and asset metadata; it
+        is not a discoverable map catalog. Locations are authoritative.
+        """
+
+        location_records = [
+            item for item in document.get("locations", []) if isinstance(item, dict)
+        ]
+        locations = {
+            str(item.get("record_id", "") or ""): item for item in location_records
+        }
+        maps_by_id = {
+            item["record_id"]: item
+            for item in (normalize_map(value) for value in document.get("maps", []))
+        }
+
+        def ancestry(location_id: str) -> list[dict[str, str]]:
+            chain: list[dict[str, str]] = []
+            seen: set[str] = set()
+            current_id = location_id
+            while current_id and current_id not in seen:
+                seen.add(current_id)
+                current = locations.get(current_id)
+                if current is None:
+                    break
+                chain.append({
+                    "record_id": current_id,
+                    "name": str(current.get("name", "") or "Unnamed location"),
+                })
+                current_id = str(current.get("parent_location_id", "") or "")
+            chain.reverse()
+            return chain
+
+        assigned: dict[str, dict[str, Any]] = {}
+
+        def assign(
+            location: dict[str, Any],
+            map_id: str,
+            *,
+            is_default: bool = False,
+            floor: dict[str, Any] | None = None,
+        ) -> None:
+            location_id = str(location.get("record_id", "") or "")
+            source = maps_by_id.get(map_id)
+            if source is None or source.get("location_id") != location_id:
+                return
+            entry = assigned.get(map_id)
+            if entry is None:
+                location_ancestry = ancestry(location_id)
+                entry = deepcopy(source)
+                entry.update({
+                    "location_name": str(location.get("name", "") or "Unnamed location"),
+                    "parent_location_id": str(location.get("parent_location_id", "") or ""),
+                    "location_ancestry": location_ancestry,
+                    "floor_name": "",
+                    "is_location_default": False,
+                    "is_floor_primary": False,
+                })
+                assigned[map_id] = entry
+            if is_default:
+                entry["is_location_default"] = True
+            if floor is not None:
+                entry["is_floor_primary"] = True
+                entry["floor_name"] = str(floor.get("name", "") or "Unnamed floor")
+
+        for location in location_records:
+            default_map_id = str(location.get("default_map_id", "") or "")
+            if default_map_id:
+                assign(location, default_map_id, is_default=True)
+            if bool(location.get("has_floors", location.get("floors"))):
+                floors = sorted(
+                    (item for item in location.get("floors", []) or [] if isinstance(item, dict)),
+                    key=lambda item: (int(item.get("sort_order", 0)), str(item.get("name", ""))),
+                )
+                for floor in floors:
+                    primary_map_id = str(floor.get("primary_map_id", "") or "")
+                    if primary_map_id:
+                        assign(location, primary_map_id, floor=floor)
+
+        return sorted(
+            assigned.values(),
+            key=lambda item: (
+                tuple(
+                    str(location.get("name", "")).casefold()
+                    for location in item.get("location_ancestry", [])
+                ),
+                str(item.get("floor_name", "")).casefold(),
+                str(item.get("record_id", "")),
+            ),
+        )
+
+    def location_maps(self) -> list[dict[str, Any]]:
+        """Return maps assigned through the canonical location hierarchy."""
+
+        return self._location_maps(self.load().data)
+
     def snapshot(
         self,
         game_datetime: str,
@@ -461,28 +560,18 @@ class WorldBoardRepository:
     ) -> dict[str, Any]:
         document = self.load().data
         player_ids = {str(value) for value in player_character_ids if value}
-        maps = [normalize_map(item) for item in document.get("maps", [])]
+        maps = self._location_maps(document)
         locations = {
             str(item.get("record_id")): item
             for item in document.get("locations", [])
             if isinstance(item, dict)
         }
-        for map_record in maps:
-            location = locations.get(map_record["location_id"], {})
-            map_record["location_name"] = str(location.get("name", "") or map_record["name"])
-            map_record["floor_name"] = next(
-                (
-                    str(floor.get("name", "") or "")
-                    for floor in location.get("floors", []) or []
-                    if str(floor.get("record_id")) == map_record.get("floor_id")
-                ),
-                "",
-            )
         visible_map_ids = {
             item["record_id"]
             for item in maps
             if item.get("players_published")
         }
+        assigned_map_ids = {item["record_id"] for item in maps}
         if for_players:
             maps = [item for item in maps if item["record_id"] in visible_map_ids]
             public_maps = []
@@ -537,7 +626,7 @@ class WorldBoardRepository:
             person_id = str(person.get("record_id", "") or "")
             board = normalize_person_board(person.get("board"))
             placement = board.get("placement")
-            if not placement:
+            if not placement or placement["map_id"] not in assigned_map_ids:
                 continue
             is_player = person_id in player_ids or bool(person.get("player_character"))
             if for_players and (
@@ -592,6 +681,10 @@ class WorldBoardRepository:
 
     def move_person(self, person_id: str, map_id: str, x: float, y: float) -> dict[str, Any]:
         session = self.load()
+        if map_id not in {
+            item["record_id"] for item in self._location_maps(session.data)
+        }:
+            raise KeyError("That map is not assigned to a location or floor")
         map_record = next((item for item in session.data["maps"] if item.get("record_id") == map_id), None)
         person = next((item for item in session.data["people"] if item.get("record_id") == person_id), None)
         if map_record is None or person is None:
@@ -641,6 +734,10 @@ class WorldBoardRepository:
 
     def set_map_published(self, map_id: str, published: bool) -> dict[str, Any]:
         session = self.load()
+        if map_id not in {
+            item["record_id"] for item in self._location_maps(session.data)
+        }:
+            raise KeyError("That map is not assigned to a location or floor")
         record = next((item for item in session.data["maps"] if item.get("record_id") == map_id), None)
         if record is None:
             raise KeyError("Unknown map")
@@ -659,6 +756,10 @@ class WorldBoardRepository:
         preview_color: str = "#ff0000",
     ) -> dict[str, Any]:
         session = self.load()
+        if map_id not in {
+            item["record_id"] for item in self._location_maps(session.data)
+        }:
+            raise KeyError("That map is not assigned to a location or floor")
         record = next((item for item in session.data["maps"] if item.get("record_id") == map_id), None)
         if record is None:
             raise KeyError("Unknown map")
@@ -681,6 +782,10 @@ class WorldBoardRepository:
         y: float,
     ) -> dict[str, Any]:
         session = self.load()
+        if source_map_id not in {
+            item["record_id"] for item in self._location_maps(session.data)
+        }:
+            raise KeyError("That map is not assigned to a location or floor")
         source = next((item for item in session.data["maps"] if item.get("record_id") == source_map_id), None)
         person = next((item for item in session.data["people"] if item.get("record_id") == person_id), None)
         if source is None or person is None:

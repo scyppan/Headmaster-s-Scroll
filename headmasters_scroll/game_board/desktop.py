@@ -814,6 +814,20 @@ class GameBoardWindow(tk.Tk):
             pady=9,
         )
         self.admission_alert_text.pack(side="left", fill="x", expand=True)
+        self.admission_quick_approve_button = tk.Button(
+            self.admission_alert,
+            text="Approve",
+            background=self.GREEN,
+            foreground="white",
+            activebackground="#31553a",
+            activeforeground="white",
+            relief="flat",
+            font=("Segoe UI", 9, "bold"),
+            padx=12,
+            pady=7,
+            command=self.admit_all_pending,
+        )
+        self.admission_quick_approve_button.pack(side="right", padx=(0, 6), pady=5)
         tk.Button(
             self.admission_alert,
             text="Review request",
@@ -2007,7 +2021,8 @@ class GameBoardWindow(tk.Tk):
         token_scale = max(0.002, min(0.03, float(record.get("token_scale", 0.0055))))
         token_diameter = max(6, round(draw_width * token_scale))
         portrait_diameter = token_diameter
-        dot_diameter = max(4, round(token_diameter * 0.55))
+        # Dots must remain easy to find and select without changing portrait size.
+        dot_diameter = max(8, round(token_diameter * 0.9))
         for key in [key for key in self._board_portraits if key.startswith(f"{map_id}:")]:
             self._board_portraits.pop(key, None)
         for actor in self.board_snapshot.get("actors", []):
@@ -4041,6 +4056,9 @@ class GameBoardWindow(tk.Tk):
             names = [str(values[0]) for _request_id, values in pending_rows]
             label = f"{count} player{'s are' if count != 1 else ' is'} waiting for approval: {', '.join(names)}"
             self.admission_alert_text.configure(text=label)
+            self.admission_quick_approve_button.configure(
+                text="Approve" if count == 1 else "Approve all"
+            )
             if not self.admission_alert.winfo_manager():
                 self.admission_alert.pack(
                     fill="x", padx=12, pady=(0, 6), before=self.workspace

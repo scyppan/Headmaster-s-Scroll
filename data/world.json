@@ -5569,8 +5569,8 @@
           "location_id": "de9bca8f-8fea-4db4-a040-131af6804693",
           "floor_id": "",
           "map_id": "4fc2ff78-e528-4ebd-b4db-9b34fc803622",
-          "x": 0.9872824412370469,
-          "y": 0.3146926369595356
+          "x": 0.9839723916960044,
+          "y": 0.31378861204932196
         },
         "visibility": "players",
         "display_mode": "dot",
@@ -124031,8 +124031,8 @@
   ],
   "board_groups": [],
   "_headmasters_scroll": {
-    "revision_id": "d6ccabb9-8713-43dc-81f0-528733a3f42f",
-    "last_modified_at": "2026-08-11T11:54:31.086612Z",
+    "revision_id": "f3a61165-2a2b-42ef-a924-8d02e5a824a0",
+    "last_modified_at": "2026-08-11T12:14:45.309022Z",
     "last_modified_by": "game-board"
   }
 }

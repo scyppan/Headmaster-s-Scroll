@@ -714,9 +714,10 @@
 
 #gameboard .ccgb-board-actor {
   --actor-color: #808080;
+  appearance: none;
   align-items: center;
   background: var(--actor-color);
-  border: 2px solid #3d2a1b;
+  border: var(--map-actor-border, 0.12px) solid #3d2a1b;
   border-radius: 50%;
   color: #fff8e7;
   display: flex;
@@ -749,60 +750,60 @@
 #gameboard .ccgb-board-actor.is-nameplate {
   background: #d6ad52;
   border-color: #382719;
-  border-radius: 5px;
+  border-radius: var(--map-label-radius, 0.15px);
   color: var(--ccgb-ink);
-  font-size: 12px;
+  font-size: var(--map-label-font-size, 0.65px);
   font-weight: 800;
   height: auto;
-  min-width: var(--map-nameplate-width, 92px);
-  padding: 6px 9px;
+  min-width: var(--map-nameplate-width, 15px);
+  padding: var(--map-label-pad-y, 0.12px) var(--map-label-pad-x, 0.25px);
   width: auto;
 }
 
 #gameboard .ccgb-board-actor.is-controlled {
   cursor: grab;
-  outline: 2px solid #fff4c8;
-  outline-offset: 2px;
+  outline: var(--map-control-outline, 0.12px) solid #fff4c8;
+  outline-offset: var(--map-control-offset, 0.1px);
 }
 
 #gameboard .ccgb-board-actor.is-controlled:active { cursor: grabbing; }
 
 #gameboard .ccgb-actor-label {
   background: #d6ad52;
-  border: 1px solid #382719;
-  border-radius: 3px;
+  border: var(--map-label-border, 0.06px) solid #382719;
+  border-radius: var(--map-label-radius, 0.15px);
   color: #000;
-  font-size: 11px;
+  font-size: var(--map-label-font-size, 0.65px);
   font-weight: 700;
   left: 50%;
-  max-width: 140px;
+  max-width: var(--map-label-max-width, 15px);
   overflow: hidden;
-  padding: 2px 5px;
+  padding: var(--map-label-pad-y, 0.12px) var(--map-label-pad-x, 0.25px);
   pointer-events: none;
   position: absolute;
   text-overflow: ellipsis;
-  top: calc(100% + 5px);
+  top: calc(100% + var(--map-label-gap, 0.4px));
   transform: translate(-50%, 0);
   white-space: nowrap;
 }
 
 #gameboard .ccgb-actor-indicators {
+  bottom: calc(100% + var(--map-indicator-offset, 0.4px));
   display: flex;
-  gap: 2px;
+  gap: var(--map-indicator-gap, 0.22px);
   left: 50%;
   pointer-events: auto;
   position: absolute;
-  top: -9px;
   transform: translateX(-50%);
   z-index: 2;
 }
 
 #gameboard .ccgb-actor-indicators > span {
-  border: 1px solid #382719;
+  border: var(--map-indicator-border, 0.06px) solid #382719;
   border-radius: 50%;
   display: block;
-  height: 5px;
-  width: 5px;
+  height: var(--map-indicator-size, 0.55px);
+  width: var(--map-indicator-size, 0.55px);
 }
 
 #gameboard .ccgb-actor-indicators .is-heavy { background: #c62828; }

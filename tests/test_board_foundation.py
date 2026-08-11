@@ -1,3 +1,4 @@
+import importlib.util
 import json
 import tempfile
 import unittest
@@ -7,10 +8,11 @@ from pathlib import Path
 from PIL import Image
 from fastapi.testclient import TestClient
 
-from headmasters_scroll.assets import AssetStore
+from headmasters_scroll.assets import AssetStore, MAP_CANVAS_SIZE
 from headmasters_scroll.board import (
     WorldBoardRepository,
     active_faction_ids,
+    normalize_map,
     validate_world_board,
 )
 from headmasters_scroll.store import SharedJsonStore
@@ -122,7 +124,11 @@ class BoardFoundationTests(unittest.TestCase):
         one = self.assets.import_map("map-1", first)
         two = self.assets.import_map("map-1", second)
         self.assertEqual(one["asset_id"], two["asset_id"])
-        self.assertEqual((two["width"], two["height"]), (500, 1000))
+        self.assertEqual((two["width"], two["height"]), MAP_CANVAS_SIZE)
+        self.assertEqual(two["file_extension"], ".png")
+        self.assertEqual((two["source_width"], two["source_height"]), (500, 1000))
+        with Image.open(self.assets.resolve(two["asset_id"], two)) as stored:
+            self.assertEqual(stored.size, MAP_CANVAS_SIZE)
         moved = self.repository.move_person("pc-1", "map-1", 0.42, 0.61)
         self.assertEqual((moved["x"], moved["y"]), (0.42, 0.61))
 
@@ -147,6 +153,65 @@ class BoardFoundationTests(unittest.TestCase):
         self.assertEqual(npc["name"], "Unknown")
         self.assertEqual(npc["faction_color"], "#808080")
 
+    def test_regions_validate_persist_and_never_enter_player_snapshot(self):
+        region = {
+            "record_id": "region-gringotts",
+            "name": "Gringotts",
+            "type_label": "Bank",
+            "behavior_type": "shop",
+            "hover_text": "The most famous wizarding bank in the world.",
+            "points": [
+                {"x": 0.1, "y": 0.2},
+                {"x": 0.8, "y": 0.2},
+                {"x": 0.7, "y": 0.7},
+            ],
+            "target_location_id": "",
+            "created_at": "2026-08-10T00:00:00Z",
+            "last_updated": "2026-08-10T00:00:00Z",
+        }
+        session = self.repository.load()
+        session.data["maps"][0]["regions"] = [region]
+        self.repository.save(session, "mapper")
+        reloaded = self.repository.load().data["maps"][0]["regions"]
+        self.assertEqual(reloaded, [region])
+        admin = self.repository.snapshot("2000-06-01T12:00")
+        player = self.repository.snapshot("2000-06-01T12:00", player_character_ids=["pc-1"], for_players=True)
+        self.assertEqual(admin["maps"][0]["regions"][0]["name"], "Gringotts")
+        self.assertNotIn("regions", player["maps"][0])
+
+    def test_region_validation_rejects_bad_geometry_and_destinations(self):
+        base = {
+            "record_id": "region-1",
+            "name": "Door",
+            "type_label": "Exit",
+            "behavior_type": "travel",
+            "hover_text": "Leave",
+            "points": [{"x": 0.1, "y": 0.1}, {"x": 0.8, "y": 0.1}, {"x": 0.5, "y": 0.8}],
+            "target_location_id": "castle",
+        }
+        document = world_document()
+        document["maps"][0]["regions"] = [base]
+        validate_world_board(document)
+        broken = world_document()
+        broken_region = dict(base, behavior_type="shop")
+        broken["maps"][0]["regions"] = [broken_region]
+        with self.assertRaises(ValueError):
+            validate_world_board(broken)
+        repeated = world_document()
+        repeated_region = dict(base, points=[base["points"][0], base["points"][1], base["points"][0]])
+        repeated["maps"][0]["regions"] = [repeated_region]
+        with self.assertRaises(ValueError):
+            validate_world_board(repeated)
+
+    def test_legacy_map_normalizes_to_empty_regions(self):
+        self.assertEqual(normalize_map(world_document()["maps"][0])["regions"], [])
+
+    def test_location_records_are_unique_for_single_default_map_ownership(self):
+        document = world_document()
+        document["locations"].append(dict(document["locations"][0]))
+        with self.assertRaises(ValueError):
+            validate_world_board(document)
+
     def test_groups_require_one_location_and_dissolve_when_member_leaves(self):
         group = self.repository.create_group("Explorers", "castle", ["pc-1", "npc-1"])
         self.assertEqual(len(group["members"]), 2)
@@ -170,6 +235,40 @@ class BoardFoundationTests(unittest.TestCase):
         second.data["people"][0]["board"]["placement"]["x"] = 0.9
         with self.assertRaises(RuntimeError):
             self.repository.save(second)
+
+    def test_map_import_rejects_unsafe_svg_before_replacing_asset(self):
+        original = self.directory / "original.png"
+        Image.new("RGB", (200, 100), "green").save(original)
+        metadata = self.assets.import_map("map-1", original)
+        output = self.assets.resolve(metadata["asset_id"], metadata)
+        old_bytes = output.read_bytes()
+        unsafe = self.directory / "unsafe.svg"
+        unsafe.write_text(
+            '<svg width="200" height="100" xmlns="http://www.w3.org/2000/svg">'
+            '<image href="https://example.com/private.png"/></svg>',
+            encoding="utf-8",
+        )
+        with self.assertRaises(ValueError):
+            self.assets.import_map("map-1", unsafe)
+        self.assertEqual(output.read_bytes(), old_bytes)
+
+    @unittest.skipUnless(importlib.util.find_spec("resvg_py"), "resvg_py is installed with project dependencies")
+    def test_svg_import_renders_png_and_keeps_source(self):
+        source = self.directory / "base.svg"
+        source.write_text(
+            '<svg width="320" height="180" xmlns="http://www.w3.org/2000/svg">'
+            '<rect width="320" height="180" fill="#663399"/></svg>',
+            encoding="utf-8",
+        )
+        original = source.read_bytes()
+        metadata = self.assets.import_map("map-svg", source)
+        self.assertEqual(metadata["file_extension"], ".png")
+        self.assertEqual((metadata["width"], metadata["height"]), MAP_CANVAS_SIZE)
+        self.assertEqual((metadata["source_width"], metadata["source_height"]), (320, 180))
+        with Image.open(self.assets.resolve(metadata["asset_id"], metadata)) as image:
+            self.assertEqual(image.format, "PNG")
+            self.assertEqual(image.size, MAP_CANVAS_SIZE)
+        self.assertEqual(source.read_bytes(), original)
 
 
 class ProtectedAssetApiTests(unittest.TestCase):

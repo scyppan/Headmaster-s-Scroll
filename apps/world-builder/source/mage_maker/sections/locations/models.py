@@ -413,6 +413,12 @@ def normalize_location_record(values):
     ).strip()
     normalized["notes"] = str(normalized.get("notes", "") or "").strip()
     normalized["is_building"] = bool(normalized.get("is_building", False))
+    normalized["has_floors"] = bool(
+        normalized.get(
+            "has_floors",
+            normalized.get("floors") or normalized.get("is_building", False),
+        )
+    )
     floors = []
     floor_ids = set()
     for index, floor in enumerate(normalized.get("floors", []) or []):
@@ -432,8 +438,8 @@ def normalize_location_record(values):
             "sort_order": index,
             "primary_map_id": str(floor.get("primary_map_id", "") or "").strip(),
         })
-    if floors and not normalized["is_building"]:
-        raise ValueError("A location with named floors must be marked as a building.")
+    if floors and not normalized["has_floors"]:
+        raise ValueError("A location with named floors must have Has floors enabled.")
     normalized["floors"] = floors
     normalized["default_map_id"] = str(
         normalized.get("default_map_id", "") or ""

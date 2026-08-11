@@ -10,6 +10,7 @@ from .assets import AssetStore
 
 DISPLAY_MODES = {"dot", "token"}
 VISIBILITY_MODES = {"players", "headmaster"}
+REGION_BEHAVIOR_TYPES = {"area", "shop", "travel", "library", "other"}
 
 
 def utc_now() -> str:
@@ -89,6 +90,62 @@ def normalize_floor(value: Any, index: int = 0) -> dict[str, Any]:
     }
 
 
+def normalize_region(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise ValueError("Every map region must be an object")
+    result = deepcopy(value)
+    record_id = str(result.get("record_id", "") or "").strip()
+    name = str(result.get("name", "") or "").strip()
+    type_label = str(result.get("type_label", "") or "").strip()
+    behavior_type = str(result.get("behavior_type", "area") or "area").strip().casefold()
+    if not record_id or not name:
+        raise ValueError("Every map region requires a stable ID and name")
+    if behavior_type not in REGION_BEHAVIOR_TYPES:
+        raise ValueError("Unknown map region behavior type")
+    points = result.get("points", [])
+    if not isinstance(points, list) or len(points) < 3:
+        raise ValueError("Every completed map region requires at least three nodes")
+    normalized_points: list[dict[str, float]] = []
+    seen_points: set[tuple[float, float]] = set()
+    for point in points:
+        if not isinstance(point, dict):
+            raise ValueError("Every map region node must be an object")
+        try:
+            x = float(point.get("x"))
+            y = float(point.get("y"))
+        except (TypeError, ValueError) as error:
+            raise ValueError("Map region coordinates must be numbers") from error
+        if not 0.0 <= x <= 1.0 or not 0.0 <= y <= 1.0:
+            raise ValueError("Map region coordinates must be between 0 and 1")
+        key = (x, y)
+        if key in seen_points:
+            raise ValueError("A map region cannot repeat a node")
+        seen_points.add(key)
+        normalized_points.append({"x": x, "y": y})
+    signed_area = sum(
+        point["x"] * normalized_points[(index + 1) % len(normalized_points)]["y"]
+        - normalized_points[(index + 1) % len(normalized_points)]["x"] * point["y"]
+        for index, point in enumerate(normalized_points)
+    )
+    if abs(signed_area) < 1e-12:
+        raise ValueError("A map region polygon must enclose an area")
+    target_location_id = str(result.get("target_location_id", "") or "").strip()
+    if behavior_type != "travel" and target_location_id:
+        raise ValueError("Only travel regions may specify a destination")
+    result.update(
+        record_id=record_id,
+        name=name,
+        type_label=type_label,
+        behavior_type=behavior_type,
+        hover_text=str(result.get("hover_text", "") or "").strip(),
+        points=normalized_points,
+        target_location_id=target_location_id if behavior_type == "travel" else "",
+        created_at=str(result.get("created_at", "") or "").strip(),
+        last_updated=str(result.get("last_updated", "") or "").strip(),
+    )
+    return result
+
+
 def normalize_map(value: Any) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError("Every map must be an object")
@@ -111,6 +168,12 @@ def normalize_map(value: Any) -> dict[str, Any]:
         if int(asset.get("width", 0)) <= 0 or int(asset.get("height", 0)) <= 0:
             raise ValueError("Map asset dimensions must be positive")
     result["asset"] = deepcopy(asset) if asset else None
+    regions = result.get("regions", [])
+    if regions is None:
+        regions = []
+    if not isinstance(regions, list):
+        raise ValueError("Map regions must be a list")
+    result["regions"] = [normalize_region(region) for region in regions]
     return result
 
 
@@ -157,6 +220,9 @@ def ensure_board_collections(document: dict[str, Any]) -> bool:
             if key not in location:
                 location[key] = deepcopy(default)
                 changed = True
+        if "has_floors" not in location:
+            location["has_floors"] = bool(location.get("floors") or location.get("is_building"))
+            changed = True
     return changed
 
 
@@ -207,15 +273,30 @@ def active_faction_ids(document: dict[str, Any], person_id: str, game_datetime: 
 
 def validate_world_board(document: dict[str, Any]) -> None:
     maps = [normalize_map(item) for item in document.get("maps", [])]
+    if len({item["record_id"] for item in maps}) != len(maps):
+        raise ValueError("Map IDs must be unique")
     map_by_id = {item["record_id"]: item for item in maps}
-    locations = {
-        str(item.get("record_id")): item
-        for item in document.get("locations", [])
-        if isinstance(item, dict)
-    }
+    location_records = [item for item in document.get("locations", []) if isinstance(item, dict)]
+    location_ids = [str(item.get("record_id")) for item in location_records]
+    if len(set(location_ids)) != len(location_ids):
+        raise ValueError("Location IDs must be unique so each location has only one default map")
+    locations = {str(item.get("record_id")): item for item in location_records}
+    region_ids: set[str] = set()
+    for map_record in maps:
+        for region in map_record["regions"]:
+            region_id = region["record_id"]
+            if region_id in region_ids:
+                raise ValueError("Map region IDs must be unique across the world")
+            region_ids.add(region_id)
+            target_location_id = region.get("target_location_id", "")
+            if target_location_id and target_location_id not in locations:
+                raise ValueError("A travel region destination must reference an existing location")
     floor_by_id: dict[str, tuple[str, dict[str, Any]]] = {}
     for location_id, location in locations.items():
         floors = [normalize_floor(item, index) for index, item in enumerate(location.get("floors", []) or [])]
+        has_floors = bool(location.get("has_floors", location.get("is_building", False) or floors))
+        if floors and not has_floors:
+            raise ValueError("A location with named floors must have Has floors enabled")
         if len({item["record_id"] for item in floors}) != len(floors):
             raise ValueError("Floor IDs must be unique within a location")
         for floor in floors:
@@ -324,6 +405,7 @@ class WorldBoardRepository:
             public_maps = []
             for item in maps:
                 public = deepcopy(item)
+                public.pop("regions", None)
                 metadata = public.get("asset")
                 public["asset"] = (
                     {

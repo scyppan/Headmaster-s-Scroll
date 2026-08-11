@@ -2,6 +2,8 @@
 
 Headmaster's Scroll is the local home for Charms Check desktop applications. The canonical JSON files live in `data/`; applications live in `apps/` and use the shared `headmasters_scroll` package to load and save them safely.
 
+Project-wide record-selection, canvas, and toolbar requirements are documented in [`docs/INTERFACE_CONVENTIONS.md`](docs/INTERFACE_CONVENTIONS.md).
+
 ## Run the home screen
 
 ```powershell
@@ -15,6 +17,12 @@ The Scroll launches Game Board, World Builder, DBM, and Mapper as separate nativ
 World Builder converts imported character portraits to 512×512 WebP files. Mapper imports map images without embedding them in JSON. Both kinds of image live under the Git-ignored `data/assets/` directory; `world.json` contains only stable asset IDs, hashes, dimensions, and media metadata.
 
 These images are intentionally not published to GitHub. Back up `data/assets/` separately alongside the canonical JSON backups. During a game, the player service exposes only images visible to that admitted connection using a temporary credential that expires on disconnect, revocation, expiration, or session end.
+
+## Mapper polygon editor
+
+Mapper accepts PNG, JPEG, WebP, and SVG base maps. SVG imports are safely rendered to bounded PNG files; the source SVG is not copied into the project. Select **Draw Polygon**, click each corner, and press Enter or double-click to complete a shape. Escape cancels an unfinished shape. The right panel stores its free-text Type, fixed Behavior, hover text, and optional Travel destination. Middle-drag pans, the mouse wheel zooms around the cursor, and **Fit Map** restores the full-map view.
+
+Only completed polygons are saved. They remain Headmaster-only authoring data until interactive Game Board behavior is implemented.
 
 ## Shared data API
 

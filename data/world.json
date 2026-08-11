@@ -94438,7 +94438,11 @@
       "last_updated": "2026-07-23T09:10:57.509415+00:00",
       "extinct": false,
       "extinction_year": "",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "London",
@@ -94451,7 +94455,11 @@
       "last_updated": "2026-07-23T04:57:20.328691+00:00",
       "extinct": false,
       "extinction_year": "",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Wessex",
@@ -94464,7 +94472,11 @@
       "last_updated": "2026-07-23T09:10:29.963197+00:00",
       "extinct": false,
       "extinction_year": "",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Amazonia",
@@ -94477,7 +94489,11 @@
       "record_id": "12e14d4f-ac0d-4e31-a144-80c71ac6a53c",
       "created_at": "2026-07-23T04:45:05.642791+00:00",
       "last_updated": "2026-07-24T04:08:26.365381+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Anatolia and the Caucasus",
@@ -94490,7 +94506,11 @@
       "record_id": "e05e5b3e-920c-481b-a83e-74653bf0041d",
       "created_at": "2026-07-23T04:45:30.920973+00:00",
       "last_updated": "2026-07-23T04:45:44.117277+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Antarctica & Sth Ocean Lands",
@@ -94503,7 +94523,11 @@
       "record_id": "c313fe65-a0f6-48d1-8cbc-930afd40e7a1",
       "created_at": "2026-07-23T04:46:01.330074+00:00",
       "last_updated": "2026-07-23T04:46:21.353775+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Australasia",
@@ -94516,7 +94540,11 @@
       "record_id": "2aaea415-1b04-4746-acfe-9e506dfa0821",
       "created_at": "2026-07-23T04:46:41.789080+00:00",
       "last_updated": "2026-07-23T04:46:41.789080+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "British Isles",
@@ -94529,7 +94557,11 @@
       "record_id": "96103198-d236-4041-92af-7fb8580ae909",
       "created_at": "2026-07-23T04:46:56.306646+00:00",
       "last_updated": "2026-08-04T09:11:01.412398+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Caribbean and the Guianas",
@@ -94542,7 +94574,11 @@
       "record_id": "08274fd3-f173-42a1-af64-d9dee8b2e954",
       "created_at": "2026-07-23T04:47:09.859391+00:00",
       "last_updated": "2026-07-23T04:47:09.859391+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Central and East Asia",
@@ -94555,7 +94591,11 @@
       "record_id": "9cd62c58-683b-4a71-b688-8a2e8f767f0a",
       "created_at": "2026-07-23T04:47:16.069439+00:00",
       "last_updated": "2026-07-23T04:47:19.910753+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "East Africa",
@@ -94568,7 +94608,11 @@
       "record_id": "4472b7a0-b560-4f03-9c4b-e17c6fc6298f",
       "created_at": "2026-07-23T04:47:25.441378+00:00",
       "last_updated": "2026-07-23T04:47:29.856186+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Eastern Europe & North Asia",
@@ -94581,7 +94625,11 @@
       "record_id": "12e87d6e-0570-483c-a53d-abb744981705",
       "created_at": "2026-07-23T04:47:48.904683+00:00",
       "last_updated": "2026-07-23T04:47:48.904683+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Himilayas",
@@ -94594,7 +94642,11 @@
       "record_id": "c7490d17-4237-4605-8d21-5e35daf7d3cd",
       "created_at": "2026-07-23T04:48:03.932778+00:00",
       "last_updated": "2026-07-23T04:48:03.932778+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Japan",
@@ -94607,7 +94659,11 @@
       "record_id": "6c2cbcd9-1f55-4145-a16b-48527adfec42",
       "created_at": "2026-07-23T04:48:19.841348+00:00",
       "last_updated": "2026-07-23T04:48:19.841348+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Korea",
@@ -94620,7 +94676,11 @@
       "record_id": "b3efff04-47c9-4f7f-bb3e-c43d623845c9",
       "created_at": "2026-07-23T04:48:26.500777+00:00",
       "last_updated": "2026-07-23T04:48:26.500777+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Malay Archipelago",
@@ -94633,7 +94693,11 @@
       "record_id": "2429b538-2277-47bd-a4a7-10d5c4313295",
       "created_at": "2026-07-23T04:48:36.963196+00:00",
       "last_updated": "2026-07-23T04:48:36.963196+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Medioamericana",
@@ -94646,7 +94710,11 @@
       "record_id": "0cea734a-7a05-4327-9c8c-30fbb79aa497",
       "created_at": "2026-07-23T04:48:46.327796+00:00",
       "last_updated": "2026-07-23T04:48:46.327796+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Mediterranean",
@@ -94659,7 +94727,11 @@
       "record_id": "f490692b-7d19-4399-8f19-d1a48ca1bf27",
       "created_at": "2026-07-23T04:48:55.089499+00:00",
       "last_updated": "2026-07-23T04:48:55.089499+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Mexico",
@@ -94672,7 +94744,11 @@
       "record_id": "b140ddd1-77e2-4387-9a6d-d773c6b1fbb1",
       "created_at": "2026-07-23T04:49:04.112859+00:00",
       "last_updated": "2026-07-23T04:49:04.112859+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "West Asia & North Africa",
@@ -94685,7 +94761,11 @@
       "record_id": "b8db052f-3f7d-4a18-84bf-b82297d37553",
       "created_at": "2026-07-23T04:51:27.689527+00:00",
       "last_updated": "2026-07-23T04:51:42.936849+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "North America & Greenland",
@@ -94698,7 +94778,11 @@
       "record_id": "75038204-dd2e-41ce-83fb-c1ca009f0120",
       "created_at": "2026-07-23T04:52:02.562681+00:00",
       "last_updated": "2026-07-23T04:52:14.230565+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Nordic Lands and the Baltics",
@@ -94711,7 +94795,11 @@
       "record_id": "89f1088e-0d18-4490-9bb9-f16622473e9a",
       "created_at": "2026-07-23T04:52:34.025761+00:00",
       "last_updated": "2026-07-23T04:52:34.025761+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Oceania",
@@ -94724,7 +94812,11 @@
       "record_id": "274823c0-acc2-4303-b637-789e5e4201ca",
       "created_at": "2026-07-23T04:52:59.193089+00:00",
       "last_updated": "2026-07-23T04:52:59.193089+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Patagonia",
@@ -94737,7 +94829,11 @@
       "record_id": "f86be06c-3619-4451-8ffa-7b07fc9bb729",
       "created_at": "2026-07-23T04:53:10.142507+00:00",
       "last_updated": "2026-07-23T04:53:10.142507+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "South and Southeast Asia",
@@ -94750,7 +94846,11 @@
       "record_id": "f67161b0-26f6-42f1-a38a-f8eff63764a5",
       "created_at": "2026-07-23T04:53:20.800608+00:00",
       "last_updated": "2026-07-23T04:53:20.800608+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Southern Africa",
@@ -94763,7 +94863,11 @@
       "record_id": "466b6a13-2064-49ec-865e-d4cad092bf70",
       "created_at": "2026-07-23T04:53:28.951417+00:00",
       "last_updated": "2026-07-23T04:53:28.951417+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "West Africa",
@@ -94776,7 +94880,11 @@
       "record_id": "3892e5ff-64ff-4e48-9a24-236c4c0ffb62",
       "created_at": "2026-07-23T04:53:37.391791+00:00",
       "last_updated": "2026-07-23T04:53:37.391791+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Western Europe",
@@ -94789,7 +94897,11 @@
       "record_id": "cce73c77-b94d-47a5-b386-66387b3dcd8d",
       "created_at": "2026-07-23T04:53:45.736334+00:00",
       "last_updated": "2026-07-23T04:53:45.736334+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Western South America",
@@ -94802,7 +94914,11 @@
       "record_id": "a9f4af34-8d43-4b22-a38a-3ce8786e219c",
       "created_at": "2026-07-23T04:53:57.791832+00:00",
       "last_updated": "2026-07-23T04:53:57.791832+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "England",
@@ -94815,7 +94931,11 @@
       "record_id": "fd02c4e8-9159-48c6-8143-d329cb7af046",
       "created_at": "2026-07-23T04:54:28.974899+00:00",
       "last_updated": "2026-07-23T04:54:28.974899+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Wales",
@@ -94828,7 +94948,11 @@
       "record_id": "6f9fe3a8-2965-4562-bb9a-8dbd2b9b47a7",
       "created_at": "2026-07-23T04:54:32.023401+00:00",
       "last_updated": "2026-07-23T04:54:32.023401+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Scotland",
@@ -94841,7 +94965,11 @@
       "record_id": "d3ba12b1-afe7-443b-a75b-31de101048c6",
       "created_at": "2026-07-23T04:54:36.187623+00:00",
       "last_updated": "2026-07-23T04:54:36.187623+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Northern Ireland",
@@ -94854,7 +94982,11 @@
       "record_id": "44ac45e5-e027-4505-ac14-01df65bbc2a7",
       "created_at": "2026-07-23T04:54:42.076171+00:00",
       "last_updated": "2026-07-23T04:54:42.076171+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Ireland",
@@ -94867,7 +94999,11 @@
       "record_id": "ec397fa8-dfa3-4278-b78f-c3d96b4066fe",
       "created_at": "2026-07-23T04:54:46.905076+00:00",
       "last_updated": "2026-07-23T04:54:46.905076+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "North of England",
@@ -94880,7 +95016,11 @@
       "record_id": "6a1ad229-4cd5-4a5f-8240-ca1da38abb7e",
       "created_at": "2026-07-23T04:56:04.465814+00:00",
       "last_updated": "2026-08-03T07:34:12.978074+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "South of England",
@@ -94893,7 +95033,11 @@
       "record_id": "57d0dfb7-c6ac-4f6d-baa8-4a0eb0ff89f1",
       "created_at": "2026-07-23T04:56:12.362727+00:00",
       "last_updated": "2026-07-23T04:56:12.362727+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Midlands",
@@ -94906,7 +95050,11 @@
       "record_id": "da9f9f1e-2244-44b9-94de-28d679b0cd40",
       "created_at": "2026-07-23T04:56:27.198544+00:00",
       "last_updated": "2026-07-23T04:56:27.198544+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Mungret",
@@ -94919,7 +95067,11 @@
       "record_id": "6d806b4b-6308-428f-a332-7581faed8cfc",
       "created_at": "2026-07-23T10:42:43.871649+00:00",
       "last_updated": "2026-07-23T11:50:12.193166+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Cashel",
@@ -94932,7 +95084,11 @@
       "record_id": "26fd04fa-d073-4f05-a170-d171e93ce06c",
       "created_at": "2026-07-24T05:28:04.154246+00:00",
       "last_updated": "2026-07-24T05:58:03.613097+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Cork",
@@ -94945,7 +95101,11 @@
       "record_id": "0300c4fa-288e-4ceb-80b4-b92228694602",
       "created_at": "2026-07-24T06:24:30.851656+00:00",
       "last_updated": "2026-07-24T06:24:30.851656+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "East Anglia",
@@ -94958,7 +95118,11 @@
       "record_id": "d4d5d8d1-604d-4f02-83c0-b7a8d7a7b73a",
       "created_at": "2026-07-31T13:52:01.176648+00:00",
       "last_updated": "2026-08-05T08:39:00.851900+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Azkeban",
@@ -94971,7 +95135,11 @@
       "record_id": "fc7f56ad-8d4a-426e-933f-156384f10423",
       "created_at": "2026-07-31T14:12:07.404803+00:00",
       "last_updated": "2026-07-31T14:15:30.354939+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Cyprus",
@@ -94984,7 +95152,11 @@
       "record_id": "b20a71ed-95e2-465a-a035-9ad734d67bf6",
       "created_at": "2026-08-01T02:33:16.819705+00:00",
       "last_updated": "2026-08-01T02:33:16.819705+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Scottish Highlands",
@@ -94997,7 +95169,11 @@
       "record_id": "23b54b30-b742-4e20-a224-915ca732fd61",
       "created_at": "2026-08-01T08:18:50.771991+00:00",
       "last_updated": "2026-08-01T08:18:50.771991+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Germany",
@@ -95010,7 +95186,11 @@
       "record_id": "d51a30e1-25ce-4c79-afc8-49c2d3ee0745",
       "created_at": "2026-08-01T08:32:39.017723+00:00",
       "last_updated": "2026-08-01T08:32:39.017723+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Saxony",
@@ -95023,7 +95203,11 @@
       "record_id": "2ce042ec-ffb5-4b71-8b10-ff5bdd51e6d8",
       "created_at": "2026-08-01T08:34:56.001060+00:00",
       "last_updated": "2026-08-01T08:35:16.287221+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "West Country",
@@ -95036,7 +95220,11 @@
       "record_id": "f31e3a15-e52c-4cdc-ac14-249bb323bde1",
       "created_at": "2026-08-01T09:15:25.557266+00:00",
       "last_updated": "2026-08-01T09:15:25.557266+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Godric's Hollow",
@@ -95049,7 +95237,11 @@
       "record_id": "0bbf3d43-ea85-4af7-bc48-b42219f656e8",
       "created_at": "2026-08-01T09:15:41.279379+00:00",
       "last_updated": "2026-08-01T09:15:41.279379+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Hogshire",
@@ -95062,7 +95254,11 @@
       "record_id": "de9bca8f-8fea-4db4-a040-131af6804693",
       "created_at": "2026-08-01T09:21:27.066842+00:00",
       "last_updated": "2026-08-01T09:21:27.066842+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "4fc2ff78-e528-4ebd-b4db-9b34fc803622",
+      "has_floors": false
     },
     {
       "name": "Hogsmeade Valley",
@@ -95075,7 +95271,11 @@
       "record_id": "38b8b79b-0785-4213-826e-0e65998d3b41",
       "created_at": "2026-08-01T09:22:30.645745+00:00",
       "last_updated": "2026-08-01T09:22:30.645745+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Dark Forest",
@@ -95088,7 +95288,11 @@
       "record_id": "dd1d79dc-5da9-4148-bbd3-50fc30dac8f4",
       "created_at": "2026-08-01T09:22:37.833542+00:00",
       "last_updated": "2026-08-01T09:22:37.833542+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Hogwarts",
@@ -95101,7 +95305,11 @@
       "record_id": "e9cdd1f9-3e84-4408-b2c2-98ed4b3dabef",
       "created_at": "2026-08-01T09:34:09.007984+00:00",
       "last_updated": "2026-08-01T09:34:09.007984+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Umayyad Caliphate",
@@ -95123,7 +95331,11 @@
       "record_id": "f6dacd04-90b6-4949-af1e-1bf0e69d62fb",
       "created_at": "2026-08-01T10:33:33.128804+00:00",
       "last_updated": "2026-08-01T10:34:31.087896+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "al-Andalus",
@@ -95145,7 +95357,11 @@
       "record_id": "1df35516-b69f-45df-ac06-b52616e5ed41",
       "created_at": "2026-08-01T10:33:49.461507+00:00",
       "last_updated": "2026-08-01T10:35:04.344216+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Hogsmeade Village",
@@ -95158,7 +95374,11 @@
       "record_id": "26b19885-3ce3-4df3-8b4b-3dded23625f2",
       "created_at": "2026-08-01T10:44:05.790124+00:00",
       "last_updated": "2026-08-01T10:44:05.790124+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Inverness",
@@ -95171,7 +95391,11 @@
       "record_id": "66b781c8-1a17-43d5-8e03-3fe184d5df8c",
       "created_at": "2026-08-01T10:47:51.186150+00:00",
       "last_updated": "2026-08-01T10:47:51.186150+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Fort William",
@@ -95184,7 +95408,11 @@
       "record_id": "c6e1c5f9-423d-40e0-bc33-9bc83cdc2e9f",
       "created_at": "2026-08-01T10:48:57.189139+00:00",
       "last_updated": "2026-08-01T10:48:57.189139+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Loch Ness",
@@ -95197,7 +95425,11 @@
       "record_id": "a1bdfa5d-ed43-4775-a505-42e43d0a006e",
       "created_at": "2026-08-01T10:49:45.786064+00:00",
       "last_updated": "2026-08-01T10:49:45.786064+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Cairngorms",
@@ -95210,7 +95442,11 @@
       "record_id": "66a30d33-afe8-4134-9c98-b120e07cf519",
       "created_at": "2026-08-01T10:50:08.436743+00:00",
       "last_updated": "2026-08-01T10:50:38.851012+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Northumbria",
@@ -95223,7 +95459,11 @@
       "record_id": "ca7c093c-47cf-40bc-aa9c-075035b823ab",
       "created_at": "2026-08-01T11:06:28.592102+00:00",
       "last_updated": "2026-08-01T11:06:28.592102+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "France",
@@ -95236,7 +95476,11 @@
       "record_id": "9ee79863-002a-49ba-b726-9c3a9704d391",
       "created_at": "2026-08-02T05:24:15.412926+00:00",
       "last_updated": "2026-08-02T05:24:15.412926+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Normandy",
@@ -95249,7 +95493,11 @@
       "record_id": "c2cc8919-1108-47c9-b3be-9423eea86c1a",
       "created_at": "2026-08-02T05:24:46.363882+00:00",
       "last_updated": "2026-08-02T05:24:46.363882+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Sussex",
@@ -95262,7 +95510,11 @@
       "record_id": "5bc80b00-51ab-4463-a11c-379c8de449c7",
       "created_at": "2026-08-02T05:39:34.390377+00:00",
       "last_updated": "2026-08-02T05:39:34.390377+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Paris",
@@ -95275,7 +95527,11 @@
       "record_id": "8ca999ab-62a2-40c4-ba41-cfdcb3bca870",
       "created_at": "2026-08-02T08:26:09.611338+00:00",
       "last_updated": "2026-08-02T08:26:09.611338+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Aachen",
@@ -95288,7 +95544,11 @@
       "record_id": "f02e9fc5-b286-4197-b08b-de69383a67e4",
       "created_at": "2026-08-02T08:28:20.648771+00:00",
       "last_updated": "2026-08-02T08:28:20.648771+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Holy Roman Empire",
@@ -95310,7 +95570,11 @@
       "record_id": "45e5a2df-7b87-4424-8d81-d10ab034d139",
       "created_at": "2026-08-02T08:28:28.923043+00:00",
       "last_updated": "2026-08-02T08:30:43.426927+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Arabian Peninsula",
@@ -95323,7 +95587,11 @@
       "record_id": "d0faae51-593b-440f-95f9-8e3b8b252353",
       "created_at": "2026-08-02T08:39:49.468483+00:00",
       "last_updated": "2026-08-02T08:39:49.468483+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "The Empty Quarter",
@@ -95336,7 +95604,11 @@
       "record_id": "00000deb-7be6-42e8-a8d2-0d23dff11c0b",
       "created_at": "2026-08-02T08:40:12.928675+00:00",
       "last_updated": "2026-08-02T08:40:47.313774+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Egypt",
@@ -95349,7 +95621,11 @@
       "record_id": "e2f7a85b-83ff-4c25-a779-d05da445a37b",
       "created_at": "2026-08-02T08:47:31.140038+00:00",
       "last_updated": "2026-08-02T08:47:31.140038+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Honshu",
@@ -95362,7 +95638,11 @@
       "record_id": "2fccf06f-c60f-440c-a1f3-7e99ba48bbeb",
       "created_at": "2026-08-02T08:58:46.910237+00:00",
       "last_updated": "2026-08-02T08:58:46.910237+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Hokkaido",
@@ -95375,7 +95655,11 @@
       "record_id": "670b762f-6aa6-4e21-8c7a-e187ac2e886f",
       "created_at": "2026-08-02T08:59:02.604260+00:00",
       "last_updated": "2026-08-02T08:59:02.604260+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Kyushu",
@@ -95388,7 +95672,11 @@
       "record_id": "529792ba-6505-4ce6-88ac-5328afb89550",
       "created_at": "2026-08-02T08:59:10.931138+00:00",
       "last_updated": "2026-08-02T08:59:10.931138+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Shikoku",
@@ -95401,7 +95689,11 @@
       "record_id": "ed3b86ce-2a46-48aa-a180-362163be17f7",
       "created_at": "2026-08-02T08:59:18.205358+00:00",
       "last_updated": "2026-08-02T08:59:18.205358+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Volcano Islands",
@@ -95414,7 +95706,11 @@
       "record_id": "6c9d0119-d23a-4b36-8369-7363c59ca944",
       "created_at": "2026-08-02T08:59:44.419021+00:00",
       "last_updated": "2026-08-02T08:59:44.419021+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Minami Iwo Jima",
@@ -95427,7 +95723,11 @@
       "record_id": "f6c823f8-7f67-49a3-98de-84331105deed",
       "created_at": "2026-08-02T09:00:07.533830+00:00",
       "last_updated": "2026-08-02T09:00:07.533830+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "French Polynesia",
@@ -95440,7 +95740,11 @@
       "record_id": "57108b0b-3ae0-4f8f-9d02-627e6649dd52",
       "created_at": "2026-08-02T09:01:48.828790+00:00",
       "last_updated": "2026-08-02T09:01:48.828790+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Matureivaveo",
@@ -95453,7 +95757,11 @@
       "record_id": "77f07ff9-955c-4f2d-a2d5-761141b5b5dd",
       "created_at": "2026-08-02T09:02:02.367584+00:00",
       "last_updated": "2026-08-02T09:02:02.367584+00:00",
-      "campus_organization_id": ""
+      "campus_organization_id": "",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "record_id": "school-campus:395b69b4-6931-48a7-a6b5-9ee49251ef28",
@@ -95473,7 +95781,11 @@
           "time": "",
           "note": "Location linked to Crucethu."
         }
-      ]
+      ],
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Diagon Alley",
@@ -95486,7 +95798,11 @@
       "campus_organization_id": "",
       "record_id": "bc89bd68-989e-42ec-a5b2-e7da7fbce321",
       "created_at": "2026-08-02T13:59:27.743931+00:00",
-      "last_updated": "2026-08-02T13:59:27.743931+00:00"
+      "last_updated": "2026-08-02T13:59:27.743931+00:00",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Orkney Islands",
@@ -95499,7 +95815,11 @@
       "campus_organization_id": "",
       "record_id": "649ea454-31dd-4569-b9ea-9aba1552b19e",
       "created_at": "2026-08-02T14:17:18.331916+00:00",
-      "last_updated": "2026-08-02T14:17:18.331916+00:00"
+      "last_updated": "2026-08-02T14:17:18.331916+00:00",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Libya",
@@ -95512,7 +95832,11 @@
       "timeline_events": [],
       "record_id": "dd215dfd-e36c-43aa-9bae-20aaef3509ed",
       "created_at": "2026-08-03T03:36:59.171982+00:00",
-      "last_updated": "2026-08-03T03:36:59.171982+00:00"
+      "last_updated": "2026-08-03T03:36:59.171982+00:00",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Cyrenaica",
@@ -95525,7 +95849,11 @@
       "timeline_events": [],
       "record_id": "78eb4202-7108-4712-8734-e02ad31a1213",
       "created_at": "2026-08-03T03:37:19.442126+00:00",
-      "last_updated": "2026-08-03T03:37:19.442126+00:00"
+      "last_updated": "2026-08-03T03:37:19.442126+00:00",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Katla",
@@ -95538,7 +95866,11 @@
       "timeline_events": [],
       "record_id": "8be846a2-81d7-4dfa-bf42-b7bd99de1d40",
       "created_at": "2026-08-03T04:08:36.340836+00:00",
-      "last_updated": "2026-08-03T04:51:52.365027+00:00"
+      "last_updated": "2026-08-03T04:51:52.365027+00:00",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Iceland",
@@ -95551,7 +95883,11 @@
       "campus_organization_id": "",
       "record_id": "979be093-c477-4cbc-a704-7e0ac8e4e819",
       "created_at": "2026-08-03T04:50:36.414568+00:00",
-      "last_updated": "2026-08-03T04:51:39.478948+00:00"
+      "last_updated": "2026-08-03T04:51:39.478948+00:00",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Greece",
@@ -95564,7 +95900,11 @@
       "timeline_events": [],
       "record_id": "5bdbcc74-d678-4b35-9c9b-e8e53c8f445a",
       "created_at": "2026-08-03T05:38:22.720029+00:00",
-      "last_updated": "2026-08-03T05:38:22.720029+00:00"
+      "last_updated": "2026-08-03T05:38:22.720029+00:00",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Iraq",
@@ -95577,7 +95917,11 @@
       "timeline_events": [],
       "record_id": "c57f8994-9d69-4017-bee0-4266101b09e5",
       "created_at": "2026-08-03T05:39:17.380549+00:00",
-      "last_updated": "2026-08-03T05:39:17.380549+00:00"
+      "last_updated": "2026-08-03T05:39:17.380549+00:00",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Baghdad",
@@ -95590,7 +95934,11 @@
       "timeline_events": [],
       "record_id": "40e86c68-47bd-4834-a184-2aadeb0ce514",
       "created_at": "2026-08-03T05:39:25.404871+00:00",
-      "last_updated": "2026-08-03T05:39:25.404871+00:00"
+      "last_updated": "2026-08-03T05:39:25.404871+00:00",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Slytherin's Castle",
@@ -95603,7 +95951,11 @@
       "timeline_events": [],
       "record_id": "6b8c04ee-965f-48c1-8492-d82e964e363a",
       "created_at": "2026-08-03T05:49:07.198618+00:00",
-      "last_updated": "2026-08-03T05:49:07.198618+00:00"
+      "last_updated": "2026-08-03T05:49:07.198618+00:00",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Albania",
@@ -95616,7 +95968,11 @@
       "timeline_events": [],
       "record_id": "8853490c-ae58-4cab-8913-78daddfa0c34",
       "created_at": "2026-08-03T05:55:50.371745+00:00",
-      "last_updated": "2026-08-03T05:55:50.371745+00:00"
+      "last_updated": "2026-08-03T05:55:50.371745+00:00",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "The Forests of Llogara Pass",
@@ -95629,7 +95985,11 @@
       "timeline_events": [],
       "record_id": "4e653f9e-57a4-42b2-9d9a-eec640add560",
       "created_at": "2026-08-03T05:56:14.382155+00:00",
-      "last_updated": "2026-08-03T05:56:14.382155+00:00"
+      "last_updated": "2026-08-03T05:56:14.382155+00:00",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Chamber of Secrets",
@@ -95642,7 +96002,11 @@
       "timeline_events": [],
       "record_id": "4da1c615-4a85-409e-8b09-fc51ac1f85d1",
       "created_at": "2026-08-03T06:14:02.794358+00:00",
-      "last_updated": "2026-08-03T06:14:18.446467+00:00"
+      "last_updated": "2026-08-03T06:14:18.446467+00:00",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Kufa",
@@ -95655,7 +96019,11 @@
       "campus_organization_id": "",
       "record_id": "2f745168-416f-422e-b67e-11088bc251ba",
       "created_at": "2026-08-04T04:23:39.373911+00:00",
-      "last_updated": "2026-08-04T04:23:39.373911+00:00"
+      "last_updated": "2026-08-04T04:23:39.373911+00:00",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Bohemia",
@@ -95668,7 +96036,11 @@
       "campus_organization_id": "",
       "record_id": "ed0e750f-41cb-4504-940d-219dcdb02e74",
       "created_at": "2026-08-04T04:45:21.434375+00:00",
-      "last_updated": "2026-08-04T04:45:21.434375+00:00"
+      "last_updated": "2026-08-04T04:45:21.434375+00:00",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Transylvania",
@@ -95681,7 +96053,11 @@
       "campus_organization_id": "",
       "record_id": "8043450d-0dbc-48cf-adb1-f94c7861efb1",
       "created_at": "2026-08-04T04:46:30.318832+00:00",
-      "last_updated": "2026-08-04T04:46:30.318832+00:00"
+      "last_updated": "2026-08-04T04:46:30.318832+00:00",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Constantinople",
@@ -95694,7 +96070,11 @@
       "campus_organization_id": "",
       "record_id": "25524c61-3910-4402-bef4-0e4778c73ddb",
       "created_at": "2026-08-04T04:47:46.548252+00:00",
-      "last_updated": "2026-08-04T04:47:46.548252+00:00"
+      "last_updated": "2026-08-04T04:47:46.548252+00:00",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Meath",
@@ -95707,7 +96087,11 @@
       "campus_organization_id": "",
       "record_id": "fcfaae84-a941-4e78-b640-40a7a6ca40e6",
       "created_at": "2026-08-04T06:52:24.648267+00:00",
-      "last_updated": "2026-08-04T07:08:35.041935+00:00"
+      "last_updated": "2026-08-04T07:08:35.041935+00:00",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Meade",
@@ -95720,7 +96104,11 @@
       "extinction_year": "",
       "record_id": "f4b2d7a4-cae6-4616-8b40-9a762b2d06a9",
       "created_at": "2026-08-04T07:20:05.518541+00:00",
-      "last_updated": "2026-08-04T07:20:05.518541+00:00"
+      "last_updated": "2026-08-04T07:20:05.518541+00:00",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Birmingham",
@@ -95733,7 +96121,11 @@
       "campus_organization_id": "",
       "record_id": "4cc9288a-ec7d-46b5-af92-da0e6f9ebd41",
       "created_at": "2026-08-05T08:11:35.940127+00:00",
-      "last_updated": "2026-08-05T08:11:35.940127+00:00"
+      "last_updated": "2026-08-05T08:11:35.940127+00:00",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Manchester",
@@ -95746,7 +96138,11 @@
       "campus_organization_id": "",
       "record_id": "8e5be4a1-2b84-415b-a9a7-82e5ecb990d7",
       "created_at": "2026-08-05T08:11:58.487327+00:00",
-      "last_updated": "2026-08-05T08:11:58.487327+00:00"
+      "last_updated": "2026-08-05T08:11:58.487327+00:00",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Ministry of Magic",
@@ -95759,7 +96155,11 @@
       "campus_organization_id": "",
       "record_id": "9c2845b0-2f80-45d7-89fd-381a259c40c7",
       "created_at": "2026-08-05T09:04:49.910600+00:00",
-      "last_updated": "2026-08-05T09:04:49.910600+00:00"
+      "last_updated": "2026-08-05T09:04:49.910600+00:00",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Grenada",
@@ -95772,7 +96172,11 @@
       "campus_organization_id": "",
       "record_id": "0fd7f209-b7cc-41ff-a4d3-96a471dba715",
       "created_at": "2026-08-05T23:24:45.286795+00:00",
-      "last_updated": "2026-08-05T23:24:45.286795+00:00"
+      "last_updated": "2026-08-05T23:24:45.286795+00:00",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Caithness",
@@ -95785,7 +96189,11 @@
       "campus_organization_id": "",
       "record_id": "db76b825-c905-4adc-a750-0e2867a7c228",
       "created_at": "2026-08-05T23:34:48.226152+00:00",
-      "last_updated": "2026-08-05T23:34:48.226152+00:00"
+      "last_updated": "2026-08-05T23:34:48.226152+00:00",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Marseille",
@@ -95798,7 +96206,11 @@
       "campus_organization_id": "",
       "record_id": "201bfcad-9fdb-489c-ae5a-26f6623b2710",
       "created_at": "2026-08-05T23:50:00.905210+00:00",
-      "last_updated": "2026-08-05T23:50:00.905210+00:00"
+      "last_updated": "2026-08-05T23:50:00.905210+00:00",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Dublin",
@@ -95811,7 +96223,11 @@
       "campus_organization_id": "",
       "record_id": "179f0b6e-313e-4421-87a6-1aa33ce30ff0",
       "created_at": "2026-08-05T23:51:20.194176+00:00",
-      "last_updated": "2026-08-05T23:51:20.194176+00:00"
+      "last_updated": "2026-08-05T23:51:20.194176+00:00",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Glasgow",
@@ -95824,7 +96240,11 @@
       "campus_organization_id": "",
       "record_id": "8bf994a9-2f19-48e1-8233-407b36d3b0f2",
       "created_at": "2026-08-05T23:52:29.709071+00:00",
-      "last_updated": "2026-08-05T23:52:29.709071+00:00"
+      "last_updated": "2026-08-05T23:52:29.709071+00:00",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Edinburgh",
@@ -95837,7 +96257,11 @@
       "campus_organization_id": "",
       "record_id": "ccd6b6e2-eae8-4107-b8ca-380164f19ad3",
       "created_at": "2026-08-05T23:52:44.874228+00:00",
-      "last_updated": "2026-08-05T23:52:44.874228+00:00"
+      "last_updated": "2026-08-05T23:52:44.874228+00:00",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Gringotts",
@@ -95850,7 +96274,11 @@
       "campus_organization_id": "",
       "record_id": "60a3f4fe-50e1-405c-90ea-5bef6fe6abb8",
       "created_at": "2026-08-06T00:08:36.866778+00:00",
-      "last_updated": "2026-08-06T00:08:36.866778+00:00"
+      "last_updated": "2026-08-06T00:08:36.866778+00:00",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Campus of Hogwarts",
@@ -95872,7 +96300,11 @@
       ],
       "record_id": "073329c7-a04f-4e4a-b2a9-f291b3ef4e04",
       "created_at": "2026-08-06T09:44:37.072449+00:00",
-      "last_updated": "2026-08-07T22:46:52.432150+00:00"
+      "last_updated": "2026-08-07T22:46:52.432150+00:00",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Ottery St Catchpole",
@@ -95885,7 +96317,11 @@
       "campus_organization_id": "",
       "record_id": "1f2d39ee-bccf-4e44-bffa-a2259c7156cc",
       "created_at": "2026-08-07T06:42:01.866272+00:00",
-      "last_updated": "2026-08-07T06:42:01.866272+00:00"
+      "last_updated": "2026-08-07T06:42:01.866272+00:00",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Essex",
@@ -95898,7 +96334,11 @@
       "campus_organization_id": "",
       "record_id": "af455cb5-a54a-405e-be76-d6fd73170613",
       "created_at": "2026-08-07T06:47:13.416287+00:00",
-      "last_updated": "2026-08-07T06:47:13.416287+00:00"
+      "last_updated": "2026-08-07T06:47:13.416287+00:00",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Home Counties",
@@ -95911,7 +96351,11 @@
       "campus_organization_id": "",
       "record_id": "7569e85f-e37d-4b23-9c46-82d729e44a19",
       "created_at": "2026-08-07T06:51:32.757045+00:00",
-      "last_updated": "2026-08-07T06:51:32.757045+00:00"
+      "last_updated": "2026-08-07T06:51:32.757045+00:00",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Ghana",
@@ -95924,7 +96368,11 @@
       "campus_organization_id": "",
       "record_id": "c362f173-b380-4d64-9b2f-8972754de436",
       "created_at": "2026-08-08T01:01:20.905832+00:00",
-      "last_updated": "2026-08-08T01:01:20.905832+00:00"
+      "last_updated": "2026-08-08T01:01:20.905832+00:00",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Liberia",
@@ -95937,7 +96385,11 @@
       "campus_organization_id": "",
       "record_id": "93ba38a3-3f15-4b86-9e6c-17dc1ba0e2fe",
       "created_at": "2026-08-08T01:09:04.859352+00:00",
-      "last_updated": "2026-08-08T01:09:04.859352+00:00"
+      "last_updated": "2026-08-08T01:09:04.859352+00:00",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Netherlands",
@@ -95950,7 +96402,11 @@
       "timeline_events": [],
       "record_id": "dea60141-27cb-4067-a835-10de5156b838",
       "created_at": "2026-08-08T03:45:14.904148+00:00",
-      "last_updated": "2026-08-08T03:45:14.904148+00:00"
+      "last_updated": "2026-08-08T03:45:14.904148+00:00",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Groningen",
@@ -95963,7 +96419,11 @@
       "timeline_events": [],
       "record_id": "4063949a-cfa8-4e77-9ec9-16cd08fb3f45",
       "created_at": "2026-08-08T03:46:22.518871+00:00",
-      "last_updated": "2026-08-08T03:46:22.518871+00:00"
+      "last_updated": "2026-08-08T03:46:22.518871+00:00",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Amsterdam",
@@ -95976,7 +96436,11 @@
       "timeline_events": [],
       "record_id": "b8b5a376-7c1e-4626-b46a-ef4fd1a6d4ea",
       "created_at": "2026-08-08T03:46:48.417420+00:00",
-      "last_updated": "2026-08-08T03:46:48.417420+00:00"
+      "last_updated": "2026-08-08T03:46:48.417420+00:00",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Shanghai",
@@ -95989,7 +96453,11 @@
       "campus_organization_id": "",
       "record_id": "0b09ed8f-cf16-4aa4-b966-415c41965f5f",
       "created_at": "2026-08-08T05:23:43.751786+00:00",
-      "last_updated": "2026-08-08T05:23:43.751786+00:00"
+      "last_updated": "2026-08-08T05:23:43.751786+00:00",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Beijing",
@@ -96002,7 +96470,11 @@
       "campus_organization_id": "",
       "record_id": "53aa1fd5-3592-4632-ba6b-b4347f15e312",
       "created_at": "2026-08-08T05:24:01.203748+00:00",
-      "last_updated": "2026-08-08T05:24:01.203748+00:00"
+      "last_updated": "2026-08-08T05:24:01.203748+00:00",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "International Confederation of Wizards",
@@ -96024,7 +96496,11 @@
       ],
       "record_id": "98d8a6a6-75f2-46ba-adbd-83750b49ffb1",
       "created_at": "2026-08-08T13:11:27.466064+00:00",
-      "last_updated": "2026-08-08T14:38:20.602725+00:00"
+      "last_updated": "2026-08-08T14:38:20.602725+00:00",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     },
     {
       "name": "Brocshire",
@@ -96037,7 +96513,11 @@
       "campus_organization_id": "",
       "record_id": "11754304-c8d2-43c7-8d55-41cca80b441b",
       "created_at": "2026-08-09T00:28:33.508751+00:00",
-      "last_updated": "2026-08-09T00:28:33.508751+00:00"
+      "last_updated": "2026-08-09T00:28:33.508751+00:00",
+      "is_building": false,
+      "floors": [],
+      "default_map_id": "",
+      "has_floors": false
     }
   ],
   "organizations": [
@@ -120157,11 +120637,3215 @@
   ],
   "books": [],
   "book_readings": [],
-  "maps": [],
+  "maps": [
+    {
+      "record_id": "7e02615d-2f63-4067-8ee2-2d098c2d1dc1",
+      "created_at": "2026-08-10T08:54:19.884190Z",
+      "asset": {
+        "asset_id": "map:7e02615d-2f63-4067-8ee2-2d098c2d1dc1",
+        "sha256": "1f407d78e1632e6f703cf23eb7f9d6bdcfd14c0d968de5461519bc7b68cb6fc8",
+        "width": 3840,
+        "height": 2960,
+        "source_width": 3840,
+        "source_height": 2160,
+        "mime_type": "image/png",
+        "file_extension": ".png",
+        "updated_at": "2026-08-10T08:54:21.579690Z"
+      },
+      "regions": [],
+      "name": "Hogshire",
+      "location_id": "de9bca8f-8fea-4db4-a040-131af6804693",
+      "floor_id": "",
+      "players_published": false,
+      "last_updated": "2026-08-10T08:54:19.884190Z"
+    },
+    {
+      "record_id": "4fc2ff78-e528-4ebd-b4db-9b34fc803622",
+      "created_at": "2026-08-10T09:05:39.674093Z",
+      "asset": {
+        "asset_id": "map:4fc2ff78-e528-4ebd-b4db-9b34fc803622",
+        "sha256": "1f407d78e1632e6f703cf23eb7f9d6bdcfd14c0d968de5461519bc7b68cb6fc8",
+        "width": 3840,
+        "height": 2960,
+        "source_width": 3840,
+        "source_height": 2160,
+        "mime_type": "image/png",
+        "file_extension": ".png",
+        "updated_at": "2026-08-10T09:05:41.295251Z"
+      },
+      "regions": [
+        {
+          "record_id": "b5f0c90b-22b7-4322-b21e-dbe513603437",
+          "name": "Marunweem County",
+          "type_label": "Area",
+          "behavior_type": "area",
+          "hover_text": "A small county with a timber town along the edge of the Dark Forest",
+          "points": [
+            {
+              "x": 0.6695902429960289,
+              "y": 0.42706186830099635
+            },
+            {
+              "x": 0.6679667185907077,
+              "y": 0.4277639329087029
+            },
+            {
+              "x": 0.6667490752867167,
+              "y": 0.428641513668336
+            },
+            {
+              "x": 0.6652608445818388,
+              "y": 0.4318008044030153
+            },
+            {
+              "x": 0.6643137886787347,
+              "y": 0.4342580305299881
+            },
+            {
+              "x": 0.6626902642734134,
+              "y": 0.4365397405050343
+            },
+            {
+              "x": 0.6586314532601101,
+              "y": 0.4365397405050343
+            },
+            {
+              "x": 0.6556549918503544,
+              "y": 0.4332049336184283
+            },
+            {
+              "x": 0.6513255934361643,
+              "y": 0.4365397405050343
+            },
+            {
+              "x": 0.646996195021974,
+              "y": 0.43513561128962125
+            },
+            {
+              "x": 0.6437491462113314,
+              "y": 0.4330294174665017
+            },
+            {
+              "x": 0.6364432863873856,
+              "y": 0.43513561128962125
+            },
+            {
+              "x": 0.6310315383696479,
+              "y": 0.4296946105798958
+            },
+            {
+              "x": 0.6281903706603356,
+              "y": 0.42249844835090405
+            },
+            {
+              "x": 0.6288668391625528,
+              "y": 0.4154778022738389
+            },
+            {
+              "x": 0.6265668462550142,
+              "y": 0.40740405928521406
+            },
+            {
+              "x": 0.6256197903519102,
+              "y": 0.4042447685505347
+            },
+            {
+              "x": 0.6249433218496929,
+              "y": 0.39933031629658916
+            },
+            {
+              "x": 0.6241315596470323,
+              "y": 0.3965220578657631
+            },
+            {
+              "x": 0.6244021470479192,
+              "y": 0.38686866950979854
+            },
+            {
+              "x": 0.6269727273563446,
+              "y": 0.3835338626231926
+            },
+            {
+              "x": 0.6253492029510233,
+              "y": 0.36984360277291567
+            },
+            {
+              "x": 0.6234550911448151,
+              "y": 0.3665087958863097
+            },
+            {
+              "x": 0.6227786226425979,
+              "y": 0.36317398899970377
+            },
+            {
+              "x": 0.6229139163430413,
+              "y": 0.3577329882899783
+            },
+            {
+              "x": 0.6233197974443716,
+              "y": 0.35422266525144575
+            },
+            {
+              "x": 0.6223727415412675,
+              "y": 0.3457978899589676
+            },
+            {
+              "x": 0.6225080352417109,
+              "y": 0.34316514768006817
+            },
+            {
+              "x": 0.6379315170922634,
+              "y": 0.3435161799839215
+            },
+            {
+              "x": 0.6499726564317297,
+              "y": 0.3400058569453889
+            },
+            {
+              "x": 0.6672902500884904,
+              "y": 0.3405324054011688
+            },
+            {
+              "x": 0.6678314248902641,
+              "y": 0.34316514768006817
+            },
+            {
+              "x": 0.6698608303969158,
+              "y": 0.3450958253512611
+            },
+            {
+              "x": 0.6710784737009068,
+              "y": 0.3450958253512611
+            },
+            {
+              "x": 0.6722961170048978,
+              "y": 0.3443937607435546
+            },
+            {
+              "x": 0.6731078792075584,
+              "y": 0.3426385992242883
+            },
+            {
+              "x": 0.6755431658155404,
+              "y": 0.34158550231272855
+            },
+            {
+              "x": 0.6758137532164272,
+              "y": 0.34404272843970135
+            },
+            {
+              "x": 0.6755431658155404,
+              "y": 0.34614892226282085
+            },
+            {
+              "x": 0.6743255225115494,
+              "y": 0.3473775353263073
+            },
+            {
+              "x": 0.6732431729080018,
+              "y": 0.3491326968455736
+            },
+            {
+              "x": 0.6739196414102191,
+              "y": 0.35106337451676645
+            },
+            {
+              "x": 0.674190228811106,
+              "y": 0.353169568339886
+            },
+            {
+              "x": 0.6740549351106625,
+              "y": 0.3551002460110789
+            },
+            {
+              "x": 0.6716196485026805,
+              "y": 0.35667989137841855
+            },
+            {
+              "x": 0.668372599692038,
+              "y": 0.35755747213805167
+            },
+            {
+              "x": 0.6672902500884904,
+              "y": 0.35983918211309784
+            },
+            {
+              "x": 0.6676961311898207,
+              "y": 0.3644026020631902
+            },
+            {
+              "x": 0.6668843689871601,
+              "y": 0.3691415381652091
+            },
+            {
+              "x": 0.6652608445818388,
+              "y": 0.37107221583640204
+            },
+            {
+              "x": 0.6651255508813954,
+              "y": 0.3738804742672281
+            },
+            {
+              "x": 0.6649902571809518,
+              "y": 0.3770397650019074
+            },
+            {
+              "x": 0.6652608445818388,
+              "y": 0.38248076571163286
+            },
+            {
+              "x": 0.6663431941853863,
+              "y": 0.38721970181365184
+            },
+            {
+              "x": 0.6672902500884904,
+              "y": 0.38879934718099146
+            },
+            {
+              "x": 0.6666137815862732,
+              "y": 0.39178312176374414
+            },
+            {
+              "x": 0.6649902571809518,
+              "y": 0.3952934448022767
+            },
+            {
+              "x": 0.6652608445818388,
+              "y": 0.3988037678408093
+            },
+            {
+              "x": 0.665937313084056,
+              "y": 0.4019630585754886
+            },
+            {
+              "x": 0.6662079004849428,
+              "y": 0.40564889776594776
+            },
+            {
+              "x": 0.6679667185907077,
+              "y": 0.4082816400448472
+            },
+            {
+              "x": 0.6706725925995765,
+              "y": 0.4096857692602602
+            },
+            {
+              "x": 0.6708078863000199,
+              "y": 0.4114409307795265
+            },
+            {
+              "x": 0.6693196555951421,
+              "y": 0.4138981569064993
+            },
+            {
+              "x": 0.6681020122911511,
+              "y": 0.41565331842576553
+            },
+            {
+              "x": 0.6686431870929248,
+              "y": 0.4189881253123715
+            },
+            {
+              "x": 0.6689137744938117,
+              "y": 0.42056777067971113
+            },
+            {
+              "x": 0.668372599692038,
+              "y": 0.4212698352874176
+            },
+            {
+              "x": 0.6689137744938117,
+              "y": 0.4240780937182437
+            }
+          ],
+          "target_location_id": "",
+          "created_at": "2026-08-10T23:19:47.810333Z",
+          "last_updated": "2026-08-10T23:20:51.137349Z"
+        },
+        {
+          "record_id": "0a5354f3-c03c-433c-8ce1-092993a6e4b3",
+          "name": "Hogsmeade Valley",
+          "type_label": "",
+          "behavior_type": "travel",
+          "hover_text": "Home of Hogwarts, Hogsmeade, and the Dark Forest.",
+          "points": [
+            {
+              "x": 0.667154956388047,
+              "y": 0.339479308489609
+            },
+            {
+              "x": 0.6681020122911511,
+              "y": 0.3370220823626362
+            },
+            {
+              "x": 0.6685078933924814,
+              "y": 0.3356179531472232
+            },
+            {
+              "x": 0.6704020051986895,
+              "y": 0.33509140469144333
+            },
+            {
+              "x": 0.6716196485026805,
+              "y": 0.33456485623566345
+            },
+            {
+              "x": 0.6728372918066715,
+              "y": 0.33456485623566345
+            },
+            {
+              "x": 0.6733784666084454,
+              "y": 0.33526692084336995
+            },
+            {
+              "x": 0.6745961099124362,
+              "y": 0.3349158885395167
+            },
+            {
+              "x": 0.6764902217186445,
+              "y": 0.3338627916279569
+            },
+            {
+              "x": 0.6777078650226355,
+              "y": 0.33263417856447053
+            },
+            {
+              "x": 0.6806843264323912,
+              "y": 0.33105453319713085
+            },
+            {
+              "x": 0.6821725571372691,
+              "y": 0.3298259201336445
+            },
+            {
+              "x": 0.6828490256394862,
+              "y": 0.32649111324703856
+            },
+            {
+              "x": 0.6828490256394862,
+              "y": 0.32227872560079945
+            },
+            {
+              "x": 0.6833902004412601,
+              "y": 0.32017253177767996
+            },
+            {
+              "x": 0.6843372563443642,
+              "y": 0.31596014413144086
+            },
+            {
+              "x": 0.6832549067408166,
+              "y": 0.3136784341563947
+            },
+            {
+              "x": 0.6873137177541199,
+              "y": 0.3122743049409817
+            },
+            {
+              "x": 0.6917784098687535,
+              "y": 0.3105191434217154
+            },
+            {
+              "x": 0.6957019271816133,
+              "y": 0.3085884657505225
+            },
+            {
+              "x": 0.6985430948909256,
+              "y": 0.30139230352153074
+            },
+            {
+              "x": 0.7330429885040034,
+              "y": 0.3019188519773106
+            },
+            {
+              "x": 0.7625370152006739,
+              "y": 0.2778731391633626
+            },
+            {
+              "x": 0.7969016151133083,
+              "y": 0.2710280092382241
+            },
+            {
+              "x": 0.8481779275813729,
+              "y": 0.2710280092382241
+            },
+            {
+              "x": 0.9108189108866868,
+              "y": 0.3331607270202504
+            },
+            {
+              "x": 0.9389600005789227,
+              "y": 0.32210320944887283
+            },
+            {
+              "x": 0.9564128879361268,
+              "y": 0.3068333042312562
+            },
+            {
+              "x": 0.9771128241039735,
+              "y": 0.31139672418134856
+            },
+            {
+              "x": 0.9902588535680722,
+              "y": 0.3019188519773106
+            },
+            {
+              "x": 0.9902588535680722,
+              "y": 0.40494683315824126
+            },
+            {
+              "x": 0.9625236449771665,
+              "y": 0.47216951934613977
+            },
+            {
+              "x": 0.9418237088093198,
+              "y": 0.46093648562283557
+            },
+            {
+              "x": 0.9288355135667493,
+              "y": 0.443735902734026
+            },
+            {
+              "x": 0.9167943742272829,
+              "y": 0.44075212815127335
+            },
+            {
+              "x": 0.9089473396015633,
+              "y": 0.44215625736668634
+            },
+            {
+              "x": 0.9054297033900338,
+              "y": 0.44408693503787927
+            },
+            {
+              "x": 0.9021826545793912,
+              "y": 0.4461931288609988
+            },
+            {
+              "x": 0.8992061931696355,
+              "y": 0.4461931288609988
+            },
+            {
+              "x": 0.8973120813634272,
+              "y": 0.4467196773167787
+            },
+            {
+              "x": 0.8921709207465764,
+              "y": 0.4460176127090722
+            },
+            {
+              "x": 0.8910885711430289,
+              "y": 0.44461348349365915
+            },
+            {
+              "x": 0.8881121097332731,
+              "y": 0.4435603865820994
+            },
+            {
+              "x": 0.8858121168257346,
+              "y": 0.4430338381263195
+            },
+            {
+              "x": 0.8841885924204133,
+              "y": 0.4435603865820994
+            },
+            {
+              "x": 0.8808062499093272,
+              "y": 0.443735902734026
+            },
+            {
+              "x": 0.8789121381031191,
+              "y": 0.4435603865820994
+            },
+            {
+              "x": 0.876747438896024,
+              "y": 0.44391141888595265
+            },
+            {
+              "x": 0.8714709845787297,
+              "y": 0.4428583219743929
+            },
+            {
+              "x": 0.8698474601734084,
+              "y": 0.4409276443032
+            },
+            {
+              "x": 0.867276879864983,
+              "y": 0.44005006354356685
+            },
+            {
+              "x": 0.8598357263405937,
+              "y": 0.44005006354356685
+            },
+            {
+              "x": 0.8540180972215257,
+              "y": 0.43829490202430055
+            },
+            {
+              "x": 0.849823992507779,
+              "y": 0.4428583219743929
+            },
+            {
+              "x": 0.8450887129922584,
+              "y": 0.4458420965571456
+            },
+            {
+              "x": 0.8429240137851634,
+              "y": 0.44566658040521895
+            },
+            {
+              "x": 0.8429240137851634,
+              "y": 0.44794829038026507
+            },
+            {
+              "x": 0.8433298948864937,
+              "y": 0.4500544842033846
+            },
+            {
+              "x": 0.8407593145780683,
+              "y": 0.45040551650723787
+            },
+            {
+              "x": 0.8376475594678692,
+              "y": 0.448474838836045
+            },
+            {
+              "x": 0.8315593429479142,
+              "y": 0.4453155481013657
+            },
+            {
+              "x": 0.8224946650182036,
+              "y": 0.4442624511898059
+            },
+            {
+              "x": 0.8164064484982486,
+              "y": 0.44162970891090647
+            },
+            {
+              "x": 0.8138358681898232,
+              "y": 0.44005006354356685
+            },
+            {
+              "x": 0.8124829311853888,
+              "y": 0.4353111274415479
+            },
+            {
+              "x": 0.8105896736911821,
+              "y": 0.43509563562362424
+            },
+            {
+              "x": 0.8087576044600447,
+              "y": 0.43445429349895326
+            },
+            {
+              "x": 0.8076234663645788,
+              "y": 0.43332251327894566
+            },
+            {
+              "x": 0.8057332362054689,
+              "y": 0.43056851474359387
+            },
+            {
+              "x": 0.8028833507348109,
+              "y": 0.43045533672159314
+            },
+            {
+              "x": 0.8022145000631259,
+              "y": 0.42909720045758404
+            },
+            {
+              "x": 0.802040017279208,
+              "y": 0.42819177628157795
+            },
+            {
+              "x": 0.8011385228956326,
+              "y": 0.42788996822290926
+            },
+            {
+              "x": 0.799655419232331,
+              "y": 0.42796542023757644
+            },
+            {
+              "x": 0.797387143041399,
+              "y": 0.42762588617157415
+            },
+            {
+              "x": 0.7961657635539742,
+              "y": 0.42713544807623754
+            },
+            {
+              "x": 0.7952642691703987,
+              "y": 0.42645637994423297
+            },
+            {
+              "x": 0.7939265678270286,
+              "y": 0.42490961364355595
+            },
+            {
+              "x": 0.7928505906595353,
+              "y": 0.4244569015555529
+            },
+            {
+              "x": 0.7909894409644117,
+              "y": 0.42355147737954685
+            },
+            {
+              "x": 0.788546681989562,
+              "y": 0.42396646346021627
+            },
+            {
+              "x": 0.7879650727098358,
+              "y": 0.42377783342354836
+            },
+            {
+              "x": 0.7869181760063289,
+              "y": 0.42464553159222085
+            },
+            {
+              "x": 0.7843300147115476,
+              "y": 0.42702227005423676
+            },
+            {
+              "x": 0.7822071408405472,
+              "y": 0.42687136602490244
+            },
+            {
+              "x": 0.7807531176412319,
+              "y": 0.42683364001756885
+            },
+            {
+              "x": 0.779531738153807,
+              "y": 0.42457007957755366
+            },
+            {
+              "x": 0.7772634619628752,
+              "y": 0.42592821584156276
+            },
+            {
+              "x": 0.7762747261873408,
+              "y": 0.4266827359882345
+            },
+            {
+              "x": 0.7756640364436284,
+              "y": 0.42630547591489865
+            },
+            {
+              "x": 0.7755767950516694,
+              "y": 0.42581503781956204
+            },
+            {
+              "x": 0.7753150708757927,
+              "y": 0.42464553159222085
+            },
+            {
+              "x": 0.7740355304603952,
+              "y": 0.42347602536487966
+            },
+            {
+              "x": 0.7737738062845185,
+              "y": 0.42204243708620337
+            },
+            {
+              "x": 0.773831967212491,
+              "y": 0.41747759019883945
+            },
+            {
+              "x": 0.773163116540806,
+              "y": 0.4161194539348303
+            },
+            {
+              "x": 0.7725233463331073,
+              "y": 0.4161949059494975
+            },
+            {
+              "x": 0.7720289784453401,
+              "y": 0.41547811181015937
+            },
+            {
+              "x": 0.7716218519495318,
+              "y": 0.41687397408150206
+            },
+            {
+              "x": 0.7702841506061617,
+              "y": 0.41830756236017835
+            },
+            {
+              "x": 0.7697025413264356,
+              "y": 0.42128791693953166
+            },
+            {
+              "x": 0.7685393227669833,
+              "y": 0.42324966932087815
+            },
+            {
+              "x": 0.7681031158071888,
+              "y": 0.423626929394214
+            },
+            {
+              "x": 0.7673470237435448,
+              "y": 0.42381555943088195
+            },
+            {
+              "x": 0.7659511614722021,
+              "y": 0.424720983606888
+            },
+            {
+              "x": 0.7649333452326814,
+              "y": 0.42547550375355975
+            },
+            {
+              "x": 0.7638864485291744,
+              "y": 0.42653183195890015
+            },
+            {
+              "x": 0.7630140346095852,
+              "y": 0.42713544807623754
+            },
+            {
+              "x": 0.7619962183700645,
+              "y": 0.42709772206890395
+            },
+            {
+              "x": 0.7610074825945301,
+              "y": 0.4258527638268956
+            },
+            {
+              "x": 0.7599896663550094,
+              "y": 0.42645637994423297
+            },
+            {
+              "x": 0.7580121948039406,
+              "y": 0.4277767902009085
+            },
+            {
+              "x": 0.7542898954136934,
+              "y": 0.42871994038424815
+            },
+            {
+              "x": 0.7539409298458577,
+              "y": 0.42826722829624514
+            },
+            {
+              "x": 0.7541735735577482,
+              "y": 0.4275127081495734
+            },
+            {
+              "x": 0.7550750679413236,
+              "y": 0.42679591401023526
+            },
+            {
+              "x": 0.7555694358290909,
+              "y": 0.42615457188556427
+            },
+            {
+              "x": 0.7557439186130087,
+              "y": 0.42453235357022007
+            },
+            {
+              "x": 0.7566744934605705,
+              "y": 0.42381555943088195
+            },
+            {
+              "x": 0.7583611603717763,
+              "y": 0.42332512133554534
+            },
+            {
+              "x": 0.7581285166598858,
+              "y": 0.42106156089553015
+            },
+            {
+              "x": 0.7581285166598858,
+              "y": 0.4189489044848493
+            },
+            {
+              "x": 0.7582157580518447,
+              "y": 0.41777939825750815
+            },
+            {
+              "x": 0.7575759878441459,
+              "y": 0.417515316206173
+            },
+            {
+              "x": 0.7565290911406389,
+              "y": 0.4184584663895127
+            },
+            {
+              "x": 0.7558311600049676,
+              "y": 0.41826983635284476
+            },
+            {
+              "x": 0.7553367921172004,
+              "y": 0.41660989203016696
+            },
+            {
+              "x": 0.7549005851574058,
+              "y": 0.41691170008883566
+            },
+            {
+              "x": 0.7539990907738303,
+              "y": 0.41887345247018215
+            },
+            {
+              "x": 0.7532720791741726,
+              "y": 0.4195525206021867
+            },
+            {
+              "x": 0.7528067917503918,
+              "y": 0.41959024660952027
+            },
+            {
+              "x": 0.7526032285024876,
+              "y": 0.41932616455818517
+            },
+            {
+              "x": 0.7522542629346519,
+              "y": 0.4195525206021867
+            },
+            {
+              "x": 0.7519634582947888,
+              "y": 0.41989205466818896
+            },
+            {
+              "x": 0.7519052973668162,
+              "y": 0.42128791693953166
+            },
+            {
+              "x": 0.7517017341189122,
+              "y": 0.42264605320354076
+            },
+            {
+              "x": 0.7504803546314872,
+              "y": 0.42441917554821934
+            },
+            {
+              "x": 0.7499569062797338,
+              "y": 0.42619229789289786
+            },
+            {
+              "x": 0.7496661016398707,
+              "y": 0.42709772206890395
+            },
+            {
+              "x": 0.7499569062797338,
+              "y": 0.42762588617157415
+            },
+            {
+              "x": 0.7505094350954735,
+              "y": 0.42736180412023905
+            },
+            {
+              "x": 0.7511492053031723,
+              "y": 0.42687136602490244
+            },
+            {
+              "x": 0.7515272513349943,
+              "y": 0.42705999606157036
+            },
+            {
+              "x": 0.7517017341189122,
+              "y": 0.42788996822290926
+            },
+            {
+              "x": 0.7515272513349943,
+              "y": 0.42943673452358627
+            },
+            {
+              "x": 0.7509165615912818,
+              "y": 0.43015352866292444
+            },
+            {
+              "x": 0.7501023085996653,
+              "y": 0.43022898067759163
+            },
+            {
+              "x": 0.7490554118961583,
+              "y": 0.42966309056758784
+            },
+            {
+              "x": 0.7479212738006923,
+              "y": 0.42883311840624894
+            },
+            {
+              "x": 0.7476304691608293,
+              "y": 0.42792769423024285
+            },
+            {
+              "x": 0.7465544919933359,
+              "y": 0.4277767902009085
+            },
+            {
+              "x": 0.7459728827136098,
+              "y": 0.42653183195890015
+            },
+            {
+              "x": 0.7453621929698974,
+              "y": 0.42577731181222844
+            },
+            {
+              "x": 0.744751503226185,
+              "y": 0.4255886817755605
+            },
+            {
+              "x": 0.7445479399782808,
+              "y": 0.42517369569489105
+            },
+            {
+              "x": 0.7437627674506505,
+              "y": 0.42547550375355975
+            },
+            {
+              "x": 0.7431520777069381,
+              "y": 0.42619229789289786
+            },
+            {
+              "x": 0.7417271349716091,
+              "y": 0.4266827359882345
+            },
+            {
+              "x": 0.7406220773401295,
+              "y": 0.42739953012757265
+            },
+            {
+              "x": 0.7401277094523623,
+              "y": 0.42739953012757265
+            },
+            {
+              "x": 0.7398659852764855,
+              "y": 0.42713544807623754
+            },
+            {
+              "x": 0.7393134564607458,
+              "y": 0.42770133818624134
+            },
+            {
+              "x": 0.7391971346048005,
+              "y": 0.42838040631824587
+            },
+            {
+              "x": 0.7391098932128416,
+              "y": 0.42928583049425195
+            },
+            {
+              "x": 0.7385573643971017,
+              "y": 0.42985172060425575
+            },
+            {
+              "x": 0.737539548157581,
+              "y": 0.42992717261892294
+            },
+            {
+              "x": 0.7352712719666492,
+              "y": 0.42973854258225497
+            },
+            {
+              "x": 0.7341080534071969,
+              "y": 0.42830495430357873
+            },
+            {
+              "x": 0.7337009269113887,
+              "y": 0.42819177628157795
+            },
+            {
+              "x": 0.7325667888159226,
+              "y": 0.42932355650158555
+            },
+            {
+              "x": 0.730880121904717,
+              "y": 0.42977626858958856
+            },
+            {
+              "x": 0.7291643745295249,
+              "y": 0.42977626858958856
+            },
+            {
+              "x": 0.728611845713785,
+              "y": 0.42943673452358627
+            },
+            {
+              "x": 0.7275067880823054,
+              "y": 0.42977626858958856
+            },
+            {
+              "x": 0.7262563281308942,
+              "y": 0.42954991254558705
+            },
+            {
+              "x": 0.7245696612196885,
+              "y": 0.42853131034758024
+            },
+            {
+              "x": 0.7240171324039487,
+              "y": 0.42819177628157795
+            },
+            {
+              "x": 0.7229411552364554,
+              "y": 0.42506051767289027
+            },
+            {
+              "x": 0.7227375919885513,
+              "y": 0.4258527638268956
+            },
+            {
+              "x": 0.7223886264207156,
+              "y": 0.42743725613490624
+            },
+            {
+              "x": 0.7213126492532222,
+              "y": 0.42792769423024285
+            },
+            {
+              "x": 0.7204983962616056,
+              "y": 0.42875766639158175
+            },
+            {
+              "x": 0.7185500051745232,
+              "y": 0.42890857042091607
+            },
+            {
+              "x": 0.7169796601192626,
+              "y": 0.42736180412023905
+            },
+            {
+              "x": 0.7164271313035228,
+              "y": 0.42743725613490624
+            },
+            {
+              "x": 0.7156419587758925,
+              "y": 0.42815405027424436
+            },
+            {
+              "x": 0.7145369011444129,
+              "y": 0.42822950228891155
+            },
+            {
+              "x": 0.7135190849048921,
+              "y": 0.42758816016424056
+            },
+            {
+              "x": 0.7131410388730702,
+              "y": 0.42717317408357114
+            },
+            {
+              "x": 0.7127920733052345,
+              "y": 0.42607911987089714
+            },
+            {
+              "x": 0.7122977054174673,
+              "y": 0.42638092792956583
+            },
+            {
+              "x": 0.7119778203136179,
+              "y": 0.42743725613490624
+            },
+            {
+              "x": 0.7118033375297002,
+              "y": 0.42905947445025044
+            },
+            {
+              "x": 0.7108727626821383,
+              "y": 0.42951218653825346
+            },
+            {
+              "x": 0.7090988543789737,
+              "y": 0.42958763855292065
+            },
+            {
+              "x": 0.7080519576754666,
+              "y": 0.42894629642824966
+            },
+            {
+              "x": 0.7073831070037816,
+              "y": 0.4275127081495734
+            },
+            {
+              "x": 0.7074994288597268,
+              "y": 0.42660728397356734
+            },
+            {
+              "x": 0.7081682795314118,
+              "y": 0.42551322976089334
+            },
+            {
+              "x": 0.7088371302030969,
+              "y": 0.42494733965088954
+            },
+            {
+              "x": 0.7089243715950558,
+              "y": 0.42441917554821934
+            },
+            {
+              "x": 0.7084881646352612,
+              "y": 0.42434372353355215
+            },
+            {
+              "x": 0.7081391990674255,
+              "y": 0.42487188763622236
+            },
+            {
+              "x": 0.7075575897876994,
+              "y": 0.4252868737168918
+            },
+            {
+              "x": 0.7071213828279048,
+              "y": 0.42543777774622615
+            },
+            {
+              "x": 0.7065979344761513,
+              "y": 0.4258527638268956
+            },
+            {
+              "x": 0.7061035665883841,
+              "y": 0.42792769423024285
+            },
+            {
+              "x": 0.7054637963806853,
+              "y": 0.42890857042091607
+            },
+            {
+              "x": 0.7043296582852194,
+              "y": 0.42909720045758404
+            },
+            {
+              "x": 0.7017705774544245,
+              "y": 0.42871994038424815
+            },
+            {
+              "x": 0.7005491979669997,
+              "y": 0.4286067623622474
+            },
+            {
+              "x": 0.6998803472953146,
+              "y": 0.42815405027424436
+            },
+            {
+              "x": 0.6995023012634927,
+              "y": 0.42826722829624514
+            },
+            {
+              "x": 0.698019197600191,
+              "y": 0.42951218653825346
+            },
+            {
+              "x": 0.6955182776973686,
+              "y": 0.42932355650158555
+            },
+            {
+              "x": 0.694413220065889,
+              "y": 0.42800314624491004
+            },
+            {
+              "x": 0.6940933349620396,
+              "y": 0.42728635210557186
+            },
+            {
+              "x": 0.6937152889302177,
+              "y": 0.42747498214223983
+            },
+            {
+              "x": 0.693366323362382,
+              "y": 0.42830495430357873
+            },
+            {
+              "x": 0.6917959783071215,
+              "y": 0.42838040631824587
+            },
+            {
+              "x": 0.6899929895399705,
+              "y": 0.42690909203223604
+            },
+            {
+              "x": 0.6895858630441623,
+              "y": 0.4255886817755605
+            },
+            {
+              "x": 0.6891205756203813,
+              "y": 0.4230610392842102
+            },
+            {
+              "x": 0.6887425295885593,
+              "y": 0.42272150521820795
+            },
+            {
+              "x": 0.6881027593808606,
+              "y": 0.42238197115220566
+            },
+            {
+              "x": 0.6874920696371482,
+              "y": 0.4217029030202011
+            },
+            {
+              "x": 0.6863579315416822,
+              "y": 0.42075975283686146
+            },
+            {
+              "x": 0.6849039083423669,
+              "y": 0.4192129865361844
+            },
+            {
+              "x": 0.684816666950408,
+              "y": 0.4178925762795089
+            },
+            {
+              "x": 0.6842932185986546,
+              "y": 0.4103851008201252
+            },
+            {
+              "x": 0.6840024139587915,
+              "y": 0.4101210187687901
+            },
+            {
+              "x": 0.6833044828231201,
+              "y": 0.41163005906213357
+            },
+            {
+              "x": 0.6826065516874488,
+              "y": 0.4134409074141457
+            },
+            {
+              "x": 0.6811816089521198,
+              "y": 0.4142708795754846
+            },
+            {
+              "x": 0.6809780457042156,
+              "y": 0.4150253997221563
+            },
+            {
+              "x": 0.6821703447276541,
+              "y": 0.41657216602283337
+            },
+            {
+              "x": 0.6826065516874488,
+              "y": 0.4189866304921829
+            },
+            {
+              "x": 0.6826647126154214,
+              "y": 0.42125019093219807
+            },
+            {
+              "x": 0.6827810344713666,
+              "y": 0.42238197115220566
+            },
+            {
+              "x": 0.6844967818465586,
+              "y": 0.4269468180395696
+            },
+            {
+              "x": 0.6846712646304765,
+              "y": 0.42762588617157415
+            },
+            {
+              "x": 0.6840314944227778,
+              "y": 0.42807859825957717
+            },
+            {
+              "x": 0.6830427586472434,
+              "y": 0.42811632426691076
+            },
+            {
+              "x": 0.6821994251916405,
+              "y": 0.42698454404690317
+            },
+            {
+              "x": 0.6810943675601608,
+              "y": 0.4252868737168918
+            },
+            {
+              "x": 0.6805709192084073,
+              "y": 0.4244569015555529
+            },
+            {
+              "x": 0.680251034104558,
+              "y": 0.4258527638268956
+            },
+            {
+              "x": 0.6794077006489551,
+              "y": 0.42687136602490244
+            },
+            {
+              "x": 0.6781281602335576,
+              "y": 0.42698454404690317
+            },
+            {
+              "x": 0.6764124128583655,
+              "y": 0.42656955796623375
+            },
+            {
+              "x": 0.6754818380108037,
+              "y": 0.42649410595156656
+            },
+            {
+              "x": 0.6749293091950639,
+              "y": 0.42649410595156656
+            },
+            {
+              "x": 0.6741441366674337,
+              "y": 0.42702227005423676
+            },
+            {
+              "x": 0.6739114929555432,
+              "y": 0.42826722829624514
+            },
+            {
+              "x": 0.6735625273877075,
+              "y": 0.42887084441358253
+            },
+            {
+              "x": 0.6719631018684608,
+              "y": 0.42928583049425195
+            },
+            {
+              "x": 0.669898388925433,
+              "y": 0.42773906419357494
+            },
+            {
+              "x": 0.669811147533474,
+              "y": 0.42630547591489865
+            },
+            {
+              "x": 0.6688224117579397,
+              "y": 0.42185380704953546
+            },
+            {
+              "x": 0.6692586187177343,
+              "y": 0.41996750668285615
+            },
+            {
+              "x": 0.6685606875820629,
+              "y": 0.41577991986882806
+            },
+            {
+              "x": 0.6696657452135425,
+              "y": 0.4150631257294899
+            },
+            {
+              "x": 0.6708871247009673,
+              "y": 0.41215822316480377
+            },
+            {
+              "x": 0.6712651707327894,
+              "y": 0.410498278842126
+            },
+            {
+              "x": 0.6701601131013097,
+              "y": 0.40861197847544667
+            },
+            {
+              "x": 0.6685316071180766,
+              "y": 0.4083856224314451
+            },
+            {
+              "x": 0.6665832160309941,
+              "y": 0.4055184458740926
+            },
+            {
+              "x": 0.6661179286072132,
+              "y": 0.4014817630893988
+            },
+            {
+              "x": 0.6657689630393775,
+              "y": 0.3990672986200493
+            },
+            {
+              "x": 0.6653618365435692,
+              "y": 0.3958228619893609
+            },
+            {
+              "x": 0.6675719518065285,
+              "y": 0.3891076326839825
+            },
+            {
+              "x": 0.6673683885586243,
+              "y": 0.3883153865299772
+            },
+            {
+              "x": 0.6665832160309941,
+              "y": 0.38703270228063524
+            },
+            {
+              "x": 0.6660597676792406,
+              "y": 0.3841655257232827
+            },
+            {
+              "x": 0.665536319327487,
+              "y": 0.3814115271879309
+            },
+            {
+              "x": 0.6652745951516102,
+              "y": 0.37624306418322956
+            },
+            {
+              "x": 0.6656526411834323,
+              "y": 0.37198002535453434
+            },
+            {
+              "x": 0.6676591931984874,
+              "y": 0.3673774524598368
+            },
+            {
+              "x": 0.668008158766323,
+              "y": 0.36390665978514686
+            },
+            {
+              "x": 0.6675428713425422,
+              "y": 0.3605113191251241
+            },
+            {
+              "x": 0.6688805726859123,
+              "y": 0.3579082246191066
+            },
+            {
+              "x": 0.6716722972285977,
+              "y": 0.3571159784651013
+            },
+            {
+              "x": 0.6735334469237212,
+              "y": 0.35590874623042656
+            },
+            {
+              "x": 0.6744349413072968,
+              "y": 0.35481469201775256
+            },
+            {
+              "x": 0.674085975739461,
+              "y": 0.3504384751670565
+            },
+            {
+              "x": 0.6740278148114884,
+              "y": 0.3490426128957138
+            },
+            {
+              "x": 0.6751910333709407,
+              "y": 0.3471185865217009
+            },
+            {
+              "x": 0.6759180449705984,
+              "y": 0.3457981762650254
+            },
+            {
+              "x": 0.6760634472905299,
+              "y": 0.3431950817590079
+            },
+            {
+              "x": 0.6757144817226942,
+              "y": 0.34123332937766143
+            },
+            {
+              "x": 0.6748711482670913,
+              "y": 0.341459685421663
+            },
+            {
+              "x": 0.6735334469237212,
+              "y": 0.3420255755316668
+            },
+            {
+              "x": 0.672661033004132,
+              "y": 0.34262919164900413
+            },
+            {
+              "x": 0.6723120674362963,
+              "y": 0.3437609718690117
+            },
+            {
+              "x": 0.6715268949086661,
+              "y": 0.3444023139936827
+            },
+            {
+              "x": 0.670189193565296,
+              "y": 0.3444777660083499
+            },
+            {
+              "x": 0.6689968945418575,
+              "y": 0.3436855198543446
+            },
+            {
+              "x": 0.6680372392303093,
+              "y": 0.3427046436636713
+            },
+            {
+              "x": 0.6676301127345011,
+              "y": 0.3411956033703279
+            },
+            {
+              "x": 0.6673102276306517,
+              "y": 0.3402901791943218
+            }
+          ],
+          "target_location_id": "38b8b79b-0785-4213-826e-0e65998d3b41",
+          "created_at": "2026-08-10T23:27:22.604259Z",
+          "last_updated": "2026-08-10T23:42:18.819516Z"
+        },
+        {
+          "record_id": "2eba8868-5380-4ec8-bba5-234e31db53f1",
+          "name": "Pittshire",
+          "type_label": "Area",
+          "behavior_type": "area",
+          "hover_text": "A sleepy town in the mountains along a shallow river",
+          "points": [
+            {
+              "x": 0.9899882661671853,
+              "y": 0.3018872628432477
+            },
+            {
+              "x": 0.9771353646250582,
+              "y": 0.3113651350472856
+            },
+            {
+              "x": 0.956570722157655,
+              "y": 0.30627516664141335
+            },
+            {
+              "x": 0.9396590096022247,
+              "y": 0.3218961041628832
+            },
+            {
+              "x": 0.910976745108215,
+              "y": 0.33260258943040755
+            },
+            {
+              "x": 0.8480651744020143,
+              "y": 0.2708209039522345
+            },
+            {
+              "x": 0.7970594493348365,
+              "y": 0.2708209039522345
+            },
+            {
+              "x": 0.7622889683208719,
+              "y": 0.2780170661812263
+            },
+            {
+              "x": 0.732659647923758,
+              "y": 0.3018872628432477
+            },
+            {
+              "x": 0.6977538732093499,
+              "y": 0.30136071438746775
+            },
+            {
+              "x": 0.6804362795525893,
+              "y": 0.27046987164838127
+            },
+            {
+              "x": 0.6878774330769786,
+              "y": 0.24133419042856105
+            },
+            {
+              "x": 0.684630384266336,
+              "y": 0.206933024650942
+            },
+            {
+              "x": 0.7647242549288539,
+              "y": 0.1899079579140591
+            },
+            {
+              "x": 0.8373769720669824,
+              "y": 0.1446247907169891
+            },
+            {
+              "x": 0.9310002127738445,
+              "y": 0.19008347406598572
+            }
+          ],
+          "target_location_id": "",
+          "created_at": "2026-08-10T23:32:20.070295Z",
+          "last_updated": "2026-08-10T23:34:55.170178Z"
+        },
+        {
+          "record_id": "53ef1ca8-5939-42f8-ab87-e36ab2885353",
+          "name": "Aranshire",
+          "type_label": "",
+          "behavior_type": "area",
+          "hover_text": "",
+          "points": [
+            {
+              "x": 0.9625508051875304,
+              "y": 0.4726678662086356
+            },
+            {
+              "x": 0.9411512652946907,
+              "y": 0.46065565046837215
+            },
+            {
+              "x": 0.9288053768949756,
+              "y": 0.44357161030444187
+            },
+            {
+              "x": 0.9162761841372248,
+              "y": 0.440396095294891
+            },
+            {
+              "x": 0.9083389282626632,
+              "y": 0.44292670916969396
+            },
+            {
+              "x": 0.904572094966261,
+              "y": 0.44484648521264797
+            },
+            {
+              "x": 0.9022178241560097,
+              "y": 0.44667899870819494
+            },
+            {
+              "x": 0.8991236396625365,
+              "y": 0.44606816087634593
+            },
+            {
+              "x": 0.8976438122960928,
+              "y": 0.44650447361338097
+            },
+            {
+              "x": 0.8932715950770546,
+              "y": 0.44650447361338097
+            },
+            {
+              "x": 0.8919935623514895,
+              "y": 0.445108272854869
+            },
+            {
+              "x": 0.8902446754638743,
+              "y": 0.44458469757042696
+            },
+            {
+              "x": 0.8894374969003596,
+              "y": 0.44362480954894995
+            },
+            {
+              "x": 0.8851998094419071,
+              "y": 0.44283944662228697
+            },
+            {
+              "x": 0.8808275922228689,
+              "y": 0.443799334643764
+            },
+            {
+              "x": 0.8787423809337892,
+              "y": 0.44318849681191497
+            },
+            {
+              "x": 0.8771280238067597,
+              "y": 0.44397385973857795
+            },
+            {
+              "x": 0.8725540119468428,
+              "y": 0.443363021906729
+            },
+            {
+              "x": 0.8715450387424494,
+              "y": 0.44187955860080996
+            },
+            {
+              "x": 0.8704015357774701,
+              "y": 0.44153050841118197
+            },
+            {
+              "x": 0.8696616220942482,
+              "y": 0.440483357842298
+            },
+            {
+              "x": 0.8642804316708166,
+              "y": 0.43952346982082097
+            },
+            {
+              "x": 0.8599082144517785,
+              "y": 0.44022157020007696
+            },
+            {
+              "x": 0.85762120852182,
+              "y": 0.439087157083786
+            },
+            {
+              "x": 0.8549306133101041,
+              "y": 0.43838905670453
+            },
+            {
+              "x": 0.8534507859436604,
+              "y": 0.43882536944156497
+            },
+            {
+              "x": 0.8509619853728233,
+              "y": 0.44187955860080996
+            },
+            {
+              "x": 0.8451772056676343,
+              "y": 0.44563184813931095
+            },
+            {
+              "x": 0.8426211402165042,
+              "y": 0.44554458559190396
+            },
+            {
+              "x": 0.8426884050967972,
+              "y": 0.44685352380300897
+            },
+            {
+              "x": 0.8426211402165042,
+              "y": 0.44824972456152096
+            },
+            {
+              "x": 0.8432937890194332,
+              "y": 0.4498204504148469
+            },
+            {
+              "x": 0.8420830211741611,
+              "y": 0.45060581334150995
+            },
+            {
+              "x": 0.8401323396456671,
+              "y": 0.45060581334150995
+            },
+            {
+              "x": 0.8392578962018595,
+              "y": 0.44973318786743993
+            },
+            {
+              "x": 0.8378453337157087,
+              "y": 0.44842424965633493
+            },
+            {
+              "x": 0.8367690956310224,
+              "y": 0.44833698710892794
+            },
+            {
+              "x": 0.8360291819478005,
+              "y": 0.44685352380300897
+            },
+            {
+              "x": 0.8340785004193065,
+              "y": 0.44598089832893895
+            },
+            {
+              "x": 0.833136792095206,
+              "y": 0.445457323044497
+            },
+            {
+              "x": 0.8317914944893481,
+              "y": 0.444759222665241
+            },
+            {
+              "x": 0.8299753427214399,
+              "y": 0.444759222665241
+            },
+            {
+              "x": 0.829302693918511,
+              "y": 0.44449743502301997
+            },
+            {
+              "x": 0.8270829528688455,
+              "y": 0.44458469757042696
+            },
+            {
+              "x": 0.824123298135958,
+              "y": 0.44397385973857795
+            },
+            {
+              "x": 0.8221053517271711,
+              "y": 0.444148384833392
+            },
+            {
+              "x": 0.8204237297198488,
+              "y": 0.44275218407488
+            },
+            {
+              "x": 0.8185403130716477,
+              "y": 0.442403133885252
+            },
+            {
+              "x": 0.8156479232190532,
+              "y": 0.44161777095858895
+            },
+            {
+              "x": 0.8158497178599319,
+              "y": 0.440396095294891
+            },
+            {
+              "x": 0.8134954470496806,
+              "y": 0.439697994915635
+            },
+            {
+              "x": 0.813226387528509,
+              "y": 0.438040006514902
+            },
+            {
+              "x": 0.8122846792044084,
+              "y": 0.435683917734913
+            },
+            {
+              "x": 0.8091904947109352,
+              "y": 0.434549504618622
+            },
+            {
+              "x": 0.8081142566262489,
+              "y": 0.433851404239366
+            },
+            {
+              "x": 0.8061635750977549,
+              "y": 0.43105900272234204
+            },
+            {
+              "x": 0.8043474233298468,
+              "y": 0.430884477627528
+            },
+            {
+              "x": 0.8026658013225244,
+              "y": 0.43009911470086504
+            },
+            {
+              "x": 0.8020604173998883,
+              "y": 0.42844112630013204
+            },
+            {
+              "x": 0.797755465061143,
+              "y": 0.42800481356309705
+            },
+            {
+              "x": 0.7956029888917704,
+              "y": 0.42643408770977104
+            },
+            {
+              "x": 0.7934505127223976,
+              "y": 0.4245143116668171
+            },
+            {
+              "x": 0.7915670960741966,
+              "y": 0.4240779989297821
+            },
+            {
+              "x": 0.7898854740668743,
+              "y": 0.42390347383496807
+            },
+            {
+              "x": 0.7883383818201376,
+              "y": 0.42390347383496807
+            },
+            {
+              "x": 0.7880020574186731,
+              "y": 0.42372894874015404
+            },
+            {
+              "x": 0.787396673496037,
+              "y": 0.42425252402459607
+            },
+            {
+              "x": 0.7862531705310579,
+              "y": 0.42564872478310806
+            },
+            {
+              "x": 0.7848406080449071,
+              "y": 0.42660861280458506
+            },
+            {
+              "x": 0.783629840199635,
+              "y": 0.4268704004468061
+            },
+            {
+              "x": 0.7820154830726055,
+              "y": 0.4268704004468061
+            },
+            {
+              "x": 0.7806701854667475,
+              "y": 0.42669587535199205
+            },
+            {
+              "x": 0.7795939473820612,
+              "y": 0.4247760993090381
+            },
+            {
+              "x": 0.778450444417082,
+              "y": 0.42599777497273605
+            },
+            {
+              "x": 0.7769706170506383,
+              "y": 0.42634682516236405
+            },
+            {
+              "x": 0.7760289087265377,
+              "y": 0.4258232498779221
+            },
+            {
+              "x": 0.7753562599236088,
+              "y": 0.42433978657200305
+            },
+            {
+              "x": 0.7741454920783367,
+              "y": 0.4225072730764561
+            },
+            {
+              "x": 0.7742800218389224,
+              "y": 0.4189295086327691
+            },
+            {
+              "x": 0.773943697437458,
+              "y": 0.4163116322105591
+            },
+            {
+              "x": 0.773338313514822,
+              "y": 0.4162243696631521
+            },
+            {
+              "x": 0.7723966051907214,
+              "y": 0.41552626928389613
+            },
+            {
+              "x": 0.7717912212680853,
+              "y": 0.4168352074950011
+            },
+            {
+              "x": 0.770714983183399,
+              "y": 0.41788235806388513
+            },
+            {
+              "x": 0.7701768641410558,
+              "y": 0.4187549835379551
+            },
+            {
+              "x": 0.7698405397395913,
+              "y": 0.4211110723179441
+            },
+            {
+              "x": 0.7693696855775412,
+              "y": 0.4224200105290491
+            },
+            {
+              "x": 0.7685625070140264,
+              "y": 0.4235544236453401
+            },
+            {
+              "x": 0.7664100308446536,
+              "y": 0.4244270491194101
+            },
+            {
+              "x": 0.7627104624285445,
+              "y": 0.4272194506364341
+            },
+            {
+              "x": 0.7613651648226866,
+              "y": 0.42599777497273605
+            },
+            {
+              "x": 0.7593472184138996,
+              "y": 0.42730671318384106
+            },
+            {
+              "x": 0.7545041470328112,
+              "y": 0.428528388847539
+            },
+            {
+              "x": 0.7544368821525183,
+              "y": 0.427830288468283
+            },
+            {
+              "x": 0.7555131202372046,
+              "y": 0.42695766299421306
+            },
+            {
+              "x": 0.7560512392795478,
+              "y": 0.42495062440385206
+            },
+            {
+              "x": 0.7576655964065773,
+              "y": 0.42364168619274706
+            },
+            {
+              "x": 0.7588090993715565,
+              "y": 0.4227690607186771
+            },
+            {
+              "x": 0.7586745696109707,
+              "y": 0.41988939665424607
+            },
+            {
+              "x": 0.7586073047306778,
+              "y": 0.4176205704216641
+            },
+            {
+              "x": 0.756522093441598,
+              "y": 0.4185804584431411
+            },
+            {
+              "x": 0.7555803851174975,
+              "y": 0.4163116322105591
+            },
+            {
+              "x": 0.754638676793397,
+              "y": 0.4183186708009201
+            },
+            {
+              "x": 0.7535624387087106,
+              "y": 0.4193658213698041
+            },
+            {
+              "x": 0.7526207303846101,
+              "y": 0.4188422460853621
+            },
+            {
+              "x": 0.7522171411028528,
+              "y": 0.4205002344860951
+            },
+            {
+              "x": 0.7513426976590452,
+              "y": 0.4232053734557121
+            },
+            {
+              "x": 0.7498628702926015,
+              "y": 0.4265213502571781
+            },
+            {
+              "x": 0.7498628702926015,
+              "y": 0.42756850082606207
+            },
+            {
+              "x": 0.7512754327787522,
+              "y": 0.42678313789939903
+            },
+            {
+              "x": 0.7518808167013883,
+              "y": 0.42730671318384106
+            },
+            {
+              "x": 0.7518135518210953,
+              "y": 0.42870291394235305
+            },
+            {
+              "x": 0.7510736381378735,
+              "y": 0.43001185215345805
+            },
+            {
+              "x": 0.7497283405320156,
+              "y": 0.429924589606051
+            },
+            {
+              "x": 0.748181248285279,
+              "y": 0.42861565139494606
+            },
+            {
+              "x": 0.7471050102005927,
+              "y": 0.427830288468283
+            },
+            {
+              "x": 0.7456924477144419,
+              "y": 0.42599777497273605
+            },
+            {
+              "x": 0.7446834745100485,
+              "y": 0.4252124120460731
+            },
+            {
+              "x": 0.7432709120238976,
+              "y": 0.4265213502571781
+            },
+            {
+              "x": 0.7407148465727676,
+              "y": 0.42774302592087604
+            },
+            {
+              "x": 0.7400421977698387,
+              "y": 0.42704492554162005
+            },
+            {
+              "x": 0.7394368138472026,
+              "y": 0.428179338657911
+            },
+            {
+              "x": 0.7394368138472026,
+              "y": 0.42966280196383005
+            },
+            {
+              "x": 0.7383605757625162,
+              "y": 0.43027363979567906
+            },
+            {
+              "x": 0.7349300668675787,
+              "y": 0.43009911470086504
+            },
+            {
+              "x": 0.7341228883040639,
+              "y": 0.42826660120531806
+            },
+            {
+              "x": 0.7329121204587917,
+              "y": 0.42931375177420206
+            },
+            {
+              "x": 0.7308941740500049,
+              "y": 0.429837327058644
+            },
+            {
+              "x": 0.7285399032397536,
+              "y": 0.42940101432160904
+            },
+            {
+              "x": 0.7270600758733099,
+              "y": 0.42966280196383005
+            },
+            {
+              "x": 0.7245040104221798,
+              "y": 0.428179338657911
+            },
+            {
+              "x": 0.7236295669783722,
+              "y": 0.4272194506364341
+            },
+            {
+              "x": 0.7232259776966148,
+              "y": 0.4245143116668171
+            },
+            {
+              "x": 0.7228223884148575,
+              "y": 0.42713218808902703
+            },
+            {
+              "x": 0.7214770908089995,
+              "y": 0.42791755101569007
+            },
+            {
+              "x": 0.7193246146396268,
+              "y": 0.42896470158457406
+            },
+            {
+              "x": 0.7186519658366979,
+              "y": 0.42879017648976003
+            },
+            {
+              "x": 0.7175757277520116,
+              "y": 0.42739397573124804
+            },
+            {
+              "x": 0.7163649599067394,
+              "y": 0.42713218808902703
+            },
+            {
+              "x": 0.7156923111038105,
+              "y": 0.428179338657911
+            },
+            {
+              "x": 0.7146160730191242,
+              "y": 0.42774302592087604
+            },
+            {
+              "x": 0.7135398349344378,
+              "y": 0.42730671318384106
+            },
+            {
+              "x": 0.7132035105329734,
+              "y": 0.42634682516236405
+            },
+            {
+              "x": 0.7124635968497515,
+              "y": 0.42643408770977104
+            },
+            {
+              "x": 0.71219453732858,
+              "y": 0.428179338657911
+            },
+            {
+              "x": 0.7116564182862368,
+              "y": 0.429575539416423
+            },
+            {
+              "x": 0.7086294986730565,
+              "y": 0.42940101432160904
+            },
+            {
+              "x": 0.7077550552292489,
+              "y": 0.42835386375272505
+            },
+            {
+              "x": 0.707620525468663,
+              "y": 0.42669587535199205
+            },
+            {
+              "x": 0.7094366772365712,
+              "y": 0.42468883676163105
+            },
+            {
+              "x": 0.7090330879548139,
+              "y": 0.42425252402459607
+            },
+            {
+              "x": 0.7083604391518848,
+              "y": 0.4247760993090381
+            },
+            {
+              "x": 0.7076877903489559,
+              "y": 0.42564872478310806
+            },
+            {
+              "x": 0.7072169361869056,
+              "y": 0.42564872478310806
+            },
+            {
+              "x": 0.7064770225036838,
+              "y": 0.42678313789939903
+            },
+            {
+              "x": 0.7055353141795833,
+              "y": 0.42879017648976003
+            },
+            {
+              "x": 0.7046608707357757,
+              "y": 0.42913922667938803
+            },
+            {
+              "x": 0.7006249779182019,
+              "y": 0.428528388847539
+            },
+            {
+              "x": 0.6999523291152729,
+              "y": 0.42809207611050404
+            },
+            {
+              "x": 0.699279680312344,
+              "y": 0.42879017648976003
+            },
+            {
+              "x": 0.6982707071079506,
+              "y": 0.42966280196383005
+            },
+            {
+              "x": 0.695445582135649,
+              "y": 0.42879017648976003
+            },
+            {
+              "x": 0.6945038738115484,
+              "y": 0.42739397573124804
+            },
+            {
+              "x": 0.6938984898889123,
+              "y": 0.428179338657911
+            },
+            {
+              "x": 0.6923513976421758,
+              "y": 0.42835386375272505
+            },
+            {
+              "x": 0.6904679809939747,
+              "y": 0.4268704004468061
+            },
+            {
+              "x": 0.6897953321910457,
+              "y": 0.4248633618564451
+            },
+            {
+              "x": 0.6891899482684097,
+              "y": 0.4225072730764561
+            },
+            {
+              "x": 0.6864993530566939,
+              "y": 0.4208492846757231
+            },
+            {
+              "x": 0.6848849959296643,
+              "y": 0.41788235806388513
+            },
+            {
+              "x": 0.6846159364084928,
+              "y": 0.41011599134466215
+            },
+            {
+              "x": 0.6839432876055639,
+              "y": 0.41002872879725516
+            },
+            {
+              "x": 0.6836069632040993,
+              "y": 0.41186124229280213
+            },
+            {
+              "x": 0.6826652548799989,
+              "y": 0.41351923069353513
+            },
+            {
+              "x": 0.6811854275135552,
+              "y": 0.4143045936201981
+            },
+            {
+              "x": 0.6810508977529693,
+              "y": 0.4150899565468611
+            },
+            {
+              "x": 0.6824634602391202,
+              "y": 0.4166606824001871
+            },
+            {
+              "x": 0.6827325197602917,
+              "y": 0.4194530839172111
+            },
+            {
+              "x": 0.6831361090420491,
+              "y": 0.42337989855052605
+            },
+            {
+              "x": 0.6847504661690785,
+              "y": 0.42695766299421306
+            },
+            {
+              "x": 0.684481406647907,
+              "y": 0.42791755101569007
+            },
+            {
+              "x": 0.6836742280843923,
+              "y": 0.42800481356309705
+            },
+            {
+              "x": 0.6826652548799989,
+              "y": 0.42756850082606207
+            },
+            {
+              "x": 0.6809163679923835,
+              "y": 0.4244270491194101
+            },
+            {
+              "x": 0.6803782489500404,
+              "y": 0.42625956261495707
+            },
+            {
+              "x": 0.6791674811047682,
+              "y": 0.42730671318384106
+            },
+            {
+              "x": 0.6762750912521738,
+              "y": 0.42678313789939903
+            },
+            {
+              "x": 0.6743916746039726,
+              "y": 0.42643408770977104
+            },
+            {
+              "x": 0.6741226150828011,
+              "y": 0.42861565139494606
+            },
+            {
+              "x": 0.6732481716389934,
+              "y": 0.42931375177420206
+            },
+            {
+              "x": 0.6714992847513782,
+              "y": 0.429226489226795
+            },
+            {
+              "x": 0.6700194573849345,
+              "y": 0.42774302592087604
+            },
+            {
+              "x": 0.6688759544199553,
+              "y": 0.42774302592087604
+            },
+            {
+              "x": 0.6669925377717542,
+              "y": 0.42905196413198105
+            },
+            {
+              "x": 0.6654454455250176,
+              "y": 0.434374979523808
+            },
+            {
+              "x": 0.6656472401658963,
+              "y": 0.435509392640099
+            },
+            {
+              "x": 0.6655127104053105,
+              "y": 0.4753883768050978
+            },
+            {
+              "x": 0.6401222444492612,
+              "y": 0.5318286144235552
+            },
+            {
+              "x": 0.5863116686963307,
+              "y": 0.5541248061238754
+            },
+            {
+              "x": 0.5206341218648071,
+              "y": 0.606016537997835
+            },
+            {
+              "x": 0.5088579682556572,
+              "y": 0.6388601834815277
+            },
+            {
+              "x": 0.5001738269017155,
+              "y": 0.6896272568740358
+            },
+            {
+              "x": 0.43204104467462096,
+              "y": 0.7589047096571736
+            },
+            {
+              "x": 0.3470285191029759,
+              "y": 0.804558816472115
+            },
+            {
+              "x": 0.3369006730962456,
+              "y": 0.8544598169442603
+            },
+            {
+              "x": 0.6807359299509979,
+              "y": 0.8548579632246232
+            },
+            {
+              "x": 0.7439582413869505,
+              "y": 0.8094692872632571
+            },
+            {
+              "x": 0.8403262306631113,
+              "y": 0.72731843808172
+            },
+            {
+              "x": 0.9624553587427271,
+              "y": 0.5936740033065863
+            }
+          ],
+          "target_location_id": "",
+          "created_at": "2026-08-10T23:40:03.085261Z",
+          "last_updated": "2026-08-11T01:18:17.794154Z"
+        },
+        {
+          "record_id": "0c74c3a5-e4ef-4a10-8ae5-4469f4322e46",
+          "name": "Hogsfield County",
+          "type_label": "",
+          "behavior_type": "area",
+          "hover_text": "A tiny farming village",
+          "points": [
+            {
+              "x": 0.6983300376793691,
+              "y": 0.3018488972081941
+            },
+            {
+              "x": 0.6804375795214589,
+              "y": 0.27069616778389527
+            },
+            {
+              "x": 0.6875003919522129,
+              "y": 0.24111416421292242
+            },
+            {
+              "x": 0.6842716776981539,
+              "y": 0.2067327205345646
+            },
+            {
+              "x": 0.6145852617147142,
+              "y": 0.2213055659515335
+            },
+            {
+              "x": 0.5307059559894735,
+              "y": 0.2213928284989405
+            },
+            {
+              "x": 0.4365351235794198,
+              "y": 0.2397179634544104
+            },
+            {
+              "x": 0.34720736255045465,
+              "y": 0.2214800910463475
+            },
+            {
+              "x": 0.3433059994934667,
+              "y": 0.23771092486404943
+            },
+            {
+              "x": 0.342431556049659,
+              "y": 0.2617953879483813
+            },
+            {
+              "x": 0.34700556790957593,
+              "y": 0.28762510198085317
+            },
+            {
+              "x": 0.3423642911693661,
+              "y": 0.30699738750520705
+            },
+            {
+              "x": 0.3442477078175672,
+              "y": 0.317730680836268
+            },
+            {
+              "x": 0.39711790372778305,
+              "y": 0.3328271015376789
+            },
+            {
+              "x": 0.4442033199328099,
+              "y": 0.318516043762931
+            },
+            {
+              "x": 0.46626620066887964,
+              "y": 0.3040304608933691
+            },
+            {
+              "x": 0.5216924620302255,
+              "y": 0.312931240728883
+            },
+            {
+              "x": 0.5157731525644507,
+              "y": 0.325147997365863
+            },
+            {
+              "x": 0.5171857150506015,
+              "y": 0.32837671161992193
+            },
+            {
+              "x": 0.5210870781075895,
+              "y": 0.3304710127576899
+            },
+            {
+              "x": 0.5400557743501859,
+              "y": 0.328813024356957
+            },
+            {
+              "x": 0.577387782912743,
+              "y": 0.3373647540028429
+            },
+            {
+              "x": 0.6083296278474749,
+              "y": 0.3413788311835649
+            },
+            {
+              "x": 0.6229933717513261,
+              "y": 0.34356039486873985
+            },
+            {
+              "x": 0.6670518683431726,
+              "y": 0.3401571555198669
+            },
+            {
+              "x": 0.6680608415475661,
+              "y": 0.3363176034339589
+            },
+            {
+              "x": 0.6714913504425037,
+              "y": 0.3349214026754469
+            },
+            {
+              "x": 0.6729711778089474,
+              "y": 0.3355322405072959
+            },
+            {
+              "x": 0.6820519366484883,
+              "y": 0.32959838728361995
+            },
+            {
+              "x": 0.6830609098528818,
+              "y": 0.315985429888128
+            },
+            {
+              "x": 0.6832627044937605,
+              "y": 0.313280290918511
+            },
+            {
+              "x": 0.6957067073479462,
+              "y": 0.30778275043187003
+            }
+          ],
+          "target_location_id": "",
+          "created_at": "2026-08-10T23:44:30.229516Z",
+          "last_updated": "2026-08-10T23:45:10.795796Z"
+        },
+        {
+          "record_id": "cb400849-277a-4ad7-be2d-d3b3862cd208",
+          "name": "Feldshire",
+          "type_label": "",
+          "behavior_type": "area",
+          "hover_text": "A mining town",
+          "points": [
+            {
+              "x": 0.34720005529600073,
+              "y": 0.2216206508765321
+            },
+            {
+              "x": 0.2818160692182954,
+              "y": 0.22923736232695205
+            },
+            {
+              "x": 0.2708742593032508,
+              "y": 0.23062221895430113
+            },
+            {
+              "x": 0.2050454842046087,
+              "y": 0.2618968977886012
+            },
+            {
+              "x": 0.11128395859113731,
+              "y": 0.26212770722649276
+            },
+            {
+              "x": 0.06200133507134306,
+              "y": 0.3069047381774464
+            },
+            {
+              "x": 0.010494766446864956,
+              "y": 0.45946977662373695
+            },
+            {
+              "x": 0.05906572753316037,
+              "y": 0.4711256532372584
+            },
+            {
+              "x": 0.0877990982856758,
+              "y": 0.4682405352636145
+            },
+            {
+              "x": 0.12738532114904844,
+              "y": 0.4431977112523852
+            },
+            {
+              "x": 0.17337650591391057,
+              "y": 0.43627342811563985
+            },
+            {
+              "x": 0.207892133938604,
+              "y": 0.44608282922602915
+            },
+            {
+              "x": 0.24356421341773307,
+              "y": 0.4336191195798874
+            },
+            {
+              "x": 0.2720307107576864,
+              "y": 0.43638883283458557
+            },
+            {
+              "x": 0.31473045676761646,
+              "y": 0.4358118092398568
+            },
+            {
+              "x": 0.3126844272713073,
+              "y": 0.36691519202923994
+            },
+            {
+              "x": 0.34435340556200544,
+              "y": 0.31798359119623903
+            },
+            {
+              "x": 0.342485291674071,
+              "y": 0.3065585240206091
+            },
+            {
+              "x": 0.3469331818834387,
+              "y": 0.28740134067561346
+            },
+            {
+              "x": 0.3423073760656963,
+              "y": 0.26247392138333
+            },
+            {
+              "x": 0.3434638275201319,
+              "y": 0.237315692653155
+            }
+          ],
+          "target_location_id": "",
+          "created_at": "2026-08-10T23:46:40.844065Z",
+          "last_updated": "2026-08-10T23:47:38.155797Z"
+        },
+        {
+          "record_id": "5ef86e77-2af1-43bf-acb6-193f35b39da1",
+          "name": "Brocshire",
+          "type_label": "",
+          "behavior_type": "area",
+          "hover_text": "A hub and farming town",
+          "points": [
+            {
+              "x": 0.4320934412409514,
+              "y": 0.5844308054914517
+            },
+            {
+              "x": 0.4008405964385162,
+              "y": 0.5424824451809876
+            },
+            {
+              "x": 0.379058310667122,
+              "y": 0.5131712478092407
+            },
+            {
+              "x": 0.3473995847633565,
+              "y": 0.47578630744886896
+            },
+            {
+              "x": 0.3149290966569303,
+              "y": 0.4364706894173043
+            },
+            {
+              "x": 0.31249381004894833,
+              "y": 0.36696629325435964
+            },
+            {
+              "x": 0.3442878296531573,
+              "y": 0.31747073841105056
+            },
+            {
+              "x": 0.37608184925736626,
+              "y": 0.3271241267670151
+            },
+            {
+              "x": 0.3970523728260998,
+              "y": 0.3327406436286672
+            },
+            {
+              "x": 0.44535222388440876,
+              "y": 0.3183483191706837
+            },
+            {
+              "x": 0.46672862855447267,
+              "y": 0.3041315108646268
+            },
+            {
+              "x": 0.5162461229167725,
+              "y": 0.3120297377013251
+            },
+            {
+              "x": 0.5215225772340668,
+              "y": 0.3129073184609582
+            },
+            {
+              "x": 0.5162461229167725,
+              "y": 0.3251934490958222
+            },
+            {
+              "x": 0.5170578851194332,
+              "y": 0.32852825598242813
+            },
+            {
+              "x": 0.5216578709345102,
+              "y": 0.33098548210940093
+            },
+            {
+              "x": 0.5397872267939315,
+              "y": 0.329054804438208
+            },
+            {
+              "x": 0.5468224992169906,
+              "y": 0.3315120305651808
+            },
+            {
+              "x": 0.584569441640711,
+              "y": 0.3387081927941725
+            },
+            {
+              "x": 0.6227222651657617,
+              "y": 0.344149193503898
+            },
+            {
+              "x": 0.6228575588662052,
+              "y": 0.35187190418866965
+            },
+            {
+              "x": 0.6233987336679789,
+              "y": 0.3548556787714223
+            },
+            {
+              "x": 0.6221810903639879,
+              "y": 0.3604721956330744
+            },
+            {
+              "x": 0.6229928525666486,
+              "y": 0.3660887124947265
+            },
+            {
+              "x": 0.6251575517737437,
+              "y": 0.3704766162928922
+            },
+            {
+              "x": 0.6266457824786216,
+              "y": 0.38381584383931594
+            },
+            {
+              "x": 0.6247516706724133,
+              "y": 0.38644858611821536
+            },
+            {
+              "x": 0.6240752021701962,
+              "y": 0.39645300677803313
+            },
+            {
+              "x": 0.6250222580733003,
+              "y": 0.4001388459684923
+            },
+            {
+              "x": 0.6254281391746306,
+              "y": 0.4041757174628048
+            },
+            {
+              "x": 0.6284046005843863,
+              "y": 0.41207394429950306
+            },
+            {
+              "x": 0.6288104816857166,
+              "y": 0.4155842673380356
+            },
+            {
+              "x": 0.6278634257826126,
+              "y": 0.42225388111124745
+            },
+            {
+              "x": 0.6305692997914814,
+              "y": 0.42945004334023923
+            },
+            {
+              "x": 0.6365222226109929,
+              "y": 0.4354175925057446
+            },
+            {
+              "x": 0.6443692572367125,
+              "y": 0.4331358825306984
+            },
+            {
+              "x": 0.647886893448242,
+              "y": 0.4354175925057446
+            },
+            {
+              "x": 0.6519457044615453,
+              "y": 0.4364706894173043
+            },
+            {
+              "x": 0.6555986343735182,
+              "y": 0.4338379471384049
+            },
+            {
+              "x": 0.658575095783274,
+              "y": 0.4361196571134511
+            },
+            {
+              "x": 0.663175081598351,
+              "y": 0.4364706894173043
+            },
+            {
+              "x": 0.6649338997041158,
+              "y": 0.43418897944225815
+            },
+            {
+              "x": 0.6657456619067764,
+              "y": 0.43594414096152445
+            },
+            {
+              "x": 0.6654750745058895,
+              "y": 0.44963440081180145
+            },
+            {
+              "x": 0.6658809556072198,
+              "y": 0.4752597589930891
+            },
+            {
+              "x": 0.6403104462234093,
+              "y": 0.5317759599134633
+            },
+            {
+              "x": 0.5860576723455888,
+              "y": 0.5538909950562184
+            },
+            {
+              "x": 0.5207108150314061,
+              "y": 0.606019292178427
+            }
+          ],
+          "target_location_id": "",
+          "created_at": "2026-08-10T23:55:51.506643Z",
+          "last_updated": "2026-08-10T23:57:42.088357Z"
+        },
+        {
+          "record_id": "9563d83d-c03a-4fbb-ba3e-a5674912c6cd",
+          "name": "Irondale",
+          "type_label": "",
+          "behavior_type": "area",
+          "hover_text": "",
+          "points": [
+            {
+              "x": 0.05973733371192974,
+              "y": 0.522973557403524
+            },
+            {
+              "x": 0.06565537798900907,
+              "y": 0.5825964071645533
+            },
+            {
+              "x": 0.06552946215332653,
+              "y": 0.6319281897065555
+            },
+            {
+              "x": 0.04525701260843776,
+              "y": 0.6701521536629416
+            },
+            {
+              "x": 0.01007326685460312,
+              "y": 0.6031785416026072
+            },
+            {
+              "x": 0.034500938977015685,
+              "y": 0.5134992415510864
+            }
+          ],
+          "target_location_id": "",
+          "created_at": "2026-08-11T01:14:48.771487Z",
+          "last_updated": "2026-08-11T01:14:53.141692Z"
+        },
+        {
+          "record_id": "414e767d-466c-4896-b383-81577a76d79d",
+          "name": "Keen County",
+          "type_label": "",
+          "behavior_type": "area",
+          "hover_text": "",
+          "points": [
+            {
+              "x": 0.05955819027784094,
+              "y": 0.5234636082234776
+            },
+            {
+              "x": 0.06547623455492027,
+              "y": 0.582923107711189
+            },
+            {
+              "x": 0.09154081254120584,
+              "y": 0.5871702148174541
+            },
+            {
+              "x": 0.11546482132088826,
+              "y": 0.6018717394160641
+            },
+            {
+              "x": 0.15512830956088805,
+              "y": 0.6211470716675749
+            },
+            {
+              "x": 0.1882441743453958,
+              "y": 0.6324182405265092
+            },
+            {
+              "x": 0.23143330598450668,
+              "y": 0.6547972279710599
+            },
+            {
+              "x": 0.2634159282478716,
+              "y": 0.6889374350944987
+            },
+            {
+              "x": 0.29590221385396664,
+              "y": 0.6706422044828951
+            },
+            {
+              "x": 0.39462022902907723,
+              "y": 0.6324182405265092
+            },
+            {
+              "x": 0.4320172322267913,
+              "y": 0.5842299098977322
+            },
+            {
+              "x": 0.3787548337330773,
+              "y": 0.5136625918244043
+            },
+            {
+              "x": 0.3457648847842521,
+              "y": 0.4733150743148859
+            },
+            {
+              "x": 0.31441184169929987,
+              "y": 0.4360712119984073
+            },
+            {
+              "x": 0.27172637340291916,
+              "y": 0.436561262818361
+            },
+            {
+              "x": 0.2433953103743479,
+              "y": 0.433620957898639
+            },
+            {
+              "x": 0.2076352130405068,
+              "y": 0.44587222839748064
+            },
+            {
+              "x": 0.1733861057348562,
+              "y": 0.4360712119984073
+            },
+            {
+              "x": 0.12742682571072947,
+              "y": 0.44276857320444074
+            },
+            {
+              "x": 0.0875115057993646,
+              "y": 0.4677611650220777
+            },
+            {
+              "x": 0.05955819027784094,
+              "y": 0.47086482021511755
+            },
+            {
+              "x": 0.010199182690285658,
+              "y": 0.45943030108286537
+            },
+            {
+              "x": 0.03475277064838076,
+              "y": 0.5131725410044506
+            }
+          ],
+          "target_location_id": "",
+          "created_at": "2026-08-11T01:16:15.838634Z",
+          "last_updated": "2026-08-11T01:17:04.861562Z"
+        },
+        {
+          "record_id": "46972865-937c-4026-be5d-e125254610d7",
+          "name": "Bain County",
+          "type_label": "",
+          "behavior_type": "area",
+          "hover_text": "",
+          "points": [
+            {
+              "x": 0.5205870283494858,
+              "y": 0.6065494994192494
+            },
+            {
+              "x": 0.5088579682556572,
+              "y": 0.6386723306672122
+            },
+            {
+              "x": 0.500169775593562,
+              "y": 0.6899561489753632
+            },
+            {
+              "x": 0.4315330535630101,
+              "y": 0.758898131829178
+            },
+            {
+              "x": 0.34696797831861687,
+              "y": 0.8047342185221775
+            },
+            {
+              "x": 0.3248130870302741,
+              "y": 0.7765562963748418
+            },
+            {
+              "x": 0.3220618260206107,
+              "y": 0.7724235344598992
+            },
+            {
+              "x": 0.30135496684261714,
+              "y": 0.7318473265677357
+            },
+            {
+              "x": 0.3003413443653727,
+              "y": 0.7292173871673177
+            },
+            {
+              "x": 0.2632717223404332,
+              "y": 0.6888290320894698
+            },
+            {
+              "x": 0.29585244482329015,
+              "y": 0.6696680450292815
+            },
+            {
+              "x": 0.3946082347491055,
+              "y": 0.6322853349804827
+            },
+            {
+              "x": 0.43196746319611484,
+              "y": 0.5840071617013808
+            },
+            {
+              "x": 0.47815968751625426,
+              "y": 0.5956540361889462
+            }
+          ],
+          "target_location_id": "",
+          "created_at": "2026-08-11T01:21:04.517998Z",
+          "last_updated": "2026-08-11T01:21:41.420714Z"
+        },
+        {
+          "record_id": "6081e459-4b3c-4e71-ae0c-36d8165abdec",
+          "name": "Crag County",
+          "type_label": "",
+          "behavior_type": "area",
+          "hover_text": "",
+          "points": [
+            {
+              "x": 0.33676168691880687,
+              "y": 0.8543239898642319
+            },
+            {
+              "x": 0.34727623356575843,
+              "y": 0.8049174799760236
+            },
+            {
+              "x": 0.3220247632718984,
+              "y": 0.7730180594612457
+            },
+            {
+              "x": 0.30058171144858775,
+              "y": 0.7295188496683668
+            },
+            {
+              "x": 0.263491027213672,
+              "y": 0.6891343981075705
+            },
+            {
+              "x": 0.23111947021400228,
+              "y": 0.6545498411858247
+            },
+            {
+              "x": 0.18815057486149947,
+              "y": 0.6321021008235737
+            },
+            {
+              "x": 0.153874808626555,
+              "y": 0.6198578788078003
+            },
+            {
+              "x": 0.11454874833283857,
+              "y": 0.6012767348715828
+            },
+            {
+              "x": 0.09120148727425322,
+              "y": 0.586991809186514
+            },
+            {
+              "x": 0.06570164186274866,
+              "y": 0.5823733745665293
+            },
+            {
+              "x": 0.06578443356863017,
+              "y": 0.6322095062798524
+            },
+            {
+              "x": 0.044920923686490075,
+              "y": 0.6699088214336808
+            },
+            {
+              "x": 0.11918508386220303,
+              "y": 0.6861270453317665
+            },
+            {
+              "x": 0.16323027139116544,
+              "y": 0.6956861309405721
+            },
+            {
+              "x": 0.19088270115558922,
+              "y": 0.70170083649218
+            },
+            {
+              "x": 0.2292980526846091,
+              "y": 0.787195579690036
+            },
+            {
+              "x": 0.24817456162559298,
+              "y": 0.7993323962495306
+            },
+            {
+              "x": 0.29462070862511913,
+              "y": 0.8286540858136193
+            }
+          ],
+          "target_location_id": "",
+          "created_at": "2026-08-11T01:22:59.995330Z",
+          "last_updated": "2026-08-11T01:23:09.747675Z"
+        }
+      ],
+      "name": "Hogshire",
+      "location_id": "de9bca8f-8fea-4db4-a040-131af6804693",
+      "floor_id": "",
+      "players_published": false,
+      "last_updated": "2026-08-11T01:23:10.505688Z"
+    }
+  ],
   "board_groups": [],
   "_headmasters_scroll": {
-    "revision_id": "ec60e813-fdd4-482c-91e1-33e5741402f7",
-    "last_modified_at": "2026-08-10T18:00:00Z",
-    "last_modified_by": "world-builder-board-migration"
+    "revision_id": "e83d35b8-bca3-4870-a2cf-af4e91c2a42b",
+    "last_modified_at": "2026-08-11T01:23:10.561436Z",
+    "last_modified_by": "mapper"
   }
 }

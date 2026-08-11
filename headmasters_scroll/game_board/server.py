@@ -17,7 +17,13 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from .gmail import GmailSender, GmailUnavailable
-from .service import GameBoardService, parse_utc, token_hash, utc_now
+from .service import (
+    GameBoardService,
+    format_game_datetime_for_people,
+    parse_utc,
+    token_hash,
+    utc_now,
+)
 from .storage import GameBoardRepository
 
 
@@ -683,15 +689,16 @@ def create_apps(repository: GameBoardRepository | None = None):
                 local_expiration = parse_utc(session["expires_at"]).astimezone(
                     ZoneInfo(service.settings(include_private=True)["timezone"])
                 ).strftime("%B %d, %Y at %I:%M %p %Z")
-                game_datetime = datetime.fromisoformat(session["game_datetime"]).strftime(
-                    "%d %b %Y at %H:%M"
-                )
+                game_datetime = format_game_datetime_for_people(session["game_datetime"])
                 email_body = (
                     f"Hello {player['name']},\n\n"
                     f"Use this private link to request admission to {session['title']}:\n\n{link}\n\n"
                     f"Game World Date: {game_datetime}.\n"
                     f"The invitation expires {local_expiration}. The headmaster must approve every connection.\n"
                 )
+                # Gmail delivery previously proved reliable on the server's owning
+                # thread. Keep it there; the desktop client now supplies the longer
+                # batch timeout and prevents duplicate clicks while this completes.
                 message_id = runtime.gmail().send(player["email"], subject, email_body)
                 service.record_invite_result(contact_id, True, session["id"])
                 results.append({"contact_id": contact_id, "success": True, "message_id": message_id})

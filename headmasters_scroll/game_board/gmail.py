@@ -2,6 +2,11 @@ from __future__ import annotations
 
 import base64
 import json
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
 from email.message import EmailMessage
 from pathlib import Path
 from typing import Any
@@ -21,15 +26,14 @@ class GmailUnavailable(RuntimeError):
 def _libraries():
     try:
         import keyring
-        from google.auth.transport.requests import Request
+        from google.auth.transport.requests import AuthorizedSession, Request
         from google.oauth2.credentials import Credentials
         from google_auth_oauthlib.flow import InstalledAppFlow
-        from googleapiclient.discovery import build
     except ImportError as error:
         raise GmailUnavailable(
             "Install the Game Board dependencies with: python -m pip install -e .[game-board]"
         ) from error
-    return keyring, Request, Credentials, InstalledAppFlow, build
+    return keyring, Request, Credentials, InstalledAppFlow, AuthorizedSession
 
 
 class GmailSender:
@@ -72,7 +76,7 @@ class GmailSender:
         }
 
     def send(self, recipient: str, subject: str, body: str) -> str:
-        _keyring, Request, _credentials, _flow, build = _libraries()
+        _keyring, Request, _credentials, _flow, AuthorizedSession = _libraries()
         credentials = self._stored_credentials()
         if not credentials:
             raise GmailUnavailable("Connect a Gmail account before sending invitations")
@@ -88,8 +92,107 @@ class GmailSender:
         message["Subject"] = subject
         message.set_content(body)
         raw = base64.urlsafe_b64encode(message.as_bytes()).decode("ascii")
-        result = build("gmail", "v1", credentials=credentials, cache_discovery=False).users().messages().send(
-            userId="me", body={"raw": raw}
-        ).execute()
+        payload = {"raw": raw}
+        curl = shutil.which("curl.exe") if sys.platform == "win32" else None
+        if curl:
+            result = self._send_with_windows_curl(curl, credentials.token, payload)
+            return str(result.get("id", "sent"))
+        transport = AuthorizedSession(credentials)
+        response = None
+        last_error: Exception | None = None
+        for attempt in range(3):
+            try:
+                response = transport.post(
+                    "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
+                    json=payload,
+                    timeout=(10, 30),
+                )
+                if response.status_code < 500 and response.status_code != 429:
+                    break
+            except Exception as error:
+                last_error = error
+            if attempt < 2:
+                time.sleep(attempt + 1)
+        if response is None:
+            raise GmailUnavailable(f"Gmail could not be reached: {last_error}") from last_error
+        if not 200 <= response.status_code < 300:
+            try:
+                detail = response.json().get("error", {}).get("message")
+            except (AttributeError, ValueError):
+                detail = None
+            raise GmailUnavailable(
+                detail or f"Gmail rejected the message with status {response.status_code}"
+            )
+        result = response.json()
         return str(result.get("id", "sent"))
 
+    @staticmethod
+    def _send_with_windows_curl(
+        curl: str,
+        access_token: str,
+        payload: dict[str, str],
+    ) -> dict[str, Any]:
+        """Use Windows curl when Python socket traffic to Google is filtered.
+
+        The bearer token is supplied through curl's stdin config rather than its
+        command line, and the temporary message body is always removed.
+        """
+
+        temporary_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                suffix=".json",
+                prefix="headmasters-scroll-gmail-",
+                delete=False,
+            ) as temporary:
+                json.dump(payload, temporary, separators=(",", ":"))
+                temporary_path = Path(temporary.name)
+
+            def quoted(value: str) -> str:
+                return value.replace("\\", "\\\\").replace('"', '\\"')
+
+            config = "\n".join(
+                (
+                    "silent",
+                    "show-error",
+                    "connect-timeout = 10",
+                    "max-time = 45",
+                    'request = "POST"',
+                    'url = "https://gmail.googleapis.com/gmail/v1/users/me/messages/send"',
+                    f'header = "Authorization: Bearer {quoted(access_token)}"',
+                    'header = "Content-Type: application/json"',
+                    f'data-binary = "@{quoted(str(temporary_path))}"',
+                    'write-out = "\\n%{http_code}"',
+                    "",
+                )
+            )
+            creation_flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+            completed = subprocess.run(
+                [curl, "--config", "-"],
+                input=config,
+                text=True,
+                capture_output=True,
+                timeout=50,
+                creationflags=creation_flags,
+                check=False,
+            )
+            if completed.returncode != 0:
+                detail = completed.stderr.strip() or "Windows curl could not reach Gmail"
+                raise GmailUnavailable(detail)
+            response_text, separator, status_text = completed.stdout.rpartition("\n")
+            if not separator or not status_text.isdigit():
+                raise GmailUnavailable("Gmail returned an unreadable response")
+            status = int(status_text)
+            try:
+                result = json.loads(response_text) if response_text else {}
+            except json.JSONDecodeError as error:
+                raise GmailUnavailable("Gmail returned an unreadable response") from error
+            if not 200 <= status < 300:
+                detail = result.get("error", {}).get("message") if isinstance(result, dict) else None
+                raise GmailUnavailable(detail or f"Gmail rejected the message with status {status}")
+            return result
+        finally:
+            if temporary_path is not None:
+                temporary_path.unlink(missing_ok=True)

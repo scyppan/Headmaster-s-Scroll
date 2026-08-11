@@ -486,6 +486,7 @@
     openSection(section) {
       const item = SECTIONS.find(([id]) => id === section) || SECTIONS[0];
       this.activeSection = item[0];
+      this.root.classList.toggle('ccgb-board-active', item[0] === 'board');
       this.root.querySelectorAll('[data-section]').forEach(button => {
         const active = button.dataset.section === this.activeSection;
         button.classList.toggle('is-active', active);
@@ -499,6 +500,7 @@
         return;
       }
       const content = this.element('section-content');
+      content.className = 'ccgb-panel-grid';
       content.innerHTML = `
         <details class="ccgb-content-panel" open>
           <summary>${item[1]} summary</summary>

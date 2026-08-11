@@ -9,6 +9,7 @@ description = "Local multi-app foundation for Charms Check"
 requires-python = ">=3.11"
 dependencies = [
   "Pillow>=11,<13",
+  "resvg_py>=0.3,<1",
 ]
 
 [project.optional-dependencies]

@@ -122,7 +122,7 @@ class LocationPage(tk.Frame):
             value="No notable facts yet."
         )
         self.name_value = tk.StringVar()
-        self.is_building_value = tk.BooleanVar(value=False)
+        self.has_floors_value = tk.BooleanVar(value=False)
         self.floor_records = []
         self.default_map_id = ""
         self.floor_summary_value = tk.StringVar(value="No named floors")
@@ -465,7 +465,7 @@ class LocationPage(tk.Frame):
                 getattr(self, "selected_parent_location_id", "") or ""
             ).strip(),
             "notes": str(notes_widget.get("1.0", "end-1c") or ""),
-            "is_building": bool(self.is_building_value.get()),
+            "has_floors": bool(self.has_floors_value.get()),
             "floors": deepcopy(self.floor_records),
             "default_map_id": self.default_map_id,
         }
@@ -725,11 +725,11 @@ class LocationPage(tk.Frame):
             pady=0,
         )
         self.extinction_checkbox.pack(side="left")
-        self.building_checkbox = tk.Checkbutton(
+        self.has_floors_checkbox = tk.Checkbutton(
             extinction_options,
-            text="This location is a building",
-            variable=self.is_building_value,
-            command=self.building_state_changed,
+            text="Has floors",
+            variable=self.has_floors_value,
+            command=self.floors_state_changed,
             bg=SURFACE_MUTED,
             fg=TEXT_DARK,
             activebackground=SURFACE_MUTED,
@@ -740,7 +740,7 @@ class LocationPage(tk.Frame):
             padx=0,
             pady=0,
         )
-        self.building_checkbox.pack(side="left", padx=(18, 0))
+        self.has_floors_checkbox.pack(side="left", padx=(18, 0))
         self.floors_button = SoftButton(
             extinction_options,
             text="Manage floors",
@@ -828,14 +828,14 @@ class LocationPage(tk.Frame):
         )
         facts.pack(fill="x", pady=(4, 0))
 
-    def building_state_changed(self):
-        if not self.is_building_value.get() and self.floor_records:
+    def floors_state_changed(self):
+        if not self.has_floors_value.get() and self.floor_records:
             messagebox.showinfo(
                 "Named floors",
-                "Remove the named floors in Mapper or the floor editor before turning off Building.",
+                "Remove the named floors in Mapper or the floor editor before turning off Has floors.",
                 parent=self,
             )
-            self.is_building_value.set(True)
+            self.has_floors_value.set(True)
         self.refresh_floor_summary()
 
     def refresh_floor_summary(self):
@@ -844,11 +844,11 @@ class LocationPage(tk.Frame):
             "No named floors" if not count else f"{count} named floor{'s' if count != 1 else ''}"
         )
         if hasattr(self, "floors_button"):
-            self.floors_button.set_enabled(bool(self.is_building_value.get()))
+            self.floors_button.set_enabled(bool(self.has_floors_value.get()))
 
     def open_floor_editor(self):
-        if not self.is_building_value.get():
-            messagebox.showinfo("Named floors", "Mark this location as a building first.", parent=self)
+        if not self.has_floors_value.get():
+            messagebox.showinfo("Named floors", "Turn on Has floors first.", parent=self)
             return
         dialog = tk.Toplevel(self)
         dialog.title("Named floors")
@@ -1604,7 +1604,7 @@ class LocationPage(tk.Frame):
         self.location_before_create_id = ""
         self.editor_heading_value.set("Location details")
         self.name_value.set(str(location.get("name", "") or ""))
-        self.is_building_value.set(bool(location.get("is_building", False)))
+        self.has_floors_value.set(bool(location.get("has_floors", location.get("floors") or location.get("is_building", False))))
         self.floor_records = deepcopy(location.get("floors", []) or [])
         self.default_map_id = str(location.get("default_map_id", "") or "")
         self.refresh_floor_summary()
@@ -2136,7 +2136,7 @@ class LocationPage(tk.Frame):
         self.name_value.set("")
         self.set_parent_location(parent_location_id)
         self.extinct_value.set(False)
-        self.is_building_value.set(False)
+        self.has_floors_value.set(False)
         self.floor_records = []
         self.default_map_id = ""
         self.refresh_floor_summary()
@@ -2190,6 +2190,10 @@ class LocationPage(tk.Frame):
 
     def save_location(self):
         creating_new_location = not bool(self.current_location_id)
+        has_floors_value = getattr(self, "has_floors_value", None)
+        has_floors = bool(has_floors_value.get()) if has_floors_value is not None else False
+        floor_records = deepcopy(getattr(self, "floor_records", []) or [])
+        default_map_id = str(getattr(self, "default_map_id", "") or "")
         extinction_state = (
             self.controller.extinction_state_for_location(
                 self.current_location_id
@@ -2201,9 +2205,9 @@ class LocationPage(tk.Frame):
             "name": self.name_value.get(),
             "parent_location_id": self.selected_parent_location_id,
             "notes": self.notes_control.text.get("1.0", "end-1c"),
-            "is_building": bool(self.is_building_value.get()),
-            "floors": deepcopy(self.floor_records),
-            "default_map_id": self.default_map_id,
+            "has_floors": has_floors,
+            "floors": floor_records,
+            "default_map_id": default_map_id,
             "extinct": bool(extinction_state.get("exists")),
             "extinction_year": (
                 extinction_state.get("year")

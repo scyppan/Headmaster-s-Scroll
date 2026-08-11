@@ -326,6 +326,20 @@
 
 #gameboard .ccgb-section-heading h1 { font-size: clamp(27px, 3vw, 39px); }
 
+#gameboard.ccgb-board-active .ccgb-main {
+  overflow: hidden;
+  padding: 8px;
+}
+
+#gameboard.ccgb-board-active .ccgb-section-heading {
+  align-items: center;
+  margin-bottom: 6px;
+  padding: 2px 4px 6px;
+}
+
+#gameboard.ccgb-board-active .ccgb-eyebrow { display: none; }
+#gameboard.ccgb-board-active .ccgb-section-heading h1 { font-size: 20px; }
+
 #gameboard .ccgb-connected-mark {
   background: #dce7ce;
   border: 1px solid #9bb085;
@@ -533,6 +547,11 @@
   min-height: 420px;
 }
 
+#gameboard.ccgb-board-active .ccgb-board-content {
+  height: calc(100vh - 138px);
+  min-height: 360px;
+}
+
 #gameboard .ccgb-map-shell {
   background: #211a14;
   border: 1px solid #9d7a4e;
@@ -579,7 +598,7 @@
 }
 
 #gameboard .ccgb-map-stage {
-  aspect-ratio: 16 / 10;
+  aspect-ratio: 3840 / 2960;
   background: #30251c;
   max-height: 100%;
   max-width: 100%;

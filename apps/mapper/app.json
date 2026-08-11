@@ -6,5 +6,6 @@
   "entry_command": [
     "{python}",
     "{root}/apps/mapper/main.py"
-  ]
+  ],
+  "icon": "../../assets/north-america-hollow-outline-grey.ico"
 }

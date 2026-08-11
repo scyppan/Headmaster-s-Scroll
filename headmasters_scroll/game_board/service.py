@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import calendar
 import hashlib
 import re
 import threading
@@ -17,6 +18,10 @@ from .storage import GameBoardRepository
 
 
 EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+GAME_DATETIME = re.compile(
+    r"^(?P<year>-?[1-9]\d*)-(?P<month>\d{2})-(?P<day>\d{2})T"
+    r"(?P<hour>\d{2}):(?P<minute>\d{2})$"
+)
 
 
 def utc_now() -> datetime:
@@ -37,15 +42,37 @@ def normalize_game_datetime(value: str | None, fallback_date: str) -> str:
     raw = value.strip() if isinstance(value, str) else ""
     if not raw:
         raw = f"{fallback_date}T08:00"
-    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}", raw):
+    match = GAME_DATETIME.fullmatch(raw)
+    if not match:
         raise ValueError("Game World Date and time must use YYYY-MM-DD and a 24-hour HH:MM time")
     try:
-        parsed = datetime.fromisoformat(raw)
-    except ValueError as error:
+        values = {key: int(part) for key, part in match.groupdict().items()}
+        if values["year"] == 0 or not 1 <= values["month"] <= 12:
+            raise ValueError
+        if not 1 <= values["day"] <= calendar.monthrange(values["year"], values["month"])[1]:
+            raise ValueError
+        if not 0 <= values["hour"] <= 23 or not 0 <= values["minute"] <= 59:
+            raise ValueError
+    except (TypeError, ValueError) as error:
         raise ValueError("Game World Date and time must use YYYY-MM-DD and a 24-hour HH:MM time") from error
-    if parsed.tzinfo is not None:
-        raise ValueError("Game World Date and time cannot include a timezone")
-    return parsed.replace(second=0, microsecond=0).isoformat(timespec="minutes")
+    year = f"-{abs(values['year']):04d}" if values["year"] < 0 else f"{values['year']:04d}"
+    return (
+        f"{year}-{values['month']:02d}-{values['day']:02d}T"
+        f"{values['hour']:02d}:{values['minute']:02d}"
+    )
+
+
+def format_game_datetime_for_people(value: str) -> str:
+    normalized = normalize_game_datetime(value, date.today().isoformat())
+    match = GAME_DATETIME.fullmatch(normalized)
+    if match is None:
+        return normalized
+    values = {key: int(part) for key, part in match.groupdict().items()}
+    year = f"{abs(values['year'])} BCE" if values["year"] < 0 else str(values["year"])
+    return (
+        f"{values['day']:02d} {calendar.month_abbr[values['month']]} {year} "
+        f"at {values['hour']:02d}:{values['minute']:02d}"
+    )
 
 
 def token_hash(value: str) -> str:

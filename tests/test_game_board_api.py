@@ -11,13 +11,20 @@ from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 from headmasters_scroll.game_board.desktop import (
+    HistoricalDateTime,
     directional_minute_snap,
     format_date_display,
+    format_game_datetime,
     format_stored_date,
+    parse_game_datetime,
     shift_game_calendar,
 )
 from headmasters_scroll.game_board.gmail import GmailSender, GmailUnavailable
 from headmasters_scroll.game_board.server import create_apps
+from headmasters_scroll.game_board.service import (
+    format_game_datetime_for_people,
+    normalize_game_datetime,
+)
 from headmasters_scroll.game_board.storage import GameBoardRepository
 
 
@@ -302,35 +309,80 @@ class GmailAdapterTests(unittest.TestCase):
 
         captured = {}
 
-        class SendCall:
-            def execute(self):
+        class Response:
+            status_code = 200
+
+            @staticmethod
+            def json():
                 return {"id": "gmail-message-id"}
 
-        class Messages:
-            def send(self, **kwargs):
+        class AuthorizedSession:
+            def __init__(self, credentials):
+                captured["credentials"] = credentials
+
+            def post(self, url, **kwargs):
+                captured["url"] = url
                 captured.update(kwargs)
-                return SendCall()
+                return Response()
 
-        class Users:
-            def messages(self):
-                return Messages()
-
-        class Gmail:
-            def users(self):
-                return Users()
-
-        def build(*_args, **_kwargs):
-            return Gmail()
-
-        libraries = (Keyring, object, CredentialsType, object, build)
-        with patch("headmasters_scroll.game_board.gmail._libraries", return_value=libraries):
+        libraries = (Keyring, object, CredentialsType, object, AuthorizedSession)
+        with (
+            patch("headmasters_scroll.game_board.gmail._libraries", return_value=libraries),
+            patch("headmasters_scroll.game_board.gmail.shutil.which", return_value=None),
+        ):
             sender = GmailSender("credentials.json", "headmaster@example.com")
             result = sender.send("alice@example.com", "Invitation", "Private link")
         self.assertEqual(result, "gmail-message-id")
-        decoded = base64.urlsafe_b64decode(captured["body"]["raw"]).decode("utf-8")
+        self.assertEqual(
+            captured["url"],
+            "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
+        )
+        decoded = base64.urlsafe_b64decode(captured["json"]["raw"]).decode("utf-8")
         self.assertIn("To: alice@example.com", decoded)
         self.assertIn("Subject: Invitation", decoded)
         self.assertIn("Private link", decoded)
+
+    def test_windows_curl_transport_keeps_token_off_command_line(self):
+        class Credentials:
+            valid = True
+            expired = False
+            refresh_token = "refresh"
+            scopes = []
+            token = "private-access-token"
+
+        class Keyring:
+            @staticmethod
+            def get_password(_service, _account):
+                return "{}"
+
+        class CredentialsType:
+            @staticmethod
+            def from_authorized_user_info(_value, _scopes):
+                return Credentials()
+
+        captured = {}
+
+        def run(args, **kwargs):
+            captured["args"] = args
+            captured["config"] = kwargs["input"]
+            return type(
+                "Completed",
+                (),
+                {"returncode": 0, "stdout": '{"id":"curl-message-id"}\n200', "stderr": ""},
+            )()
+
+        libraries = (Keyring, object, CredentialsType, object, object)
+        with (
+            patch("headmasters_scroll.game_board.gmail._libraries", return_value=libraries),
+            patch("headmasters_scroll.game_board.gmail.shutil.which", return_value="curl.exe"),
+            patch("headmasters_scroll.game_board.gmail.subprocess.run", side_effect=run),
+        ):
+            result = GmailSender("credentials.json").send(
+                "alice@example.com", "Invitation", "Private link"
+            )
+        self.assertEqual(result, "curl-message-id")
+        self.assertNotIn("private-access-token", " ".join(captured["args"]))
+        self.assertIn("Authorization: Bearer private-access-token", captured["config"])
 
 
 class GameBoardAssetTests(unittest.TestCase):
@@ -344,7 +396,7 @@ class GameBoardAssetTests(unittest.TestCase):
         self.assertIn("scyppan/Headmaster-s-Scroll", loader)
         self.assertIn("apps/charms-check-game-board-weblink/", loader)
         self.assertIn("https://beast.tail102829.ts.net", loader)
-        self.assertIn("a26.8.10.001", loader)
+        self.assertIn("a26.8.10.002", loader)
         self.assertNotIn("https://game.example.com", loader)
         self.assertIn("getElementById('gameboard')", loader)
         self.assertNotIn("<script>", loader)
@@ -466,6 +518,27 @@ class GameBoardAssetTests(unittest.TestCase):
         self.assertEqual(
             directional_minute_snap(current, 15, 1),
             datetime(1943, 9, 1, 11, 15),
+        )
+
+    def test_game_world_dates_support_bce_years(self):
+        ancient = parse_game_datetime("-3100-01-09T08:15")
+        self.assertEqual(ancient, HistoricalDateTime(-3100, 1, 9, 8, 15))
+        self.assertEqual(format_game_datetime(ancient), "09 Jan 3100 BCE  08:15")
+        self.assertEqual(
+            shift_game_calendar(ancient, years=1),
+            HistoricalDateTime(-3099, 1, 9, 8, 15),
+        )
+        self.assertEqual(
+            shift_game_calendar(HistoricalDateTime(-1, 12, 31, 8, 0), days=1),
+            datetime(1, 1, 1, 8, 0),
+        )
+        self.assertEqual(
+            normalize_game_datetime("-3100-01-09T08:15", "2026-01-01"),
+            "-3100-01-09T08:15",
+        )
+        self.assertEqual(
+            format_game_datetime_for_people("-3100-01-09T08:15"),
+            "09 Jan 3100 BCE at 08:15",
         )
 
 

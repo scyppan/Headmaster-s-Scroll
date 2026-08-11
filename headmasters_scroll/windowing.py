@@ -10,6 +10,7 @@ from .paths import PROJECT_ROOT
 
 HEADMASTERS_SCROLL_ICON = PROJECT_ROOT / "assets" / "worn-scroll.ico"
 GAME_BOARD_ICON = PROJECT_ROOT / "assets" / "enchanted-d10.ico"
+MAPPER_ICON = PROJECT_ROOT / "assets" / "north-america-hollow-outline-grey.ico"
 WINDOW_ICON = HEADMASTERS_SCROLL_ICON
 
 

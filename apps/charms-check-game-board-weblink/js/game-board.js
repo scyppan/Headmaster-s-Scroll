@@ -457,6 +457,7 @@
         this.hydratedCampaignId = campaignId;
         this.saveViewState();
         if (this.activeSection === 'board') this.renderBoardView();
+        else if (this.activeSection === 'attributes') this.openSection('attributes');
       } else if (message.type === 'board_move_preview') {
         const actor = (this.board.actors || []).find(item => item.actor_id === message.person_id);
         if (actor) {
@@ -620,6 +621,11 @@
         this.search(this.element('search').value);
         return;
       }
+      if (item[0] === 'attributes') {
+        this.renderAttributesPanel(content);
+        this.search(this.element('search').value);
+        return;
+      }
       content.innerHTML = `
         <details class="ccgb-content-panel" open>
           <summary>${item[1]} summary</summary>
@@ -634,6 +640,80 @@
           <div><p>Additional character notes can be organized here.</p></div>
         </details>`;
       this.search(this.element('search').value);
+    }
+
+    renderAttributesPanel(content) {
+      content.className = 'ccgb-panel-grid ccgb-attributes-panel';
+      const summary = this.board && this.board.character_attributes;
+      if (!summary) {
+        content.innerHTML = `
+          <section class="ccgb-attribute-card ccgb-attribute-empty">
+            <h2>Attributes unavailable</h2>
+            <p>Link this player to a World Builder character to display their rolls.</p>
+          </section>`;
+        return;
+      }
+
+      const escapeHtml = value => String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
+      const abilities = new Map((summary.attributes || []).map(item => [item.name, item.value]));
+      const skills = new Map((summary.skills || []).map(item => [item.name, item.value]));
+      const abilityOrder = ['Power', 'Erudition', 'Panache', 'Naturalism'];
+      const skillsByAbility = {
+        Power: ['Charms', 'Dark Arts', 'Defense', 'Transfiguration'],
+        Erudition: ['Runes', 'Arithmancy', 'Muggles', 'History'],
+        Panache: ['Flying', 'Alchemy', 'Potions', 'Artificing', 'Herbology'],
+        Naturalism: ['Astronomy', 'Divination', 'Creatures', 'Perception', 'Social']
+      };
+      const abilityGroups = abilityOrder.map(ability => `
+        <div class="ccgb-roll-group">
+          <span class="ccgb-roll-pill is-ability">
+            <span>${escapeHtml(ability)}</span><strong>${Number(abilities.get(ability) || 0)}</strong>
+          </span>
+          <div class="ccgb-skill-pills">
+            ${(skillsByAbility[ability] || []).map(skill => `
+              <span class="ccgb-roll-pill is-skill">
+                <span>${escapeHtml(skill)}</span><strong>${Number(skills.get(skill) || 0)}</strong>
+              </span>`).join('')}
+          </div>
+        </div>`).join('');
+      const characteristicPills = (summary.characteristics || []).map(item => `
+        <span class="ccgb-roll-pill is-characteristic">
+          <span>${escapeHtml(item.name)}</span><strong>${Math.max(1, Math.min(5, Number(item.dice) || 1))}d10</strong>
+        </span>`).join('');
+      const parentalPills = (summary.parental_values || []).map(item => `
+        <span class="ccgb-roll-pill is-parental">
+          <span>${escapeHtml(item.name)}</span><strong>${Number(item.value) || 0}</strong>
+        </span>`).join('');
+      const traitPills = (summary.traits || []).length
+        ? summary.traits.map(trait => `<span class="ccgb-roll-pill is-trait">${escapeHtml(trait)}</span>`).join('')
+        : '<p class="ccgb-no-rolls">No traits recorded.</p>';
+
+      content.innerHTML = `
+        <section class="ccgb-attribute-card ccgb-ability-card">
+          <h2>Ability and Skill Rolls</h2>
+          <div class="ccgb-ability-grid">${abilityGroups}</div>
+        </section>
+        <div class="ccgb-attribute-lower-grid">
+          <section class="ccgb-attribute-card">
+            <h2>Characteristics Rolls</h2>
+            <div class="ccgb-roll-list">${characteristicPills}</div>
+          </section>
+          <div class="ccgb-attribute-stack">
+            <section class="ccgb-attribute-card">
+              <h2>Parental Rolls</h2>
+              <div class="ccgb-roll-list">${parentalPills}</div>
+            </section>
+            <section class="ccgb-attribute-card">
+              <h2>Traits</h2>
+              <div class="ccgb-roll-list is-traits">${traitPills}</div>
+            </section>
+          </div>
+        </div>`;
     }
 
     async assetUrl(assetId) {
@@ -1578,10 +1658,43 @@
           { actor_id: 'preview-edward', map_id: 'preview-map', x: 0.32, y: 0.48, display_mode: 'nameplate', name: 'Edward Marksdale', faction_color: '#7b3f2b', is_player_character: true },
           { actor_id: 'preview-hermione', map_id: 'preview-map', x: 0.67, y: 0.39, display_mode: 'dot', name: 'Unknown', faction_color: '#808080' }
         ],
-        controlled_character_ids: ['preview-edward']
+        controlled_character_ids: ['preview-edward'],
+        character_attributes: {
+          character_id: 'preview-edward',
+          character_name: 'Edward Marksdale',
+          as_of: '1943-09-01T08:00',
+          attributes: [
+            { name: 'Power', value: 4 }, { name: 'Erudition', value: 2 },
+            { name: 'Panache', value: 2 }, { name: 'Naturalism', value: 3 }
+          ],
+          skills: [
+            { name: 'Charms', value: 5 }, { name: 'Transfiguration', value: 6 },
+            { name: 'Defense', value: 5 }, { name: 'Dark Arts', value: 0 },
+            { name: 'Arithmancy', value: 3 }, { name: 'Runes', value: 0 },
+            { name: 'History', value: 5 }, { name: 'Muggles', value: 0 },
+            { name: 'Potions', value: 5 }, { name: 'Alchemy', value: 0 },
+            { name: 'Artificing', value: 0 }, { name: 'Flying', value: 1 },
+            { name: 'Herbology', value: 5 }, { name: 'Creatures', value: 3 },
+            { name: 'Astronomy', value: 6 }, { name: 'Divination', value: 3 },
+            { name: 'Perception', value: 0 }, { name: 'Social', value: 11 }
+          ],
+          characteristics: [
+            { name: 'Fortitude', dice: 1 }, { name: 'Willpower', dice: 1 },
+            { name: 'Intellect', dice: 1 }, { name: 'Creativity', dice: 3 },
+            { name: 'Equanimity', dice: 2 }, { name: 'Charisma', dice: 3 },
+            { name: 'Attractiveness', dice: 2 }, { name: 'Strength', dice: 4 },
+            { name: 'Agility', dice: 5 }
+          ],
+          parental_values: [
+            { name: 'Generosity', value: 9 },
+            { name: 'Permissiveness', value: 4 },
+            { name: 'Wealth', value: 1 }
+          ],
+          traits: ['Observant', 'Protective']
+        }
       };
       this.activeMapId = 'preview-map';
-      this.openSection('board');
+      this.openSection(this.activeSection);
     }
   }
 

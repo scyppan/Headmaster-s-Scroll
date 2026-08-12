@@ -26,6 +26,7 @@ from ..board import (
     point_in_polygon,
 )
 from ..campaigns import CampaignRepository, normalize_board_camera, normalize_zoom_profile
+from ..character_attributes import calculate_character_attributes
 from .storage import GameBoardRepository
 
 
@@ -892,6 +893,27 @@ class GameBoardService:
                 }
                 if player_active in visible_ids:
                     snapshot["active_map_id"] = player_active
+                viewer_character_id = str((viewer or {}).get("character_id", "") or "")
+                viewer_person = next(
+                    (
+                        person for person in document.get("people", [])
+                        if str(person.get("record_id", "")) == viewer_character_id
+                    ),
+                    None,
+                )
+                if viewer_person is not None:
+                    try:
+                        rules_database = self.shared_store.load("db.json").data
+                    except FileNotFoundError:
+                        rules_database = {"schools": []}
+                    snapshot["character_attributes"] = calculate_character_attributes(
+                        viewer_person,
+                        document,
+                        rules_database,
+                        game_datetime,
+                    )
+                else:
+                    snapshot["character_attributes"] = None
             campaign_maps = campaign["game_state"].get("maps", {})
             for map_record in snapshot.get("maps", []):
                 map_id = str(map_record.get("record_id", "") or "")

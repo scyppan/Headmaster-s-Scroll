@@ -41,6 +41,7 @@ class CharacterAttributesTests(unittest.TestCase):
                             "skill": "Defense",
                             "points": 1,
                         }],
+                        "skills": ["Defense", "Defense"],
                     },
                     {
                         "year": 2,
@@ -115,7 +116,7 @@ class CharacterAttributesTests(unittest.TestCase):
             "Panache": 1,
             "Naturalism": 0,
         })
-        self.assertEqual(skills["Defense"], 2)  # course + one eminence
+        self.assertEqual(skills["Defense"], 4)  # course + two buys + one eminence
         self.assertEqual(characteristics["Fortitude"], 1)
         self.assertEqual(characteristics["Willpower"], 5)  # capped after earned year-one buy
         self.assertEqual(characteristics["Intellect"], 4)

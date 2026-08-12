@@ -1,6 +1,7 @@
 import random
 
 from mage_maker.sections.development.initial_bonuses import (
+    INITIAL_ABILITY_BUY_COUNT,
     initial_bonus_requirements,
     normalize_initial_bonuses,
 )
@@ -382,6 +383,20 @@ def incomplete_initial_value_names(person):
             if initial_bonuses is not None
             else []
         )
+        selected_abilities = (
+            initial_bonuses.get("attribute_buys", [])
+            if initial_bonuses is not None
+            else []
+        )
+
+        # Existing people predate this field and remain loadable. Once the
+        # field is introduced by the editor it must contain exactly two buys.
+        if (
+            initial_bonuses is not None
+            and "attribute_buys" in initial_bonuses
+            and len(selected_abilities) != INITIAL_ABILITY_BUY_COUNT
+        ):
+            incomplete_values.append("initial ability points")
 
         if (
             len(selected_skills)

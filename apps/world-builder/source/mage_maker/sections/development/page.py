@@ -43,6 +43,7 @@ from mage_maker.sections.development.initial_bonuses import (
     preferred_development_skills,
     reconcile_initial_bonuses,
     summarize_initial_skill_bonuses,
+    summarize_initial_ability_buys,
     starting_allowance_sickles,
 )
 from mage_maker.sections.development.initial_values import (
@@ -214,6 +215,9 @@ class DevelopmentView(tk.Frame):
         self.characteristics_editing = False
         self.skill_bonus_summary_value = tk.StringVar(
             value="Initial skill bonuses have not been assigned"
+        )
+        self.ability_buy_summary_value = tk.StringVar(
+            value="Two initial ability points have not been assigned"
         )
         self.trait_summary_value = tk.StringVar(
             value="Traits have not been assigned"
@@ -1147,6 +1151,17 @@ class DevelopmentView(tk.Frame):
             sticky="e",
             padx=(8, 0),
         )
+        self.ability_buy_summary = tk.Label(
+            initial_assignments,
+            textvariable=self.ability_buy_summary_value,
+            bg=SURFACE_MUTED,
+            fg=TEXT_DARK,
+            font=app_font(10),
+            anchor="w",
+        )
+        self.ability_buy_summary.grid(
+            row=2, column=0, sticky="ew", pady=1,
+        )
         self.trait_summary = tk.Label(
             initial_assignments,
             textvariable=self.trait_summary_value,
@@ -1158,7 +1173,7 @@ class DevelopmentView(tk.Frame):
             wraplength=480,
         )
         self.trait_summary.grid(
-            row=2,
+            row=3,
             column=0,
             sticky="ew",
             pady=1,
@@ -1173,7 +1188,7 @@ class DevelopmentView(tk.Frame):
             font=app_font(9, "bold"),
         )
         self.trait_button.grid(
-            row=2,
+            row=3,
             column=1,
             sticky="e",
             padx=(8, 0),
@@ -1187,7 +1202,7 @@ class DevelopmentView(tk.Frame):
             anchor="w",
         )
         self.muggles_bonus_summary.grid(
-            row=3,
+            row=4,
             column=0,
             columnspan=2,
             sticky="ew",
@@ -5152,12 +5167,25 @@ class DevelopmentView(tk.Frame):
             if self.initial_bonuses is not None
             else []
         )
+        selected_abilities = (
+            list(self.initial_bonuses.get("attribute_buys", []))
+            if self.initial_bonuses is not None
+            else []
+        )
+        ability_text = summarize_initial_ability_buys(selected_abilities)
+        self.ability_buy_summary_value.set(
+            "Initial abilities: "
+            + (ability_text if ability_text else "2 points not assigned")
+        )
 
         if skill_count == 0:
             self.skill_bonus_summary_value.set(
                 "No initial skill bonuses"
             )
-            self.skill_bonus_button.grid_remove()
+            self.skill_bonus_button.grid()
+            self.skill_bonus_button.set_enabled(
+                self.initial_bonuses is not None
+            )
         else:
             skill_label = (
                 "initial skill bonus"
@@ -5227,17 +5255,17 @@ class DevelopmentView(tk.Frame):
         )
         required_count = requirements["skill_bonus_count"]
 
-        if required_count <= 0:
-            return
-
         InitialSkillBonusDialog(
             self,
             required_count,
             self.initial_bonuses["skill_bonuses"],
             self.save_initial_skill_bonuses,
+            self.initial_bonuses.get("attribute_buys", []),
         )
 
-    def save_initial_skill_bonuses(self, selected_skills):
+    def save_initial_skill_bonuses(
+        self, selected_skills, selected_abilities
+    ):
         if self.initial_bonuses is None:
             return
 
@@ -5254,6 +5282,9 @@ class DevelopmentView(tk.Frame):
         normalized_bonuses["skill_bonuses"] = list(
             selected_skills
         )
+        normalized_bonuses["attribute_buys"] = list(
+            selected_abilities
+        )
         normalized_bonuses = normalize_initial_bonuses(
             normalized_bonuses,
             allow_uninitialized=False,
@@ -5263,6 +5294,8 @@ class DevelopmentView(tk.Frame):
             raise ValueError(
                 f"Select exactly {required_count} initial skills."
             )
+        if len(normalized_bonuses["attribute_buys"]) != 2:
+            raise ValueError("Select exactly two initial abilities.")
 
         self.initial_bonuses = normalized_bonuses
         self.current_person["initial_bonuses"] = deepcopy(

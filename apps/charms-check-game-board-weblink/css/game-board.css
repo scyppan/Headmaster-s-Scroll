@@ -413,7 +413,7 @@
 
 #gameboard .ccgb-attributes-panel {
   align-content: start;
-  gap: 24px;
+  gap: 10px;
   min-height: 100%;
 }
 
@@ -426,18 +426,18 @@
 #gameboard .ccgb-attribute-card h2 {
   background: rgba(247, 240, 223, 0.82);
   border-bottom: 1px solid #bba57b;
-  font: 700 14px/1.2 "Segoe UI", system-ui, sans-serif;
+  font: 700 12px/1.15 "Segoe UI", system-ui, sans-serif;
   margin: 0;
-  padding: 10px 12px;
+  padding: 6px 9px;
 }
 
-#gameboard .ccgb-ability-card { min-height: 310px; }
+#gameboard .ccgb-ability-card { min-height: 0; }
 
 #gameboard .ccgb-ability-grid {
   display: grid;
-  gap: 16px clamp(28px, 7vw, 100px);
-  grid-template-columns: repeat(2, minmax(180px, 1fr));
-  padding: 10px clamp(12px, 5vw, 78px) 22px;
+  gap: 8px 14px;
+  grid-template-columns: repeat(4, minmax(125px, 1fr));
+  padding: 7px 9px 10px;
 }
 
 #gameboard .ccgb-roll-group { min-width: 0; }
@@ -446,10 +446,10 @@
   align-items: flex-start;
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 3px;
 }
 
-#gameboard .ccgb-skill-pills { margin-top: 6px; }
+#gameboard .ccgb-skill-pills { margin-top: 4px; }
 
 #gameboard .ccgb-roll-pill {
   align-items: baseline;
@@ -458,30 +458,43 @@
   border-radius: 999px;
   color: #17130c;
   display: inline-flex;
-  font-size: 14px;
-  gap: 5px;
-  line-height: 1.15;
+  cursor: pointer;
+  font-size: 12px;
+  gap: 4px;
+  line-height: 1.1;
   max-width: 100%;
-  padding: 2px 9px;
+  padding: 2px 7px;
   width: max-content;
 }
 
 #gameboard .ccgb-roll-pill strong { font-weight: 500; }
 #gameboard .ccgb-roll-pill.is-ability { background: #e1c56e; }
+#gameboard .ccgb-roll-pill.is-skill { background: #c9e2ec; border-color: #7296a4; color: #000; }
 #gameboard .ccgb-roll-pill.is-characteristic { background: #bfe0b3; border-color: #6eaa69; }
 #gameboard .ccgb-roll-pill.is-parental { background: #e8b8bd; border-color: #bc7e83; }
 #gameboard .ccgb-roll-pill.is-trait { background: #e7d49e; border-color: #a9853e; }
+#gameboard .ccgb-roll-pill.is-ability:hover { background: #566c76; color: #fff; }
+#gameboard .ccgb-roll-pill.is-skill:hover { background: #9fc9d9; color: #000; }
+#gameboard .ccgb-roll-pill.is-characteristic:hover { background: #66745d; color: #fff; }
+#gameboard .ccgb-roll-pill.is-parental:hover { background: #705c5c; color: #fff; }
+#gameboard .ccgb-roll-pill.is-trait:hover { background: #8b743d; color: #fff; }
 
 #gameboard .ccgb-attribute-lower-grid {
   display: grid;
-  gap: 14px;
+  gap: 10px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 #gameboard .ccgb-attribute-lower-grid .ccgb-attribute-card,
-#gameboard .ccgb-attribute-stack .ccgb-attribute-card { min-height: 148px; }
-#gameboard .ccgb-attribute-stack { display: grid; gap: 14px; }
-#gameboard .ccgb-roll-list { padding: 8px 12px 16px; }
+#gameboard .ccgb-attribute-stack .ccgb-attribute-card { min-height: 0; }
+#gameboard .ccgb-attribute-stack { display: grid; gap: 10px; }
+#gameboard .ccgb-roll-list {
+  align-content: start;
+  display: grid;
+  gap: 3px 7px;
+  grid-template-columns: repeat(3, minmax(0, max-content));
+  padding: 6px 9px 9px;
+}
 #gameboard .ccgb-no-rolls { color: var(--ccgb-muted); margin: 2px 0; }
 #gameboard .ccgb-attribute-empty { padding-bottom: 18px; }
 #gameboard .ccgb-attribute-empty p { color: var(--ccgb-muted); margin: 14px 16px 0; }

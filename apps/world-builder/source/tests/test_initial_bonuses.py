@@ -825,6 +825,7 @@ class InitialBonusPersistenceTests(unittest.TestCase):
                 "Charms",
                 "Charms",
             ],
+            "attribute_buys": ["Power", "Erudition"],
             "traits": [],
         }
         updated = self.controller.update_person(
@@ -838,6 +839,10 @@ class InitialBonusPersistenceTests(unittest.TestCase):
         self.assertEqual(
             ["Charms", "Charms", "Charms"],
             updated["initial_bonuses"]["skill_bonuses"],
+        )
+        self.assertEqual(
+            ["Power", "Erudition"],
+            updated["initial_bonuses"]["attribute_buys"],
         )
 
     def test_version_fourteen_migrates_with_unassigned_bonuses(self):

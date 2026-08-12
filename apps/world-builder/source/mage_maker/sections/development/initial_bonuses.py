@@ -12,6 +12,7 @@ from mage_maker.sections.development.initial_values import (
     normalize_parental_values,
 )
 from mage_maker.sections.development.models import (
+    DEVELOPMENT_ABILITY_OPTIONS,
     DEVELOPMENT_ABILITY_BY_SKILL,
     DEVELOPMENT_SKILL_OPTIONS,
     DEVELOPMENT_SKILLS_BY_ABILITY,
@@ -31,6 +32,7 @@ INITIAL_SELECTION_MODES = (
     INITIAL_SELECTION_AUTOMATIC,
     INITIAL_SELECTION_MANUAL,
 )
+INITIAL_ABILITY_BUY_COUNT = 2
 MUGGLES_INITIAL_SKILL_BONUS = 11
 FRUGAL_ALLOWANCE_BONUS = 9
 SICKLES_PER_GALLEON = 17
@@ -168,6 +170,42 @@ def normalize_initial_bonus_skills(value):
     return normalized_skills
 
 
+def normalize_initial_ability_buys(value):
+    if value in (None, ""):
+        candidate_values = []
+    elif isinstance(value, str):
+        candidate_values = [value]
+    elif isinstance(value, (list, tuple)):
+        candidate_values = list(value)
+    else:
+        raise TypeError("Initial ability buys must be a list.")
+
+    aliases = {
+        ability.casefold(): ability
+        for ability in DEVELOPMENT_ABILITY_OPTIONS
+    }
+    normalized = []
+    for candidate in candidate_values:
+        ability = aliases.get(str(candidate or "").strip().casefold())
+        if ability is None:
+            valid_values = ", ".join(DEVELOPMENT_ABILITY_OPTIONS)
+            raise ValueError(
+                f"Initial ability buy must be one of: {valid_values}."
+            )
+        normalized.append(ability)
+    return normalized
+
+
+def summarize_initial_ability_buys(value):
+    counts = {}
+    for ability in normalize_initial_ability_buys(value):
+        counts[ability] = counts.get(ability, 0) + 1
+    return ", ".join(
+        f"{ability} +{amount}"
+        for ability, amount in counts.items()
+    )
+
+
 def normalize_initial_traits(value):
     if value in (None, ""):
         candidate_values = []
@@ -218,7 +256,7 @@ def normalize_initial_bonuses(value, allow_uninitialized=True):
 
         raise ValueError("Initial bonuses have not been assigned.")
 
-    return {
+    normalized = {
         "initialized": True,
         "skill_selection_mode": normalize_initial_selection_mode(
             value.get("skill_selection_mode")
@@ -233,6 +271,11 @@ def normalize_initial_bonuses(value, allow_uninitialized=True):
             value.get("traits", [])
         ),
     }
+    if "attribute_buys" in value:
+        normalized["attribute_buys"] = normalize_initial_ability_buys(
+            value.get("attribute_buys", [])
+        )
+    return normalized
 
 
 def initial_bonus_requirements(
@@ -478,6 +521,7 @@ def initialize_initial_bonuses(person, development_plan):
                 development_plan,
                 requirements["skill_bonus_count"],
             ),
+            "attribute_buys": [],
             "traits": randomized_initial_traits(
                 development_plan,
                 requirements["trait_count"],
@@ -531,6 +575,11 @@ def reconcile_initial_bonuses(
             requirements["skill_bonus_count"],
             retained_skills,
         )
+    )
+    normalized_bonuses["attribute_buys"] = (
+        normalized_bonuses.get("attribute_buys", [])[
+            :INITIAL_ABILITY_BUY_COUNT
+        ]
     )
     normalized_bonuses["traits"] = randomized_initial_traits(
         development_plan,

@@ -36,11 +36,21 @@ class InitialSkillBonusDialog(tk.Toplevel):
         required_count,
         selected_skills,
         save_command,
+        selected_abilities=None,
     ):
         super().__init__(parent)
         self.required_count = int(required_count)
         self.selected_skills = list(selected_skills or [])
         self.save_command = save_command
+        self.selected_abilities = list(selected_abilities or [])
+        self.ability_buy_values = {
+            ability: 0
+            for ability in DEVELOPMENT_ABILITY_OPTIONS
+        }
+        self.ability_buy_labels = {}
+        self.ability_decrement_buttons = {}
+        self.ability_increment_buttons = {}
+        self.ability_summary_value = tk.StringVar()
         self.skill_values = {}
         self.skill_bonus_amounts = {
             skill: 0
@@ -52,7 +62,7 @@ class InitialSkillBonusDialog(tk.Toplevel):
         self.skill_decrement_buttons = {}
         self.skill_increment_buttons = {}
         self.selection_summary_value = tk.StringVar()
-        self.title("Select Initial Skill Bonuses")
+        self.title("Select Initial Skills and Abilities")
         self.geometry("1120x600")
         self.minsize(980, 520)
         self.configure(bg=APP_BACKGROUND)
@@ -82,7 +92,7 @@ class InitialSkillBonusDialog(tk.Toplevel):
             padx=20,
             pady=20,
         )
-        card.grid_rowconfigure(3, weight=1)
+        card.grid_rowconfigure(4, weight=1)
         card.grid_columnconfigure(0, weight=1)
         heading = tk.Label(
             card,
@@ -132,6 +142,44 @@ class InitialSkillBonusDialog(tk.Toplevel):
             sticky="ew",
             pady=(0, 7),
         )
+        ability_row = tk.Frame(card, bg=SURFACE)
+        ability_row.grid(row=3, column=0, sticky="ew", pady=(0, 9))
+        tk.Label(
+            ability_row,
+            text="Initial abilities (assign 2):",
+            bg=SURFACE,
+            fg=TEXT_DARK,
+            font=app_font(10, "bold"),
+        ).pack(side="left", padx=(0, 8))
+        for ability in DEVELOPMENT_ABILITY_OPTIONS:
+            block = tk.Frame(ability_row, bg=SURFACE)
+            block.pack(side="left", padx=(0, 8))
+            decrement = SoftButton(
+                block, text="−1",
+                command=partial(self.adjust_ability_buy, ability, -1),
+                background=SURFACE, width=30, height=26,
+                font=app_font(8, "bold"), padx=2,
+            )
+            decrement.pack(side="left")
+            label_value = tk.StringVar(value=ability)
+            tk.Label(
+                block, textvariable=label_value, bg=SURFACE,
+                fg=TEXT_DARK, font=app_font(9), padx=4,
+            ).pack(side="left")
+            increment = SoftButton(
+                block, text="+1",
+                command=partial(self.adjust_ability_buy, ability, 1),
+                background=SURFACE, width=30, height=26,
+                font=app_font(8, "bold"), padx=2,
+            )
+            increment.pack(side="left")
+            self.ability_buy_labels[ability] = label_value
+            self.ability_decrement_buttons[ability] = decrement
+            self.ability_increment_buttons[ability] = increment
+        tk.Label(
+            ability_row, textvariable=self.ability_summary_value,
+            bg=SURFACE, fg=TEXT_MUTED, font=app_font(9, "bold"),
+        ).pack(side="right")
         checkbox_panel = tk.Frame(
             card,
             bg=FIELD_BACKGROUND,
@@ -141,7 +189,7 @@ class InitialSkillBonusDialog(tk.Toplevel):
             pady=8,
         )
         checkbox_panel.grid(
-            row=3,
+            row=4,
             column=0,
             sticky="nsew",
         )
@@ -298,7 +346,7 @@ class InitialSkillBonusDialog(tk.Toplevel):
                 )
         footer = tk.Frame(card, bg=SURFACE)
         footer.grid(
-            row=4,
+            row=5,
             column=0,
             sticky="ew",
             pady=(14, 0),
@@ -337,6 +385,26 @@ class InitialSkillBonusDialog(tk.Toplevel):
             self.skill_bonus_amounts[skill] = restored_amount
             self.skill_values[skill].set(restored_amount > 0)
             remaining_count -= restored_amount
+        for ability in getattr(self, "selected_abilities", [])[:2]:
+            if ability in getattr(self, "ability_buy_values", {}):
+                self.ability_buy_values[ability] += 1
+
+    def selected_ability_buys(self):
+        selected = []
+        for ability in DEVELOPMENT_ABILITY_OPTIONS:
+            selected.extend([ability] * self.ability_buy_values[ability])
+        return selected
+
+    def adjust_ability_buy(self, ability, change):
+        if ability not in self.ability_buy_values:
+            return
+        current = self.ability_buy_values[ability]
+        total = sum(self.ability_buy_values.values())
+        if change > 0 and total < 2:
+            self.ability_buy_values[ability] = current + 1
+        elif change < 0 and current > 0:
+            self.ability_buy_values[ability] = current - 1
+        self.update_selection_state()
 
     def selection_changed(self, changed_skill=None):
         if changed_skill not in self.skill_values:
@@ -403,9 +471,24 @@ class InitialSkillBonusDialog(tk.Toplevel):
             f"{selected_count} of {self.required_count} "
             "bonus points assigned"
         )
+        ability_values = getattr(self, "ability_buy_values", {})
+        ability_count = sum(ability_values.values())
+        ability_complete = not ability_values or ability_count == 2
+        if hasattr(self, "ability_summary_value"):
+            self.ability_summary_value.set(f"{ability_count} of 2 assigned")
         self.save_button.set_enabled(
             selected_count == self.required_count
+            and ability_complete
         )
+        for ability in ability_values:
+            amount = self.ability_buy_values[ability]
+            self.ability_buy_labels[ability].set(
+                f"{ability} +{amount}" if amount else ability
+            )
+            self.ability_decrement_buttons[ability].set_enabled(amount > 0)
+            self.ability_increment_buttons[ability].set_enabled(
+                ability_count < 2
+            )
 
         for skill, checkbutton in self.skill_checkbuttons.items():
             amount = self.skill_bonus_amounts[skill]
@@ -438,6 +521,7 @@ class InitialSkillBonusDialog(tk.Toplevel):
 
     def save_selection(self):
         selection = self.selected_skill_bonuses()
+        ability_selection = self.selected_ability_buys()
 
         if len(selection) != self.required_count:
             messagebox.showinfo(
@@ -454,7 +538,15 @@ class InitialSkillBonusDialog(tk.Toplevel):
             )
             return
 
-        self.save_command(selection)
+        if len(ability_selection) != 2:
+            messagebox.showinfo(
+                "Select abilities",
+                "Assign exactly two initial ability points.",
+                parent=self,
+            )
+            return
+
+        self.save_command(selection, ability_selection)
         self.destroy()
 
     def close_dialog(self, event=None):

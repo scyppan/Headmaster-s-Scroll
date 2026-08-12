@@ -244,6 +244,13 @@ def calculate_character_attributes(
     for record in earned_years:
         school_name = str(record.get("school", "") or default_school).strip()
         school = schools.get(school_name.casefold())
+        # World Builder stores developmental skill buys independently of
+        # school attendance and curriculum. Each occurrence is one point,
+        # including repeated focus selections in the same year.
+        for skill in record.get("skills", []) or []:
+            skill_name = str(skill or "").strip()
+            if skill_name in skill_values:
+                skill_values[skill_name] += 1
         try:
             school_year = int(record.get("year"))
         except (TypeError, ValueError):

@@ -480,6 +480,20 @@
           this.queueCameraSave(mapId, 0);
           this.showBoardNotice('The Headmaster focused your view here.');
         }
+      } else if (message.type === 'board_transport' && message.camera) {
+        // Transport is part of moving this player's character, not the
+        // optional Headmaster camera-control feature. Always take the player
+        // to the destination so they can see where their token arrived.
+        const mapId = String(message.map_id || '');
+        if (mapId) {
+          this.activeMapId = mapId;
+          this.mapCameraStates.set(mapId, this.normalizedCamera(message.camera));
+          this.saveViewState();
+          if (this.activeSection !== 'board') this.openSection('board');
+          else this.renderBoardView();
+          this.queueCameraSave(mapId, 0);
+          this.showBoardNotice('You have been transported.');
+        }
       } else if (message.type === 'access_revoked') {
         this.releaseAssets();
         this.show('revoked', message.message || 'Access was revoked.');
@@ -682,9 +696,14 @@
       notice.className = 'ccgb-map-notice';
       notice.hidden = true;
       viewport.appendChild(notice);
+      const locatorLayer = document.createElement('div');
+      locatorLayer.className = 'ccgb-player-locators';
+      locatorLayer.setAttribute('aria-hidden', 'true');
+      viewport.appendChild(locatorLayer);
       const stage = document.createElement('div');
       stage.className = 'ccgb-map-stage';
       const map = maps.find(item => item.record_id === this.activeMapId) || maps[0];
+      stage._ccgbZoomProfile = map.zoom_profile || {};
       this.activeMapId = map.record_id;
       const metadata = map.asset || null;
       if (metadata?.asset_id) {
@@ -836,10 +855,14 @@
       return fitScale * Math.max(1, Number(state.scale || 1));
     }
 
-    zoomTier(state) {
-      const clicks = Math.max(0, Number.isFinite(state.zoomClicks)
+    zoomClicks(state) {
+      return Math.max(0, Number.isFinite(state.zoomClicks)
         ? state.zoomClicks
         : Math.round(Math.log(Math.max(1, state.scale)) / Math.log(MAP_ZOOM_STEP)));
+    }
+
+    zoomTier(state) {
+      const clicks = this.zoomClicks(state);
       return Math.max(0, Math.min(TOKEN_SCREEN_SIZES.length - 1, Math.floor(clicks / 3)));
     }
 
@@ -947,7 +970,17 @@
       const tierScreenSize = overviewMode
         ? OVERVIEW_DOT_SCREEN_SIZES[tier]
         : TOKEN_SCREEN_SIZES[tier];
-      const targetActorScreenSize = Math.max(8, tierScreenSize * sizeRatio);
+      const profileTiers = stage._ccgbZoomProfile?.tiers || {};
+      const applicableClicks = Object.keys(profileTiers)
+        .map(value => Number(value))
+        .filter(value => Number.isFinite(value) && value <= this.zoomClicks(state))
+        .sort((left, right) => right - left)[0];
+      const tierOverride = Number.isFinite(applicableClicks) ? profileTiers[String(applicableClicks)] : {};
+      const configuredTokenSize = Number(tierOverride.token_size);
+      const targetActorScreenSize = Math.max(
+        8,
+        (Number.isFinite(configuredTokenSize) ? configuredTokenSize : tierScreenSize) * sizeRatio
+      );
       const actorCameraScale = targetActorScreenSize / Math.max(1, tokenSize * stageScale);
       const actorNetScale = Math.max(0.0001, stageScale * actorCameraScale);
       const screenToActor = value => value / actorNetScale;
@@ -956,7 +989,12 @@
       stage.style.setProperty('--map-actor-border', `${screenToActor(1)}px`);
       stage.style.setProperty('--map-control-outline', `${screenToActor(2)}px`);
       stage.style.setProperty('--map-control-offset', `${screenToActor(2)}px`);
-      stage.style.setProperty('--map-label-font-size', `${screenToActor(LABEL_SCREEN_SIZES[tier])}px`);
+      const configuredLabelSize = Number(tierOverride.nameplate_size);
+      const defaultLabelSize = Number(stage._ccgbZoomProfile?.default_nameplate_size);
+      const labelScreenSize = Number.isFinite(configuredLabelSize)
+        ? configuredLabelSize
+        : (Number.isFinite(defaultLabelSize) ? defaultLabelSize : LABEL_SCREEN_SIZES[tier]);
+      stage.style.setProperty('--map-label-font-size', `${screenToActor(labelScreenSize)}px`);
       stage.style.setProperty('--map-label-border', `${screenToActor(1)}px`);
       stage.style.setProperty('--map-label-radius', `${screenToActor(2)}px`);
       stage.style.setProperty('--map-label-gap', `${screenToActor(3)}px`);
@@ -978,14 +1016,89 @@
       cancelAnimationFrame(this.actorLabelFrame);
       this.actorLabelFrame = requestAnimationFrame(() => {
         if (viewport.isConnected && stage.isConnected) {
-          if (overviewMode) {
-            this.positionOverviewLabels(viewport, stage, tier, actorNetScale);
-          } else {
-            this.positionOffscreenPlayerLocator(viewport, stage, tier, actorNetScale);
-          }
+          this.positionPlayerViewportLocators(viewport, stage, tier, labelScreenSize, overviewMode);
         }
       });
       this.queueSharpMapRepaint(stage);
+    }
+
+    positionPlayerViewportLocators(viewport, stage, tier, fontSize, overviewMode) {
+      const layer = viewport.querySelector('.ccgb-player-locators');
+      if (!layer) return;
+      const pieces = Array.from(stage.querySelectorAll('.ccgb-board-actor.is-player-character'));
+      layer.replaceChildren();
+      if (!pieces.length) return;
+
+      const viewportBounds = viewport.getBoundingClientRect();
+      const stageBounds = stage.getBoundingClientRect();
+      const margin = 9;
+      const widthLimit = Math.max(72, Math.min(LABEL_SCREEN_WIDTHS[tier], viewport.clientWidth - margin * 2));
+      const occupied = [];
+      const overlaps = (left, top, width, height, other) => !(
+        left + width + 4 <= other.left || left >= other.right + 4 ||
+        top + height + 4 <= other.top || top >= other.bottom + 4
+      );
+
+      pieces.forEach((piece, index) => {
+        const actorX = stageBounds.left - viewportBounds.left + Number(piece.dataset.actorX ?? 0.5) * stageBounds.width;
+        const actorY = stageBounds.top - viewportBounds.top + Number(piece.dataset.actorY ?? 0.5) * stageBounds.height;
+        const onScreen = actorX >= margin && actorX <= viewport.clientWidth - margin &&
+          actorY >= margin && actorY <= viewport.clientHeight - margin;
+        const name = piece.querySelector('.ccgb-position-label')?.textContent || piece.title || 'Character';
+
+        const locator = document.createElement('div');
+        locator.className = 'ccgb-player-locator';
+        const dot = document.createElement('span');
+        dot.className = 'ccgb-player-locator-dot';
+        const line = document.createElement('span');
+        line.className = 'ccgb-player-locator-line';
+        const plaque = document.createElement('span');
+        plaque.className = 'ccgb-player-locator-plaque';
+        plaque.textContent = name;
+        plaque.style.fontSize = `${fontSize}px`;
+        plaque.style.maxWidth = `${widthLimit}px`;
+        locator.append(dot, line, plaque);
+        layer.appendChild(locator);
+
+        const plaqueWidth = Math.min(widthLimit, Math.max(72, plaque.offsetWidth || name.length * fontSize * 0.62 + 18));
+        const plaqueHeight = Math.max(fontSize + 10, plaque.offsetHeight || fontSize + 10);
+        const anchorX = Math.max(margin, Math.min(viewport.clientWidth - margin, actorX));
+        const anchorY = Math.max(margin, Math.min(viewport.clientHeight - margin, actorY));
+        let plaqueX = Math.max(margin + plaqueWidth / 2, Math.min(viewport.clientWidth - margin - plaqueWidth / 2, actorX));
+        let plaqueY = Math.max(margin + plaqueHeight / 2, Math.min(viewport.clientHeight - margin - plaqueHeight / 2, actorY - 22));
+
+        // Keep multiple player plaques legible without ever allowing one to
+        // leave the viewport.  The small stagger is deterministic per player.
+        for (let attempt = 0; attempt < 8; attempt += 1) {
+          const left = plaqueX - plaqueWidth / 2;
+          const top = plaqueY - plaqueHeight / 2;
+          if (!occupied.some(other => overlaps(left, top, plaqueWidth, plaqueHeight, other))) break;
+          const direction = (index + attempt) % 2 ? 1 : -1;
+          plaqueY = Math.max(
+            margin + plaqueHeight / 2,
+            Math.min(viewport.clientHeight - margin - plaqueHeight / 2, plaqueY + direction * (plaqueHeight + 5))
+          );
+        }
+        occupied.push({
+          left: plaqueX - plaqueWidth / 2,
+          right: plaqueX + plaqueWidth / 2,
+          top: plaqueY - plaqueHeight / 2,
+          bottom: plaqueY + plaqueHeight / 2
+        });
+
+        plaque.style.left = `${plaqueX}px`;
+        plaque.style.top = `${plaqueY}px`;
+        dot.style.left = `${anchorX}px`;
+        dot.style.top = `${anchorY}px`;
+        dot.hidden = onScreen && !overviewMode;
+        const dx = anchorX - plaqueX;
+        const dy = anchorY - plaqueY;
+        const distance = Math.hypot(dx, dy);
+        line.style.left = `${plaqueX}px`;
+        line.style.top = `${plaqueY}px`;
+        line.style.width = `${Math.max(4, distance)}px`;
+        line.style.transform = `rotate(${Math.atan2(dy, dx)}rad)`;
+      });
     }
 
     queueSharpMapRepaint(stage) {
@@ -1008,7 +1121,7 @@
     }
 
     positionOffscreenPlayerLocator(viewport, stage, tier, actorNetScale) {
-      const pieces = Array.from(stage.querySelectorAll('.ccgb-board-actor.is-player-character.is-controlled'));
+      const pieces = Array.from(stage.querySelectorAll('.ccgb-board-actor.is-player-character'));
       if (!pieces.length) return;
       const viewportBounds = viewport.getBoundingClientRect();
       const stageBounds = stage.getBoundingClientRect();
@@ -1025,22 +1138,27 @@
         const actorX = stageBounds.left + Number(piece.dataset.actorX ?? 0.5) * stageBounds.width;
         const actorY = stageBounds.top + Number(piece.dataset.actorY ?? 0.5) * stageBounds.height;
         const onScreen = actorX >= bounds.left && actorX <= bounds.right && actorY >= bounds.top && actorY <= bounds.bottom;
+        piece.classList.add('has-viewport-locator');
         piece.classList.toggle('is-offscreen-locator', !onScreen);
-        if (onScreen) return;
         const label = piece.querySelector('.ccgb-position-label');
         const name = label?.textContent || 'Character';
         const width = Math.min(maxWidth, Math.max(72, name.length * fontSize * 0.62 + 22));
         const height = fontSize + 14;
+        const preferredY = onScreen ? actorY - height / 2 - 18 : actorY;
         const labelX = Math.max(bounds.left + width / 2, Math.min(bounds.right - width / 2, actorX));
-        const labelY = Math.max(bounds.top + height / 2, Math.min(bounds.bottom - height / 2, actorY));
+        const labelY = Math.max(bounds.top + height / 2, Math.min(bounds.bottom - height / 2, preferredY));
         const shiftX = (labelX - actorX) / actorNetScale;
         const shiftY = (labelY - actorY) / actorNetScale;
         const direction = Math.atan2(actorY - labelY, actorX - labelX);
+        const distance = Math.hypot(actorX - labelX, actorY - labelY);
         piece.style.setProperty('--map-position-label-x', `${shiftX}px`);
         piece.style.setProperty('--map-position-label-y', `${shiftY}px`);
         piece.style.setProperty('--map-position-line-x', `${shiftX}px`);
         piece.style.setProperty('--map-position-line-y', `${shiftY}px`);
-        piece.style.setProperty('--map-position-line-length', `${30 / actorNetScale}px`);
+        piece.style.setProperty(
+          '--map-position-line-length',
+          `${Math.max(5, distance - Math.min(width, height) / 2) / actorNetScale}px`
+        );
         piece.style.setProperty('--map-position-line-angle', `${direction}rad`);
       });
     }
@@ -1172,6 +1290,8 @@
       piece.dataset.actorId = actor.actor_id;
       piece.dataset.actorX = String(Number(actor.x ?? 0.5));
       piece.dataset.actorY = String(Number(actor.y ?? 0.5));
+      piece.style.setProperty('--actor-label-offset-x', `${Number(actor.label_offset?.x || 0) * MAP_NATIVE_WIDTH}px`);
+      piece.style.setProperty('--actor-label-offset-y', `${Number(actor.label_offset?.y || 0) * MAP_NATIVE_HEIGHT}px`);
       piece.classList.toggle('is-player-character', Boolean(actor.is_player_character));
       piece.style.setProperty('--actor-color', actor.faction_color || '#808080');
       piece.title = actor.faction_revealed && actor.faction_name
@@ -1264,7 +1384,13 @@
         const sizeRatio = Math.max(0.35, Math.min(5.5, tokenSize / (MAP_NATIVE_WIDTH * DEFAULT_TOKEN_SCALE)));
         const targetActorScreenSize = Math.max(8, (TOKEN_SCREEN_SIZES[tier] || 8) * sizeRatio);
         const actorNetScale = Math.max(0.0001, stageScale * targetActorScreenSize / Math.max(1, tokenSize * stageScale));
-        this.positionOffscreenPlayerLocator(viewport, this.dragging.stage, tier, actorNetScale);
+        this.positionPlayerViewportLocators(
+          viewport,
+          this.dragging.stage,
+          tier,
+          Number(this.dragging.stage._ccgbZoomProfile?.default_nameplate_size) || LABEL_SCREEN_SIZES[tier],
+          tier < 6
+        );
       }
       const now = performance.now();
       if (now - this.lastMovePreview >= 80) {

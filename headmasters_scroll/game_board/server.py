@@ -99,6 +99,13 @@ class BoardMoveBody(BaseModel):
     y: float = Field(ge=0.0, le=1.0)
 
 
+class BoardTransportBody(BaseModel):
+    session_id: str = Field(min_length=1, max_length=100)
+    person_id: str = Field(min_length=1, max_length=100)
+    map_id: str = Field(min_length=1, max_length=100)
+    warp_point_id: str = Field(min_length=1, max_length=100)
+
+
 class BoardPersonBody(BaseModel):
     session_id: str = Field(min_length=1, max_length=100)
     visibility: str | None = Field(default=None, max_length=20)
@@ -106,6 +113,15 @@ class BoardPersonBody(BaseModel):
     name_revealed: bool | None = None
     faction_revealed: bool | None = None
     faction_organization_id: str | None = Field(default=None, max_length=100)
+    label_offset: dict[str, float] | None = None
+
+
+class BoardPersonActionBody(BaseModel):
+    session_id: str = Field(min_length=1, max_length=100)
+    action: str = Field(min_length=1, max_length=30)
+    severity: str = Field(default="", max_length=20)
+    text: str = Field(default="", max_length=4000)
+    battle_name: str = Field(default="", max_length=200)
 
 
 class MapVisibilityBody(BaseModel):
@@ -124,8 +140,9 @@ class MapPresentationBody(BaseModel):
 class MapBoardSettingsBody(BaseModel):
     session_id: str = Field(min_length=1, max_length=100)
     token_scale: float | None = Field(default=None, ge=0.002, le=0.03)
-    start_point: dict[str, float] | None = None
-    update_start_point: bool = False
+    zoom_profile: dict[str, Any] | None = None
+    preview_opacity: float | None = Field(default=None, ge=0.05, le=1.0)
+    preview_color: str | None = Field(default=None, min_length=7, max_length=7)
 
 
 class BoardGroupBody(BaseModel):
@@ -219,11 +236,29 @@ class GameBoardRuntime:
         self.rate_limiter = RateLimiter()
         self._announcement_id = 0
         self.asset_credentials: dict[str, str] = {}
+        self._world_revision_id = self.world_revision_id()
+
+    def world_revision_id(self) -> str:
+        try:
+            metadata = self.service.shared_store.load("world.json").data.get(
+                "_headmasters_scroll", {}
+            )
+            return str(metadata.get("revision_id", "") or "")
+        except Exception:
+            return ""
+
+    def world_changed(self) -> bool:
+        revision_id = self.world_revision_id()
+        if not revision_id or revision_id == self._world_revision_id:
+            return False
+        self._world_revision_id = revision_id
+        return True
 
     def state(self) -> dict[str, Any]:
         sessions = self.service.sessions_view()
+        archived_sessions = self.service.archived_sessions_view()
         boards = {}
-        for session in sessions:
+        for session in sessions + archived_sessions:
             try:
                 boards[session["id"]] = self.service.board_snapshot(
                     session["id"],
@@ -241,6 +276,7 @@ class GameBoardRuntime:
             "campaigns": self.service.list_campaigns(),
             "settings": self.service.settings(),
             "sessions": sessions,
+            "archived_sessions": archived_sessions,
             "session": sessions[0] if sessions else None,
             "connections": [item.public(self.service) for item in self.connections.values()],
             "boards": boards,
@@ -395,6 +431,30 @@ class GameBoardRuntime:
             return_exceptions=True,
         )
 
+    async def focus_transported_player(
+        self,
+        session_id: str,
+        contact_ids: list[str],
+        map_id: str,
+        camera: dict[str, float],
+    ) -> None:
+        recipients = set(contact_ids)
+        envelope = {
+            "v": 1,
+            "type": "board_transport",
+            "map_id": map_id,
+            "camera": camera,
+        }
+        await asyncio.gather(
+            *(
+                connection.websocket.send_json(envelope)
+                for connection in list(self.connections.values())
+                if connection.session_id == session_id
+                and connection.contact_id in recipients
+            ),
+            return_exceptions=True,
+        )
+
     async def preview_move(
         self,
         connection: PlayerConnection,
@@ -476,6 +536,14 @@ def create_apps(
                     pass
             if expired:
                 await runtime.notify_admins()
+            if runtime.world_changed():
+                sessions = service.sessions_view()
+                await asyncio.gather(
+                    *(runtime.broadcast_board(session["id"]) for session in sessions),
+                    return_exceptions=True,
+                )
+                if not sessions:
+                    await runtime.notify_admins()
 
     @asynccontextmanager
     async def lifespan(_app):
@@ -642,6 +710,24 @@ def create_apps(
         await runtime.broadcast_board(body.session_id)
         return result
 
+    @admin_app.post("/api/admin/board/transport", dependencies=[Depends(admin_guard)])
+    async def transport_board_person(body: BoardTransportBody):
+        result = admin_result(
+            service.transport_person,
+            body.session_id,
+            body.person_id,
+            body.map_id,
+            body.warp_point_id,
+        )
+        await runtime.broadcast_board(body.session_id)
+        await runtime.focus_transported_player(
+            body.session_id,
+            result.get("contact_ids", []),
+            body.map_id,
+            result["camera"],
+        )
+        return result
+
     @admin_app.post("/api/admin/board/move-preview", dependencies=[Depends(admin_guard)])
     async def preview_board_person(body: BoardMoveBody):
         await runtime.broadcast_move_preview(
@@ -671,6 +757,23 @@ def create_apps(
         )
         for session in service.sessions_view():
             await runtime.broadcast_board(session["id"])
+        return result
+
+    @admin_app.post(
+        "/api/admin/board/people/{person_id}/actions",
+        dependencies=[Depends(admin_guard)],
+    )
+    async def update_board_person_action(person_id: str, body: BoardPersonActionBody):
+        result = admin_result(
+            service.update_person_campaign_action,
+            body.session_id,
+            person_id,
+            body.action,
+            severity=body.severity,
+            text=body.text,
+            battle_name=body.battle_name,
+        )
+        await runtime.notify_admins()
         return result
 
     @admin_app.put(
@@ -716,8 +819,9 @@ def create_apps(
             body.session_id,
             map_id,
             token_scale=body.token_scale,
-            start_point=body.start_point,
-            update_start_point=body.update_start_point,
+            zoom_profile=body.zoom_profile,
+            preview_opacity=body.preview_opacity,
+            preview_color=body.preview_color,
         )
         for session in service.sessions_view():
             await runtime.broadcast_board(session["id"])

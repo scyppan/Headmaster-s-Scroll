@@ -16,6 +16,17 @@ GAME_WORLD_DATE = re.compile(
 )
 GAME_WORLD_DATETIME = re.compile(r"^-?[1-9]\d*-\d{2}-\d{2}T\d{2}:\d{2}$")
 
+LEGACY_GENERATED_ZOOM_TIERS = {
+    "0": {"token_size": 0, "nameplate_size": 11},
+    "3": {"token_size": 0, "nameplate_size": 11},
+    "6": {"token_size": 0, "nameplate_size": 10},
+    "9": {"token_size": 0, "nameplate_size": 10},
+    "12": {"token_size": 0, "nameplate_size": 9},
+    "15": {"token_size": 0, "nameplate_size": 9},
+    "18": {"token_size": 68, "nameplate_size": 9},
+    "21": {"token_size": 64, "nameplate_size": 8},
+}
+
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
@@ -65,6 +76,54 @@ def normalize_board_camera(value: Any) -> dict[str, float]:
         "zoom": zoom,
         "center_x": center_x,
         "center_y": center_y,
+    }
+
+
+def normalize_zoom_profile(value: Any) -> dict[str, Any]:
+    raw = value if isinstance(value, dict) else {}
+    default_zoom = float(raw.get("default_zoom", 1.0))
+    if not 1.0 <= default_zoom <= 32.0:
+        raise ValueError("Default map zoom must be between 1 and 32")
+    default_center_x = float(raw.get("default_center_x", 0.5))
+    default_center_y = float(raw.get("default_center_y", 0.5))
+    if not 0.0 <= default_center_x <= 1.0 or not 0.0 <= default_center_y <= 1.0:
+        raise ValueError("Default map position must be on the map")
+    default_nameplate_size = int(raw.get("default_nameplate_size", 10))
+    if not 6 <= default_nameplate_size <= 32:
+        raise ValueError("Default map nameplate size must be between 6 and 32 pixels")
+    raw_tiers = raw.get("tiers", {}) or {}
+    if not isinstance(raw_tiers, dict):
+        raise ValueError("Map zoom tiers must be keyed by click level")
+    tiers: dict[str, dict[str, int]] = {}
+    for raw_clicks, item in raw_tiers.items():
+        try:
+            clicks = int(raw_clicks)
+        except (TypeError, ValueError) as error:
+            raise ValueError("Map zoom click levels must be whole numbers") from error
+        if not 0 <= clicks <= 250:
+            raise ValueError("Map zoom click levels must be between 0 and 250")
+        if not isinstance(item, dict):
+            raise ValueError("Every map zoom-tier override must be an object")
+        token_size = int(item.get("token_size", 0))
+        nameplate_size = int(item.get("nameplate_size", 10))
+        if not 0 <= token_size <= 240:
+            raise ValueError("Zoom-tier token size must be between 0 and 240 pixels")
+        if not 6 <= nameplate_size <= 32:
+            raise ValueError("Zoom-tier nameplate size must be between 6 and 32 pixels")
+        tiers[str(clicks)] = {
+            "token_size": token_size,
+            "nameplate_size": nameplate_size,
+        }
+    # Older builds generated this exact preset for every map. These were not
+    # user-created overrides, so discard only that known automatic set.
+    if tiers == LEGACY_GENERATED_ZOOM_TIERS:
+        tiers = {}
+    return {
+        "default_zoom": default_zoom,
+        "default_center_x": default_center_x,
+        "default_center_y": default_center_y,
+        "default_nameplate_size": default_nameplate_size,
+        "tiers": dict(sorted(tiers.items(), key=lambda item: int(item[0]))),
     }
 
 
@@ -151,6 +210,7 @@ def normalize_campaign_game_state(
                 raw_state.get("headmaster_camera")
             ),
             "player_cameras": player_cameras,
+            "zoom_profile": normalize_zoom_profile(raw_state.get("zoom_profile")),
         }
 
     people: dict[str, dict[str, Any]] = {}
@@ -162,6 +222,40 @@ def normalize_campaign_game_state(
         if not person_id or not isinstance(raw_state, dict):
             raise ValueError("Every campaign person state requires a stable person ID")
         board = normalize_person_board({**raw_state, "portrait": None})
+        wounds = []
+        for wound in raw_state.get("wounds", []) or []:
+            if not isinstance(wound, dict):
+                raise ValueError("Campaign wounds must be objects")
+            severity = str(wound.get("severity", "") or "").strip().lower()
+            if severity not in {"light", "medium", "heavy"}:
+                raise ValueError("Campaign wounds must be light, medium, or heavy")
+            wounds.append({
+                "record_id": str(wound.get("record_id", "") or uuid4()),
+                "severity": severity,
+                "note": str(wound.get("note", "") or "").strip()[:1000],
+                "created_at": str(wound.get("created_at", "") or utc_now()),
+            })
+        notes = []
+        for note in raw_state.get("character_notes", []) or []:
+            if not isinstance(note, dict):
+                raise ValueError("Campaign character notes must be objects")
+            text = str(note.get("text", "") or "").strip()
+            if text:
+                notes.append({
+                    "record_id": str(note.get("record_id", "") or uuid4()),
+                    "text": text[:4000],
+                    "created_at": str(note.get("created_at", "") or utc_now()),
+                })
+        battle = raw_state.get("battle")
+        if battle is not None and not isinstance(battle, dict):
+            raise ValueError("Campaign battle state must be an object")
+        normalized_battle = None
+        if isinstance(battle, dict) and bool(battle.get("active", True)):
+            normalized_battle = {
+                "active": True,
+                "name": str(battle.get("name", "Battle") or "Battle").strip()[:200],
+                "entered_at": str(battle.get("entered_at", "") or utc_now()),
+            }
         people[person_id] = {
             "placement": deepcopy(board["placement"]),
             "visibility": board["visibility"],
@@ -169,6 +263,10 @@ def normalize_campaign_game_state(
             "name_revealed": board["name_revealed"],
             "faction_revealed": board["faction_revealed"],
             "faction_organization_id": board["faction_organization_id"],
+            "label_offset": deepcopy(board["label_offset"]),
+            "wounds": wounds,
+            "battle": normalized_battle,
+            "character_notes": notes,
         }
 
     groups = [normalize_group(item) for item in (raw.get("groups", []) or [])]
@@ -246,10 +344,14 @@ class CampaignRepository:
         return campaign
 
     @staticmethod
-    def _person_state(board: dict[str, Any]) -> dict[str, Any]:
+    def _person_state(
+        board: dict[str, Any],
+        existing: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         from .board import normalize_person_board
 
         normalized = normalize_person_board(board)
+        prior = existing if isinstance(existing, dict) else {}
         return {
             "placement": deepcopy(normalized["placement"]),
             "visibility": normalized["visibility"],
@@ -257,6 +359,10 @@ class CampaignRepository:
             "name_revealed": normalized["name_revealed"],
             "faction_revealed": normalized["faction_revealed"],
             "faction_organization_id": normalized["faction_organization_id"],
+            "label_offset": deepcopy(normalized["label_offset"]),
+            "wounds": deepcopy(prior.get("wounds", []) or []),
+            "battle": deepcopy(prior.get("battle")),
+            "character_notes": deepcopy(prior.get("character_notes", []) or []),
         }
 
     def ensure_game_state(
@@ -290,6 +396,7 @@ class CampaignRepository:
                 "start_point": deepcopy(item.get("start_point")),
                 "headmaster_camera": normalize_board_camera(None),
                 "player_cameras": {},
+                "zoom_profile": normalize_zoom_profile(None),
             }
             for item in maps
         }

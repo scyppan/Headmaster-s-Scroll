@@ -108,11 +108,11 @@ class MapperWindow(tk.Tk):
         self.world_session = None
         self.maps: list[dict] = []
         self.locations: list[dict] = []
-        self.selected_map_id = ""
+        self.selected_map_id = str(self.preferences.get("last_map_id", "") or "")
         self.pending_image: Path | None = None
         self.location_options: dict[str, str] = {}
-        self.selected_location_id = ""
-        self.selected_floor_id = ""
+        self.selected_location_id = str(self.preferences.get("last_location_id", "") or "")
+        self.selected_floor_id = str(self.preferences.get("last_floor_id", "") or "")
         self.regions: list[dict] = []
         self.warp_points: list[dict] = []
         self.selected_warp_point_id = ""
@@ -232,6 +232,7 @@ class MapperWindow(tk.Tk):
             ("Poly  [P]", lambda: self.set_mode("draw")),
             ("Edit Poly [E]", lambda: self.set_mode("edit")),
             ("Warp  [W]", lambda: self.set_mode("warp")),
+            ("Set Arrival", self.set_selected_warp_as_arrival),
             ("Undo", self.undo),
             ("Redo", self.redo),
             ("Fit Map", self.fit_map),
@@ -281,15 +282,14 @@ class MapperWindow(tk.Tk):
         workspace.add(panel, weight=0)
         self.right_panel = panel
         ttk.Label(panel, text="Interactable Shapes", style="MapperCard.TLabel", font=("Georgia", 14, "bold")).pack(anchor="w")
-        self.region_tree = ttk.Treeview(panel, columns=("behavior", "status"), show="tree headings", height=9)
+        self.region_tree = ttk.Treeview(panel, columns=("visible",), show="tree headings", height=9)
         self.region_tree.heading("#0", text="Name")
-        self.region_tree.heading("behavior", text="Behavior")
-        self.region_tree.heading("status", text="Status")
-        self.region_tree.column("#0", width=92)
-        self.region_tree.column("behavior", width=55)
-        self.region_tree.column("status", width=78)
+        self.region_tree.heading("visible", text="✓")
+        self.region_tree.column("#0", width=190, minwidth=90, stretch=True)
+        self.region_tree.column("visible", width=32, minwidth=32, stretch=False, anchor="center")
         self.region_tree.pack(fill="x", pady=5)
         self.region_tree.bind("<<TreeviewSelect>>", self.select_region_from_list)
+        self.region_tree.bind("<ButtonRelease-1>", self.toggle_region_player_visibility)
         row = ttk.Frame(panel, style="MapperCard.TFrame")
         row.pack(fill="x")
         ttk.Button(row, text="Duplicate", command=self.duplicate_region).pack(side="left")
@@ -301,12 +301,14 @@ class MapperWindow(tk.Tk):
         self.region_behavior = tk.StringVar(value="Area")
         self.region_target = tk.StringVar(value="Not applicable")
         ttk.Label(props, text="Name").pack(anchor="w")
-        ttk.Entry(props, textvariable=self.region_name).pack(fill="x")
-        self.region_name.trace_add("write", self.region_metadata_changed)
+        self.region_name_entry = ttk.Entry(props, textvariable=self.region_name)
+        self.region_name_entry.pack(fill="x")
+        self.region_name_entry.bind("<FocusOut>", self.region_property_focus_out)
         ttk.Label(props, text="Behavior").pack(anchor="w", pady=(5, 0))
         self.behavior_select = ttk.Combobox(props, textvariable=self.region_behavior, state="readonly", values=list(BEHAVIOR_LABELS.values()))
         self.behavior_select.pack(fill="x")
         self.behavior_select.bind("<<ComboboxSelected>>", self.region_behavior_changed)
+        self.behavior_select.bind("<FocusOut>", self.region_property_focus_out)
         ttk.Label(props, text="Hover Text").pack(anchor="w", pady=(5, 0))
         self.hover_text = tk.Text(props, height=5, wrap="word", relief="solid", borderwidth=1)
         self.hover_text.pack(fill="x")
@@ -333,8 +335,10 @@ class MapperWindow(tk.Tk):
         self.region_help_label.pack(anchor="w", pady=(12, 0))
 
     def close_window(self) -> None:
+        self.region_property_focus_out()
         self.flush_metadata_save()
         if self.confirm_discard():
+            self.remember_catalog_selection()
             self.remember_right_panel_width()
             self.destroy()
 
@@ -383,6 +387,17 @@ class MapperWindow(tk.Tk):
             return
         self.right_panel_width = max(220, min(420, int(width)))
         self.preferences["right_panel_width"] = self.right_panel_width
+        try:
+            self.preferences_store.save(self.preferences)
+        except OSError:
+            pass
+
+    def remember_catalog_selection(self) -> None:
+        self.preferences.update({
+            "last_map_id": self.selected_map_id,
+            "last_location_id": self.selected_location_id,
+            "last_floor_id": self.selected_floor_id,
+        })
         try:
             self.preferences_store.save(self.preferences)
         except OSError:
@@ -509,6 +524,7 @@ class MapperWindow(tk.Tk):
         selected = self.map_tree.selection()
         if not selected:
             return
+        self.region_property_focus_out()
         self.flush_metadata_save()
         parts = selected[0].split(":", 2)
         location_id = parts[1] if len(parts) > 1 else ""
@@ -537,6 +553,7 @@ class MapperWindow(tk.Tk):
         else:
             self.clear_map_editor()
             self.status_value.set(f"{self.map_display_name()} has no map yet")
+            self.remember_catalog_selection()
 
     def load_map(self, record: dict) -> None:
         self.selected_map_id = str(record.get("record_id"))
@@ -554,6 +571,7 @@ class MapperWindow(tk.Tk):
         self.image_value.set("Base image ready" if asset else "No image")
         self.load_canvas_image(record)
         self.render_region_list()
+        self.remember_catalog_selection()
         self.after_idle(self.fit_map)
 
     def _reset_editor(self) -> None:
@@ -769,6 +787,7 @@ class MapperWindow(tk.Tk):
                 for item in self.locations
             }
             self.selected_map_id = map_id
+            self.remember_catalog_selection()
             self.pending_image = None
             self.editor_dirty = False
             self.metadata_history_pending = False
@@ -931,7 +950,7 @@ class MapperWindow(tk.Tk):
                 center_x = sum(point["x"] for point in region["points"]) / len(region["points"])
                 center_y = sum(point["y"] for point in region["points"]) / len(region["points"])
                 cx, cy = self.normal_to_canvas({"x": center_x, "y": center_y})
-                self.canvas.create_text(cx, cy, text=region["name"], fill="#fff8e7", font=("Segoe UI", 10, "bold"))
+                self.canvas.create_text(cx, cy, text=region["name"], fill="#000000", font=("Segoe UI", 10, "bold"))
                 if self.mode == "edit":
                     for index, point in enumerate(region["points"]):
                         x, y = self.normal_to_canvas(point)
@@ -939,6 +958,9 @@ class MapperWindow(tk.Tk):
                         self.canvas.create_oval(x - radius, y - radius, x + radius, y + radius, fill="#fff8e7", outline=self.LINE, width=2, tags=(f"node:{index}", "node"))
         for warp_point in self.warp_points:
             x, y = self.normal_to_canvas(warp_point)
+            label_offset = warp_point.get("label_offset", {}) or {}
+            label_x = x + 12 + float(label_offset.get("x", 0.0)) * self.map_width * self.scale
+            label_y = y - 12 + float(label_offset.get("y", 0.0)) * self.map_height * self.scale
             selected = str(warp_point.get("record_id")) == self.selected_warp_point_id
             radius = 8 if selected else 6
             self.canvas.create_oval(
@@ -946,7 +968,7 @@ class MapperWindow(tk.Tk):
                 y - radius,
                 x + radius,
                 y + radius,
-                fill="#7b3f8c",
+                fill="#2f7d32" if warp_point.get("player_arrival") else "#7b3f8c",
                 outline="#fff8e7" if selected else self.LINE,
                 width=3 if selected else 2,
                 tags=(f"warp:{warp_point['record_id']}", "warp-point"),
@@ -954,13 +976,17 @@ class MapperWindow(tk.Tk):
             self.canvas.create_line(x - 11, y, x + 11, y, fill="#fff8e7", width=2, tags=("warp-point",))
             self.canvas.create_line(x, y - 11, x, y + 11, fill="#fff8e7", width=2, tags=("warp-point",))
             self.canvas.create_text(
-                x + 12,
-                y - 12,
-                text=str(warp_point.get("name") or "Warp"),
+                label_x,
+                label_y,
+                text=(
+                    f"ARRIVAL · {str(warp_point.get('name') or 'Warp')}"
+                    if warp_point.get("player_arrival")
+                    else str(warp_point.get("name") or "Warp")
+                ),
                 anchor="sw",
-                fill="#fff8e7",
+                fill="#000000",
                 font=("Segoe UI", 9, "bold"),
-                tags=("warp-point",),
+                tags=(f"warp-label:{warp_point['record_id']}", "warp-label"),
             )
         if self.draft_points:
             coords = [coordinate for point in self.draft_points for coordinate in self.normal_to_canvas(point)]
@@ -1148,6 +1174,21 @@ class MapperWindow(tk.Tk):
                 return point
         return None
 
+    def warp_label_at(self, x: float, y: float) -> dict | None:
+        for item_id in reversed(self.canvas.find_overlapping(x, y, x, y)):
+            for tag in self.canvas.gettags(item_id):
+                if not tag.startswith("warp-label:"):
+                    continue
+                record_id = tag.split(":", 1)[1]
+                return next(
+                    (
+                        point for point in self.warp_points
+                        if str(point.get("record_id")) == record_id
+                    ),
+                    None,
+                )
+        return None
+
     def add_warp_point(self, point: dict) -> None:
         name = simpledialog.askstring(
             "Name warp point",
@@ -1171,6 +1212,31 @@ class MapperWindow(tk.Tk):
         self.render_canvas()
         self.autosave_map("Added warp point")
 
+    def set_selected_warp_as_arrival(self) -> None:
+        selected = next(
+            (
+                point for point in self.warp_points
+                if str(point.get("record_id")) == self.selected_warp_point_id
+            ),
+            None,
+        )
+        if selected is None:
+            messagebox.showinfo(
+                "Player arrival",
+                "Select an existing warp point, then choose Set Arrival.",
+                parent=self,
+            )
+            return
+        now = utc_now()
+        for point in self.warp_points:
+            is_selected = point is selected
+            if bool(point.get("player_arrival")) != is_selected:
+                point["player_arrival"] = is_selected
+                point["last_updated"] = now
+        self.editor_dirty = True
+        self.render_canvas()
+        self.autosave_map("Selected player arrival warp")
+
     def canvas_press(self, event: tk.Event) -> None:
         self.canvas.focus_set()
         if self.pan_state is not None:
@@ -1179,6 +1245,23 @@ class MapperWindow(tk.Tk):
             return
         point = self.canvas_to_normal(event.x, event.y)
         if not 0 <= point["x"] <= 1 or not 0 <= point["y"] <= 1:
+            return
+        label_warp = (
+            self.warp_label_at(event.x, event.y)
+            if int(getattr(event, "state", 0)) & 0x0004
+            else None
+        )
+        if label_warp is not None and self.mode in {"select", "edit", "warp"}:
+            self.selected_warp_point_id = str(label_warp["record_id"])
+            self.drag_state = {
+                "kind": "warp-label",
+                "record_id": self.selected_warp_point_id,
+                "start_x": event.x,
+                "start_y": event.y,
+                "offset": deepcopy(label_warp.get("label_offset", {"x": 0.0, "y": 0.0})),
+                "changed": False,
+            }
+            self.render_canvas()
             return
         existing_warp = self.warp_point_at(event.x, event.y)
         if existing_warp is not None and self.mode in {"select", "edit", "warp"}:
@@ -1238,6 +1321,26 @@ class MapperWindow(tk.Tk):
     def canvas_drag(self, event: tk.Event) -> None:
         if not self.drag_state:
             return
+        if self.drag_state.get("kind") == "warp-label":
+            warp_point = next(
+                (
+                    item for item in self.warp_points
+                    if str(item.get("record_id")) == self.drag_state.get("record_id")
+                ),
+                None,
+            )
+            if warp_point is not None:
+                original = self.drag_state.get("offset", {"x": 0.0, "y": 0.0})
+                width = max(1.0, self.map_width * self.scale)
+                height = max(1.0, self.map_height * self.scale)
+                warp_point["label_offset"] = {
+                    "x": max(-1.0, min(1.0, float(original.get("x", 0.0)) + (event.x - self.drag_state["start_x"]) / width)),
+                    "y": max(-1.0, min(1.0, float(original.get("y", 0.0)) + (event.y - self.drag_state["start_y"]) / height)),
+                }
+                self.drag_state["changed"] = True
+                self.editor_dirty = True
+                self.render_canvas()
+            return
         if self.drag_state.get("kind") == "warp":
             point = self.canvas_to_normal(event.x, event.y, True)
             warp_point = next(
@@ -1267,8 +1370,9 @@ class MapperWindow(tk.Tk):
         self.render_canvas()
 
     def canvas_release(self, _event: tk.Event) -> None:
-        if self.drag_state and self.drag_state.get("kind") == "warp":
+        if self.drag_state and self.drag_state.get("kind") in {"warp", "warp-label"}:
             changed = bool(self.drag_state.get("changed"))
+            action = "Moved warp label" if self.drag_state.get("kind") == "warp-label" else "Moved warp point"
             warp_point = next(
                 (
                     item for item in self.warp_points
@@ -1279,7 +1383,7 @@ class MapperWindow(tk.Tk):
             self.drag_state = None
             if changed and warp_point is not None:
                 warp_point["last_updated"] = utc_now()
-                self.autosave_map("Moved warp point")
+                self.autosave_map(action)
             return
         changed = bool(self.drag_state and self.drag_state.get("changed"))
         if self.drag_state and not changed and self.undo_stack:
@@ -1419,6 +1523,8 @@ class MapperWindow(tk.Tk):
             return
         selected = self.region_tree.selection()
         if selected:
+            if selected[0] != self.selected_region_id:
+                self.region_property_focus_out()
             self.select_region(selected[0])
 
     def select_region(self, region_id: str) -> None:
@@ -1468,34 +1574,41 @@ class MapperWindow(tk.Tk):
 
     def render_region_list(self) -> None:
         self.region_tree.delete(*self.region_tree.get_children())
-        location_names = {str(item.get("record_id")): str(item.get("name", "")) for item in self.locations}
         for region in self.regions:
-            behavior = region.get("behavior_type", "area")
-            if behavior == "travel":
-                target = str(region.get("target_location_id", ""))
-                warp_id = str(region.get("target_warp_point_id", ""))
-                warp = next(
-                    (
-                        point for map_record in self.maps
-                        for point in map_record.get("warp_points", []) or []
-                        if str(point.get("record_id", "")) == warp_id
-                    ),
-                    None,
-                )
-                status = (
-                    f"Warp: {warp.get('name')}"
-                    if warp
-                    else (f"Travel to: {location_names.get(target, 'Missing')}" if target else "Needs destination")
-                )
-            else:
-                status = "Ready"
-            self.region_tree.insert("", "end", iid=region["record_id"], text=region["name"], values=(BEHAVIOR_LABELS.get(behavior, behavior), status))
+            self.region_tree.insert(
+                "",
+                "end",
+                iid=region["record_id"],
+                text=region["name"],
+                values=("✓" if region.get("players_visible", True) else "",),
+            )
         if self.selected_region_id and self.region_tree.exists(self.selected_region_id):
             self.updating_region_selection = True
             try:
                 self.region_tree.selection_set(self.selected_region_id)
             finally:
                 self.updating_region_selection = False
+
+    def toggle_region_player_visibility(self, event: tk.Event) -> None:
+        if self.region_tree.identify_region(event.x, event.y) != "cell":
+            return
+        if self.region_tree.identify_column(event.x) != "#1":
+            return
+        region_id = self.region_tree.identify_row(event.y)
+        region = next(
+            (item for item in self.regions if item.get("record_id") == region_id),
+            None,
+        )
+        if region is None:
+            return
+        self.record_history()
+        region["players_visible"] = not bool(region.get("players_visible", True))
+        region["last_updated"] = utc_now()
+        self.editor_dirty = True
+        self.selected_region_id = region_id
+        self.render_region_list()
+        self.render_canvas()
+        self.autosave_map("Changed area player visibility")
 
     def render_target_controls(self) -> None:
         behavior = next((key for key, label in BEHAVIOR_LABELS.items() if label == self.region_behavior.get()), "area")
@@ -1610,24 +1723,24 @@ class MapperWindow(tk.Tk):
         if not self.hover_text.edit_modified():
             return
         self.hover_text.edit_modified(False)
-        self.region_metadata_changed(schedule_save=False)
 
     def hover_text_focus_in(self, _event: tk.Event | None = None) -> None:
-        # Finish any save queued by another property before the user starts
-        # typing, so a delayed list refresh cannot interrupt this text field.
-        self.flush_metadata_save()
+        return
 
     def hover_text_focus_out(self, _event: tk.Event | None = None) -> None:
-        self.region_metadata_changed(schedule_save=False)
-        self.flush_metadata_save()
+        self.region_property_focus_out()
 
     def region_behavior_changed(self, _event: tk.Event | None = None) -> None:
         self.render_target_controls()
+
+    def region_property_focus_out(self, _event: tk.Event | None = None) -> None:
+        """Commit region metadata only after the edited control loses focus."""
+
         self.region_metadata_changed()
         self.flush_metadata_save()
 
-    def region_metadata_changed(self, *_args, schedule_save: bool = True) -> None:
-        """Update the selected region immediately and debounce its disk write."""
+    def region_metadata_changed(self, *_args) -> None:
+        """Update working metadata without writing until its control loses focus."""
 
         if self.loading_region_properties:
             return
@@ -1655,16 +1768,6 @@ class MapperWindow(tk.Tk):
             last_updated=utc_now(),
         )
         self.editor_dirty = True
-        if schedule_save:
-            self.schedule_metadata_save()
-
-    def schedule_metadata_save(self) -> None:
-        if self.metadata_save_after_id is not None:
-            try:
-                self.after_cancel(self.metadata_save_after_id)
-            except tk.TclError:
-                pass
-        self.metadata_save_after_id = self.after(650, self.flush_metadata_save)
 
     def flush_metadata_save(self) -> bool:
         if self.metadata_save_after_id is not None:

@@ -187,6 +187,41 @@ class GameBoardServiceTests(unittest.TestCase):
         self.assertEqual(summary["game_datetime"], "1943-09-01T17:45")
         self.assertEqual(summary["campaign_id"], self.campaign_id)
 
+    def test_ended_session_reopens_and_saves_its_campaign_board(self):
+        created = self.create_session()
+        snapshot = self.service.board_snapshot(created["id"])
+        map_id = snapshot["maps"][0]["record_id"]
+        self.service.set_board_workspace(created["id"], [map_id], map_id)
+        summary = self.service.end_session("expired", created["id"])
+
+        archived = self.service.archived_sessions_view()
+        self.assertEqual(archived[0]["id"], summary["id"])
+        self.assertTrue(archived[0]["archived"])
+        restored = self.service.board_snapshot(summary["id"])
+        self.assertEqual(restored["loaded_map_ids"], [map_id])
+        self.assertEqual(restored["active_map_id"], map_id)
+
+        obscuration = {
+            "record_id": "archived-obscuration",
+            "name": "Closed wing",
+            "points": [
+                {"x": 0.1, "y": 0.1},
+                {"x": 0.3, "y": 0.1},
+                {"x": 0.2, "y": 0.3},
+            ],
+        }
+        self.service.set_map_presentation(
+            summary["id"],
+            map_id,
+            published=False,
+            obscurations=[obscuration],
+            preview_opacity=0.35,
+            preview_color="#ff0000",
+        )
+        saved = self.service.board_snapshot(summary["id"])
+        selected_map = next(item for item in saved["maps"] if item["record_id"] == map_id)
+        self.assertEqual(selected_map["obscurations"][0]["name"], "Closed wing")
+
     def test_new_session_requires_a_campaign(self):
         with self.assertRaisesRegex(ValueError, "Choose a campaign"):
             self.service.create_session(

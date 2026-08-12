@@ -274,10 +274,18 @@ class BoardFoundationTests(unittest.TestCase):
         self.assertEqual(moved["map_id"], "map-2")
         self.assertEqual((moved["x"], moved["y"]), (0.5, 0.5))
 
-    def test_map_start_point_spawns_unplaced_players_without_stacking(self):
+    def test_mapper_arrival_warp_spawns_unplaced_players_without_stacking(self):
         session = self.repository.load()
         session.data["maps"][0]["players_published"] = True
-        session.data["maps"][0]["start_point"] = {"x": 0.42, "y": 0.61}
+        session.data["maps"][0]["warp_points"] = [{
+            "record_id": "arrival-1",
+            "name": "Player Arrival",
+            "x": 0.42,
+            "y": 0.61,
+            "player_arrival": True,
+            "created_at": "2000-01-01T00:00:00Z",
+            "last_updated": "2000-01-01T00:00:00Z",
+        }]
         session.data["maps"][0]["token_scale"] = 0.06
         session.data["people"][0]["board"]["placement"] = None
         session.data["people"].append({
@@ -617,8 +625,16 @@ class ProtectedAssetApiTests(unittest.TestCase):
                 json={
                     "session_id": self.session_id,
                     "token_scale": 0.007,
-                    "start_point": {"x": 0.35, "y": 0.45},
-                    "update_start_point": True,
+                    "zoom_profile": {
+                        "default_zoom": 2.25,
+                        "default_center_x": 0.62,
+                        "default_center_y": 0.38,
+                        "tiers": {
+                            "0": {"token_size": 0, "nameplate_size": 9},
+                            "7": {"token_size": 28, "nameplate_size": 12},
+                            "18": {"token_size": 76, "nameplate_size": 8},
+                        },
+                    },
                 },
             ),
             self.admin.put(
@@ -678,7 +694,10 @@ class ProtectedAssetApiTests(unittest.TestCase):
         self.assertEqual(state["active_map_id"], "map-1")
         self.assertTrue(state["maps"]["map-1"]["players_published"])
         self.assertEqual(state["maps"]["map-1"]["token_scale"], 0.007)
-        self.assertEqual(state["maps"]["map-1"]["start_point"], {"x": 0.35, "y": 0.45})
+        self.assertEqual(state["maps"]["map-1"]["zoom_profile"]["default_zoom"], 2.25)
+        self.assertEqual(state["maps"]["map-1"]["zoom_profile"]["default_center_x"], 0.62)
+        self.assertEqual(state["maps"]["map-1"]["zoom_profile"]["tiers"]["7"]["token_size"], 28)
+        self.assertEqual(state["maps"]["map-1"]["zoom_profile"]["tiers"]["18"]["token_size"], 76)
         self.assertEqual(
             state["maps"]["map-1"]["headmaster_camera"],
             {"zoom": 14.5, "center_x": 0.72, "center_y": 0.31},
@@ -698,6 +717,7 @@ class ProtectedAssetApiTests(unittest.TestCase):
         self.assertEqual(snapshot["loaded_map_ids"], ["map-1"])
         self.assertEqual((actor["x"], actor["y"]), (0.41, 0.62))
         self.assertEqual(map_record["token_scale"], 0.007)
+        self.assertEqual(map_record["zoom_profile"]["tiers"]["0"]["nameplate_size"], 9)
         self.assertEqual(
             map_record["camera"],
             {"zoom": 14.5, "center_x": 0.72, "center_y": 0.31},
@@ -721,6 +741,72 @@ class ProtectedAssetApiTests(unittest.TestCase):
         self.assertEqual(player_snapshot["active_map_id"], "map-1")
         self.assertNotIn("player_cameras", player_map)
         self.assertNotIn("headmaster_camera", player_map)
+
+    def test_headmaster_transport_uses_selected_warp_and_focuses_linked_player(self):
+        world_session = self.shared.load("world.json")
+        world_session.data["locations"].append({
+            "record_id": "village",
+            "name": "Village",
+            "is_building": False,
+            "has_floors": False,
+            "floors": [],
+            "default_map_id": "map-2",
+        })
+        world_session.data["maps"].append({
+            "record_id": "map-2",
+            "name": "Village Square",
+            "location_id": "village",
+            "floor_id": "",
+            "players_published": False,
+            "asset": None,
+            "warp_points": [
+                {"record_id": "north-gate", "name": "North Gate", "x": 0.18, "y": 0.27},
+                {"record_id": "fountain", "name": "Fountain", "x": 0.63, "y": 0.71},
+            ],
+        })
+        self.shared.save(world_session, "mapper")
+
+        response = self.admin.post(
+            "/api/admin/board/transport",
+            headers=self.admin_headers,
+            json={
+                "session_id": self.session_id,
+                "person_id": "pc-1",
+                "map_id": "map-2",
+                "warp_point_id": "fountain",
+            },
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["placement"]["map_id"], "map-2")
+        self.assertEqual(
+            (response.json()["placement"]["x"], response.json()["placement"]["y"]),
+            (0.63, 0.71),
+        )
+        self.assertEqual(response.json()["contact_ids"], [self.contact_id])
+
+        player = self.runtime.service.board_snapshot(
+            self.session_id,
+            for_players=True,
+            contact_id=self.contact_id,
+        )
+        self.assertEqual(player["active_map_id"], "map-2")
+        destination = next(item for item in player["maps"] if item["record_id"] == "map-2")
+        self.assertEqual(destination["camera"]["center_x"], 0.63)
+        self.assertEqual(destination["camera"]["center_y"], 0.71)
+        actor = next(item for item in player["actors"] if item["actor_id"] == "pc-1")
+        self.assertEqual(actor["map_id"], "map-2")
+
+        same_map = self.admin.post(
+            "/api/admin/board/transport",
+            headers=self.admin_headers,
+            json={
+                "session_id": self.session_id,
+                "person_id": "pc-1",
+                "map_id": "map-2",
+                "warp_point_id": "north-gate",
+            },
+        )
+        self.assertEqual(same_map.status_code, 400)
 
 
 if __name__ == "__main__":

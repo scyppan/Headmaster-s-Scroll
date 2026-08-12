@@ -33,6 +33,7 @@ def default_person_board() -> dict[str, Any]:
         "name_revealed": False,
         "faction_revealed": False,
         "faction_organization_id": "",
+        "label_offset": {"x": 0.0, "y": 0.0},
     }
 
 
@@ -78,6 +79,14 @@ def normalize_person_board(value: Any) -> dict[str, Any]:
     result["faction_organization_id"] = str(
         source.get("faction_organization_id", "") or ""
     ).strip()
+    raw_offset = source.get("label_offset", {}) or {}
+    if not isinstance(raw_offset, dict):
+        raise ValueError("A nameplate offset must be an object")
+    offset_x = float(raw_offset.get("x", 0.0))
+    offset_y = float(raw_offset.get("y", 0.0))
+    if not -1.0 <= offset_x <= 1.0 or not -1.0 <= offset_y <= 1.0:
+        raise ValueError("Nameplate offsets must remain within one map width or height")
+    result["label_offset"] = {"x": offset_x, "y": offset_y}
     return result
 
 
@@ -145,6 +154,7 @@ def normalize_region(value: Any) -> dict[str, Any]:
         name=name,
         type_label=type_label,
         behavior_type=behavior_type,
+        players_visible=bool(result.get("players_visible", True)),
         hover_text=str(result.get("hover_text", "") or "").strip(),
         points=normalized_points,
         target_location_id=target_location_id if behavior_type == "travel" else "",
@@ -177,12 +187,24 @@ def normalize_warp_point(value: Any) -> dict[str, Any]:
     if not record_id or not name:
         raise ValueError("Every warp point requires a stable ID and name")
     point = normalize_map_point(value, "Warp point")
+    raw_label_offset = value.get("label_offset", {}) or {}
+    if not isinstance(raw_label_offset, dict):
+        raise ValueError("Warp point label offset must be an object")
+    try:
+        label_x = float(raw_label_offset.get("x", 0.0))
+        label_y = float(raw_label_offset.get("y", 0.0))
+    except (TypeError, ValueError) as error:
+        raise ValueError("Warp point label offset must use numeric coordinates") from error
+    if not -1.0 <= label_x <= 1.0 or not -1.0 <= label_y <= 1.0:
+        raise ValueError("Warp point label offset must remain within the map span")
     return {
         **deepcopy(value),
         "record_id": record_id,
         "name": name,
         "x": point["x"],
         "y": point["y"],
+        "player_arrival": bool(value.get("player_arrival", False)),
+        "label_offset": {"x": label_x, "y": label_y},
         "created_at": str(value.get("created_at", "") or "").strip(),
         "last_updated": str(value.get("last_updated", "") or "").strip(),
     }
@@ -223,6 +245,7 @@ def normalize_obscuration(value: Any) -> dict[str, Any]:
     return {
         **deepcopy(value),
         "record_id": record_id,
+        "name": str(value.get("name", "") or "").strip(),
         "points": normalized_points,
         "created_at": str(value.get("created_at", "") or "").strip(),
         "last_updated": str(value.get("last_updated", "") or "").strip(),
@@ -266,6 +289,8 @@ def normalize_map(value: Any) -> dict[str, Any]:
     result["warp_points"] = [normalize_warp_point(item) for item in warp_points]
     if len({item["record_id"] for item in result["warp_points"]}) != len(result["warp_points"]):
         raise ValueError("Warp point IDs must be unique within a map")
+    if sum(bool(item.get("player_arrival")) for item in result["warp_points"]) > 1:
+        raise ValueError("A map can have only one player-arrival warp point")
     preview_opacity = float(result.get("obscuration_preview_opacity", 0.35))
     if not 0.05 <= preview_opacity <= 1.0:
         raise ValueError("Headmaster obscuration opacity must be between 5% and 100%")
@@ -650,6 +675,8 @@ class WorldBoardRepository:
                 public = deepcopy(item)
                 public["regions"] = []
                 for region in item.get("regions", []):
+                    if not bool(region.get("players_visible", True)):
+                        continue
                     target_location_id = str(region.get("target_location_id", "") or "")
                     target_warp_point_id = str(region.get("target_warp_point_id", "") or "")
                     warp_target = next(
@@ -758,9 +785,13 @@ class WorldBoardRepository:
                 ] if not for_players else [],
                 "is_player_character": is_player,
                 "visibility": board["visibility"] if not for_players else "players",
+                "label_offset": deepcopy(board["label_offset"]),
             }
             actors.append(actor)
         return {
+            "world_revision_id": str(
+                (document.get("_headmasters_scroll") or {}).get("revision_id", "")
+            ),
             "game_datetime": game_datetime,
             "maps": maps,
             "actors": actors,
@@ -902,8 +933,14 @@ class WorldBoardRepository:
             return None
         target = maps[0]
         start = normalize_map_point(
-            target.get("start_point") or {"x": 0.5, "y": 0.5},
-            "Map start point",
+            next(
+                (
+                    point for point in target.get("warp_points", []) or []
+                    if point.get("player_arrival")
+                ),
+                None,
+            ) or {"x": 0.5, "y": 0.5},
+            "Player arrival warp",
         )
         occupied = []
         for candidate in session.data.get("people", []):

@@ -25,7 +25,7 @@ from ..board import (
     normalize_person_board,
     point_in_polygon,
 )
-from ..campaigns import CampaignRepository, normalize_board_camera
+from ..campaigns import CampaignRepository, normalize_board_camera, normalize_zoom_profile
 from .storage import GameBoardRepository
 
 
@@ -178,6 +178,7 @@ class GameBoardService:
                     "start_point": None,
                     "headmaster_camera": normalize_board_camera(None),
                     "player_cameras": {},
+                    "zoom_profile": normalize_zoom_profile(None),
                 })
         people_state = state.get("people", {})
         for person in world.get("people", []):
@@ -196,6 +197,12 @@ class GameBoardService:
         document: dict[str, Any],
     ) -> dict[str, Any]:
         assigned_maps = self.world_board._location_maps(document)
+        existing_people = (
+            self.campaign_repository.get(campaign_id).get("game_state", {}).get(
+                "people", {}
+            )
+            or {}
+        )
         map_states = {
             item["record_id"]: {
                 "players_published": bool(item.get("players_published", False)),
@@ -208,12 +215,14 @@ class GameBoardService:
                     item.get("headmaster_camera")
                 ),
                 "player_cameras": deepcopy(item.get("player_cameras", {}) or {}),
+                "zoom_profile": normalize_zoom_profile(item.get("zoom_profile")),
             }
             for item in assigned_maps
         }
         people = {
             str(item["record_id"]): self.campaign_repository._person_state(
-                normalize_person_board(item.get("board"))
+                normalize_person_board(item.get("board")),
+                existing_people.get(str(item["record_id"]), {}),
             )
             for item in document.get("people", [])
             if isinstance(item, dict) and item.get("record_id")
@@ -542,6 +551,45 @@ class GameBoardService:
             wrapper = self.repository.active()
             return [self._public_session(session) for session in wrapper.get("sessions", [])]
 
+    def archived_sessions_view(self) -> list[dict[str, Any]]:
+        """Return ended sessions as campaign-board contexts, never as live sessions."""
+
+        with self._lock:
+            summaries = self.repository.summaries().get("sessions", [])
+            result = []
+            for summary in reversed(summaries):
+                if not summary.get("campaign_id"):
+                    continue
+                view = deepcopy(summary)
+                view["archived"] = True
+                view["status"] = str(summary.get("reason") or "ended")
+                view["pending"] = []
+                view["chat"] = []
+                view["roster"] = []
+                result.append(view)
+            return result
+
+    def _board_context(self, session_id: str) -> dict[str, Any]:
+        """Resolve either a live session or its retained campaign summary."""
+
+        wrapper = self.repository.active()
+        active = next(
+            (item for item in wrapper.get("sessions", []) if item.get("id") == session_id),
+            None,
+        )
+        if active is not None:
+            return active
+        summary = next(
+            (
+                item for item in reversed(self.repository.summaries().get("sessions", []))
+                if item.get("id") == session_id and item.get("campaign_id")
+            ),
+            None,
+        )
+        if summary is None:
+            raise KeyError("Unknown session")
+        return summary
+
     def session_view(self, session_id: str | None = None) -> dict[str, Any] | None:
         with self._lock:
             wrapper = self.repository.active()
@@ -778,7 +826,7 @@ class GameBoardService:
         contact_id: str | None = None,
     ) -> dict[str, Any]:
         with self._lock:
-            wrapper, session = self._active(session_id)
+            session = self._board_context(str(session_id or ""))
             campaign, document = self._campaign_document(session)
             game_datetime = str(campaign["game_state"]["current_game_datetime"])
             character_ids = [
@@ -786,6 +834,38 @@ class GameBoardService:
                 for player in session.get("roster", [])
                 if player.get("character_id")
             ]
+            if for_players and contact_id:
+                viewer = next(
+                    (
+                        player for player in session.get("roster", [])
+                        if str(player.get("contact_id", "")) == contact_id
+                    ),
+                    None,
+                )
+                viewer_character_id = str((viewer or {}).get("character_id", "") or "")
+                viewer_person = next(
+                    (
+                        person for person in document.get("people", [])
+                        if str(person.get("record_id", "")) == viewer_character_id
+                    ),
+                    None,
+                )
+                viewer_placement = normalize_person_board(
+                    (viewer_person or {}).get("board")
+                ).get("placement")
+                viewer_map_id = str((viewer_placement or {}).get("map_id", "") or "")
+                if viewer_map_id:
+                    viewer_map = next(
+                        (
+                            item for item in document.get("maps", [])
+                            if str(item.get("record_id", "")) == viewer_map_id
+                        ),
+                        None,
+                    )
+                    if viewer_map is not None:
+                        # This document is a private per-request copy. Reveal
+                        # the occupied destination only to its linked player.
+                        viewer_map["players_published"] = True
             snapshot = self.world_board.snapshot(
                 game_datetime,
                 player_character_ids=character_ids,
@@ -830,7 +910,81 @@ class GameBoardService:
                 # camera selected for its viewer, never every player's view.
                 map_record.pop("headmaster_camera", None)
                 map_record.pop("player_cameras", None)
+            if not for_players:
+                campaign_people = campaign.get("game_state", {}).get("people", {}) or {}
+                for actor in snapshot.get("actors", []):
+                    person_state = campaign_people.get(str(actor.get("actor_id", "")), {})
+                    actor["wounds"] = deepcopy(person_state.get("wounds", []) or [])
+                    actor["battle"] = deepcopy(person_state.get("battle"))
+                    actor["character_notes"] = deepcopy(
+                        person_state.get("character_notes", []) or []
+                    )
             return snapshot
+
+    def update_person_campaign_action(
+        self,
+        session_id: str,
+        person_id: str,
+        action: str,
+        *,
+        severity: str = "",
+        text: str = "",
+        battle_name: str = "",
+    ) -> dict[str, Any]:
+        with self._lock:
+            session = self._board_context(session_id)
+            campaign, document = self._campaign_document(session)
+            if not any(
+                str(person.get("record_id", "")) == person_id
+                for person in document.get("people", [])
+                if isinstance(person, dict)
+            ):
+                raise KeyError("Unknown person")
+
+            result: dict[str, Any] = {}
+
+            def update(state: dict[str, Any]) -> None:
+                nonlocal result
+                person = state.setdefault("people", {}).setdefault(person_id, {})
+                if action == "add_wound":
+                    normalized_severity = str(severity or "").strip().lower()
+                    if normalized_severity not in {"light", "medium", "heavy"}:
+                        raise ValueError("Choose a light, medium, or heavy wound")
+                    wound = {
+                        "record_id": str(uuid4()),
+                        "severity": normalized_severity,
+                        "note": str(text or "").strip()[:1000],
+                        "created_at": iso_utc(utc_now()),
+                    }
+                    person.setdefault("wounds", []).append(wound)
+                    result = deepcopy(wound)
+                elif action == "enter_battle":
+                    battle = {
+                        "active": True,
+                        "name": str(battle_name or "Battle").strip()[:200] or "Battle",
+                        "entered_at": iso_utc(utc_now()),
+                    }
+                    person["battle"] = battle
+                    result = deepcopy(battle)
+                elif action == "leave_battle":
+                    person["battle"] = None
+                    result = {"active": False}
+                elif action == "add_note":
+                    note_text = str(text or "").strip()
+                    if not note_text:
+                        raise ValueError("A character note cannot be empty")
+                    note = {
+                        "record_id": str(uuid4()),
+                        "text": note_text[:4000],
+                        "created_at": iso_utc(utc_now()),
+                    }
+                    person.setdefault("character_notes", []).append(note)
+                    result = deepcopy(note)
+                else:
+                    raise ValueError("Unknown character action")
+
+            self.campaign_repository.update_game_state(campaign["record_id"], update)
+            return result
 
     def controlled_character_ids(
         self,
@@ -868,7 +1022,7 @@ class GameBoardService:
         ):
             raise PermissionError("You do not control that token")
         with self._lock:
-            _wrapper, session = self._active(session_id)
+            session = self._board_context(session_id)
             campaign, document = self._campaign_document(session)
             map_record = self._campaign_map(document, map_id)
             person = next(
@@ -891,6 +1045,87 @@ class GameBoardService:
             )
             self._persist_campaign_document(campaign["record_id"], document)
             return deepcopy(board["placement"])
+
+    def transport_person(
+        self,
+        session_id: str,
+        person_id: str,
+        map_id: str,
+        warp_point_id: str,
+    ) -> dict[str, Any]:
+        """Move a person to an explicit warp and focus their linked player there."""
+
+        with self._lock:
+            session = self._board_context(session_id)
+            campaign, document = self._campaign_document(session)
+            target = self._campaign_map(document, map_id)
+            person = next(
+                (
+                    item for item in document.get("people", [])
+                    if str(item.get("record_id", "")) == person_id
+                ),
+                None,
+            )
+            if person is None:
+                raise KeyError("Unknown person")
+            current = normalize_person_board(person.get("board")).get("placement")
+            if current and str(current.get("map_id", "")) == map_id:
+                raise ValueError("Choose a different destination map")
+            warp = next(
+                (
+                    item for item in target.get("warp_points", []) or []
+                    if str(item.get("record_id", "")) == warp_point_id
+                ),
+                None,
+            )
+            if warp is None:
+                raise KeyError("Choose a warp point on the destination map")
+            arrival = normalize_map_point(warp, "Transport warp point")
+            board = normalize_person_board(person.get("board"))
+            board["placement"] = {
+                "location_id": str(target["location_id"]),
+                "floor_id": str(target.get("floor_id", "") or ""),
+                "map_id": map_id,
+                "x": arrival["x"],
+                "y": arrival["y"],
+            }
+            person["board"] = board
+            self.world_board._remove_from_incompatible_groups(
+                document, person_id, board["placement"]["location_id"]
+            )
+            self._persist_campaign_document(campaign["record_id"], document)
+
+            contact_ids = [
+                str(player["contact_id"])
+                for player in session.get("roster", [])
+                if str(player.get("character_id", "") or "") == person_id
+            ]
+            profile = normalize_zoom_profile(target.get("zoom_profile"))
+            camera = {
+                "zoom": float(profile.get("default_zoom", 1.0)),
+                "center_x": arrival["x"],
+                "center_y": arrival["y"],
+            }
+
+            def update(state: dict[str, Any]) -> None:
+                loaded = state.setdefault("loaded_map_ids", [])
+                if map_id not in loaded:
+                    loaded.append(map_id)
+                map_state = state.setdefault("maps", {}).setdefault(map_id, {})
+                player_cameras = map_state.setdefault("player_cameras", {})
+                active_maps = state.setdefault("player_active_map_ids", {})
+                for contact_id in contact_ids:
+                    active_maps[contact_id] = map_id
+                    player_cameras[contact_id] = deepcopy(camera)
+
+            self.campaign_repository.update_game_state(campaign["record_id"], update)
+            return {
+                "placement": deepcopy(board["placement"]),
+                "warp_point_id": warp_point_id,
+                "warp_point_name": str(warp.get("name", "") or "Warp point"),
+                "contact_ids": contact_ids,
+                "camera": camera,
+            }
 
     def ensure_person_placement(
         self,
@@ -924,8 +1159,14 @@ class GameBoardService:
                 return None
             target = candidates[0]
             start = normalize_map_point(
-                target.get("start_point") or {"x": 0.5, "y": 0.5},
-                "Map start point",
+                next(
+                    (
+                        point for point in target.get("warp_points", []) or []
+                        if point.get("player_arrival")
+                    ),
+                    None,
+                ) or {"x": 0.5, "y": 0.5},
+                "Player arrival warp",
             )
             occupied = []
             for other in document.get("people", []):
@@ -970,7 +1211,7 @@ class GameBoardService:
         updates: dict[str, Any],
     ) -> dict[str, Any]:
         with self._lock:
-            _wrapper, session = self._active(session_id)
+            session = self._board_context(session_id)
             campaign, document = self._campaign_document(session)
             person = next(
                 (item for item in document.get("people", []) if item.get("record_id") == person_id),
@@ -989,7 +1230,7 @@ class GameBoardService:
 
     def set_map_published(self, session_id: str, map_id: str, published: bool) -> dict[str, Any]:
         with self._lock:
-            _wrapper, session = self._active(session_id)
+            session = self._board_context(session_id)
             campaign, document = self._campaign_document(session)
             record = self._campaign_map(document, map_id)
             record["players_published"] = bool(published)
@@ -1002,19 +1243,22 @@ class GameBoardService:
         map_id: str,
         *,
         token_scale: float | None = None,
-        start_point: dict[str, Any] | None = None,
-        update_start_point: bool = False,
+        zoom_profile: dict[str, Any] | None = None,
+        preview_opacity: float | None = None,
+        preview_color: str | None = None,
     ) -> dict[str, Any]:
         with self._lock:
-            _wrapper, session = self._active(session_id)
+            session = self._board_context(session_id)
             campaign, document = self._campaign_document(session)
             record = self._campaign_map(document, map_id)
             if token_scale is not None:
                 record["token_scale"] = float(token_scale)
-            if update_start_point:
-                record["start_point"] = normalize_map_point(
-                    start_point, "Map start point", optional=True
-                )
+            if zoom_profile is not None:
+                record["zoom_profile"] = normalize_zoom_profile(zoom_profile)
+            if preview_opacity is not None:
+                record["obscuration_preview_opacity"] = float(preview_opacity)
+            if preview_color is not None:
+                record["obscuration_preview_color"] = str(preview_color).lower()
             record.update(normalize_map(record))
             self._persist_campaign_document(campaign["record_id"], document)
             return deepcopy(record)
@@ -1022,7 +1266,7 @@ class GameBoardService:
     def location_maps(self, session_id: str | None = None) -> list[dict[str, Any]]:
         if session_id:
             with self._lock:
-                _wrapper, session = self._active(session_id)
+                session = self._board_context(session_id)
                 _campaign, document = self._campaign_document(session)
                 return self.world_board._location_maps(document)
         return self.world_board.location_maps()
@@ -1034,7 +1278,7 @@ class GameBoardService:
         active_map_id: str = "",
     ) -> dict[str, Any]:
         with self._lock:
-            _wrapper, session = self._active(session_id)
+            session = self._board_context(session_id)
             campaign, document = self._campaign_document(session)
             valid_ids = {
                 item["record_id"] for item in self.world_board._location_maps(document)
@@ -1067,8 +1311,10 @@ class GameBoardService:
     ) -> dict[str, float]:
         normalized_camera = normalize_board_camera(camera)
         with self._lock:
-            _wrapper, session = self._active(session_id)
+            session = self._board_context(session_id)
             if contact_id is not None:
+                if session.get("archived") or session.get("ended_at"):
+                    raise ValueError("Players cannot update an ended session")
                 self._player(session, contact_id)
             campaign, document = self._campaign_document(session)
             self._campaign_map(document, map_id)
@@ -1095,7 +1341,7 @@ class GameBoardService:
         preview_color: str,
     ) -> dict[str, Any]:
         with self._lock:
-            _wrapper, session = self._active(session_id)
+            session = self._board_context(session_id)
             campaign, document = self._campaign_document(session)
             record = self._campaign_map(document, map_id)
             record["players_published"] = bool(published)
@@ -1190,7 +1436,7 @@ class GameBoardService:
         person_ids: list[str],
     ) -> dict[str, Any]:
         with self._lock:
-            _wrapper, session = self._active(session_id)
+            session = self._board_context(session_id)
             campaign, document = self._campaign_document(session)
             if len(set(person_ids)) < 2:
                 raise ValueError("A board group requires at least two people")
@@ -1228,7 +1474,7 @@ class GameBoardService:
         group_id: str | None,
     ) -> dict[str, Any] | None:
         with self._lock:
-            _wrapper, session = self._active(session_id)
+            session = self._board_context(session_id)
             campaign, document = self._campaign_document(session)
             person = next((item for item in document.get("people", []) if item.get("record_id") == person_id), None)
             if person is None:

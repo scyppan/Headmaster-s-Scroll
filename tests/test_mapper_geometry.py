@@ -75,6 +75,9 @@ class MapperGeometryTests(unittest.TestCase):
         window.selected_region_id = ""
         window.render_region_list = lambda: None
         window.render_canvas = lambda: None
+        window.region_tree = type("RegionTree", (), {
+            "exists": lambda _self, _value: False,
+        })()
         saves = []
         window.autosave_map = lambda reason: saves.append(reason) or True
 
@@ -125,16 +128,19 @@ class MapperGeometryTests(unittest.TestCase):
         window.schedule_metadata_save = lambda: self.fail("Hover text must not schedule a timed save")
         window.render_region_list = lambda: None
         window.render_canvas = lambda: None
+        window.region_tree = type("RegionTree", (), {
+            "exists": lambda _self, _value: False,
+        })()
         saves = []
         window.autosave_map = lambda reason: saves.append(reason) or True
 
         window.hover_text_changed()
         self.assertEqual(saves, [])
-        self.assertEqual(region["hover_text"], "A quiet reading room")
+        self.assertEqual(region["hover_text"], "")
 
-        window.selected_region_id = ""
         window.hover_text_focus_out()
         self.assertEqual(saves, ["Region details"])
+        self.assertEqual(region["hover_text"], "A quiet reading room")
 
     def test_warp_tool_creates_named_point_and_saves_it(self):
         window = mapper.MapperWindow.__new__(mapper.MapperWindow)

@@ -634,6 +634,54 @@
 
 #gameboard .ccgb-map-viewport.is-camera-panning { cursor: grabbing; }
 
+#gameboard .ccgb-player-locators {
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  position: absolute;
+  z-index: 30;
+}
+
+#gameboard .ccgb-player-locator {
+  inset: 0;
+  position: absolute;
+}
+
+#gameboard .ccgb-player-locator-dot {
+  background: #d6ad52;
+  border: 1px solid #24170f;
+  border-radius: 50%;
+  height: 8px;
+  position: absolute;
+  transform: translate(-50%, -50%);
+  width: 8px;
+  z-index: 2;
+}
+
+#gameboard .ccgb-player-locator-line {
+  background: #24170f;
+  height: 2px;
+  position: absolute;
+  transform-origin: left center;
+  z-index: 1;
+}
+
+#gameboard .ccgb-player-locator-plaque {
+  background: #d6ad52;
+  border: 1px solid #382719;
+  border-radius: 2px;
+  color: #000;
+  font-weight: 800;
+  line-height: 1.2;
+  overflow: hidden;
+  padding: 2px 4px;
+  position: absolute;
+  text-overflow: ellipsis;
+  transform: translate(-50%, -50%);
+  white-space: nowrap;
+  z-index: 3;
+}
+
 #gameboard .ccgb-map-stage {
   aspect-ratio: 3840 / 2960;
   background: #30251c;
@@ -753,6 +801,12 @@
 
 #gameboard .ccgb-board-actor.is-player-character { z-index: 12; }
 
+#gameboard .ccgb-board-actor.is-player-character > .ccgb-actor-label,
+#gameboard .ccgb-board-actor.is-player-character > .ccgb-position-leader,
+#gameboard .ccgb-board-actor.is-player-character > .ccgb-position-label {
+  display: none !important;
+}
+
 #gameboard .ccgb-board-actor.is-player-character.is-controlled { z-index: 13; }
 
 #gameboard .ccgb-board-actor.is-token {
@@ -832,12 +886,14 @@
   z-index: -1;
 }
 
+#gameboard .ccgb-board-actor.has-viewport-locator .ccgb-position-leader,
+#gameboard .ccgb-board-actor.has-viewport-locator .ccgb-position-label,
 #gameboard .ccgb-board-actor.is-offscreen-locator .ccgb-position-leader,
 #gameboard .ccgb-board-actor.is-offscreen-locator .ccgb-position-label {
   display: block;
 }
 
-#gameboard .ccgb-board-actor.is-offscreen-locator .ccgb-position-leader {
+#gameboard .ccgb-board-actor.has-viewport-locator .ccgb-position-leader {
   background: #24170f;
   height: var(--map-position-line-width, 0.1px);
   left: calc(50% + var(--map-position-line-x, 0px));
@@ -850,7 +906,7 @@
   z-index: 4;
 }
 
-#gameboard .ccgb-board-actor.is-offscreen-locator .ccgb-position-label {
+#gameboard .ccgb-board-actor.has-viewport-locator .ccgb-position-label {
   background: #d6ad52;
   border: var(--map-label-border, 0.06px) solid #382719;
   border-radius: var(--map-label-radius, 0.15px);
@@ -922,7 +978,7 @@
   text-overflow: ellipsis;
   text-rendering: optimizeLegibility;
   top: calc(100% + var(--map-label-gap, 0.4px));
-  transform: translate(-50%, 0);
+  transform: translate(-50%, 0) translate(var(--actor-label-offset-x, 0px), var(--actor-label-offset-y, 0px));
   white-space: nowrap;
   -webkit-font-smoothing: antialiased;
 }

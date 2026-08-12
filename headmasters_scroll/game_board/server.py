@@ -621,6 +621,9 @@ def create_apps(
                     "type": "identity_updated",
                     "player": result["display_name"],
                     "character_id": result.get("character_id"),
+                    "character_attributes": service.character_attributes_for(
+                        connection.session_id, contact_id
+                    ),
                 })
             except Exception:
                 pass
@@ -1132,6 +1135,9 @@ def create_apps(
             "v": 1, "type": "connection_accepted", "player": identity["name"],
             "player_id": identity["contact_id"], "session": identity["session_title"],
             "character_id": identity.get("character_id"),
+            "character_attributes": service.character_attributes_for(
+                identity["session_id"], identity["contact_id"]
+            ),
             "asset_credential": asset_credential,
         })
         session = service.session_view(identity["session_id"])

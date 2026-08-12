@@ -256,6 +256,7 @@ class GameBoardApiTests(unittest.TestCase):
             accepted = websocket.receive_json()
             self.assertEqual(accepted["type"], "connection_accepted")
             self.assertEqual(accepted["player_id"], self.contact["id"])
+            self.assertIn("character_attributes", accepted)
             history = websocket.receive_json()
             self.assertEqual(history, {"v": 1, "type": "chat_history", "messages": []})
             arrival = websocket.receive_json()

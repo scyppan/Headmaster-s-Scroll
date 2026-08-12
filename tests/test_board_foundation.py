@@ -742,6 +742,12 @@ class ProtectedAssetApiTests(unittest.TestCase):
         self.assertNotIn("player_cameras", player_map)
         self.assertNotIn("headmaster_camera", player_map)
 
+        attributes = resumed.character_attributes_for(
+            self.session_id, self.contact_id
+        )
+        self.assertIsNotNone(attributes)
+        self.assertEqual(attributes["character_id"], "pc-1")
+
     def test_headmaster_transport_uses_selected_warp_and_focuses_linked_player(self):
         world_session = self.shared.load("world.json")
         world_session.data["locations"].append({

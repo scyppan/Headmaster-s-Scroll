@@ -398,6 +398,9 @@
       if (message.type === 'connection_accepted') {
         this.playerId = message.player_id || '';
         this.characterId = message.character_id || '';
+        if (Object.prototype.hasOwnProperty.call(message, 'character_attributes')) {
+          this.board.character_attributes = message.character_attributes;
+        }
         this.assetCredential = message.asset_credential || '';
         this.element('player').textContent = message.player || 'Player';
         this.element('detail-player').textContent = message.player || 'Player';
@@ -428,11 +431,18 @@
       } else if (message.type === 'identity_updated') {
         const player = message.player || 'Player';
         this.characterId = message.character_id || '';
+        if (Object.prototype.hasOwnProperty.call(message, 'character_attributes')) {
+          this.board.character_attributes = message.character_attributes;
+        }
         this.element('player').textContent = player;
         this.element('detail-player').textContent = player;
         this.element('avatar').textContent = player.trim().charAt(0).toUpperCase() || '?';
       } else if (message.type === 'board_snapshot' && message.board) {
+        const previousAttributes = this.board && this.board.character_attributes;
         this.board = message.board;
+        if (!Object.prototype.hasOwnProperty.call(this.board, 'character_attributes') && previousAttributes) {
+          this.board.character_attributes = previousAttributes;
+        }
         const campaignId = String(this.board.campaign_id || '');
         const firstCampaignSnapshot = campaignId !== this.hydratedCampaignId;
         if (firstCampaignSnapshot && this.savedViewCampaignId && campaignId !== this.savedViewCampaignId) {
@@ -646,10 +656,13 @@
       content.className = 'ccgb-panel-grid ccgb-attributes-panel';
       const summary = this.board && this.board.character_attributes;
       if (!summary) {
+        const linked = Boolean(this.characterId);
         content.innerHTML = `
           <section class="ccgb-attribute-card ccgb-attribute-empty">
-            <h2>Attributes unavailable</h2>
-            <p>Link this player to a World Builder character to display their rolls.</p>
+            <h2>${linked ? 'Loading attributes…' : 'Attributes unavailable'}</h2>
+            <p>${linked
+              ? 'Your linked World Builder character data is being loaded.'
+              : 'No World Builder character is linked to this player.'}</p>
           </section>`;
         return;
       }

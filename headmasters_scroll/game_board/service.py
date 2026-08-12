@@ -943,6 +943,44 @@ class GameBoardService:
                     )
             return snapshot
 
+    def character_attributes_for(
+        self,
+        session_id: str,
+        contact_id: str,
+    ) -> dict[str, Any] | None:
+        """Return the linked World Builder character sheet for one player."""
+
+        with self._lock:
+            session = self._board_context(session_id)
+            campaign, document = self._campaign_document(session)
+            viewer = next(
+                (
+                    player for player in session.get("roster", [])
+                    if str(player.get("contact_id", "")) == contact_id
+                ),
+                None,
+            )
+            character_id = str((viewer or {}).get("character_id", "") or "")
+            person = next(
+                (
+                    item for item in document.get("people", [])
+                    if str(item.get("record_id", "")) == character_id
+                ),
+                None,
+            )
+            if person is None:
+                return None
+            try:
+                rules_database = self.shared_store.load("db.json").data
+            except FileNotFoundError:
+                rules_database = {"schools": []}
+            return calculate_character_attributes(
+                person,
+                document,
+                rules_database,
+                str(campaign["game_state"]["current_game_datetime"]),
+            )
+
     def update_person_campaign_action(
         self,
         session_id: str,

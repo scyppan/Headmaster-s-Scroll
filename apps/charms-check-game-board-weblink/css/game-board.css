@@ -357,6 +357,19 @@
 #gameboard.ccgb-board-active .ccgb-eyebrow { display: none; }
 #gameboard.ccgb-board-active .ccgb-section-heading h1 { font-size: 20px; }
 
+#gameboard .ccgb-connection-markers {
+  align-items: center;
+  display: flex;
+  gap: 7px;
+}
+
+#gameboard .ccgb-zoom-level {
+  color: var(--ccgb-muted);
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
 #gameboard .ccgb-connected-mark {
   background: #dce7ce;
   border: 1px solid #9bb085;
@@ -796,8 +809,7 @@
 
 #gameboard .ccgb-board-actor.is-overview-marker > img,
 #gameboard .ccgb-board-actor.is-overview-marker > .ccgb-nameplate-body,
-#gameboard .ccgb-board-actor.is-overview-marker > .ccgb-actor-label,
-#gameboard .ccgb-board-actor.is-overview-marker > .ccgb-actor-indicators {
+#gameboard .ccgb-board-actor.is-overview-marker > .ccgb-actor-label {
   display: none;
 }
 
@@ -870,30 +882,6 @@
   white-space: nowrap;
   -webkit-font-smoothing: antialiased;
 }
-
-#gameboard .ccgb-actor-indicators {
-  bottom: calc(100% + var(--map-indicator-offset, 0.4px));
-  display: flex;
-  gap: var(--map-indicator-gap, 0.22px);
-  left: 50%;
-  pointer-events: auto;
-  position: absolute;
-  transform: translateX(-50%);
-  z-index: 2;
-}
-
-#gameboard .ccgb-actor-indicators > span {
-  border: var(--map-indicator-border, 0.06px) solid #382719;
-  border-radius: 50%;
-  display: block;
-  height: var(--map-indicator-size, 0.55px);
-  width: var(--map-indicator-size, 0.55px);
-}
-
-#gameboard .ccgb-actor-indicators .is-heavy { background-color: #c62828 !important; }
-#gameboard .ccgb-actor-indicators .is-medium { background-color: #f2d13d !important; }
-#gameboard .ccgb-actor-indicators .is-light { background-color: #fff !important; }
-#gameboard .ccgb-actor-indicators .is-status { background-color: #000 !important; }
 
 #gameboard button:hover,
 #gameboard button:focus-visible,

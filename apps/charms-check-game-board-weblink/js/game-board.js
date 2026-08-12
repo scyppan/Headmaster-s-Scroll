@@ -10,9 +10,9 @@
   const MAP_MAX_ZOOM = 32;
   const MAP_PAN_STEP = 24;
   const DEFAULT_TOKEN_SCALE = 0.0055;
-  const TOKEN_SCREEN_SIZES = [0, 0, 0, 0, 64, 60, 56, 52];
-  const OVERVIEW_DOT_SCREEN_SIZES = [12, 11, 10, 9, 0, 0, 0, 0];
-  const LABEL_SCREEN_SIZES = [15, 14, 13, 12, 11, 10.5, 10, 9.5];
+  const TOKEN_SCREEN_SIZES = [0, 0, 0, 0, 0, 0, 64, 60];
+  const OVERVIEW_DOT_SCREEN_SIZES = [12, 11, 10, 9, 8, 7, 0, 0];
+  const LABEL_SCREEN_SIZES = [14.5, 14, 13, 12, 11, 10.5, 10, 9.5];
   const LABEL_SCREEN_WIDTHS = [200, 185, 170, 155, 145, 135, 126, 118];
   const SECTIONS = [
     ['board', 'Game Board', '▦'],
@@ -133,7 +133,10 @@
                   <p class="ccgb-eyebrow">Character profile</p>
                   <h1 data-ccgb="section-title">Overview</h1>
                 </div>
-                <span class="ccgb-connected-mark">Connected</span>
+                <div class="ccgb-connection-markers">
+                  <span class="ccgb-zoom-level" data-ccgb="zoom-level">Zoom 100% (0 clicks)</span>
+                  <span class="ccgb-connected-mark">Connected</span>
+                </div>
               </div>
               <p class="ccgb-search-result" data-ccgb="search-result" hidden></p>
               <div class="ccgb-panel-grid" data-ccgb="section-content"></div>
@@ -938,7 +941,7 @@
       const tokenSize = Math.max(1, Number(stage.dataset.tokenSize || 6));
       const tier = this.zoomTier(state);
       const sizeRatio = Math.max(0.35, Math.min(5.5, tokenSize / (MAP_NATIVE_WIDTH * DEFAULT_TOKEN_SCALE)));
-      const overviewMode = tier < 4;
+      const overviewMode = tier < 6;
       const tierScreenSize = overviewMode
         ? OVERVIEW_DOT_SCREEN_SIZES[tier]
         : TOKEN_SCREEN_SIZES[tier];
@@ -960,12 +963,13 @@
       stage.style.setProperty('--map-label-max-width', `${screenToActor(LABEL_SCREEN_WIDTHS[tier])}px`);
       stage.style.setProperty('--map-position-dot-size', `${screenToActor(OVERVIEW_DOT_SCREEN_SIZES[tier] || 8)}px`);
       stage.style.setProperty('--map-position-line-width', `${screenToActor(1.5)}px`);
-      stage.style.setProperty('--map-indicator-size', `${screenToActor(targetActorScreenSize * (tier === 4 ? 0.24 : 0.2))}px`);
-      stage.style.setProperty('--map-indicator-gap', `${screenToActor(targetActorScreenSize * 0.055)}px`);
-      stage.style.setProperty('--map-indicator-border', `${screenToActor(1)}px`);
-      stage.style.setProperty('--map-indicator-offset', `${screenToActor(3)}px`);
       stage.dataset.zoomTier = String(tier);
       stage.style.transform = `translate(-50%, -50%) translate(${state.x}px, ${state.y}px) scale(${stageScale})`;
+      const zoomLevel = this.root.querySelector('[data-ccgb="zoom-level"]');
+      if (zoomLevel) {
+        const clicks = Math.max(0, Number(state.zoomClicks || 0));
+        zoomLevel.textContent = `Zoom ${Math.round(Number(state.scale || 1) * 100)}% (${clicks} click${clicks === 1 ? '' : 's'})`;
+      }
       stage.querySelectorAll('.ccgb-board-actor.is-player-character').forEach(piece => {
         piece.classList.toggle('is-overview-marker', overviewMode);
       });
@@ -1116,21 +1120,6 @@
         piece.setAttribute('role', 'button');
         piece.setAttribute('aria-label', `Move ${actor.name || 'character'}`);
       }
-
-      const indicators = document.createElement('span');
-      indicators.className = 'ccgb-actor-indicators';
-      [
-        ['heavy', 'Heavy wounds — details coming soon'],
-        ['medium', 'Medium wounds — details coming soon'],
-        ['light', 'Light wounds — details coming soon'],
-        ['status', 'Status — details coming soon']
-      ].forEach(([kind, title]) => {
-        const indicator = document.createElement('span');
-        indicator.className = `is-${kind}`;
-        indicator.title = title;
-        indicators.appendChild(indicator);
-      });
-      piece.appendChild(indicators);
 
       if (actor.display_mode === 'token' && actor.portrait_asset_id) {
         const image = document.createElement('img');

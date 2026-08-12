@@ -10,10 +10,10 @@
   const MAP_MAX_ZOOM = 32;
   const MAP_PAN_STEP = 24;
   const DEFAULT_TOKEN_SCALE = 0.0055;
-  const TOKEN_SCREEN_SIZES = [0, 0, 0, 0, 0, 0, 64, 60];
+  const TOKEN_SCREEN_SIZES = [0, 0, 0, 0, 0, 0, 68, 64];
   const OVERVIEW_DOT_SCREEN_SIZES = [12, 11, 10, 9, 8, 7, 0, 0];
-  const LABEL_SCREEN_SIZES = [14.5, 14, 13, 12, 11, 10.5, 10, 9.5];
-  const LABEL_SCREEN_WIDTHS = [200, 185, 170, 155, 145, 135, 126, 118];
+  const LABEL_SCREEN_SIZES = [15.2, 14.7, 13.7, 12.7, 11.5, 11, 10.5, 10];
+  const LABEL_SCREEN_WIDTHS = [208, 192, 177, 162, 152, 142, 132, 124];
   const SECTIONS = [
     ['board', 'Game Board', '▦'],
     ['overview', 'Overview', '⌂'],
@@ -58,6 +58,8 @@
       this.mapCameraDrag = null;
       this.mapResizeObserver = null;
       this.mapCameraFrame = 0;
+      this.mapRepaintTimer = 0;
+      this.mapRepaintFrame = 0;
       this.currentCampaignId = '';
       this.hydratedCampaignId = '';
       this.savedViewCampaignId = '';
@@ -974,13 +976,73 @@
         piece.classList.toggle('is-overview-marker', overviewMode);
       });
       cancelAnimationFrame(this.actorLabelFrame);
-      if (overviewMode) {
-        this.actorLabelFrame = requestAnimationFrame(() => {
-          if (viewport.isConnected && stage.isConnected) {
+      this.actorLabelFrame = requestAnimationFrame(() => {
+        if (viewport.isConnected && stage.isConnected) {
+          if (overviewMode) {
             this.positionOverviewLabels(viewport, stage, tier, actorNetScale);
+          } else {
+            this.positionOffscreenPlayerLocator(viewport, stage, tier, actorNetScale);
           }
+        }
+      });
+      this.queueSharpMapRepaint(stage);
+    }
+
+    queueSharpMapRepaint(stage) {
+      if (!stage?.isConnected) return;
+      stage.classList.add('is-camera-moving');
+      clearTimeout(this.mapRepaintTimer);
+      cancelAnimationFrame(this.mapRepaintFrame);
+      this.mapRepaintTimer = setTimeout(() => {
+        if (!stage.isConnected) return;
+        stage.classList.remove('is-camera-moving');
+        const image = stage.querySelector(':scope > img');
+        if (!image) return;
+        image.classList.add('is-repainting');
+        void image.offsetWidth;
+        this.mapRepaintFrame = requestAnimationFrame(() => {
+          if (!image.isConnected) return;
+          image.classList.remove('is-repainting');
         });
-      }
+      }, 90);
+    }
+
+    positionOffscreenPlayerLocator(viewport, stage, tier, actorNetScale) {
+      const pieces = Array.from(stage.querySelectorAll('.ccgb-board-actor.is-player-character.is-controlled'));
+      if (!pieces.length) return;
+      const viewportBounds = viewport.getBoundingClientRect();
+      const stageBounds = stage.getBoundingClientRect();
+      const bounds = {
+        left: Math.max(viewportBounds.left + 10, stageBounds.left + 10),
+        top: Math.max(viewportBounds.top + 10, stageBounds.top + 10),
+        right: Math.min(viewportBounds.right - 10, stageBounds.right - 10),
+        bottom: Math.min(viewportBounds.bottom - 10, stageBounds.bottom - 10)
+      };
+      if (bounds.right <= bounds.left || bounds.bottom <= bounds.top) return;
+      const fontSize = LABEL_SCREEN_SIZES[tier];
+      const maxWidth = LABEL_SCREEN_WIDTHS[tier];
+      pieces.forEach(piece => {
+        const actorX = stageBounds.left + Number(piece.dataset.actorX ?? 0.5) * stageBounds.width;
+        const actorY = stageBounds.top + Number(piece.dataset.actorY ?? 0.5) * stageBounds.height;
+        const onScreen = actorX >= bounds.left && actorX <= bounds.right && actorY >= bounds.top && actorY <= bounds.bottom;
+        piece.classList.toggle('is-offscreen-locator', !onScreen);
+        if (onScreen) return;
+        const label = piece.querySelector('.ccgb-position-label');
+        const name = label?.textContent || 'Character';
+        const width = Math.min(maxWidth, Math.max(72, name.length * fontSize * 0.62 + 22));
+        const height = fontSize + 14;
+        const labelX = Math.max(bounds.left + width / 2, Math.min(bounds.right - width / 2, actorX));
+        const labelY = Math.max(bounds.top + height / 2, Math.min(bounds.bottom - height / 2, actorY));
+        const shiftX = (labelX - actorX) / actorNetScale;
+        const shiftY = (labelY - actorY) / actorNetScale;
+        const direction = Math.atan2(actorY - labelY, actorX - labelX);
+        piece.style.setProperty('--map-position-label-x', `${shiftX}px`);
+        piece.style.setProperty('--map-position-label-y', `${shiftY}px`);
+        piece.style.setProperty('--map-position-line-x', `${shiftX}px`);
+        piece.style.setProperty('--map-position-line-y', `${shiftY}px`);
+        piece.style.setProperty('--map-position-line-length', `${30 / actorNetScale}px`);
+        piece.style.setProperty('--map-position-line-angle', `${direction}rad`);
+      });
     }
 
     positionOverviewLabels(viewport, stage, tier, actorNetScale) {
@@ -1065,6 +1127,8 @@
         const lineLength = Math.max(4, distance - Math.min(width, height) / 2 - 3);
         anchor.piece.style.setProperty('--map-position-label-x', `${shiftX}px`);
         anchor.piece.style.setProperty('--map-position-label-y', `${shiftY}px`);
+        anchor.piece.style.setProperty('--map-position-line-x', '0px');
+        anchor.piece.style.setProperty('--map-position-line-y', '0px');
         anchor.piece.style.setProperty('--map-position-line-length', `${lineLength / actorNetScale}px`);
         anchor.piece.style.setProperty('--map-position-line-angle', `${Math.atan2(best.dy, best.dx)}rad`);
         occupied.push(best.rect);
@@ -1191,6 +1255,17 @@
       this.dragging.piece.dataset.actorY = String(point.y);
       this.dragging.piece.style.left = `${point.x * 100}%`;
       this.dragging.piece.style.top = `${point.y * 100}%`;
+      const viewport = this.root.querySelector('.ccgb-map-viewport');
+      const state = this.cameraState(this.activeMapId);
+      if (viewport) {
+        const tier = this.zoomTier(state);
+        const tokenSize = Math.max(1, Number(this.dragging.stage.dataset.tokenSize || 6));
+        const stageScale = this.mapStageScale(this.dragging.stage, state);
+        const sizeRatio = Math.max(0.35, Math.min(5.5, tokenSize / (MAP_NATIVE_WIDTH * DEFAULT_TOKEN_SCALE)));
+        const targetActorScreenSize = Math.max(8, (TOKEN_SCREEN_SIZES[tier] || 8) * sizeRatio);
+        const actorNetScale = Math.max(0.0001, stageScale * targetActorScreenSize / Math.max(1, tokenSize * stageScale));
+        this.positionOffscreenPlayerLocator(viewport, this.dragging.stage, tier, actorNetScale);
+      }
       const now = performance.now();
       if (now - this.lastMovePreview >= 80) {
         this.lastMovePreview = now;
@@ -1225,9 +1300,13 @@
       (this.board.actors || []).forEach(actor => {
         const piece = stage.querySelector(`[data-actor-id="${CSS.escape(actor.actor_id)}"]`);
         if (!piece || actor.map_id !== this.activeMapId) return;
-        piece.style.left = `${Number(actor.x || 0.5) * 100}%`;
-        piece.style.top = `${Number(actor.y || 0.5) * 100}%`;
+        piece.dataset.actorX = String(Number(actor.x ?? 0.5));
+        piece.dataset.actorY = String(Number(actor.y ?? 0.5));
+        piece.style.left = `${Number(actor.x ?? 0.5) * 100}%`;
+        piece.style.top = `${Number(actor.y ?? 0.5) * 100}%`;
       });
+      const viewport = this.root.querySelector('.ccgb-map-viewport');
+      if (viewport) this.applyMapCamera(viewport, stage, this.activeMapId);
     }
 
     search(value) {

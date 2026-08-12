@@ -751,7 +751,7 @@ class GameBoardWindow(tk.Tk):
         self._drag_actor_id = ""
         self._drag_start_point: tuple[float, float] | None = None
         self._piece_popup: tk.Toplevel | None = None
-        self.board_map_controls_window: tk.Toplevel | None = None
+        self.board_map_controls_dock: ttk.Frame | None = None
         self.board_settings_window: tk.Toplevel | None = None
         self._known_pending_ids: set[str] = set()
         self._chat_layout_after_id: str | None = None
@@ -1298,8 +1298,6 @@ class GameBoardWindow(tk.Tk):
         board_panel = ttk.Frame(parent, style="Card.TFrame")
         board_panel.pack(fill="both", expand=True)
 
-        self._create_board_map_controls()
-
         self.board_notebook = ttk.Notebook(board_panel)
         self.board_notebook.pack(fill="both", expand=True)
         self.board_notebook.bind("<<NotebookTabChanged>>", self._board_tab_changed)
@@ -1328,17 +1326,10 @@ class GameBoardWindow(tk.Tk):
         self.bind("<Delete>", self.delete_board_obscuration_node, add="+")
         self.bind("<BackSpace>", self.delete_board_obscuration_node, add="+")
 
-    def _create_board_map_controls(self) -> None:
-        window = tk.Toplevel(self)
-        self.board_map_controls_window = window
-        window.title("Map Tools")
-        window.resizable(False, False)
-        window.configure(background=self.PAPER)
-        window.protocol("WM_DELETE_WINDOW", self.hide_board_map_controls)
-        window.bind("<Unmap>", self._board_tools_unmapped)
-        apply_window_icon(window, GAME_BOARD_ICON)
-        map_controls = ttk.Frame(window, style="Card.TFrame", padding=8)
-        map_controls.pack(fill="both", expand=True)
+    def _create_board_map_controls(self, parent: tk.Misc) -> None:
+        map_controls = ttk.Frame(parent, style="Card.TFrame", padding=8)
+        self.board_map_controls_dock = map_controls
+        map_controls.pack(fill="x", pady=(0, 5))
         ttk.Label(
             map_controls,
             text="MAP CONTROLS",
@@ -1375,7 +1366,7 @@ class GameBoardWindow(tk.Tk):
             selectbackground=self.ACCENT,
             selectforeground="#fff8e7",
             exportselection=False,
-            height=5,
+            height=3,
             font=("Segoe UI", 8),
         )
         self.board_obscuration_list.pack(fill="x", pady=(0, 4))
@@ -1437,44 +1428,29 @@ class GameBoardWindow(tk.Tk):
             font=("Segoe UI", 8, "bold"),
         )
         self.board_draft_status.pack(fill="x", pady=(5, 0))
-        window.update_idletasks()
-        width = max(240, window.winfo_reqwidth())
-        height = max(470, window.winfo_reqheight())
-        window.geometry(
-            f"{width}x{height}+{self.winfo_rootx() + 230}+{self.winfo_rooty() + 110}"
-        )
-        window.minsize(width, height)
-        window.maxsize(width, height)
-
     def open_board_map_controls(self) -> None:
-        window = self.board_map_controls_window
-        if window is None or not window.winfo_exists():
-            self._create_board_map_controls()
-            window = self.board_map_controls_window
-        if window is None:
-            return
-        window.deiconify()
-        window.lift()
+        if self.chat_collapsed:
+            self.toggle_chat()
+        dock = self.board_map_controls_dock
+        if dock is not None and dock.winfo_exists() and not dock.winfo_manager():
+            dock.pack(fill="x", pady=(0, 5), before=self.chat_header)
+        if dock is not None:
+            dock.focus_set()
 
     def hide_board_map_controls(self) -> None:
-        window = self.board_map_controls_window
         if self.board_obscure_drawing:
-            if window is not None and window.winfo_exists():
-                window.deiconify()
-                window.lift()
             self.bell()
             self.board_draft_status.configure(
                 text="Finish or cancel the current obfuscation before hiding Map Tools.",
                 foreground=self.RED,
             )
             return
-        if window is not None and window.winfo_exists():
-            window.withdraw()
+        dock = self.board_map_controls_dock
+        if dock is not None and dock.winfo_exists():
+            dock.pack_forget()
 
     def _board_tools_unmapped(self, _event: tk.Event | None = None) -> None:
-        if not self.board_obscure_drawing or self.state() == "iconic":
-            return
-        self.after(50, self.open_board_map_controls)
+        return
 
     def open_occupants_dialog(self) -> None:
         if self.occupants_dialog is not None and self.occupants_dialog.winfo_exists():
@@ -2480,11 +2456,6 @@ class GameBoardWindow(tk.Tk):
             text="Pen active — click nodes on the map, then click the first node to finish.",
             foreground=self.MUTED,
         )
-        window = self.board_map_controls_window
-        if window is not None and window.winfo_exists():
-            window.attributes("-topmost", True)
-            window.deiconify()
-            window.lift()
         canvas = self.board_canvases.get(self.selected_board_map_id)
         if canvas is not None:
             canvas.configure(cursor="crosshair")
@@ -2629,10 +2600,6 @@ class GameBoardWindow(tk.Tk):
         self.board_selected_obscuration_id = obscuration["record_id"]
         self.board_selected_obscuration_node = None
         self.board_obscure_button.configure(text="Draw obfuscation  [O]")
-        window = self.board_map_controls_window
-        if window is not None and window.winfo_exists():
-            window.attributes("-topmost", False)
-            window.lift()
         self._board_mark_presentation_dirty()
         self._refresh_board_obscuration_list()
         self._draw_board_map(map_id)
@@ -2644,10 +2611,6 @@ class GameBoardWindow(tk.Tk):
         if self.board_obscure_drawing:
             self.board_obscure_drawing = False
             self.board_obscure_button.configure(text="Draw obfuscation  [O]")
-            window = self.board_map_controls_window
-            if window is not None and window.winfo_exists():
-                window.attributes("-topmost", False)
-                window.lift()
             if not self.board_selected_obscuration_id:
                 self.board_obscure_mode = False
             self._sync_board_presentation_controls()
@@ -3557,10 +3520,11 @@ class GameBoardWindow(tk.Tk):
         self.chat_shell.pack(side="right", fill="y", padx=(8, 0))
         self.chat_shell.pack_propagate(False)
         self.chat_expanded = tk.Frame(self.chat_shell, background=self.LIGHT)
-        chat_header = tk.Frame(self.chat_expanded, background=self.EDGE)
-        chat_header.pack(fill="x")
+        self._create_board_map_controls(self.chat_expanded)
+        self.chat_header = tk.Frame(self.chat_expanded, background=self.EDGE)
+        self.chat_header.pack(fill="x")
         tk.Label(
-            chat_header,
+            self.chat_header,
             text="SESSION CHAT",
             anchor="w",
             background=self.EDGE,
@@ -3570,7 +3534,7 @@ class GameBoardWindow(tk.Tk):
             pady=11,
         ).pack(side="left", fill="x", expand=True)
         tk.Button(
-            chat_header,
+            self.chat_header,
             text="›",
             width=3,
             background=self.EDGE,

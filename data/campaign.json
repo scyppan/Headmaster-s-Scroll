@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "_headmasters_scroll": {
-    "revision_id": "201cd455-de02-420a-a8cb-8412750569dc",
-    "last_modified_at": "2026-08-12T12:32:47.163039Z",
+    "revision_id": "4b5c8b3e-f6bb-4e13-b331-646158b38191",
+    "last_modified_at": "2026-08-13T01:11:38.906088Z",
     "last_modified_by": "game-board"
   },
   "campaigns": [
@@ -11,7 +11,7 @@
       "created_at": "2026-08-11T08:19:23.069609Z",
       "name": "Test camp",
       "game_world_start_date": "2000-08-27",
-      "last_updated": "2026-08-12T12:32:47.159632Z",
+      "last_updated": "2026-08-13T01:11:38.902502Z",
       "game_state": {
         "initialized": true,
         "current_game_datetime": "2000-08-27T08:00",
@@ -205,15 +205,15 @@
             "token_scale": 0.0055,
             "start_point": null,
             "headmaster_camera": {
-              "zoom": 6.15278762129476,
-              "center_x": 0.8955983611578101,
-              "center_y": 0.43991833878185765
+              "zoom": 2.6600198804687483,
+              "center_x": 0.7741284744977088,
+              "center_y": 0.4202437537688553
             },
             "player_cameras": {
               "6ca9e551-e305-4c3c-a763-d2ff9a13afff": {
-                "zoom": 1.5208749999999998,
-                "center_x": 0.5195622494360885,
-                "center_y": 0.49496360830296887
+                "zoom": 14.231771646040077,
+                "center_x": 0.9402246077135714,
+                "center_y": 0.4251567230908033
               }
             },
             "zoom_profile": {
@@ -261,8 +261,8 @@
               "location_id": "38b8b79b-0785-4213-826e-0e65998d3b41",
               "floor_id": "",
               "map_id": "a5a85bd9-e989-4069-936c-8acda64f0fdd",
-              "x": 0.983707513051257,
-              "y": 0.4287232427735722
+              "x": 0.9807714826948193,
+              "y": 0.4329548356968588
             },
             "visibility": "players",
             "display_mode": "dot",
@@ -270,8 +270,8 @@
             "faction_revealed": false,
             "faction_organization_id": "",
             "label_offset": {
-              "x": 0.0,
-              "y": 0.0
+              "x": 0.0033462448222561655,
+              "y": -0.06337968571451677
             },
             "wounds": [],
             "battle": null,

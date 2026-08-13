@@ -505,6 +505,8 @@
         this.board.character_attributes = message.character_sheet.attributes;
         this.updatePlayerIdentity();
         if (this.activeSection !== 'board') this.openSection(this.activeSection);
+      } else if (message.type === 'request_submitted') {
+        this.showChatNotice(message.message || 'Request sent to the Headmaster.');
       } else if (message.type === 'board_move_preview') {
         const actor = (this.board.actors || []).find(item => item.actor_id === message.person_id);
         if (actor) {
@@ -611,7 +613,11 @@
       this.chatMessages.forEach(message => {
         const article = document.createElement('article');
         const ownMessage = Boolean(this.playerId && message.sender_id === this.playerId);
-        article.className = `ccgb-chat-message ${message.sender_role === 'headmaster' ? 'is-headmaster' : ''} ${ownMessage ? 'is-own' : ''}`;
+        const activityOutcome = String(message.activity?.outcome || '');
+        const outcomeClass = ['critical_failure', 'failure', 'success', 'critical_success'].includes(activityOutcome)
+          ? `is-roll-${activityOutcome.replace('_', '-')}`
+          : '';
+        article.className = `ccgb-chat-message ${message.sender_role === 'headmaster' ? 'is-headmaster' : ''} ${ownMessage ? 'is-own' : ''} ${outcomeClass}`;
         const heading = document.createElement('div');
         const name = document.createElement('strong');
         name.textContent = message.sender_name || 'Player';
@@ -653,6 +659,16 @@
             }
             term.append(label, value);
             components.appendChild(term);
+            (component.sources || []).forEach(source => {
+              const sourceTerm = document.createElement('div');
+              sourceTerm.className = 'ccgb-roll-source';
+              const sourceLabel = document.createElement('dt');
+              const sourceValue = document.createElement('dd');
+              sourceLabel.textContent = source.label || 'Source';
+              sourceValue.textContent = String(Number(source.value ?? 0));
+              sourceTerm.append(sourceLabel, sourceValue);
+              components.appendChild(sourceTerm);
+            });
           });
           if (message.activity.threshold != null) {
             const term = document.createElement('div');
@@ -830,7 +846,17 @@
           ${collection === 'spells' ? optionList('subtype', 'subtypes') : ''}
           <label class="ccgb-threshold-filter">Difficulty &le; <input type="number" min="0" data-catalog-threshold placeholder="Any"></label>
           <label><input type="checkbox" data-favorites-only> Favorites</label>
+          <button type="button" class="ccgb-teach-open" data-teach-open>Teach...</button>
         </div>
+        <section class="ccgb-teach-panel" data-teach-panel hidden>
+          <strong>Submit a teaching request</strong>
+          <input type="search" data-teach-pupil-search placeholder="Search pupils" autocomplete="off">
+          <div class="ccgb-teach-choices" data-teach-pupils></div>
+          <input type="search" data-teach-subject-search placeholder="Search ${collection}" autocomplete="off">
+          <div class="ccgb-teach-choices" data-teach-subjects></div>
+          <p data-teach-selection>Select a pupil and subject.</p>
+          <div><button type="button" data-teach-cancel>Cancel</button><button type="button" data-teach-submit disabled>Send request</button></div>
+        </section>
         <div class="ccgb-catalog-list">${records.map(record => {
           const favoriteKey = `${collection}:${record.record_id}`;
           return `<article class="ccgb-catalog-item" data-search="${this.escapeHtml([record.name, record.skill, record.subtype, record.source, record.description].join(' ').toLowerCase())}" data-skill="${this.escapeHtml(record.skill || '')}" data-source="${this.escapeHtml(record.source || '')}" data-subtype="${this.escapeHtml(record.subtype || '')}" data-threshold="${record.threshold == null ? '' : Number(record.threshold)}" data-favorite="${this.favorites.has(favoriteKey)}">
@@ -859,6 +885,50 @@
         this.renderKnowledgePanel(content, collection);
       }));
       this.bindRollButtons(content);
+      this.bindTeachingPanel(content, collection, singular, records);
+    }
+
+    bindTeachingPanel(content, collection, kind, records) {
+      const panel = content.querySelector('[data-teach-panel]');
+      const pupils = (this.characterSheet?.teaching_targets || []);
+      let pupilId = '';
+      let subjectId = '';
+      const selection = panel.querySelector('[data-teach-selection]');
+      const submit = panel.querySelector('[data-teach-submit]');
+      const updateSelection = () => {
+        const pupil = pupils.find(item => item.record_id === pupilId);
+        const subject = records.find(item => item.record_id === subjectId);
+        selection.textContent = pupil && subject ? `Teach ${subject.name} to ${pupil.name}` : 'Select a pupil and subject.';
+        submit.disabled = !(pupil && subject);
+      };
+      const renderChoices = (holder, values, query, selected, select) => {
+        holder.innerHTML = values.filter(item => item.name.toLowerCase().includes(query)).slice(0, 100).map(item =>
+          `<button type="button" class="${item.record_id === selected ? 'is-selected' : ''}" data-choice-id="${this.escapeHtml(item.record_id)}">${this.escapeHtml(item.name)}</button>`
+        ).join('') || '<span>No matches.</span>';
+        holder.querySelectorAll('[data-choice-id]').forEach(button => button.addEventListener('click', () => select(button.dataset.choiceId)));
+      };
+      const pupilSearch = panel.querySelector('[data-teach-pupil-search]');
+      const subjectSearch = panel.querySelector('[data-teach-subject-search]');
+      const renderPupils = () => renderChoices(panel.querySelector('[data-teach-pupils]'), pupils, pupilSearch.value.trim().toLowerCase(), pupilId, value => { pupilId = value; renderPupils(); updateSelection(); });
+      const renderSubjects = () => renderChoices(panel.querySelector('[data-teach-subjects]'), records, subjectSearch.value.trim().toLowerCase(), subjectId, value => { subjectId = value; renderSubjects(); updateSelection(); });
+      content.querySelector('[data-teach-open]').addEventListener('click', () => {
+        panel.hidden = false;
+        renderPupils(); renderSubjects(); updateSelection(); pupilSearch.focus();
+      });
+      panel.querySelector('[data-teach-cancel]').addEventListener('click', () => { panel.hidden = true; });
+      pupilSearch.addEventListener('input', renderPupils);
+      subjectSearch.addEventListener('input', renderSubjects);
+      submit.addEventListener('click', () => {
+        const subject = records.find(item => item.record_id === subjectId);
+        if (!subject || !pupilId) return;
+        this.send({
+          v: VERSION, type: 'teaching_request', pupil_person_id: pupilId,
+          knowledge_kind: kind, knowledge_record_id: subjectId,
+          knowledge_collection: subject.collection || collection,
+        });
+        panel.hidden = true;
+        this.showChatNotice('Sending teaching request...');
+      });
     }
 
     renderRecordRequirements(record) {

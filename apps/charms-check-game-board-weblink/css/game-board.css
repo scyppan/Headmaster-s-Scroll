@@ -563,6 +563,13 @@
   min-height: 22px;
 }
 #gameboard .ccgb-roll-components dd { font-weight: 700; margin: 0; }
+#gameboard .ccgb-roll-components .ccgb-roll-source {
+  color: #6f5a42;
+  font-size: 11px;
+  min-height: 18px;
+  padding-left: 12px;
+}
+#gameboard .ccgb-roll-components .ccgb-roll-source dt::before { content: "↳ "; }
 #gameboard .ccgb-roll-components .ccgb-roll-total {
   border-top: 1px solid #8f532f;
   font-weight: 900;
@@ -721,6 +728,37 @@
   align-self: flex-end;
   background: #efe0b8;
   border-color: #aa8a55;
+}
+
+#gameboard .ccgb-chat-message.is-roll-critical-failure {
+  background: #661a1a;
+  border-color: #3b0707;
+  color: #ffe2e2;
+}
+#gameboard .ccgb-chat-message.is-roll-critical-failure strong,
+#gameboard .ccgb-chat-message.is-roll-critical-failure time,
+#gameboard .ccgb-chat-message.is-roll-critical-failure .ccgb-roll-source { color: #ffe2e2; }
+#gameboard .ccgb-chat-message.is-roll-critical-failure .ccgb-roll-details,
+#gameboard .ccgb-chat-message.is-roll-critical-failure .ccgb-roll-total { border-color: #f0a0a0; }
+#gameboard .ccgb-chat-message.is-roll-critical-failure .ccgb-roll-details summary {
+  background: #7f2929;
+  border-color: #f0a0a0;
+  color: #ffe2e2;
+}
+#gameboard .ccgb-chat-message.is-roll-failure {
+  background: #f3c5bd;
+  border-color: #c46f65;
+  color: #4d2020;
+}
+#gameboard .ccgb-chat-message.is-roll-success {
+  background: #d7efcb;
+  border-color: #6d9460;
+  color: #243d20;
+}
+#gameboard .ccgb-chat-message.is-roll-critical-success {
+  background: #d7efcb;
+  border: 4px solid #d4af37;
+  color: #243d20;
 }
 
 #gameboard .ccgb-chat-message > div { display: flex; gap: 8px; justify-content: space-between; }
@@ -1205,6 +1243,47 @@
 #gameboard summary:focus-visible {
   outline: 2px solid #8f532f;
   outline-offset: 2px;
+}
+
+#gameboard .ccgb-teach-panel {
+  background: #f6e7b8;
+  border: 1px solid #a9683d;
+  display: grid;
+  gap: 7px;
+  margin: 0 0 10px;
+  padding: 10px;
+}
+
+#gameboard .ccgb-teach-panel[hidden] { display: none; }
+
+#gameboard .ccgb-teach-choices {
+  background: #fff8e6;
+  border: 1px solid #c59b58;
+  display: grid;
+  max-height: 130px;
+  overflow: auto;
+}
+
+#gameboard .ccgb-teach-choices button {
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid #ead8aa;
+  color: #2f1f13;
+  cursor: pointer;
+  padding: 5px 8px;
+  text-align: left;
+}
+
+#gameboard .ccgb-teach-choices button:hover,
+#gameboard .ccgb-teach-choices button.is-selected {
+  background: #8a422c;
+  color: #fff8e7;
+}
+
+#gameboard .ccgb-teach-panel > div:last-child {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
 }
 
 .ccgb-preview-page {

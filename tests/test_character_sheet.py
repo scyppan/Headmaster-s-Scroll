@@ -83,6 +83,41 @@ class CharacterSheetTests(unittest.TestCase):
         early = build_character_sheet(self.person, self.world, self.database, self.campaign())
         self.assertEqual([item["record_id"] for item in early["proficiencies"]], ["prof-1"])
 
+    def test_school_and_recreational_books_follow_curriculum_and_dates(self):
+        self.person.update({"birth_year": 1990, "birth_month": 1, "birth_day": 1, "school": "Hogwarts"})
+        self.person["development_plan"] = {"school_years": [{
+            "year": 1, "school": "Hogwarts", "skipped": False,
+            "electives": ["Runes"],
+            "books": [{"record_id": "book-recreation-one"}, {"record_id": "book-recreation-two"}],
+        }], "adult_years": [], "initial_eminence": []}
+        self.database["schools"] = [{
+            "name": "Hogwarts",
+            "curriculum": [{"year": 1, "core": ["Charms"], "electives": ["Runes", "Divination"]}],
+            "course_books": [
+                {"year": 1, "course": "Charms", "record_id": "book-core"},
+                {"year": 1, "course": "Runes", "record_id": "book-elective"},
+                {"year": 1, "course": "Divination", "record_id": "book-unselected"},
+            ],
+        }]
+        self.database["books"] = [
+            {"record_id": "book-core", "spells": [{"record_id": "spell-core"}]},
+            {"record_id": "book-elective", "spells": [{"record_id": "spell-elective"}]},
+            {"record_id": "book-unselected", "spells": [{"record_id": "spell-unselected"}]},
+            {"record_id": "book-recreation-one", "spells": [{"record_id": "spell-recreation-one"}]},
+            {"record_id": "book-recreation-two", "spells": [{"record_id": "spell-recreation-two"}]},
+        ]
+        self.database["spells"].extend([
+            {"record_id": "spell-core", "name": "Core"},
+            {"record_id": "spell-elective", "name": "Elective"},
+            {"record_id": "spell-unselected", "name": "Unselected"},
+            {"record_id": "spell-recreation-one", "name": "September"},
+            {"record_id": "spell-recreation-two", "name": "January"},
+        ])
+        early = build_character_sheet(self.person, self.world, self.database, self.campaign("2001-09-01T08:00"))
+        self.assertEqual({item["record_id"] for item in early["spells"]}, {"spell-core", "spell-elective", "spell-recreation-one"})
+        january = build_character_sheet(self.person, self.world, self.database, self.campaign("2002-01-01T08:00"))
+        self.assertIn("spell-recreation-two", {item["record_id"] for item in january["spells"]})
+
     def test_tame_bond_and_irk_histories_coexist(self):
         sheet = build_character_sheet(self.person, self.world, self.database, self.campaign())
         self.assertEqual(len(sheet["pets"]), 1)
@@ -129,6 +164,32 @@ class CharacterSheetTests(unittest.TestCase):
         self.assertIn("attempts to cast a straight Charms spell", result["text"])
         self.assertEqual([item["label"] for item in result["components"]], ["d10", "Power", "Charms"])
         self.assertEqual(result["formula"], "6 + 2 + 1")
+        self.assertEqual(
+            [item["label"] for item in result["components"][2]["sources"]],
+            [
+                "Buys", "Corecourses", "Electives", "Traits", "Wand parts",
+                "Wand", "Quality", "Accessories", "Passive", "Eminence", "Temp",
+            ],
+        )
+        self.assertTrue(all(
+            "value" in item for item in result["components"][2]["sources"]
+        ))
+
+    def test_characteristic_roll_details_include_base_and_passive_without_adding_pool(self):
+        sheet = build_character_sheet(
+            self.person, self.world, self.database, self.campaign()
+        )
+        result = perform_character_roll(
+            sheet, "characteristic", "Fortitude", roller=lambda _a, _b: 4
+        )
+        pool = result["components"][-1]
+        self.assertEqual(pool["kind"], "pool")
+        self.assertEqual(
+            pool["sources"],
+            [{"label": "Base", "value": 2}, {"label": "Passive", "value": 0}],
+        )
+        self.assertEqual(result["total"], 8)
+        self.assertEqual(result["formula"], "4 + 4")
 
 
 if __name__ == "__main__":

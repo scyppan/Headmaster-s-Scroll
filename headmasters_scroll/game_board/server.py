@@ -82,6 +82,23 @@ class ChatBody(BaseModel):
     session_id: str | None = Field(default=None, max_length=100)
 
 
+class TeachingBody(BaseModel):
+    session_id: str = Field(min_length=1, max_length=100)
+    pupil_person_id: str = Field(min_length=1, max_length=100)
+    knowledge_kind: str = Field(min_length=1, max_length=30)
+    knowledge_record_id: str = Field(min_length=1, max_length=120)
+    knowledge_collection: str = Field(default="", max_length=80)
+
+
+class RequestResolutionBody(BaseModel):
+    campaign_id: str = Field(min_length=1, max_length=100)
+    decision: str = Field(min_length=1, max_length=20)
+    pupil_person_id: str = Field(default="", max_length=100)
+    knowledge_kind: str = Field(default="", max_length=30)
+    knowledge_record_id: str = Field(default="", max_length=120)
+    knowledge_collection: str = Field(default="", max_length=80)
+
+
 class EventDateBody(BaseModel):
     event_date: str | None = Field(default=None, max_length=32)
     session_id: str | None = Field(default=None, max_length=100)
@@ -315,6 +332,8 @@ class GameBoardRuntime:
             "boards": boards,
             "location_maps": location_maps,
             "gmail": self.gmail().status(),
+            "requests": self.service.pending_campaign_requests(),
+            "teaching_catalog": self.service.teaching_catalog(),
         }
 
     def gmail(self) -> GmailSender:
@@ -1157,6 +1176,44 @@ def create_apps(
         except (PermissionError, ValueError) as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
+    @admin_app.post("/api/admin/teaching", dependencies=[Depends(admin_guard)])
+    async def teach_character(body: TeachingBody):
+        result = admin_result(
+            service.teach_character,
+            body.session_id,
+            body.pupil_person_id,
+            body.knowledge_kind,
+            body.knowledge_record_id,
+            knowledge_collection=body.knowledge_collection,
+        )
+        await runtime.broadcast_character_sheets(body.session_id)
+        await runtime.notify_admins()
+        return result
+
+    @admin_app.post(
+        "/api/admin/requests/{request_id}/resolve",
+        dependencies=[Depends(admin_guard)],
+    )
+    async def resolve_campaign_request(request_id: str, body: RequestResolutionBody):
+        result = admin_result(
+            service.resolve_campaign_request,
+            body.campaign_id,
+            request_id,
+            body.decision,
+            pupil_person_id=body.pupil_person_id,
+            knowledge_kind=body.knowledge_kind,
+            knowledge_record_id=body.knowledge_record_id,
+            knowledge_collection=body.knowledge_collection,
+        )
+        session_id = next((
+            item.get("id") for item in service.sessions_view()
+            if item.get("campaign_id") == body.campaign_id
+        ), "")
+        if session_id and body.decision == "approved":
+            await runtime.broadcast_character_sheets(str(session_id))
+        await runtime.notify_admins()
+        return result
+
     @admin_app.websocket("/ws/admin")
     async def admin_websocket(websocket: WebSocket, key: str = Query(default="")):
         if key != settings["admin_key"]:
@@ -1392,6 +1449,27 @@ def create_apps(
                             connection.session_id,
                             result,
                         )
+                    except (KeyError, PermissionError, RuntimeError, TypeError, ValueError) as error:
+                        await websocket.send_json({
+                            "v": 1, "type": "server_error", "message": str(error),
+                        })
+                elif message.get("type") == "teaching_request":
+                    try:
+                        result = service.submit_teaching_request(
+                            connection.session_id,
+                            connection.contact_id,
+                            str(message.get("pupil_person_id", ""))[:100],
+                            str(message.get("knowledge_kind", ""))[:30],
+                            str(message.get("knowledge_record_id", ""))[:120],
+                            str(message.get("knowledge_collection", ""))[:80],
+                        )
+                        await websocket.send_json({
+                            "v": 1,
+                            "type": "request_submitted",
+                            "request_id": result["record_id"],
+                            "message": "Teaching request sent to the Headmaster.",
+                        })
+                        await runtime.notify_admins()
                     except (KeyError, PermissionError, RuntimeError, TypeError, ValueError) as error:
                         await websocket.send_json({
                             "v": 1, "type": "server_error", "message": str(error),

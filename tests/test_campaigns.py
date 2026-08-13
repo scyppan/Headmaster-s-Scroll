@@ -34,6 +34,7 @@ class CampaignTests(unittest.TestCase):
         created = self.repository.save_campaign("First Campaign", "-3100-01-09")
         self.assertEqual(created["history_policy"], "keep")
         self.assertEqual(created["events"], [])
+        self.assertEqual(created["requests"], [])
         self.assertEqual(created["game_world_start_date"], "-3100-01-09")
         updated = self.repository.save_campaign(
             "Renamed Campaign", "1943-09-01", created["record_id"]
@@ -87,6 +88,21 @@ class CampaignTests(unittest.TestCase):
         self.assertEqual(stored["events"], [event])
         self.assertEqual(event["person_ids"], ["person-1"])
         self.assertNotIn("world_events", stored)
+
+    def test_request_approval_and_event_append_are_one_save(self):
+        campaign = self.repository.save_campaign("Requests", "2000-01-01")
+        request = self.repository.add_request(
+            campaign["record_id"], "teaching",
+            {"pupil_person_id": "pupil", "knowledge_record_id": "spell"},
+        )
+        resolved = self.repository.resolve_request(
+            campaign["record_id"], request["record_id"], "approved",
+            event_type="taught_spell", event_date="2000-01-02",
+            event_details={"person_ids": ["pupil"], "knowledge_record_id": "spell"},
+        )
+        stored = self.repository.get(campaign["record_id"])
+        self.assertEqual(resolved["status"], "approved")
+        self.assertEqual(stored["requests"][0]["event_id"], stored["events"][0]["record_id"])
 
 
 if __name__ == "__main__":

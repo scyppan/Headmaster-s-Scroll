@@ -22,8 +22,55 @@ def _die(roller: Callable[[int, int], int]) -> int:
     return int(roller(1, 10))
 
 
-def _component(label: str, value: int, kind: str = "modifier") -> dict[str, Any]:
-    return {"label": label, "value": int(value), "kind": kind}
+def _component(
+    label: str,
+    value: int,
+    kind: str = "modifier",
+    sources: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    component = {"label": label, "value": int(value), "kind": kind}
+    if sources is not None:
+        component["sources"] = sources
+    return component
+
+
+def _source(label: str, value: Any) -> dict[str, Any]:
+    return {"label": label, "value": int(value or 0)}
+
+
+def _ability_sources(record: dict[str, Any]) -> list[dict[str, Any]]:
+    breakdown = record.get("breakdown", {}) or {}
+    return [
+        _source("Base", breakdown.get("base", 0)),
+        _source("Wand", breakdown.get("wand", 0)),
+        _source("Accessories", breakdown.get("accessories", 0)),
+        _source("Passive", breakdown.get("passive", 0)),
+    ]
+
+
+def _skill_sources(record: dict[str, Any]) -> list[dict[str, Any]]:
+    breakdown = record.get("breakdown", {}) or {}
+    return [
+        _source("Buys", breakdown.get("buys", 0)),
+        _source("Corecourses", breakdown.get("core_courses", 0)),
+        _source("Electives", breakdown.get("elective_courses", 0)),
+        _source("Traits", breakdown.get("trait_bonus", 0)),
+        _source("Wand parts", breakdown.get("wand_parts", 0)),
+        _source("Wand", breakdown.get("wand", 0)),
+        _source("Quality", breakdown.get("wand_quality", 0)),
+        _source("Accessories", breakdown.get("accessories", 0)),
+        _source("Passive", breakdown.get("passive", 0)),
+        _source("Eminence", breakdown.get("eminence", 0)),
+        _source("Temp", breakdown.get("temporary", 0)),
+    ]
+
+
+def _characteristic_sources(record: dict[str, Any]) -> list[dict[str, Any]]:
+    breakdown = record.get("breakdown", {}) or {}
+    return [
+        _source("Base", breakdown.get("base", 0)),
+        _source("Passive", breakdown.get("passive", 0)),
+    ]
 
 
 def _roll_value(record: dict[str, Any]) -> int:
@@ -126,22 +173,29 @@ def perform_character_roll(
         target_name = target_id
         bonus = _roll_value(target)
         dice = [_die(roller)]
-        components = [_component("d10", dice[0], "die"), _component(target_name, bonus)]
+        components = [
+            _component("d10", dice[0], "die"),
+            _component(target_name, bonus, sources=_ability_sources(target)),
+        ]
     elif roll_type == "skill":
         target = _by_name(skills, target_id)
         if not target or target.get("name") != target_id:
             raise CharacterRollError("Unknown skill")
         ability_name = ability_for_skill(target_id)
+        ability_record = _by_name(abilities, ability_name)
         skill_value = _roll_value(target)
-        ability_value = _roll_value(_by_name(abilities, ability_name))
+        ability_value = _roll_value(ability_record)
         bonus = skill_value + ability_value
         target_name = target_id
         dice = [_die(roller)]
         skill_name = target_id
         components = [
             _component("d10", dice[0], "die"),
-            _component(ability_name or "Ability", ability_value),
-            _component(skill_name, skill_value),
+            _component(
+                ability_name or "Ability", ability_value,
+                sources=_ability_sources(ability_record),
+            ),
+            _component(skill_name, skill_value, sources=_skill_sources(target)),
         ]
     elif roll_type == "characteristic":
         target = _by_name(characteristics, target_id)
@@ -154,6 +208,12 @@ def perform_character_roll(
             _component(f"d10 {index + 1}", value, "die")
             for index, value in enumerate(dice)
         ]
+        components.append(
+            _component(
+                "Dice pool", count, "pool",
+                sources=_characteristic_sources(target),
+            )
+        )
     elif roll_type == "parental":
         target = _by_name(parental, target_id)
         if not target or target.get("name") != target_id:
@@ -170,8 +230,10 @@ def perform_character_roll(
         target_name = str(target.get("name") or roll_type.title())
         skill_name = str(target.get("skill") or ("Potions" if roll_type == "recipe" else ""))
         ability_name = ability_for_skill(skill_name)
-        skill_value = _roll_value(_by_name(skills, skill_name))
-        ability_value = _roll_value(_by_name(abilities, ability_name))
+        skill_record = _by_name(skills, skill_name)
+        ability_record = _by_name(abilities, ability_name)
+        skill_value = _roll_value(skill_record)
+        ability_value = _roll_value(ability_record)
         bonus = skill_value + ability_value
         try:
             threshold = int(target.get("threshold"))
@@ -180,8 +242,14 @@ def perform_character_roll(
         dice = [_die(roller)]
         components = [
             _component("d10", dice[0], "die"),
-            _component(ability_name or "Ability", ability_value),
-            _component(skill_name or "Skill", skill_value),
+            _component(
+                ability_name or "Ability", ability_value,
+                sources=_ability_sources(ability_record),
+            ),
+            _component(
+                skill_name or "Skill", skill_value,
+                sources=_skill_sources(skill_record),
+            ),
         ]
     else:
         raise CharacterRollError("Unknown character action")
@@ -194,7 +262,9 @@ def perform_character_roll(
         str(sheet["character_name"]), roll_type, target_name, total,
         threshold, critical, success,
     )
-    formula = " + ".join(str(item["value"]) for item in components) or str(total)
+    formula = " + ".join(
+        str(item["value"]) for item in components if item.get("kind") != "pool"
+    ) or str(total)
     return {
         "schema_version": 1,
         "action_type": roll_type,

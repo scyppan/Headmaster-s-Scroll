@@ -155,6 +155,199 @@ class GameBoardService:
     def list_campaigns(self) -> list[dict[str, Any]]:
         return self.campaign_repository.list()
 
+    def teaching_catalog(self) -> dict[str, list[dict[str, str]]]:
+        """Return compact searchable catalogs for the Headmaster UI."""
+
+        try:
+            database = self.shared_store.load("db.json").data
+        except FileNotFoundError:
+            # Board-only fixtures and recovery mode may intentionally omit the
+            # rules catalog.  The rest of the Headmaster state must still load.
+            database = {
+                "spells": [], "proficiencies": [], "potions": [],
+                "preparations": [], "foods_and_drinks": [],
+            }
+        result: dict[str, list[dict[str, str]]] = {
+            "spell": [], "proficiency": [], "recipe": [],
+        }
+        for kind, collections in (
+            ("spell", ("spells",)),
+            ("proficiency", ("proficiencies",)),
+            ("recipe", ("potions", "preparations", "foods_and_drinks")),
+        ):
+            for collection in collections:
+                for item in database.get(collection, []) or []:
+                    if not isinstance(item, dict) or not item.get("record_id"):
+                        continue
+                    result[kind].append({
+                        "record_id": str(item["record_id"]),
+                        "name": str(item.get("name") or item.get("title") or "Unknown"),
+                        "collection": collection,
+                        "skill": str(item.get("skill") or ""),
+                    })
+            result[kind].sort(key=lambda item: (item["name"].casefold(), item["record_id"]))
+        return result
+
+    def _teaching_context(
+        self, session_id: str, pupil_person_id: str, knowledge_kind: str,
+        knowledge_record_id: str, knowledge_collection: str = "",
+    ) -> tuple[dict[str, Any], dict[str, Any], dict[str, str]]:
+        session = self._board_context(session_id)
+        campaign, world = self._campaign_document(session)
+        pupil = next((
+            item for item in world.get("people", []) or []
+            if isinstance(item, dict) and str(item.get("record_id", "")) == pupil_person_id
+        ), None)
+        if pupil is None:
+            raise KeyError("Unknown pupil")
+        kind = str(knowledge_kind or "").strip().casefold()
+        if kind not in {"spell", "proficiency", "recipe"}:
+            raise ValueError("Choose a spell, proficiency, or recipe")
+        catalog = self.teaching_catalog()[kind]
+        record = next((item for item in catalog if item["record_id"] == knowledge_record_id), None)
+        if record is None:
+            raise KeyError("Unknown teaching subject")
+        if knowledge_collection and record["collection"] != knowledge_collection:
+            raise ValueError("The teaching subject does not belong to that collection")
+        return campaign, pupil, record
+
+    @staticmethod
+    def _teaching_event_details(
+        pupil: dict[str, Any], record: dict[str, str], kind: str,
+        teacher_person_id: str = "", teacher_name: str = "Headmaster",
+    ) -> dict[str, Any]:
+        return {
+            "person_id": str(pupil["record_id"]),
+            "person_ids": [str(pupil["record_id"])],
+            "pupil_person_id": str(pupil["record_id"]),
+            "pupil_name": str(pupil.get("displayed_name") or "Unknown pupil"),
+            "teacher_person_id": str(teacher_person_id or ""),
+            "teacher_name": str(teacher_name or "Headmaster"),
+            "knowledge_record_id": record["record_id"],
+            "knowledge_collection": record["collection"],
+            "knowledge_name": record["name"],
+            "knowledge_kind": kind,
+            "description": f"{teacher_name or 'Headmaster'} taught {record['name']}",
+            "source": "game-board",
+        }
+
+    def teach_character(
+        self, session_id: str, pupil_person_id: str, knowledge_kind: str,
+        knowledge_record_id: str, *, knowledge_collection: str = "",
+        teacher_person_id: str = "", teacher_name: str = "Headmaster",
+    ) -> dict[str, Any]:
+        with self._lock:
+            normalized_kind = str(knowledge_kind or "").strip().casefold()
+            campaign, pupil, record = self._teaching_context(
+                session_id, pupil_person_id, knowledge_kind,
+                knowledge_record_id, knowledge_collection,
+            )
+            current = str(campaign["game_state"]["current_game_datetime"])
+            event_date, event_time = current.split("T", 1)
+            return self.campaign_repository.add_event(
+                campaign["record_id"], f"taught_{normalized_kind}", event_date,
+                event_time=event_time,
+                details=self._teaching_event_details(
+                    pupil, record, normalized_kind, teacher_person_id, teacher_name
+                ),
+            )
+
+    def submit_teaching_request(
+        self, session_id: str, contact_id: str, pupil_person_id: str,
+        knowledge_kind: str, knowledge_record_id: str,
+        knowledge_collection: str = "",
+    ) -> dict[str, Any]:
+        with self._lock:
+            wrapper, session = self._active(session_id)
+            teacher = self._player(session, contact_id)
+            teacher_id = str(teacher.get("character_id") or "")
+            if not teacher_id:
+                raise PermissionError("A linked character is required to teach")
+            sheet = self.character_sheet_for(session_id, contact_id)
+            key = {"spell": "spells", "proficiency": "proficiencies", "recipe": "recipes"}.get(knowledge_kind)
+            known = next((item for item in (sheet or {}).get(key or "", []) if str(item.get("record_id")) == knowledge_record_id), None)
+            if known is None:
+                raise PermissionError("That character does not know this subject")
+            campaign, pupil, record = self._teaching_context(
+                session_id, pupil_person_id, knowledge_kind,
+                knowledge_record_id, knowledge_collection,
+            )
+            if pupil_person_id == teacher_id:
+                raise ValueError("A character cannot submit a request to teach themselves")
+            details = self._teaching_event_details(
+                pupil, record, knowledge_kind, teacher_id,
+                str(teacher.get("character_name") or teacher.get("name") or "Player"),
+            )
+            details.update({
+                "session_id": session_id,
+                "campaign_id": campaign["record_id"],
+                "submitted_by_contact_id": contact_id,
+                "request_summary": f"{details['teacher_name']} wants to teach {details['pupil_name']} {record['name']}",
+            })
+            return self.campaign_repository.add_request(
+                campaign["record_id"], "teaching", details
+            )
+
+    def pending_campaign_requests(self) -> list[dict[str, Any]]:
+        sessions = self.sessions_view()
+        session_by_campaign = {
+            str(item.get("campaign_id", "")): item for item in sessions if item.get("campaign_id")
+        }
+        result: list[dict[str, Any]] = []
+        for campaign in self.campaign_repository.list():
+            for request in campaign.get("requests", []) or []:
+                if request.get("status") != "pending":
+                    continue
+                item = deepcopy(request)
+                session = session_by_campaign.get(campaign["record_id"], {})
+                item["campaign_id"] = campaign["record_id"]
+                item["campaign_name"] = campaign["name"]
+                item["session_id"] = str(item.get("session_id") or session.get("id") or "")
+                item["session_title"] = str(session.get("title") or "")
+                result.append(item)
+        result.sort(key=lambda item: (str(item.get("submitted_at", "")), str(item.get("record_id", ""))))
+        return result
+
+    def resolve_campaign_request(
+        self, campaign_id: str, request_id: str, decision: str,
+        *, pupil_person_id: str = "", knowledge_kind: str = "",
+        knowledge_record_id: str = "", knowledge_collection: str = "",
+    ) -> dict[str, Any]:
+        with self._lock:
+            campaign = self.campaign_repository.get(campaign_id)
+            request = next((item for item in campaign.get("requests", []) if item.get("record_id") == request_id), None)
+            if request is None:
+                raise KeyError("Unknown campaign request")
+            if decision == "rejected":
+                return self.campaign_repository.resolve_request(campaign_id, request_id, "rejected")
+            if request.get("request_type") != "teaching":
+                raise ValueError("This request type does not yet have an approval action")
+            session_id = str(request.get("session_id") or "")
+            pupil_id = pupil_person_id or str(request.get("pupil_person_id") or "")
+            kind = knowledge_kind or str(request.get("knowledge_kind") or "")
+            if not kind:
+                event_type = str(request.get("knowledge_collection") or "")
+                kind = "spell" if event_type == "spells" else "proficiency" if event_type == "proficiencies" else "recipe"
+            record_id = knowledge_record_id or str(request.get("knowledge_record_id") or "")
+            collection = knowledge_collection or str(request.get("knowledge_collection") or "")
+            checked_campaign, pupil, record = self._teaching_context(
+                session_id, pupil_id, kind, record_id, collection
+            )
+            if checked_campaign["record_id"] != campaign_id:
+                raise ValueError("The request session belongs to another campaign")
+            details = self._teaching_event_details(
+                pupil, record, kind,
+                str(request.get("teacher_person_id") or ""),
+                str(request.get("teacher_name") or "Player"),
+            )
+            current = str(campaign["game_state"]["current_game_datetime"])
+            event_date, event_time = current.split("T", 1)
+            return self.campaign_repository.resolve_request(
+                campaign_id, request_id, "approved",
+                event_type=f"taught_{kind}", event_date=event_date,
+                event_time=event_time, event_details=details,
+            )
+
     def _campaign_document(
         self,
         session: dict[str, Any],
@@ -1034,7 +1227,23 @@ class GameBoardService:
                     "potions": [], "preparations": [],
                     "foods_and_drinks": [], "creatures": [], "books": [],
                 }
-            return build_character_sheet(person, document, database, campaign)
+            sheet = build_character_sheet(person, document, database, campaign)
+            people = {
+                str(item.get("record_id", "")): item
+                for item in document.get("people", []) or [] if isinstance(item, dict)
+            }
+            sheet["teaching_targets"] = sorted((
+                {
+                    "record_id": str(player.get("character_id")),
+                    "name": str(
+                        people.get(str(player.get("character_id")), {}).get("displayed_name")
+                        or player.get("character_name") or player.get("name") or "Player"
+                    ),
+                }
+                for player in session.get("roster", []) or []
+                if player.get("character_id") and str(player.get("character_id")) != character_id
+            ), key=lambda item: (item["name"].casefold(), item["record_id"]))
+            return sheet
 
     def roll_character_action(
         self,

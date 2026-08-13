@@ -13,7 +13,12 @@ from copy import deepcopy
 from typing import Any, Iterable
 
 from .campaigns import HISTORY_DISCARD
-from .character_attributes import ABILITY_SKILLS, calculate_character_attributes
+from .character_attributes import (
+    ABILITY_SKILLS,
+    _historical_year_shift,
+    _school_year_start,
+    calculate_character_attributes,
+)
 
 
 DATE_PATTERN = re.compile(
@@ -113,6 +118,127 @@ def _effective_book_readings(
     ]
 
 
+def _book_history_boundary(campaign: dict[str, Any]) -> tuple[int, int, int]:
+    current = date_key(
+        (campaign.get("game_state", {}) or {}).get("current_game_datetime")
+    ) or date_key(campaign.get("game_world_start_date")) or (1, 1, 1)
+    if campaign.get("history_policy") == HISTORY_DISCARD:
+        return date_key(campaign.get("game_world_start_date")) or current
+    return current
+
+
+def _development_year_readings(
+    person: dict[str, Any], database: dict[str, Any], campaign: dict[str, Any]
+) -> list[dict[str, str]]:
+    """Derive books that the character necessarily finished by the branch date.
+
+    Curriculum books are read at the start of an attended school year.  The
+    recreational slots in both school and adult years mature on September 1,
+    January 1, and June 1 respectively.  This is a projection only: it does not
+    duplicate deterministic biography into world.json or campaign.json.
+    """
+
+    plan = person.get("development_plan")
+    if not isinstance(plan, dict):
+        return []
+    boundary = _book_history_boundary(campaign)
+    schools = {
+        str(item.get("name", "")).strip().casefold(): item
+        for item in database.get("schools", []) or []
+        if isinstance(item, dict) and str(item.get("name", "")).strip()
+    }
+    readings: list[dict[str, str]] = []
+
+    def add(book: Any, when: tuple[int, int, int], source: str) -> None:
+        if when > boundary:
+            return
+        if isinstance(book, dict):
+            book_id = str(book.get("record_id") or book.get("book_id") or "")
+        else:
+            book_id = str(book or "")
+        if book_id:
+            readings.append({
+                "person_id": str(person.get("record_id") or ""),
+                "book_id": book_id,
+                "date": f"{when[0]}-{when[1]:02d}-{when[2]:02d}",
+                "source": source,
+            })
+
+    def recreational(records: list[Any], start: tuple[int, int, int], source: str) -> None:
+        next_year = _historical_year_shift(start[0], 1)
+        dates = ((start[0], 9, 1), (next_year, 1, 1), (next_year, 6, 1))
+        for index, book in enumerate(records[:3]):
+            add(book, dates[index], source)
+
+    school_records = plan.get("school_years", []) or []
+    for raw_year in school_records if isinstance(school_records, list) else []:
+        if not isinstance(raw_year, dict):
+            continue
+        try:
+            school_year = int(raw_year.get("year"))
+        except (TypeError, ValueError):
+            continue
+        start = _school_year_start(person, school_year)
+        if start is None:
+            continue
+        school_name = str(raw_year.get("school") or person.get("school") or "").strip()
+        school = schools.get(school_name.casefold())
+        if school is not None and not bool(raw_year.get("skipped", False)):
+            curriculum = next((
+                item for item in school.get("curriculum", []) or []
+                if isinstance(item, dict) and str(item.get("year")) == str(school_year)
+            ), {})
+            allowed_courses = {
+                str(value).strip().casefold()
+                for value in curriculum.get("core", []) or []
+                if str(value).strip()
+            }
+            offered_electives = {
+                str(value).strip().casefold()
+                for value in curriculum.get("electives", []) or []
+                if str(value).strip()
+            }
+            selected_electives = {
+                str(value).strip().casefold()
+                for value in raw_year.get("electives", []) or []
+                if str(value).strip()
+            }
+            allowed_courses.update(offered_electives & selected_electives)
+            for assignment in school.get("course_books", []) or []:
+                if not isinstance(assignment, dict):
+                    continue
+                if str(assignment.get("year")) != str(school_year):
+                    continue
+                if str(assignment.get("course", "")).strip().casefold() not in allowed_courses:
+                    continue
+                add(
+                    assignment,
+                    start,
+                    f"{school_name or 'School'} Year {school_year}",
+                )
+        recreational(
+            list(raw_year.get("books", []) or []),
+            start,
+            f"Recreational reading, school year {school_year}",
+        )
+
+    school_one = _school_year_start(person, 1)
+    for raw_year in plan.get("adult_years", []) or []:
+        if not isinstance(raw_year, dict) or school_one is None:
+            continue
+        try:
+            adult_year = int(raw_year.get("adult_year") or raw_year.get("year"))
+        except (TypeError, ValueError):
+            continue
+        start_year = _historical_year_shift(school_one[0], 7 + adult_year - 1)
+        recreational(
+            list(raw_year.get("books", []) or []),
+            (start_year, 9, 1),
+            f"Recreational reading, adult year {adult_year}",
+        )
+    return readings
+
+
 def _record_index(database: dict[str, Any], collection: str) -> dict[str, dict[str, Any]]:
     return {
         str(item.get("record_id", "")): item
@@ -190,7 +316,13 @@ def _knowledge(
     grants: dict[str, dict[str, tuple[str, str]]] = {
         "spell": {}, "proficiency": {}, "recipe": {},
     }
-    for reading in _effective_book_readings(world, campaign):
+    readings = _effective_book_readings(world, campaign)
+    readings.extend(_development_year_readings(
+        next((item for item in world.get("people", []) or [] if isinstance(item, dict) and str(item.get("record_id", "")) == person_id), {}),
+        database,
+        campaign,
+    ))
+    for reading in readings:
         if not isinstance(reading, dict) or str(reading.get("person_id", "")) != person_id:
             continue
         book_id = str(reading.get("book_id", ""))
@@ -199,7 +331,8 @@ def _knowledge(
             continue
         for kind, collection, record_id, source in _book_contents(book):
             if kind in grants and record_id:
-                grants[kind].setdefault(record_id, (collection, f"Read {source}"))
+                reading_source = str(reading.get("source") or f"Read {source}")
+                grants[kind].setdefault(record_id, (collection, reading_source))
 
     for event in events:
         kind = TEACHING_TYPES.get(str(event.get("event_type", "")))

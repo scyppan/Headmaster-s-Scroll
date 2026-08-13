@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "_headmasters_scroll": {
-    "revision_id": "83bcd1d2-3509-448b-9a98-916c4769334c",
-    "last_modified_at": "2026-08-13T11:49:12.423747Z",
+    "revision_id": "8ebe782f-3ec0-4124-b600-0585b95de8be",
+    "last_modified_at": "2026-08-13T13:56:57.708947Z",
     "last_modified_by": "game-board"
   },
   "campaigns": [
@@ -11,7 +11,7 @@
       "created_at": "2026-08-11T08:19:23.069609Z",
       "name": "Test camp",
       "game_world_start_date": "2000-08-27",
-      "last_updated": "2026-08-13T11:49:12.420059Z",
+      "last_updated": "2026-08-13T13:56:57.705027Z",
       "game_state": {
         "initialized": true,
         "current_game_datetime": "2000-08-27T08:00",
@@ -225,8 +225,8 @@
             "start_point": null,
             "headmaster_camera": {
               "zoom": 5.200894613889844,
-              "center_x": 0.8431264827684976,
-              "center_y": 0.49873553561257594
+              "center_x": 0.843126482768498,
+              "center_y": 0.49873553561257583
             },
             "player_cameras": {
               "6ca9e551-e305-4c3c-a763-d2ff9a13afff": {
@@ -244,6 +244,27 @@
             }
           },
           "e3b02941-1bac-4b0f-a91d-095d27989325": {
+            "players_published": false,
+            "obscurations": [],
+            "obscuration_preview_opacity": 0.35,
+            "obscuration_preview_color": "#ff0000",
+            "token_scale": 0.0055,
+            "start_point": null,
+            "headmaster_camera": {
+              "zoom": 1.0,
+              "center_x": 0.5,
+              "center_y": 0.5
+            },
+            "player_cameras": {},
+            "zoom_profile": {
+              "default_zoom": 1.0,
+              "default_center_x": 0.5,
+              "default_center_y": 0.5,
+              "default_nameplate_size": 10,
+              "tiers": {}
+            }
+          },
+          "cbb468df-c46b-44db-8a1a-e698cca7fbf6": {
             "players_published": false,
             "obscurations": [],
             "obscuration_preview_opacity": 0.35,
@@ -939,8 +960,8 @@
               "location_id": "38b8b79b-0785-4213-826e-0e65998d3b41",
               "floor_id": "",
               "map_id": "a5a85bd9-e989-4069-936c-8acda64f0fdd",
-              "x": 0.8674617014647045,
-              "y": 0.5325079465136516
+              "x": 0.8691912956307987,
+              "y": 0.5290132620535738
             },
             "visibility": "players",
             "display_mode": "token",
@@ -948,8 +969,8 @@
             "faction_revealed": true,
             "faction_organization_id": "c4cbf003-ab52-4da7-b341-e2cea0e34062",
             "label_offset": {
-              "x": -0.00046661019382123836,
-              "y": 0.011251605911420857
+              "x": 0.001918405362206273,
+              "y": -0.0022297175404103267
             },
             "nameplate_scale": 0.9,
             "wounds": [],

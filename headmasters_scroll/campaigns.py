@@ -18,6 +18,7 @@ GAME_WORLD_DATETIME = re.compile(r"^-?[1-9]\d*-\d{2}-\d{2}T\d{2}:\d{2}$")
 HISTORY_KEEP = "keep"
 HISTORY_DISCARD = "discard"
 HISTORY_POLICIES = {HISTORY_KEEP, HISTORY_DISCARD}
+REQUEST_STATUSES = {"pending", "approved", "rejected"}
 
 LEGACY_GENERATED_ZOOM_TIERS = {
     "0": {"token_size": 0, "nameplate_size": 11},
@@ -349,6 +350,33 @@ def normalize_campaign(value: Any) -> dict[str, Any]:
         event_ids.add(record_id)
         events.append(event)
     result["events"] = events
+    raw_requests = value.get("requests", []) or []
+    if not isinstance(raw_requests, list):
+        raise ValueError("Campaign requests must be a list")
+    requests: list[dict[str, Any]] = []
+    request_ids: set[str] = set()
+    for raw_request in raw_requests:
+        if not isinstance(raw_request, dict):
+            raise ValueError("Every campaign request must be an object")
+        request = deepcopy(raw_request)
+        request_id = str(request.get("record_id", "") or "").strip()
+        request_type = str(request.get("request_type", "") or "").strip()
+        status = str(request.get("status", "pending") or "pending").strip().casefold()
+        if not request_id or request_id in request_ids:
+            raise ValueError("Campaign request IDs must be present and unique")
+        if not request_type:
+            raise ValueError("Every campaign request requires a type")
+        if status not in REQUEST_STATUSES:
+            raise ValueError("Campaign request status is invalid")
+        request.update({
+            "record_id": request_id,
+            "request_type": request_type,
+            "status": status,
+            "submitted_at": str(request.get("submitted_at", "") or "").strip(),
+        })
+        request_ids.add(request_id)
+        requests.append(request)
+    result["requests"] = requests
     result["game_state"] = normalize_campaign_game_state(
         value.get("game_state"), result["game_world_start_date"]
     )
@@ -546,6 +574,84 @@ class CampaignRepository:
             raise RuntimeError("The campaign changed elsewhere; reload before saving")
         return deepcopy(event)
 
+    def add_request(
+        self,
+        campaign_id: str,
+        request_type: str,
+        details: dict[str, Any],
+        *,
+        app_id: str = "game-board",
+    ) -> dict[str, Any]:
+        session = self.store.load("campaign.json")
+        campaign = next((item for item in session.data["campaigns"] if item.get("record_id") == campaign_id), None)
+        if campaign is None:
+            raise KeyError("Unknown campaign")
+        request = deepcopy(details)
+        request.update({
+            "record_id": str(uuid4()),
+            "request_type": str(request_type or "").strip(),
+            "status": "pending",
+            "submitted_at": utc_now(),
+        })
+        campaign.setdefault("requests", []).append(request)
+        campaign["last_updated"] = utc_now()
+        normalized = normalize_campaign(campaign)
+        campaign.clear()
+        campaign.update(normalized)
+        outcome = self.store.save(session, app_id)
+        if not outcome.saved:
+            raise RuntimeError("The campaign changed elsewhere; reload before saving")
+        return deepcopy(request)
+
+    def resolve_request(
+        self,
+        campaign_id: str,
+        request_id: str,
+        decision: str,
+        *,
+        event_type: str = "",
+        event_date: str = "",
+        event_time: str = "",
+        event_details: dict[str, Any] | None = None,
+        app_id: str = "game-board",
+    ) -> dict[str, Any]:
+        """Resolve a request and append its approved event in one atomic save."""
+
+        normalized_decision = str(decision or "").strip().casefold()
+        if normalized_decision not in {"approved", "rejected"}:
+            raise ValueError("A request must be approved or rejected")
+        session = self.store.load("campaign.json")
+        campaign = next((item for item in session.data["campaigns"] if item.get("record_id") == campaign_id), None)
+        if campaign is None:
+            raise KeyError("Unknown campaign")
+        request = next((item for item in campaign.get("requests", []) or [] if item.get("record_id") == request_id), None)
+        if request is None:
+            raise KeyError("Unknown campaign request")
+        if str(request.get("status", "pending")) != "pending":
+            raise ValueError("Only pending requests can be resolved")
+        request["status"] = normalized_decision
+        request["resolved_at"] = utc_now()
+        if normalized_decision == "approved":
+            if not event_type:
+                raise ValueError("An approved request requires an event type")
+            event = deepcopy(event_details) if isinstance(event_details, dict) else {}
+            event.update({
+                "record_id": str(uuid4()),
+                "event_type": str(event_type).strip(),
+                "date": normalize_game_world_date(event_date),
+                "time": str(event_time or "").strip(),
+            })
+            request["event_id"] = event["record_id"]
+            campaign.setdefault("events", []).append(event)
+        campaign["last_updated"] = utc_now()
+        normalized = normalize_campaign(campaign)
+        campaign.clear()
+        campaign.update(normalized)
+        outcome = self.store.save(session, app_id)
+        if not outcome.saved:
+            raise RuntimeError("The campaign changed elsewhere; reload before saving")
+        return deepcopy(request)
+
     def save_campaign(
         self,
         name: str,
@@ -581,6 +687,7 @@ class CampaignRepository:
                 else campaign.get("history_policy", HISTORY_KEEP)
             ).strip().casefold(),
             "events": deepcopy(campaign.get("events", []) or []),
+            "requests": deepcopy(campaign.get("requests", []) or []),
             "last_updated": now,
         })
         normalized = normalize_campaign(campaign)

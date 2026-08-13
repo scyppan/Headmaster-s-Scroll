@@ -778,6 +778,7 @@ class GameBoardWindow(tk.Tk):
         self._board_token_preview_after_id: str | None = None
         self.board_settings_window: tk.Toplevel | None = None
         self._known_pending_ids: set[str] = set()
+        self._known_campaign_request_ids: set[str] = set()
         self._chat_layout_after_id: str | None = None
         self._chat_layout_compact: bool | None = None
         self.title("Game Board — Headmaster Controls")
@@ -905,7 +906,11 @@ class GameBoardWindow(tk.Tk):
             pady=12,
         ).pack(fill="x")
         self.sidebar_buttons: dict[str, tk.Button] = {}
-        for key, label in (("game-board", "Game Board"), ("control-panel", "Control Room")):
+        for key, label in (
+            ("game-board", "Game Board"),
+            ("requests", "Requests"),
+            ("control-panel", "Control Room"),
+        ):
             button = tk.Button(
                 sidebar,
                 text=label,
@@ -924,6 +929,7 @@ class GameBoardWindow(tk.Tk):
             button.pack(fill="x", pady=(0, 1))
             self.sidebar_buttons[key] = button
         self.control_panel_button = self.sidebar_buttons["control-panel"]
+        self.requests_button = self.sidebar_buttons["requests"]
         self._build_headmaster_tool_rail(self.workspace)
 
         self.app_host = ttk.Frame(self.workspace)
@@ -943,7 +949,14 @@ class GameBoardWindow(tk.Tk):
 
         control_panel = ttk.Frame(self.app_host)
         control_panel.grid(row=0, column=0, sticky="nsew")
-        self.app_pages = {"game-board": game_board_page, "control-panel": control_panel}
+        requests_page = ttk.Frame(self.app_host)
+        requests_page.grid(row=0, column=0, sticky="nsew")
+        self.app_pages = {
+            "game-board": game_board_page,
+            "requests": requests_page,
+            "control-panel": control_panel,
+        }
+        self._build_requests_page(requests_page)
         control_header = ttk.Frame(control_panel)
         control_header.pack(fill="x", pady=(0, 8))
         ttk.Label(control_header, text="Control Room", style="Title.TLabel").pack(side="left")
@@ -3809,6 +3822,7 @@ class GameBoardWindow(tk.Tk):
         popup = tk.Menu(self, tearoff=False)
         self._piece_popup = popup
         popup.add_command(label=str(actor.get("name") or "Unknown occupant"), state="disabled")
+        popup.add_command(label="Teach...", command=self.teach_selected_actor)
         popup.add_separator()
         visible = actor.get("visibility") == "players"
         popup.add_command(label="Transport…", command=self.transport_selected_actor)
@@ -3856,6 +3870,95 @@ class GameBoardWindow(tk.Tk):
             popup.tk_popup(root_x, root_y)
         finally:
             popup.grab_release()
+
+    def _searchable_record_panel(
+        self, parent: tk.Misc, records: list[dict[str, Any]],
+        selected: tk.StringVar, *, height: int = 8,
+    ) -> ttk.Frame:
+        """Search-first chooser used for large core-data collections."""
+        shell = ttk.Frame(parent)
+        query = tk.StringVar()
+        entry = ttk.Entry(shell, textvariable=query)
+        entry.pack(fill="x", pady=(0, 4))
+        listing = tk.Listbox(shell, height=height, exportselection=False)
+        listing.pack(fill="both", expand=True)
+        visible: list[dict[str, Any]] = []
+
+        def render(*_args: Any) -> None:
+            term = query.get().strip().casefold()
+            visible[:] = [item for item in records if not term or term in str(item.get("name") or "").casefold()][:500]
+            listing.delete(0, "end")
+            for item in visible:
+                listing.insert("end", str(item.get("name") or "Unknown"))
+
+        def choose(_event: tk.Event | None = None) -> None:
+            indices = listing.curselection()
+            if indices:
+                selected.set(str(visible[indices[0]].get("record_id") or ""))
+
+        query.trace_add("write", render)
+        listing.bind("<<ListboxSelect>>", choose)
+        listing.bind("<Double-Button-1>", choose)
+        render()
+        shell.after_idle(entry.focus_set)
+        return shell
+
+    def teach_selected_actor(self) -> None:
+        actor = self._selected_board_actor()
+        if not actor or not self.selected_session_id:
+            return
+        catalog = self.state_data.get("teaching_catalog", {}) or {}
+        dialog = tk.Toplevel(self)
+        dialog.title(f"Teach — {actor.get('name') or 'Pupil'}")
+        dialog.transient(self)
+        dialog.grab_set()
+        dialog.geometry("620x500")
+        apply_window_icon(dialog, GAME_BOARD_ICON)
+        shell = ttk.Frame(dialog, padding=10)
+        shell.pack(fill="both", expand=True)
+        ttk.Label(shell, text="Pupil", style="CardTitle.TLabel").pack(anchor="w")
+        pupil = tk.StringVar(value=str(actor.get("actor_id") or ""))
+        characters = [
+            {"record_id": item["id"], "name": item["name"]}
+            for item in self.state_data.get("characters", [])
+        ]
+        self._searchable_record_panel(shell, characters, pupil, height=6).pack(
+            fill="both", expand=True, pady=(0, 8)
+        )
+        ttk.Label(shell, text="Subject", style="CardTitle.TLabel").pack(anchor="w")
+        kind = tk.StringVar(value="spell")
+        chosen = tk.StringVar()
+        kinds = ttk.Frame(shell)
+        kinds.pack(fill="x", pady=(8, 0))
+        chooser_host = ttk.Frame(shell)
+        chooser_host.pack(fill="both", expand=True, pady=8)
+
+        def render_kind() -> None:
+            for child in chooser_host.winfo_children():
+                child.destroy()
+            chosen.set("")
+            self._searchable_record_panel(chooser_host, list(catalog.get(kind.get(), []) or []), chosen, height=14).pack(fill="both", expand=True)
+
+        for value, label in (("spell", "Spells"), ("proficiency", "Proficiencies"), ("recipe", "Recipes")):
+            ttk.Radiobutton(kinds, text=label, variable=kind, value=value, command=render_kind).pack(side="left", padx=(0, 12))
+        render_kind()
+
+        def teach() -> None:
+            record_id = chosen.get()
+            record = next((item for item in catalog.get(kind.get(), []) if item.get("record_id") == record_id), None)
+            if record is None:
+                messagebox.showinfo("Teach", "Choose a subject from the search results.", parent=dialog)
+                return
+            if not pupil.get():
+                messagebox.showinfo("Teach", "Choose a pupil from the search results.", parent=dialog)
+                return
+            payload = {"session_id": self.selected_session_id, "pupil_person_id": pupil.get(), "knowledge_kind": kind.get(), "knowledge_record_id": record_id, "knowledge_collection": record.get("collection", "")}
+            self._background(lambda: self.client.request("POST", "/api/admin/teaching", payload), lambda _result: (dialog.destroy(), self.refresh(silent=True)))
+
+        actions = ttk.Frame(shell)
+        actions.pack(fill="x")
+        ttk.Button(actions, text="Cancel", style="Quiet.TButton", command=dialog.destroy).pack(side="right")
+        ttk.Button(actions, text="Teach", command=teach).pack(side="right", padx=(0, 6))
 
     def transport_selected_actor(self) -> None:
         actor = self._selected_board_actor()
@@ -5006,6 +5109,85 @@ class GameBoardWindow(tk.Tk):
                 activeforeground="#fff8e7" if active else self.INK,
             )
 
+    def _build_requests_page(self, parent: tk.Misc) -> None:
+        header = ttk.Frame(parent)
+        header.pack(fill="x", pady=(0, 8))
+        ttk.Label(header, text="Requests", style="Title.TLabel").pack(side="left")
+        ttk.Label(header, text="Player actions awaiting review", style="Status.TLabel").pack(side="left", padx=12)
+        columns = ("request", "campaign", "submitted")
+        self.requests_tree = ttk.Treeview(parent, columns=columns, show="headings", selectmode="browse")
+        for key, label, width in (("request", "Request", 480), ("campaign", "Campaign", 180), ("submitted", "Submitted", 175)):
+            self.requests_tree.heading(key, text=label)
+            self.requests_tree.column(key, width=width, minwidth=80, stretch=key == "request")
+        self.requests_tree.pack(fill="both", expand=True)
+        actions = ttk.Frame(parent)
+        actions.pack(fill="x", pady=(6, 0))
+        ttk.Button(actions, text="Reject", style="Danger.TButton", command=lambda: self.resolve_selected_request("rejected")).pack(side="right")
+        ttk.Button(actions, text="Edit & Approve...", style="Quiet.TButton", command=self.edit_selected_request).pack(side="right", padx=6)
+        ttk.Button(actions, text="Approve", command=lambda: self.resolve_selected_request("approved")).pack(side="right")
+
+    def _selected_campaign_request(self) -> dict[str, Any] | None:
+        selected = self.requests_tree.selection() if hasattr(self, "requests_tree") else ()
+        if not selected:
+            return None
+        return next((item for item in self.state_data.get("requests", []) if item.get("record_id") == selected[0]), None)
+
+    def resolve_selected_request(self, decision: str, overrides: dict[str, str] | None = None) -> None:
+        request = self._selected_campaign_request()
+        if request is None:
+            messagebox.showinfo("Requests", "Select a request first.", parent=self)
+            return
+        payload = {"campaign_id": request["campaign_id"], "decision": decision}
+        payload.update(overrides or {})
+        self._background(lambda: self.client.request("POST", f"/api/admin/requests/{request['record_id']}/resolve", payload), lambda _result: self.refresh(silent=True))
+
+    def edit_selected_request(self) -> None:
+        request = self._selected_campaign_request()
+        if request is None or request.get("request_type") != "teaching":
+            messagebox.showinfo("Requests", "Select a teaching request to edit.", parent=self)
+            return
+        # The edit dialog intentionally uses search lists, never a select box.
+        dialog = tk.Toplevel(self)
+        dialog.title("Edit Teaching Request")
+        dialog.transient(self)
+        dialog.grab_set()
+        dialog.geometry("720x560")
+        apply_window_icon(dialog, GAME_BOARD_ICON)
+        shell = ttk.Frame(dialog, padding=10)
+        shell.pack(fill="both", expand=True)
+        characters = [{"record_id": item["id"], "name": item["name"]} for item in self.state_data.get("characters", [])]
+        pupil = tk.StringVar(value=str(request.get("pupil_person_id") or ""))
+        kind = tk.StringVar(value="spell" if request.get("knowledge_collection") == "spells" else "proficiency" if request.get("knowledge_collection") == "proficiencies" else "recipe")
+        subject = tk.StringVar(value=str(request.get("knowledge_record_id") or ""))
+        ttk.Label(shell, text="Pupil", style="CardTitle.TLabel").pack(anchor="w")
+        self._searchable_record_panel(shell, characters, pupil, height=7).pack(fill="both", expand=True, pady=(0, 8))
+        kind_row = ttk.Frame(shell)
+        kind_row.pack(fill="x")
+        subject_host = ttk.Frame(shell)
+        subject_host.pack(fill="both", expand=True, pady=8)
+
+        def render_subjects() -> None:
+            for child in subject_host.winfo_children(): child.destroy()
+            choices = list((self.state_data.get("teaching_catalog", {}) or {}).get(kind.get(), []) or [])
+            if not any(item.get("record_id") == subject.get() for item in choices):
+                subject.set("")
+            self._searchable_record_panel(subject_host, choices, subject, height=8).pack(fill="both", expand=True)
+
+        for value, label in (("spell", "Spells"), ("proficiency", "Proficiencies"), ("recipe", "Recipes")):
+            ttk.Radiobutton(kind_row, text=label, variable=kind, value=value, command=render_subjects).pack(side="left", padx=(0, 10))
+        render_subjects()
+        actions = ttk.Frame(shell)
+        actions.pack(fill="x")
+        ttk.Button(actions, text="Cancel", style="Quiet.TButton", command=dialog.destroy).pack(side="right")
+        def approve() -> None:
+            record = next((item for item in (self.state_data.get("teaching_catalog", {}) or {}).get(kind.get(), []) if item.get("record_id") == subject.get()), None)
+            if not pupil.get() or record is None:
+                messagebox.showinfo("Requests", "Choose both a pupil and a subject.", parent=dialog)
+                return
+            self.resolve_selected_request("approved", {"pupil_person_id": pupil.get(), "knowledge_kind": kind.get(), "knowledge_record_id": subject.get(), "knowledge_collection": record.get("collection", "")})
+            dialog.destroy()
+        ttk.Button(actions, text="Approve changes", command=approve).pack(side="right", padx=(0, 6))
+
     def show_control_page(self, key: str) -> None:
         self.show_app_page("control-panel")
         page = self.control_pages[key]
@@ -5779,6 +5961,31 @@ class GameBoardWindow(tk.Tk):
         self._render_chat(list((session or {}).get("chat", [])))
         self._replace_tree(self.pending_tree, pending_rows)
         self._replace_tree(self.invites_tree, invite_rows)
+        campaign_requests = list(state.get("requests", []) or [])
+        if hasattr(self, "requests_tree"):
+            self._replace_tree(self.requests_tree, [
+                (
+                    str(item.get("record_id")),
+                    (
+                        str(item.get("request_summary") or item.get("request_type") or "Request"),
+                        str(item.get("campaign_name") or ""),
+                        str(item.get("submitted_at") or "")[:16].replace("T", " "),
+                    ),
+                )
+                for item in campaign_requests
+            ])
+        request_count = len(campaign_requests)
+        request_ids = {str(item.get("record_id")) for item in campaign_requests}
+        new_request_ids = request_ids - self._known_campaign_request_ids
+        self._known_campaign_request_ids.update(request_ids)
+        self.requests_button.configure(
+            text=f"Requests ({request_count})" if request_count else "Requests"
+        )
+        if new_request_ids:
+            self.bell()
+            self.set_notice(
+                f"{len(new_request_ids)} new player request{'s' if len(new_request_ids) != 1 else ''} awaiting review"
+            )
         self._update_invite_count()
         self._update_admission_alert(pending_rows)
 

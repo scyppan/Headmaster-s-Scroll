@@ -84,10 +84,16 @@ class ChatBody(BaseModel):
 
 class TeachingBody(BaseModel):
     session_id: str = Field(min_length=1, max_length=100)
+    teacher_person_id: str = Field(min_length=1, max_length=100)
     pupil_person_id: str = Field(min_length=1, max_length=100)
     knowledge_kind: str = Field(min_length=1, max_length=30)
     knowledge_record_id: str = Field(min_length=1, max_length=120)
     knowledge_collection: str = Field(default="", max_length=80)
+
+
+class TeachingOptionsBody(BaseModel):
+    session_id: str = Field(min_length=1, max_length=100)
+    teacher_person_id: str = Field(min_length=1, max_length=100)
 
 
 class RequestResolutionBody(BaseModel):
@@ -1185,10 +1191,21 @@ def create_apps(
             body.knowledge_kind,
             body.knowledge_record_id,
             knowledge_collection=body.knowledge_collection,
+            teacher_person_id=body.teacher_person_id,
         )
         await runtime.broadcast_character_sheets(body.session_id)
         await runtime.notify_admins()
         return result
+
+    @admin_app.post(
+        "/api/admin/teaching/options", dependencies=[Depends(admin_guard)]
+    )
+    async def teaching_options(body: TeachingOptionsBody):
+        return admin_result(
+            service.teaching_options,
+            body.session_id,
+            body.teacher_person_id,
+        )
 
     @admin_app.post(
         "/api/admin/requests/{request_id}/resolve",

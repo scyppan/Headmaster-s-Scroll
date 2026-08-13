@@ -211,6 +211,83 @@ class GameBoardService:
             raise ValueError("The teaching subject does not belong to that collection")
         return campaign, pupil, record
 
+    def _sheet_for_person(
+        self, session_id: str, person_id: str,
+    ) -> dict[str, Any]:
+        """Build one character's date-effective sheet without exposing the world."""
+        session = self._board_context(session_id)
+        campaign, document = self._campaign_document(session)
+        person = next((
+            item for item in document.get("people", []) or []
+            if isinstance(item, dict) and str(item.get("record_id", "")) == person_id
+        ), None)
+        if person is None:
+            raise KeyError("Unknown teacher")
+        try:
+            database = self.shared_store.load("db.json").data
+        except FileNotFoundError:
+            database = {
+                "schools": [], "spells": [], "proficiencies": [],
+                "potions": [], "preparations": [], "foods_and_drinks": [],
+                "creatures": [], "books": [],
+            }
+        return build_character_sheet(person, document, database, campaign)
+
+    def teaching_options(
+        self, session_id: str, teacher_person_id: str,
+    ) -> dict[str, Any]:
+        """Return only subjects known by the teacher and pupils on the same map."""
+        with self._lock:
+            snapshot = self.board_snapshot(session_id, for_players=False)
+            actors = [
+                item for item in snapshot.get("actors", []) or []
+                if isinstance(item, dict)
+            ]
+            teacher = next((
+                item for item in actors
+                if str(item.get("actor_id", "")) == teacher_person_id
+            ), None)
+            if teacher is None or not str(teacher.get("map_id", "")):
+                raise ValueError("The teacher must be present on an open map")
+            map_id = str(teacher["map_id"])
+            pupils = sorted((
+                {
+                    "record_id": str(item.get("actor_id", "")),
+                    "name": str(item.get("true_name") or item.get("name") or "Unknown"),
+                    "map_id": map_id,
+                }
+                for item in actors
+                if str(item.get("map_id", "")) == map_id
+                and str(item.get("actor_id", "")) != teacher_person_id
+            ), key=lambda item: (item["name"].casefold(), item["record_id"]))
+            sheet = self._sheet_for_person(session_id, teacher_person_id)
+            return {
+                "teacher": {
+                    "record_id": teacher_person_id,
+                    "name": str(teacher.get("true_name") or teacher.get("name") or "Unknown"),
+                    "map_id": map_id,
+                },
+                "pupils": pupils,
+                "spell": deepcopy(sheet.get("spells", []) or []),
+                "proficiency": deepcopy(sheet.get("proficiencies", []) or []),
+                "recipe": deepcopy(sheet.get("recipes", []) or []),
+            }
+
+    def _validate_teaching_action(
+        self, session_id: str, teacher_person_id: str, pupil_person_id: str,
+        knowledge_kind: str, knowledge_record_id: str,
+    ) -> dict[str, Any]:
+        options = self.teaching_options(session_id, teacher_person_id)
+        if not any(item["record_id"] == pupil_person_id for item in options["pupils"]):
+            raise PermissionError("The pupil must be on the same map as the teacher")
+        kind = str(knowledge_kind or "").strip().casefold()
+        if not any(
+            str(item.get("record_id", "")) == knowledge_record_id
+            for item in options.get(kind, [])
+        ):
+            raise PermissionError("That character does not know this subject")
+        return options
+
     @staticmethod
     def _teaching_event_details(
         pupil: dict[str, Any], record: dict[str, str], kind: str,
@@ -238,6 +315,13 @@ class GameBoardService:
     ) -> dict[str, Any]:
         with self._lock:
             normalized_kind = str(knowledge_kind or "").strip().casefold()
+            if not teacher_person_id:
+                raise ValueError("Choose the character who is teaching")
+            options = self._validate_teaching_action(
+                session_id, teacher_person_id, pupil_person_id,
+                normalized_kind, knowledge_record_id,
+            )
+            teacher_name = str(options["teacher"]["name"])
             campaign, pupil, record = self._teaching_context(
                 session_id, pupil_person_id, knowledge_kind,
                 knowledge_record_id, knowledge_collection,
@@ -268,6 +352,10 @@ class GameBoardService:
             known = next((item for item in (sheet or {}).get(key or "", []) if str(item.get("record_id")) == knowledge_record_id), None)
             if known is None:
                 raise PermissionError("That character does not know this subject")
+            self._validate_teaching_action(
+                session_id, teacher_id, pupil_person_id,
+                knowledge_kind, knowledge_record_id,
+            )
             campaign, pupil, record = self._teaching_context(
                 session_id, pupil_person_id, knowledge_kind,
                 knowledge_record_id, knowledge_collection,
@@ -1228,21 +1316,12 @@ class GameBoardService:
                     "foods_and_drinks": [], "creatures": [], "books": [],
                 }
             sheet = build_character_sheet(person, document, database, campaign)
-            people = {
-                str(item.get("record_id", "")): item
-                for item in document.get("people", []) or [] if isinstance(item, dict)
-            }
-            sheet["teaching_targets"] = sorted((
-                {
-                    "record_id": str(player.get("character_id")),
-                    "name": str(
-                        people.get(str(player.get("character_id")), {}).get("displayed_name")
-                        or player.get("character_name") or player.get("name") or "Player"
-                    ),
-                }
-                for player in session.get("roster", []) or []
-                if player.get("character_id") and str(player.get("character_id")) != character_id
-            ), key=lambda item: (item["name"].casefold(), item["record_id"]))
+            try:
+                sheet["teaching_targets"] = self.teaching_options(
+                    session_id, character_id
+                )["pupils"]
+            except (KeyError, ValueError):
+                sheet["teaching_targets"] = []
             return sheet
 
     def roll_character_action(

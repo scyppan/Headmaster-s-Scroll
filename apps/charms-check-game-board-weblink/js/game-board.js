@@ -832,60 +832,97 @@
     }
 
     renderKnowledgePanel(content, collection) {
+      return this.renderKnowledgeCatalog(content, collection);
+    }
+
+    renderKnowledgeCatalog(content, collection) {
       const records = this.characterSheet && this.characterSheet[collection];
       if (!records) return this.sheetUnavailable(content, collection);
       const singular = { spells: 'spell', proficiencies: 'proficiency', recipes: 'recipe' }[collection];
-      const fieldValues = field => [...new Set(records.map(item => item[field]).filter(Boolean))].sort();
+      const fieldValues = field => [...new Set(records.map(item => String(item[field] || '')).filter(Boolean))].sort((a, b) => a.localeCompare(b));
       const optionList = (field, label) => `<select data-catalog-filter="${field}" aria-label="Filter by ${label}"><option value="">All ${label}</option>${fieldValues(field).map(value => `<option value="${this.escapeHtml(value)}">${this.escapeHtml(value)}</option>`).join('')}</select>`;
-      content.className = 'ccgb-catalog-panel';
+      content.className = 'ccgb-knowledge-browser';
       content.innerHTML = `
         <div class="ccgb-catalog-tools">
           <input type="search" data-catalog-search placeholder="Search ${collection}">
           ${optionList('skill', 'skills')}
           ${optionList('source', 'sources')}
           ${collection === 'spells' ? optionList('subtype', 'subtypes') : ''}
-          <label class="ccgb-threshold-filter">Difficulty &le; <input type="number" min="0" data-catalog-threshold placeholder="Any"></label>
+          <label class="ccgb-threshold-filter">Difficulty <input type="number" min="0" data-catalog-min placeholder="Min"><span>–</span><input type="number" min="0" data-catalog-max placeholder="Max"></label>
+          <select data-catalog-sort aria-label="Sort results"><option value="name">Name A–Z</option><option value="difficulty">Difficulty</option><option value="skill">Skill</option><option value="source">Source</option></select>
           <label><input type="checkbox" data-favorites-only> Favorites</label>
           <button type="button" class="ccgb-teach-open" data-teach-open>Teach...</button>
         </div>
         <section class="ccgb-teach-panel" data-teach-panel hidden>
-          <strong>Submit a teaching request</strong>
-          <input type="search" data-teach-pupil-search placeholder="Search pupils" autocomplete="off">
-          <div class="ccgb-teach-choices" data-teach-pupils></div>
-          <input type="search" data-teach-subject-search placeholder="Search ${collection}" autocomplete="off">
-          <div class="ccgb-teach-choices" data-teach-subjects></div>
+          <header><strong>Submit a teaching request</strong><span>Only characters on your map are available.</span></header>
+          <div class="ccgb-teach-columns">
+            <div><label>Pupil</label><input type="search" data-teach-pupil-search placeholder="Search nearby characters" autocomplete="off"><div class="ccgb-teach-choices" data-teach-pupils></div></div>
+            <div><label>Known ${singular}</label><div class="ccgb-teach-filter-row"><input type="search" data-teach-subject-search placeholder="Search known ${collection}" autocomplete="off"><select data-teach-skill><option value="">All skills</option>${fieldValues('skill').map(value => `<option value="${this.escapeHtml(value)}">${this.escapeHtml(value)}</option>`).join('')}</select><select data-teach-sort><option value="name">Name</option><option value="difficulty">Difficulty</option><option value="skill">Skill</option></select></div><div class="ccgb-teach-choices" data-teach-subjects></div></div>
+          </div>
           <p data-teach-selection>Select a pupil and subject.</p>
           <div><button type="button" data-teach-cancel>Cancel</button><button type="button" data-teach-submit disabled>Send request</button></div>
         </section>
-        <div class="ccgb-catalog-list">${records.map(record => {
-          const favoriteKey = `${collection}:${record.record_id}`;
-          return `<article class="ccgb-catalog-item" data-search="${this.escapeHtml([record.name, record.skill, record.subtype, record.source, record.description].join(' ').toLowerCase())}" data-skill="${this.escapeHtml(record.skill || '')}" data-source="${this.escapeHtml(record.source || '')}" data-subtype="${this.escapeHtml(record.subtype || '')}" data-threshold="${record.threshold == null ? '' : Number(record.threshold)}" data-favorite="${this.favorites.has(favoriteKey)}">
-            <button class="ccgb-favorite ${this.favorites.has(favoriteKey) ? 'is-favorite' : ''}" data-favorite-key="${this.escapeHtml(favoriteKey)}" title="Favorite">&#9733;</button>
-            <button class="ccgb-record-main" data-roll-type="${singular}" data-target-id="${this.escapeHtml(record.record_id)}" title="Roll ${this.escapeHtml(record.name)}"><strong>${this.escapeHtml(record.name)}</strong><span>${this.escapeHtml(record.skill || record.collection || '')}${record.threshold == null ? '' : ` - ${record.threshold}`}</span></button>
-            <details><summary>Details</summary><p>${this.escapeHtml(record.description || record.raw_effect || record.raw_effects || 'No description recorded.')}</p>${this.renderRecordRequirements(record)}<small>${this.escapeHtml(record.source || '')}</small></details>
-          </article>`;
-        }).join('') || `<p class="ccgb-empty-result">No known ${collection} as of the current campaign date.</p>`}</div>`;
-      const update = () => {
-        const query = content.querySelector('[data-catalog-search]').value.trim().toLowerCase();
-        const filters = [...content.querySelectorAll('[data-catalog-filter]')].map(element => [element.dataset.catalogFilter, element.value]);
-        const thresholdText = content.querySelector('[data-catalog-threshold]').value;
-        const threshold = thresholdText === '' ? null : Number(thresholdText);
-        const favoritesOnly = content.querySelector('[data-favorites-only]').checked;
-        content.querySelectorAll('.ccgb-catalog-item').forEach(item => {
-          const wrongFilter = filters.some(([field, value]) => value && item.dataset[field] !== value);
-          const tooDifficult = threshold !== null && item.dataset.threshold !== '' && Number(item.dataset.threshold) > threshold;
-          item.hidden = Boolean((query && !item.dataset.search.includes(query)) || wrongFilter || tooDifficult || (favoritesOnly && item.dataset.favorite !== 'true'));
+        <div class="ccgb-knowledge-results"><span data-result-count></span><div class="ccgb-knowledge-pills" data-knowledge-pills></div></div>
+        <aside class="ccgb-knowledge-detail" data-knowledge-detail><p>Select a ${singular} to see its details.</p></aside>`;
+
+      let selectedId = records[0]?.record_id || '';
+      const normalizedText = value => String(value || '').toLocaleLowerCase();
+      const fuzzyScore = (record, query) => {
+        if (!query) return 1;
+        const terms = query.split(/\s+/).filter(Boolean);
+        const name = normalizedText(record.name);
+        const haystack = normalizedText([record.name, record.skill, record.subtype, record.source, record.description, record.raw_effect, record.raw_effects].join(' '));
+        if (!terms.every(term => haystack.includes(term))) return -1;
+        return terms.reduce((score, term) => score + (name.startsWith(term) ? 12 : name.includes(term) ? 6 : 1), 0);
+      };
+
+      const renderDetail = () => {
+        const record = records.find(item => item.record_id === selectedId);
+        const holder = content.querySelector('[data-knowledge-detail]');
+        if (!record) { holder.innerHTML = `<p>Select a ${singular} to see its details.</p>`; return; }
+        const favoriteKey = `${collection}:${record.record_id}`;
+        holder.innerHTML = `<header><div><p>${this.escapeHtml(record.skill || record.collection || singular)}</p><h2>${this.escapeHtml(record.name)}</h2></div><button type="button" class="ccgb-favorite ${this.favorites.has(favoriteKey) ? 'is-favorite' : ''}" data-detail-favorite title="Favorite">&#9733;</button></header>
+          <div class="ccgb-knowledge-badges">${record.threshold == null ? '' : `<span>Difficulty ${Number(record.threshold)}</span>`}${record.subtype ? `<span>${this.escapeHtml(record.subtype)}</span>` : ''}${record.source ? `<span>${this.escapeHtml(record.source)}</span>` : ''}</div>
+          <p>${this.escapeHtml(record.description || record.raw_effect || record.raw_effects || 'No description recorded.')}</p>
+          ${this.renderRecordRequirements(record)}
+          <button type="button" class="ccgb-knowledge-roll" data-detail-roll>Roll ${this.escapeHtml(record.name)}</button>`;
+        holder.querySelector('[data-detail-roll]').addEventListener('click', () => this.requestRoll(singular, record.record_id));
+        holder.querySelector('[data-detail-favorite]').addEventListener('click', () => {
+          if (this.favorites.has(favoriteKey)) this.favorites.delete(favoriteKey); else this.favorites.add(favoriteKey);
+          localStorage.setItem(this.favoriteStorageKey, JSON.stringify([...this.favorites]));
+          renderDetail(); renderResults();
         });
       };
-      content.querySelectorAll('[data-catalog-search],[data-catalog-filter],[data-catalog-threshold],[data-favorites-only]').forEach(element => element.addEventListener('input', update));
-      content.querySelectorAll('[data-favorite-key]').forEach(button => button.addEventListener('click', () => {
-        const key = button.dataset.favoriteKey;
-        if (this.favorites.has(key)) this.favorites.delete(key); else this.favorites.add(key);
-        localStorage.setItem(this.favoriteStorageKey, JSON.stringify([...this.favorites]));
-        this.renderKnowledgePanel(content, collection);
-      }));
-      this.bindRollButtons(content);
+
+      const renderResults = () => {
+        const query = normalizedText(content.querySelector('[data-catalog-search]').value.trim());
+        const filters = [...content.querySelectorAll('[data-catalog-filter]')].map(element => [element.dataset.catalogFilter, element.value]);
+        const minText = content.querySelector('[data-catalog-min]').value;
+        const maxText = content.querySelector('[data-catalog-max]').value;
+        const minimum = minText === '' ? null : Number(minText);
+        const maximum = maxText === '' ? null : Number(maxText);
+        const favoritesOnly = content.querySelector('[data-favorites-only]').checked;
+        const sort = content.querySelector('[data-catalog-sort]').value;
+        const values = records.map(record => ({ record, score: fuzzyScore(record, query) })).filter(({ record, score }) => {
+          const wrongFilter = filters.some(([field, value]) => value && String(record[field] || '') !== value);
+          const difficulty = record.threshold == null ? null : Number(record.threshold);
+          return score >= 0 && !wrongFilter && (minimum === null || difficulty === null || difficulty >= minimum) && (maximum === null || difficulty === null || difficulty <= maximum) && (!favoritesOnly || this.favorites.has(`${collection}:${record.record_id}`));
+        });
+        values.sort((left, right) => {
+          if (query && right.score !== left.score) return right.score - left.score;
+          if (sort === 'difficulty') return Number(left.record.threshold ?? 1e9) - Number(right.record.threshold ?? 1e9) || left.record.name.localeCompare(right.record.name);
+          if (sort === 'skill' || sort === 'source') return String(left.record[sort] || '').localeCompare(String(right.record[sort] || '')) || left.record.name.localeCompare(right.record.name);
+          return left.record.name.localeCompare(right.record.name);
+        });
+        const holder = content.querySelector('[data-knowledge-pills]');
+        holder.innerHTML = values.map(({ record }) => `<button type="button" class="ccgb-knowledge-pill ${record.record_id === selectedId ? 'is-selected' : ''}" data-record-id="${this.escapeHtml(record.record_id)}" title="${this.escapeHtml([record.skill, record.threshold == null ? '' : `Difficulty ${record.threshold}`, record.source].filter(Boolean).join(' · '))}">${this.escapeHtml(record.name)}</button>`).join('') || `<p class="ccgb-empty-result">No matching ${collection}.</p>`;
+        content.querySelector('[data-result-count]').textContent = `${values.length} known ${values.length === 1 ? singular : collection}`;
+        holder.querySelectorAll('[data-record-id]').forEach(button => button.addEventListener('click', () => { selectedId = button.dataset.recordId; renderResults(); renderDetail(); }));
+      };
+      content.querySelectorAll('[data-catalog-search],[data-catalog-filter],[data-catalog-min],[data-catalog-max],[data-catalog-sort],[data-favorites-only]').forEach(element => element.addEventListener('input', renderResults));
       this.bindTeachingPanel(content, collection, singular, records);
+      renderResults();
+      renderDetail();
     }
 
     bindTeachingPanel(content, collection, kind, records) {
@@ -909,8 +946,19 @@
       };
       const pupilSearch = panel.querySelector('[data-teach-pupil-search]');
       const subjectSearch = panel.querySelector('[data-teach-subject-search]');
+      const subjectSkill = panel.querySelector('[data-teach-skill]');
+      const subjectSort = panel.querySelector('[data-teach-sort]');
       const renderPupils = () => renderChoices(panel.querySelector('[data-teach-pupils]'), pupils, pupilSearch.value.trim().toLowerCase(), pupilId, value => { pupilId = value; renderPupils(); updateSelection(); });
-      const renderSubjects = () => renderChoices(panel.querySelector('[data-teach-subjects]'), records, subjectSearch.value.trim().toLowerCase(), subjectId, value => { subjectId = value; renderSubjects(); updateSelection(); });
+      const renderSubjects = () => {
+        const query = subjectSearch.value.trim().toLowerCase();
+        const skill = subjectSkill.value;
+        const values = records.filter(item => !skill || String(item.skill || '') === skill).sort((left, right) => {
+          if (subjectSort.value === 'difficulty') return Number(left.threshold ?? 1e9) - Number(right.threshold ?? 1e9) || left.name.localeCompare(right.name);
+          if (subjectSort.value === 'skill') return String(left.skill || '').localeCompare(String(right.skill || '')) || left.name.localeCompare(right.name);
+          return left.name.localeCompare(right.name);
+        });
+        renderChoices(panel.querySelector('[data-teach-subjects]'), values, query, subjectId, value => { subjectId = value; renderSubjects(); updateSelection(); });
+      };
       content.querySelector('[data-teach-open]').addEventListener('click', () => {
         panel.hidden = false;
         renderPupils(); renderSubjects(); updateSelection(); pupilSearch.focus();
@@ -918,6 +966,8 @@
       panel.querySelector('[data-teach-cancel]').addEventListener('click', () => { panel.hidden = true; });
       pupilSearch.addEventListener('input', renderPupils);
       subjectSearch.addEventListener('input', renderSubjects);
+      subjectSkill.addEventListener('input', renderSubjects);
+      subjectSort.addEventListener('input', renderSubjects);
       submit.addEventListener('click', () => {
         const subject = records.find(item => item.record_id === subjectId);
         if (!subject || !pupilId) return;

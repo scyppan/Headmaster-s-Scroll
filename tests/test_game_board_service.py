@@ -70,6 +70,35 @@ class GameBoardServiceTests(unittest.TestCase):
         self.service.delete_contact(self.alice["id"])
         self.assertEqual(self.service.list_contacts(), [])
 
+    def test_teaching_options_include_only_known_subjects_and_same_map_pupils(self):
+        self.service.board_snapshot = lambda *_args, **_kwargs: {
+            "actors": [
+                {"actor_id": "teacher", "name": "Teacher", "map_id": "map-a"},
+                {"actor_id": "nearby", "name": "Nearby", "map_id": "map-a"},
+                {"actor_id": "elsewhere", "name": "Elsewhere", "map_id": "map-b"},
+            ]
+        }
+        self.service._sheet_for_person = lambda *_args, **_kwargs: {
+            "spells": [{"record_id": "known-spell", "name": "Known"}],
+            "proficiencies": [],
+            "recipes": [],
+        }
+        options = self.service.teaching_options("session", "teacher")
+        self.assertEqual(
+            [item["record_id"] for item in options["pupils"]], ["nearby"]
+        )
+        self.assertEqual(
+            [item["record_id"] for item in options["spell"]], ["known-spell"]
+        )
+        with self.assertRaises(PermissionError):
+            self.service._validate_teaching_action(
+                "session", "teacher", "elsewhere", "spell", "known-spell"
+            )
+        with self.assertRaises(PermissionError):
+            self.service._validate_teaching_action(
+                "session", "teacher", "nearby", "spell", "unknown-spell"
+            )
+
     def test_character_link_becomes_the_player_identity_everywhere(self):
         character = self.service.list_characters()[0]
         linked = self.service.assign_character(self.alice["id"], character["id"])

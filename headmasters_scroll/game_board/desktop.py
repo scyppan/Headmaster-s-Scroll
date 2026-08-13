@@ -3907,6 +3907,17 @@ class GameBoardWindow(tk.Tk):
         actor = self._selected_board_actor()
         if not actor or not self.selected_session_id:
             return
+        request = {
+            "session_id": self.selected_session_id,
+            "teacher_person_id": str(actor.get("actor_id") or ""),
+        }
+        self._background(
+            lambda: self.client.request(
+                "POST", "/api/admin/teaching/options", request
+            ),
+            lambda options: self._open_known_teaching_dialog(actor, options),
+        )
+        return
         catalog = self.state_data.get("teaching_catalog", {}) or {}
         dialog = tk.Toplevel(self)
         dialog.title(f"Teach — {actor.get('name') or 'Pupil'}")
@@ -3959,6 +3970,207 @@ class GameBoardWindow(tk.Tk):
         actions.pack(fill="x")
         ttk.Button(actions, text="Cancel", style="Quiet.TButton", command=dialog.destroy).pack(side="right")
         ttk.Button(actions, text="Teach", command=teach).pack(side="right", padx=(0, 6))
+
+    def _open_known_teaching_dialog(
+        self, actor: dict[str, Any], options: dict[str, Any],
+    ) -> None:
+        dialog = tk.Toplevel(self)
+        dialog.title(f"Teach — {actor.get('name') or 'Character'}")
+        dialog.transient(self)
+        dialog.grab_set()
+        dialog.geometry("920x620")
+        dialog.minsize(760, 520)
+        apply_window_icon(dialog, GAME_BOARD_ICON)
+        shell = ttk.Frame(dialog, padding=10)
+        shell.pack(fill="both", expand=True)
+        teacher = options.get("teacher", {}) or {}
+        ttk.Label(
+            shell,
+            text=f"{teacher.get('name') or actor.get('name') or 'Character'} is teaching",
+            style="Section.TLabel",
+        ).pack(anchor="w", pady=(0, 8))
+        workspace = ttk.Panedwindow(shell, orient="horizontal")
+        workspace.pack(fill="both", expand=True)
+        pupil_side = ttk.Frame(workspace, padding=(0, 0, 8, 0))
+        subject_side = ttk.Frame(workspace, padding=(8, 0, 0, 0))
+        workspace.add(pupil_side, weight=2)
+        workspace.add(subject_side, weight=5)
+
+        ttk.Label(pupil_side, text="Pupil on this map", style="CardTitle.TLabel").pack(anchor="w")
+        pupil_query = tk.StringVar()
+        ttk.Entry(pupil_side, textvariable=pupil_query).pack(fill="x", pady=(4, 6))
+        pupil_tree = ttk.Treeview(
+            pupil_side, columns=("name",), show="headings", selectmode="browse"
+        )
+        pupil_tree.heading("name", text="Character")
+        pupil_tree.column("name", minwidth=170, width=230, stretch=True)
+        pupil_tree.pack(fill="both", expand=True)
+        pupils = list(options.get("pupils", []) or [])
+
+        def render_pupils(*_args: Any) -> None:
+            term = pupil_query.get().strip().casefold()
+            pupil_tree.delete(*pupil_tree.get_children())
+            for item in pupils:
+                if term and term not in str(item.get("name", "")).casefold():
+                    continue
+                pupil_tree.insert(
+                    "", "end", iid=str(item["record_id"]),
+                    values=(item.get("name", "Unknown"),),
+                )
+
+        pupil_query.trace_add("write", render_pupils)
+        render_pupils()
+
+        ttk.Label(subject_side, text="Known subject", style="CardTitle.TLabel").pack(anchor="w")
+        kind = tk.StringVar(value="spell")
+        query = tk.StringVar()
+        skill_filter = tk.StringVar(value="All skills")
+        source_filter = tk.StringVar(value="All sources")
+        sort_mode = tk.StringVar(value="Name")
+        kinds = ttk.Frame(subject_side)
+        kinds.pack(fill="x", pady=(4, 5))
+        filters = ttk.Frame(subject_side)
+        filters.pack(fill="x", pady=(0, 5))
+        search = ttk.Entry(filters, textvariable=query)
+        search.pack(side="left", fill="x", expand=True)
+        skill_box = ttk.Combobox(
+            filters, textvariable=skill_filter, state="readonly", width=14
+        )
+        source_box = ttk.Combobox(
+            filters, textvariable=source_filter, state="readonly", width=14
+        )
+        sort_box = ttk.Combobox(
+            filters, textvariable=sort_mode, state="readonly", width=12,
+            values=("Name", "Skill", "Difficulty", "Source"),
+        )
+        skill_box.pack(side="left", padx=(5, 0))
+        source_box.pack(side="left", padx=(5, 0))
+        sort_box.pack(side="left", padx=(5, 0))
+        subject_tree = ttk.Treeview(
+            subject_side,
+            columns=("name", "skill", "difficulty", "source"),
+            show="headings", selectmode="browse",
+        )
+        for column, title, width in (
+            ("name", "Name", 235), ("skill", "Skill", 105),
+            ("difficulty", "Difficulty", 72), ("source", "Source", 125),
+        ):
+            subject_tree.heading(column, text=title)
+            subject_tree.column(
+                column, width=width, minwidth=55,
+                stretch=column in {"name", "source"},
+            )
+        subject_tree.pack(fill="both", expand=True)
+        visible_subjects: dict[str, dict[str, Any]] = {}
+
+        def records() -> list[dict[str, Any]]:
+            return list(options.get(kind.get(), []) or [])
+
+        def render_subjects(*_args: Any) -> None:
+            term = query.get().strip().casefold()
+            skill = skill_filter.get()
+            source = source_filter.get()
+            values = [item for item in records() if (
+                (not term or term in " ".join(
+                    str(item.get(field) or "")
+                    for field in ("name", "skill", "source", "subtype", "description")
+                ).casefold())
+                and (skill == "All skills" or str(item.get("skill") or "") == skill)
+                and (source == "All sources" or str(item.get("source") or "") == source)
+            )]
+            mode = sort_mode.get()
+            if mode == "Difficulty":
+                values.sort(key=lambda item: (
+                    float(item.get("threshold") or 10**9),
+                    str(item.get("name") or "").casefold(),
+                ))
+            else:
+                field = {"Skill": "skill", "Source": "source"}.get(mode, "name")
+                values.sort(key=lambda item: (
+                    str(item.get(field) or "").casefold(),
+                    str(item.get("name") or "").casefold(),
+                ))
+            subject_tree.delete(*subject_tree.get_children())
+            visible_subjects.clear()
+            for item in values[:1000]:
+                record_id = str(item.get("record_id") or "")
+                visible_subjects[record_id] = item
+                subject_tree.insert("", "end", iid=record_id, values=(
+                    item.get("name", "Unknown"), item.get("skill", ""),
+                    item.get("threshold", ""), item.get("source", ""),
+                ))
+
+        def reset_filters() -> None:
+            values = records()
+            skills = sorted(
+                {str(item.get("skill")) for item in values if item.get("skill")},
+                key=str.casefold,
+            )
+            sources = sorted(
+                {str(item.get("source")) for item in values if item.get("source")},
+                key=str.casefold,
+            )
+            skill_box.configure(values=("All skills", *skills))
+            source_box.configure(values=("All sources", *sources))
+            skill_filter.set("All skills")
+            source_filter.set("All sources")
+            render_subjects()
+
+        for value, label in (
+            ("spell", "Spells"), ("proficiency", "Proficiencies"),
+            ("recipe", "Recipes"),
+        ):
+            ttk.Radiobutton(
+                kinds, text=label, variable=kind, value=value,
+                command=reset_filters,
+            ).pack(side="left", padx=(0, 16))
+        query.trace_add("write", render_subjects)
+        skill_box.bind("<<ComboboxSelected>>", render_subjects)
+        source_box.bind("<<ComboboxSelected>>", render_subjects)
+        sort_box.bind("<<ComboboxSelected>>", render_subjects)
+        reset_filters()
+
+        def teach() -> None:
+            pupils_selected = pupil_tree.selection()
+            subjects_selected = subject_tree.selection()
+            record = visible_subjects.get(
+                subjects_selected[0] if subjects_selected else ""
+            )
+            if not pupils_selected:
+                messagebox.showinfo(
+                    "Teach", "Choose a pupil who is on this map.", parent=dialog
+                )
+                return
+            if record is None:
+                messagebox.showinfo(
+                    "Teach", "Choose a known subject.", parent=dialog
+                )
+                return
+            request = {
+                "session_id": self.selected_session_id,
+                "teacher_person_id": str(actor.get("actor_id") or ""),
+                "pupil_person_id": pupils_selected[0],
+                "knowledge_kind": kind.get(),
+                "knowledge_record_id": str(record.get("record_id") or ""),
+                "knowledge_collection": str(record.get("collection") or ""),
+            }
+            self._background(
+                lambda: self.client.request(
+                    "POST", "/api/admin/teaching", request
+                ),
+                lambda _result: (dialog.destroy(), self.refresh(silent=True)),
+            )
+
+        actions = ttk.Frame(shell)
+        actions.pack(fill="x", pady=(10, 0))
+        ttk.Button(
+            actions, text="Cancel", width=14, style="Quiet.TButton",
+            command=dialog.destroy,
+        ).pack(side="right", ipady=5)
+        ttk.Button(
+            actions, text="Teach selected", width=18, command=teach,
+        ).pack(side="right", padx=(0, 8), ipady=5)
+        search.focus_set()
 
     def transport_selected_actor(self) -> None:
         actor = self._selected_board_actor()
@@ -5547,9 +5759,44 @@ class GameBoardWindow(tk.Tk):
         normal = ("Segoe UI", self.chat_font_size)
         bold = ("Segoe UI", self.chat_font_size, "bold")
         self.chat_log.configure(font=normal)
-        self.chat_log.tag_configure("headmaster", foreground=self.ACCENT, font=bold)
-        self.chat_log.tag_configure("system", foreground=self.GREEN, font=bold)
-        self.chat_log.tag_configure("player", foreground=self.INK, font=bold)
+        shared = {
+            "lmargin1": 8, "lmargin2": 8, "rmargin": 8,
+            "spacing1": 4, "spacing3": 4,
+        }
+        self.chat_log.tag_configure(
+            "headmaster", foreground=self.INK, background="#fff1ce",
+            font=bold, justify="right", **shared,
+        )
+        self.chat_log.tag_configure(
+            "system", foreground=self.GREEN, background="#f2ead0",
+            font=bold, **shared,
+        )
+        self.chat_log.tag_configure(
+            "player", foreground=self.INK, background="#fff8e6",
+            font=bold, **shared,
+        )
+        self.chat_log.tag_configure(
+            "message_body", foreground=self.INK, font=normal,
+            lmargin1=8, lmargin2=8, rmargin=8, spacing3=5,
+        )
+        self.chat_log.tag_configure(
+            "roll_summary", background="#ead18e", foreground=self.INK,
+            font=("Segoe UI", max(8, self.chat_font_size - 1), "bold"),
+            lmargin1=8, lmargin2=8, rmargin=8, spacing1=2, spacing3=4,
+        )
+        self.chat_log.tag_configure(
+            "critical_failure", background="#6f1717", foreground="#ffe2e2",
+        )
+        self.chat_log.tag_configure(
+            "failure", background="#f3c5bd", foreground=self.INK,
+        )
+        self.chat_log.tag_configure(
+            "success", background="#d7efcb", foreground=self.INK,
+        )
+        self.chat_log.tag_configure(
+            "critical_success", background="#d7efcb", foreground="#314d2a",
+            relief="solid", borderwidth=2,
+        )
         if hasattr(self, "chat_entry"):
             self.chat_entry.configure(font=normal)
 
@@ -6727,14 +6974,44 @@ class GameBoardWindow(tk.Tk):
             start = self.chat_log.index("end-1c")
             stamp = str(message.get("sent_at", ""))[11:16] or "--:--"
             role = message.get("sender_role") if message.get("sender_role") in {"headmaster", "system"} else "player"
-            self.chat_log.insert("end", f"{stamp}  {message.get('sender_name', 'Player')}: ", role)
-            self.chat_log.insert("end", f"{message.get('text', '')}\n")
-            end = self.chat_log.index("end-1c")
             activity = message.get("activity")
+            outcome = str((activity or {}).get("outcome") or "")
+            outcome_tag = outcome if outcome in {
+                "critical_failure", "failure", "success", "critical_success"
+            } else None
+            header_tags = (role, outcome_tag) if outcome_tag else (role,)
+            body_tags = ("message_body", outcome_tag) if outcome_tag else ("message_body",)
+            self.chat_log.insert(
+                "end", f"{message.get('sender_name', 'Player')}  {stamp}\n",
+                header_tags,
+            )
+            self.chat_log.insert(
+                "end", f"{message.get('text', '')}\n", body_tags,
+            )
             if isinstance(activity, dict):
-                self._chat_roll_ranges.append((start, end, deepcopy(activity)))
-                self.chat_log.tag_add("roll", start, end)
+                component_text = "  ·  ".join(
+                    f"{item.get('label', 'Value')} {item.get('value', 0)}"
+                    for item in activity.get("components", []) or []
+                    if isinstance(item, dict)
+                )
+                summary_start = self.chat_log.index("end-1c")
+                self.chat_log.insert(
+                    "end",
+                    f"{activity.get('target_name') or 'Roll'} · {activity.get('total', 0)}\n",
+                    ("roll_summary", outcome_tag) if outcome_tag else ("roll_summary",),
+                )
+                if component_text:
+                    self.chat_log.insert(
+                        "end", f"{component_text}\n", body_tags,
+                    )
+                summary_end = self.chat_log.index("end-1c")
+                self._chat_roll_ranges.append(
+                    (summary_start, summary_end, deepcopy(activity))
+                )
+                self.chat_log.tag_add("roll", summary_start, summary_end)
                 self.chat_log.tag_configure("roll", underline=True)
+            end = self.chat_log.index("end-1c")
+            self.chat_log.insert("end", "\n")
         self.chat_log.configure(state="disabled")
         self.chat_log.see("end")
 

@@ -962,8 +962,22 @@
       };
       const skillTitle = skill => {
         const record = skillRecords.get(skill) || {};
-        const sources = Array.isArray(record.sources) ? record.sources : [];
-        return sources.map(source => `${source.label}: ${Number(source.points || 0)}`).join('\n');
+        const breakdown = record.breakdown || {};
+        // This is deliberately a fixed ledger. Never trust an older cached
+        // `sources` array: every row must appear even when its value is zero.
+        return [
+          ['Buys', 'buys'],
+          ['Corecourses', 'core_courses'],
+          ['Electives', 'elective_courses'],
+          ['Traits', 'trait_bonus'],
+          ['Wand parts', 'wand_parts'],
+          ['Wand', 'wand'],
+          ['Quality', 'wand_quality'],
+          ['Accessories', 'accessories'],
+          ['Passive', 'passive'],
+          ['Eminence', 'eminence'],
+          ['Temp', 'temporary']
+        ].map(([label, key]) => `${label}: ${Number(breakdown[key] ?? 0)}`).join('\n');
       };
       const abilityOrder = ['Power', 'Erudition', 'Panache', 'Naturalism'];
       const skillsByAbility = {

@@ -481,6 +481,13 @@ class GameBoardAssetTests(unittest.TestCase):
         self.assertIn("ccgb-roll-components", client)
         self.assertIn("edgePointToward", client)
         self.assertIn("skillTitle", client)
+        for hover_label in (
+            "Buys", "Corecourses", "Electives", "Traits", "Wand parts", "Wand",
+            "Quality", "Accessories", "Passive", "Eminence", "Temp",
+        ):
+            self.assertIn(f"['{hover_label}',", client)
+        self.assertIn("Number(breakdown[key] ?? 0)", client)
+        self.assertNotIn("sources.map(source", client)
         self.assertNotIn("window.crypto?.getRandomValues", client)
         self.assertNotIn("rolled ${targetId}", client)
         self.assertIn("Click to inspect the dice and every modifier", client)

@@ -718,6 +718,12 @@ class GameBoardWindow(tk.Tk):
         self.repository = repository or GameBoardRepository()
         self.preferences_store = Preferences("game-board")
         self.preferences = self.preferences_store.load()
+        try:
+            self.chat_font_size = max(
+                8, min(20, int(self.preferences.get("chat_font_size", 10)))
+            )
+        except (TypeError, ValueError):
+            self.chat_font_size = 10
         self.settings = self.repository.settings()
         self.client = AdminClient(self.settings)
         self.server = LocalServer(self.client)
@@ -4731,6 +4737,26 @@ class GameBoardWindow(tk.Tk):
         card = ttk.Frame(parent, style="Card.TFrame", padding=10)
         self.chat_card = card
         card.pack(fill="both", expand=True)
+        chat_controls = ttk.Frame(card, style="Card.TFrame")
+        chat_controls.pack(fill="x", pady=(0, 4))
+        decrease = ttk.Button(
+            chat_controls,
+            text="−",
+            width=3,
+            style="Quiet.TButton",
+            command=lambda: self.adjust_chat_font_size(-1),
+        )
+        increase = ttk.Button(
+            chat_controls,
+            text="+",
+            width=3,
+            style="Quiet.TButton",
+            command=lambda: self.adjust_chat_font_size(1),
+        )
+        increase.pack(side="right")
+        decrease.pack(side="right", padx=(0, 3))
+        self._attach_tooltip(decrease, "Decrease chat text size")
+        self._attach_tooltip(increase, "Increase chat text size")
         log_frame = ttk.Frame(card, style="Card.TFrame")
         log_frame.pack(fill="both", expand=True)
         self.chat_log = tk.Text(
@@ -4743,21 +4769,46 @@ class GameBoardWindow(tk.Tk):
             borderwidth=1,
             padx=10,
             pady=10,
+            font=("Segoe UI", self.chat_font_size),
         )
         chat_scroll = ttk.Scrollbar(log_frame, orient="vertical", command=self.chat_log.yview)
         self.chat_log.configure(yscrollcommand=chat_scroll.set)
         self.chat_log.pack(side="left", fill="both", expand=True)
         chat_scroll.pack(side="right", fill="y")
-        self.chat_log.tag_configure("headmaster", foreground=self.ACCENT, font=("Segoe UI", 10, "bold"))
-        self.chat_log.tag_configure("system", foreground=self.GREEN, font=("Segoe UI", 10, "bold"))
-        self.chat_log.tag_configure("player", foreground=self.INK, font=("Segoe UI", 10, "bold"))
+        self._configure_chat_fonts()
         composer = ttk.Frame(card, style="Card.TFrame")
         composer.pack(fill="x", pady=(10, 0))
-        self.chat_entry = ttk.Entry(composer)
+        self.chat_entry = ttk.Entry(
+            composer, font=("Segoe UI", self.chat_font_size)
+        )
         self.chat_entry.pack(side="left", fill="x", expand=True)
         self.chat_entry.bind("<Return>", lambda _event: self.send_chat())
         ttk.Button(composer, text="Send", command=self.send_chat).pack(side="right", padx=(10, 0))
         self._rendered_chat_ids: tuple[str, ...] = ()
+
+    def _configure_chat_fonts(self) -> None:
+        if not hasattr(self, "chat_log"):
+            return
+        normal = ("Segoe UI", self.chat_font_size)
+        bold = ("Segoe UI", self.chat_font_size, "bold")
+        self.chat_log.configure(font=normal)
+        self.chat_log.tag_configure("headmaster", foreground=self.ACCENT, font=bold)
+        self.chat_log.tag_configure("system", foreground=self.GREEN, font=bold)
+        self.chat_log.tag_configure("player", foreground=self.INK, font=bold)
+        if hasattr(self, "chat_entry"):
+            self.chat_entry.configure(font=normal)
+
+    def adjust_chat_font_size(self, direction: int) -> None:
+        next_size = max(8, min(20, self.chat_font_size + int(direction)))
+        if next_size == self.chat_font_size:
+            return
+        self.chat_font_size = next_size
+        self._configure_chat_fonts()
+        self.preferences["chat_font_size"] = next_size
+        try:
+            self.preferences_store.save(self.preferences)
+        except OSError:
+            self.set_notice("Chat size changed, but the preference could not be saved")
 
     def _build_session(self) -> None:
         self.session_tab.columnconfigure(0, weight=1)
@@ -4825,14 +4876,20 @@ class GameBoardWindow(tk.Tk):
             height=12,
         )
         for column, heading, width, anchor in (
-            ("checked", "✓", 38, "center"),
-            ("name", "Player", 140, "w"),
-            ("email", "Email", 190, "w"),
-            ("sent", "Last Invitation", 145, "w"),
-            ("logged_in", "Logged In", 85, "center"),
+            ("checked", "✓", 34, "center"),
+            ("name", "Player", 122, "w"),
+            ("email", "Email", 162, "w"),
+            ("sent", "Last invitation", 136, "w"),
+            ("logged_in", "Logged in", 72, "center"),
         ):
             self.invites_tree.heading(column, text=heading)
-            self.invites_tree.column(column, width=width, minwidth=35, anchor=anchor)
+            self.invites_tree.column(
+                column,
+                width=width,
+                minwidth=34 if column == "checked" else 60,
+                anchor=anchor,
+                stretch=False,
+            )
         invitation_scroll = ttk.Scrollbar(
             invitations_card, orient="vertical", command=self.invites_tree.yview
         )

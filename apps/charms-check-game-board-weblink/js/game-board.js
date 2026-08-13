@@ -69,6 +69,11 @@
       this.chatMessages = [];
       this.characterSheet = null;
       this.favoriteStorageKey = `${this.storageKey}-favorites`;
+      this.chatFontStorageKey = `${this.storageKey}-chat-font-size`;
+      this.chatFontSize = Math.max(
+        11,
+        Math.min(22, Number(localStorage.getItem(this.chatFontStorageKey)) || 14)
+      );
       try {
         this.favorites = new Set(JSON.parse(localStorage.getItem(this.favoriteStorageKey) || '[]'));
       } catch (_error) {
@@ -78,6 +83,8 @@
       this.allowHeadmasterCamera = localStorage.getItem(this.cameraPreferenceKey) !== 'false';
       this.restoreViewState();
       this.render();
+      this.syncViewportHeight();
+      this.applyChatFontSize();
       this.bind();
       this.restoreLayout();
       this.openSection(this.activeSection);
@@ -123,7 +130,6 @@
             <nav class="ccgb-profile-nav" aria-label="Character profile sections">
               <div class="ccgb-sidebar-heading">Sections</div>
               <div class="ccgb-player-card">
-                <span class="ccgb-avatar" data-ccgb="avatar">?</span>
                 <span class="ccgb-player-name" data-ccgb="player">Player</span>
               </div>
               <div class="ccgb-nav-list">${navigation}</div>
@@ -181,7 +187,11 @@
                     <p class="ccgb-eyebrow">Live room</p>
                     <h2>Chat</h2>
                   </div>
-                  <button type="button" class="ccgb-collapse-panel" data-ccgb="close-chat" aria-label="Collapse chat" title="Collapse chat">›</button>
+                  <div class="ccgb-chat-header-controls">
+                    <button type="button" data-ccgb="chat-smaller" aria-label="Decrease chat text size" title="Decrease chat text size">−</button>
+                    <button type="button" data-ccgb="chat-larger" aria-label="Increase chat text size" title="Increase chat text size">+</button>
+                    <button type="button" class="ccgb-collapse-panel" data-ccgb="close-chat" aria-label="Collapse chat" title="Collapse chat">›</button>
+                  </div>
                 </div>
                 <div class="ccgb-chat-messages" data-ccgb="chat-messages" aria-live="polite"></div>
                 <form class="ccgb-chat-form" data-ccgb="chat-form">
@@ -206,6 +216,9 @@
       this.element('close-details').addEventListener('click', () => this.toggleRegion('details', true));
       this.element('close-chat').addEventListener('click', () => this.toggleRegion('chat', true));
       this.element('chat-rail').addEventListener('click', () => this.toggleRegion('chat'));
+      this.element('chat-smaller').addEventListener('click', () => this.adjustChatFontSize(-1));
+      this.element('chat-larger').addEventListener('click', () => this.adjustChatFontSize(1));
+      window.addEventListener('resize', () => this.syncViewportHeight());
       this.element('search').addEventListener('input', event => this.search(event.target.value));
       this.element('chat-form').addEventListener('submit', event => {
         event.preventDefault();
@@ -414,7 +427,6 @@
         this.assetCredential = message.asset_credential || '';
         this.element('player').textContent = message.player || 'Player';
         this.element('detail-player').textContent = message.player || 'Player';
-        this.element('avatar').textContent = (message.player || '?').trim().charAt(0).toUpperCase();
         this.element('session').textContent = message.session || '';
         this.show('connected', 'You are connected.', { connected: true });
         this.setQuality('good', 'Connected');
@@ -449,7 +461,8 @@
         }
         this.element('player').textContent = player;
         this.element('detail-player').textContent = player;
-        this.element('avatar').textContent = player.trim().charAt(0).toUpperCase() || '?';
+        this.releaseAssets();
+        if (this.activeSection !== 'board') this.openSection(this.activeSection);
       } else if (message.type === 'board_snapshot' && message.board) {
         const previousAttributes = this.board && this.board.character_attributes;
         const previousSheet = this.characterSheet;
@@ -548,6 +561,24 @@
       this.send({ v: VERSION, type: 'chat_message', message });
       input.value = '';
       input.focus();
+    }
+
+    applyChatFontSize() {
+      this.root.style.setProperty('--ccgb-chat-font-size', `${this.chatFontSize}px`);
+    }
+
+    syncViewportHeight() {
+      const top = Math.max(0, this.root.getBoundingClientRect().top);
+      const available = Math.max(420, window.innerHeight - top - 7);
+      this.root.style.setProperty('--ccgb-board-height', `${available}px`);
+    }
+
+    adjustChatFontSize(direction) {
+      const next = Math.max(11, Math.min(22, this.chatFontSize + Number(direction || 0)));
+      if (next === this.chatFontSize) return;
+      this.chatFontSize = next;
+      localStorage.setItem(this.chatFontStorageKey, String(next));
+      this.applyChatFontSize();
     }
 
     renderChat() {
@@ -1832,7 +1863,6 @@
       this.element('player').textContent = 'Edward Marksdale';
       this.playerId = 'preview-edward';
       this.element('detail-player').textContent = 'Edward Marksdale';
-      this.element('avatar').textContent = 'E';
       this.element('session').textContent = 'Saturday Evening Session';
       this.show('connected', 'You are connected.', { connected: true });
       this.setQuality('good', '84 ms');

@@ -639,9 +639,17 @@ def create_apps(
             connection for connection in runtime.connections.values()
             if connection.contact_id == contact_id
         ]
+        refreshed_sessions: set[str] = set()
         for connection in connections:
             connection.name = result["display_name"]
             connection.character_id = result.get("character_id")
+            if connection.character_id:
+                service.activate_player_character_map(
+                    connection.session_id,
+                    contact_id,
+                    str(connection.character_id),
+                )
+            refreshed_sessions.add(connection.session_id)
             try:
                 await connection.websocket.send_json({
                     "v": 1,
@@ -658,8 +666,8 @@ def create_apps(
             except Exception:
                 pass
         await runtime.notify_admins()
-        for connection in connections:
-            await runtime.broadcast_board(connection.session_id)
+        for session_id in refreshed_sessions:
+            await runtime.broadcast_board(session_id)
         return result
 
     @admin_app.delete("/api/admin/contacts/{contact_id}", dependencies=[Depends(admin_guard)])

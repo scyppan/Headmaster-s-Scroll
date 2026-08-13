@@ -811,7 +811,9 @@ class GameBoardService:
             self.repository.save_active(wrapper)
             character_id = player.get("character_id")
             if character_id:
-                self.ensure_person_placement(session["id"], str(character_id))
+                self.activate_player_character_map(
+                    session["id"], player["contact_id"], str(character_id)
+                )
             return {
                 "request_id": request["id"],
                 "contact_id": player["contact_id"],
@@ -1352,6 +1354,40 @@ class GameBoardService:
             person["board"] = board
             self._persist_campaign_document(campaign["record_id"], document)
             return deepcopy(board["placement"])
+
+    def activate_player_character_map(
+        self,
+        session_id: str,
+        contact_id: str,
+        person_id: str,
+    ) -> dict[str, Any] | None:
+        """Place a linked character and make its map the player's live view."""
+
+        with self._lock:
+            placement = self.ensure_person_placement(session_id, person_id)
+            if not placement:
+                return None
+            _wrapper, session = self._active(session_id)
+            campaign, document = self._campaign_document(session)
+            target = self._campaign_map(document, str(placement["map_id"]))
+            map_id = str(target["record_id"])
+            profile = normalize_zoom_profile(target.get("zoom_profile"))
+            camera = {
+                "zoom": float(profile.get("default_zoom", 1.0)),
+                "center_x": float(placement["x"]),
+                "center_y": float(placement["y"]),
+            }
+
+            def update(state: dict[str, Any]) -> None:
+                loaded = state.setdefault("loaded_map_ids", [])
+                if map_id not in loaded:
+                    loaded.append(map_id)
+                state.setdefault("player_active_map_ids", {})[contact_id] = map_id
+                map_state = state.setdefault("maps", {}).setdefault(map_id, {})
+                map_state.setdefault("player_cameras", {})[contact_id] = deepcopy(camera)
+
+            self.campaign_repository.update_game_state(campaign["record_id"], update)
+            return {"placement": deepcopy(placement), "camera": camera}
 
     def update_person_board(
         self,

@@ -2,7 +2,7 @@
   "_database": {
     "schema_version": 36,
     "database_version": "0.36.0",
-    "last_saved": "2026-08-12T23:27:01.069934+00:00"
+    "last_saved": "2026-08-13T01:39:34.017066+00:00"
   },
   "people": [
     {
@@ -65735,6 +65735,7 @@
                   "knuts": 14,
                   "period": "month"
                 },
+                "concurrent": false,
                 "start_year": 1998,
                 "start_month": 7,
                 "start_day": 15,
@@ -65754,6 +65755,7 @@
                   "knuts": 0,
                   "period": "month"
                 },
+                "concurrent": false,
                 "start_year": 2000,
                 "start_month": 8,
                 "start_day": 14,
@@ -65773,6 +65775,7 @@
                   "knuts": 0,
                   "period": "month"
                 },
+                "concurrent": false,
                 "start_year": 2003,
                 "start_month": 9,
                 "start_day": 1,
@@ -65792,6 +65795,7 @@
                   "knuts": 0,
                   "period": "month"
                 },
+                "concurrent": false,
                 "start_year": 2007,
                 "start_month": 12,
                 "start_day": 23,
@@ -65811,6 +65815,7 @@
                   "knuts": 0,
                   "period": "month"
                 },
+                "concurrent": false,
                 "start_year": 2019,
                 "start_month": 1,
                 "start_day": 6,
@@ -65883,7 +65888,28 @@
       "imported_fields": {},
       "record_id": "594ad00f-0b79-4118-ba66-a875f7ba9811",
       "created_at": "2026-08-05T04:54:03.206991+00:00",
-      "last_updated": "2026-08-07T05:13:53.919672+00:00"
+      "last_updated": "2026-08-13T01:39:33.815722+00:00",
+      "tags": [],
+      "board": {
+        "portrait": {
+          "asset_id": "portrait:594ad00f-0b79-4118-ba66-a875f7ba9811",
+          "sha256": "4ade378f1ed2ecc0b88bc4dac0ce798db278fec2c76cfb66875e9ffb98b3ea57",
+          "width": 512,
+          "height": 512,
+          "mime_type": "image/webp",
+          "updated_at": "2026-08-13T01:39:31.137332Z"
+        },
+        "placement": null,
+        "visibility": "players",
+        "display_mode": "dot",
+        "name_revealed": false,
+        "faction_revealed": false,
+        "faction_organization_id": "",
+        "label_offset": {
+          "x": 0.0,
+          "y": 0.0
+        }
+      }
     },
     {
       "displayed_name": "Ronald Weasley",
@@ -120312,9 +120338,10 @@
     }
   ],
   "_recent_people": [
+    "594ad00f-0b79-4118-ba66-a875f7ba9811",
+    "19cdecaf-4b65-400b-9b05-75ac1c549f24",
     "6882e7fb-529a-4b3e-8929-a795b91b816d",
     "da621804-0d7d-4af5-8cd1-54e535323c8b",
-    "19cdecaf-4b65-400b-9b05-75ac1c549f24",
     "62ca5c0d-a14f-4450-9581-f36c9396fbcb",
     "a7bc9826-202b-47c5-876e-bed43ac5c92d",
     "834260f1-6a1a-40d4-85f6-93a9e9b20ad1",
@@ -120322,8 +120349,7 @@
     "833049f6-2ac3-4029-af7d-a55eeaf3c04b",
     "e4e4c105-eb42-440b-8db3-1fe5212375e5",
     "0ce7ff22-29a8-405e-863a-394a301380c3",
-    "6bfae378-3a03-4d25-a276-1e10596d897b",
-    "b06ed514-fff6-4b58-99e2-f35895b030d8"
+    "6bfae378-3a03-4d25-a276-1e10596d897b"
   ],
   "_recent_locations": [
     "38b8b79b-0785-4213-826e-0e65998d3b41",
@@ -127594,8 +127620,9 @@
   ],
   "board_groups": [],
   "_headmasters_scroll": {
-    "revision_id": "913d6036-bf6f-4587-a1ad-f2c03c408ef5",
-    "last_modified_at": "2026-08-12T23:29:05.784215Z",
-    "last_modified_by": "mapper"
-  }
+    "revision_id": "dffa5817-6578-4906-b77e-395305f06832",
+    "last_modified_at": "2026-08-13T01:39:34.091545Z",
+    "last_modified_by": "world-builder"
+  },
+  "named_creatures": []
 }

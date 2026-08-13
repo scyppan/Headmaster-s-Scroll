@@ -766,7 +766,9 @@ class WorldBoardRepository:
                 "floor_id": placement["floor_id"],
                 "x": placement["x"],
                 "y": placement["y"],
-                "display_mode": "nameplate" if is_player and not portrait else display_mode,
+                # Portraitless player characters remain spatial pieces: a
+                # movable dot plus the normal gold name plaque.
+                "display_mode": "dot" if is_player and not portrait else display_mode,
                 "portrait_asset_id": portrait.get("asset_id") if portrait else None,
                 "name": str(person.get("displayed_name", "") or "") if (not for_players or is_player or board["name_revealed"]) else "Unknown",
                 "name_revealed": bool(is_player or board["name_revealed"]),

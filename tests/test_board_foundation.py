@@ -161,7 +161,7 @@ class BoardFoundationTests(unittest.TestCase):
         self.assertEqual([item["record_id"] for item in snapshot["maps"]], ["map-1"])
         pc = next(item for item in snapshot["actors"] if item["actor_id"] == "pc-1")
         npc = next(item for item in snapshot["actors"] if item["actor_id"] == "npc-1")
-        self.assertEqual(pc["display_mode"], "nameplate")
+        self.assertEqual(pc["display_mode"], "dot")
         self.assertEqual(npc["name"], "Unknown")
         self.assertEqual(npc["faction_color"], "#808080")
 

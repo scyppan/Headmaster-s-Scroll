@@ -61,9 +61,11 @@ class CharacterSheetTests(unittest.TestCase):
     def test_reading_grants_contents_and_future_teaching_waits(self):
         sheet = build_character_sheet(self.person, self.world, self.database, self.campaign())
         self.assertEqual([item["record_id"] for item in sheet["proficiencies"]], ["prof-1"])
+        self.assertEqual(sheet["proficiencies"][0]["source"], "Primer")
         self.assertEqual(sheet["spells"], [])
         later = build_character_sheet(self.person, self.world, self.database, self.campaign("2006-01-01T08:00"))
         self.assertEqual([item["record_id"] for item in later["spells"]], ["spell-1"])
+        self.assertEqual(later["spells"][0]["source"], "Unknown teacher")
 
     def test_ownership_or_assignment_without_completed_reading_grants_nothing(self):
         self.world["book_readings"] = []
@@ -157,6 +159,36 @@ class CharacterSheetTests(unittest.TestCase):
         failure = perform_character_roll(sheet, "ability", "Power", roller=lambda _a, _b: 1)
         self.assertEqual(failure["critical"], "failure")
         self.assertEqual(failure["text"], "Ada CRITICALLY FAILS a straight Power roll.")
+
+    def test_recipe_requires_every_ingredient_before_rolling(self):
+        sheet = build_character_sheet(
+            self.person, self.world, self.database, self.campaign("2006-01-01T08:00")
+        )
+        sheet["recipes"] = [{
+            "record_id": "recipe-1", "name": "Tea", "skill": "Potions",
+            "threshold": 5,
+            "ingredients": [{"name": "Tea leaves", "quantity": 2}],
+        }]
+        sheet["inventory"] = [{"name": "Tea leaves", "quantity": 1}]
+        with self.assertRaisesRegex(PermissionError, "Missing recipe ingredients"):
+            perform_character_roll(sheet, "recipe", "recipe-1", roller=lambda _a, _b: 6)
+        sheet["inventory"][0]["quantity"] = 2
+        result = perform_character_roll(
+            sheet, "recipe", "recipe-1", roller=lambda _a, _b: 6
+        )
+        self.assertEqual(result["action_type"], "recipe")
+
+    def test_natural_ten_does_not_bypass_an_unreachable_threshold(self):
+        sheet = build_character_sheet(
+            self.person, self.world, self.database, self.campaign("2006-01-01T08:00")
+        )
+        sheet["spells"][0]["threshold"] = 99
+        result = perform_character_roll(
+            sheet, "spell", "spell-1", roller=lambda _a, _b: 10
+        )
+        self.assertFalse(result["success"])
+        self.assertEqual(result["critical"], "")
+        self.assertEqual(result["outcome"], "failure")
 
     def test_skill_roll_retains_character_controls_wording_and_components(self):
         sheet = build_character_sheet(self.person, self.world, self.database, self.campaign())

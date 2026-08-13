@@ -228,6 +228,38 @@ def perform_character_roll(
         if target is None:
             raise PermissionError(f"This character does not know that {roll_type}")
         target_name = str(target.get("name") or roll_type.title())
+        if roll_type == "recipe":
+            required = [
+                item for item in target.get("ingredients", []) or []
+                if isinstance(item, dict) and str(item.get("name") or "").strip()
+            ]
+            inventory = sheet.get("inventory", []) or []
+            available: dict[str, float] = {}
+            for item in inventory:
+                if not isinstance(item, dict):
+                    continue
+                name = str(item.get("name") or "").strip().casefold()
+                if not name:
+                    continue
+                try:
+                    quantity = float(item.get("quantity", 1) or 0)
+                except (TypeError, ValueError):
+                    quantity = 1.0
+                available[name] = available.get(name, 0.0) + max(0.0, quantity)
+            missing: list[str] = []
+            for ingredient in required:
+                name = str(ingredient.get("name") or "").strip()
+                try:
+                    needed = float(ingredient.get("quantity", 1) or 1)
+                except (TypeError, ValueError):
+                    needed = 1.0
+                if available.get(name.casefold(), 0.0) < needed:
+                    amount = int(needed) if needed.is_integer() else needed
+                    missing.append(f"{amount} {name}")
+            if missing:
+                raise PermissionError(
+                    "Missing recipe ingredients: " + ", ".join(missing)
+                )
         skill_name = str(target.get("skill") or ("Potions" if roll_type == "recipe" else ""))
         ability_name = ability_for_skill(skill_name)
         skill_record = _by_name(skills, skill_name)
@@ -256,8 +288,12 @@ def perform_character_roll(
 
     natural = dice[0] if len(dice) == 1 else None
     total = sum(dice) + bonus
-    critical = "failure" if natural == 1 else "success" if natural == 10 else ""
-    success = None if threshold is None else bool(natural == 10 or (natural != 1 and total >= threshold))
+    critical = (
+        "failure" if natural == 1
+        else "success" if natural == 10 and (threshold is None or total >= threshold)
+        else ""
+    )
+    success = None if threshold is None else bool(natural != 1 and total >= threshold)
     sentence = _roll_text(
         str(sheet["character_name"]), roll_type, target_name, total,
         threshold, critical, success,

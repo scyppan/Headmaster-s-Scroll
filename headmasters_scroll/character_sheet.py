@@ -214,7 +214,7 @@ def _development_year_readings(
                 add(
                     assignment,
                     start,
-                    f"{school_name or 'School'} Year {school_year}",
+                    "",
                 )
         recreational(
             list(raw_year.get("books", []) or []),
@@ -331,7 +331,9 @@ def _knowledge(
             continue
         for kind, collection, record_id, source in _book_contents(book):
             if kind in grants and record_id:
-                reading_source = str(reading.get("source") or f"Read {source}")
+                # The source is the actual book, not the year/course timing
+                # which caused that book to be read.
+                reading_source = str(source or book.get("title") or book.get("name") or "Book")
                 grants[kind].setdefault(record_id, (collection, reading_source))
 
     for event in events:
@@ -352,7 +354,13 @@ def _knowledge(
         elif not collection:
             collection = "potions"
         if record_id:
-            grants[kind].setdefault(record_id, (collection, f"Taught on {event.get('date', '')}"))
+            teacher = str(
+                event.get("teacher_name")
+                or event.get("instructor_name")
+                or event.get("source_name")
+                or "Unknown teacher"
+            )
+            grants[kind].setdefault(record_id, (collection, teacher))
 
     result = {"spells": [], "proficiencies": [], "recipes": []}
     for record_id, (_, source) in grants["spell"].items():

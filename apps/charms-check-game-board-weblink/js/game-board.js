@@ -14,6 +14,12 @@
   const OVERVIEW_DOT_SCREEN_SIZES = [12, 11, 10, 9, 8, 7, 0, 0];
   const LABEL_SCREEN_SIZES = [15.2, 14.7, 13.7, 12.7, 11.5, 11, 10.5, 10];
   const LABEL_SCREEN_WIDTHS = [208, 192, 177, 162, 152, 142, 132, 124];
+  const SKILL_ABILITIES = {
+    Charms: 'Power', Transfiguration: 'Power', Defense: 'Power', 'Dark Arts': 'Power',
+    Runes: 'Erudition', Arithmancy: 'Erudition', Muggles: 'Erudition', History: 'Erudition',
+    Flying: 'Panache', Alchemy: 'Panache', Potions: 'Panache', Artificing: 'Panache', Herbology: 'Panache',
+    Astronomy: 'Naturalism', Divination: 'Naturalism', Creatures: 'Naturalism', Perception: 'Naturalism', Social: 'Naturalism'
+  };
   const SECTIONS = [
     ['board', 'Game Board', '▦'],
     ['overview', 'Overview', '⌂'],
@@ -582,6 +588,16 @@
       input.focus();
     }
 
+    postChatText(message) {
+      const text = String(message || '').trim();
+      if (!text) return;
+      if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
+        this.showChatNotice('Chat is unavailable while disconnected.');
+        return;
+      }
+      this.send({ v: VERSION, type: 'chat_message', message: text.slice(0, 500) });
+    }
+
     applyChatFontSize() {
       this.root.style.setProperty('--ccgb-chat-font-size', `${this.chatFontSize}px`);
     }
@@ -840,15 +856,34 @@
       if (!records) return this.sheetUnavailable(content, collection);
       const singular = { spells: 'spell', proficiencies: 'proficiency', recipes: 'recipe' }[collection];
       const fieldValues = field => [...new Set(records.map(item => String(item[field] || '')).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+      const tagValues = [...new Set(records.flatMap(item => Array.isArray(item.tags) ? item.tags : String(item.tags || '').split(',')).map(value => String(value).trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
       const optionList = (field, label) => `<select data-catalog-filter="${field}" aria-label="Filter by ${label}"><option value="">All ${label}</option>${fieldValues(field).map(value => `<option value="${this.escapeHtml(value)}">${this.escapeHtml(value)}</option>`).join('')}</select>`;
-      content.className = 'ccgb-knowledge-browser';
+      const valueByName = (this.characterSheet?.attributes?.attributes || []).reduce((values, item) => { values[item.name] = Number(item.value || 0); return values; }, {});
+      const skillByName = (this.characterSheet?.attributes?.skills || []).reduce((values, item) => { values[item.name] = Number(item.value || 0); return values; }, {});
+      const requiredRoll = record => {
+        if (record.threshold == null || record.threshold === '') return null;
+        const skill = String(record.skill || (collection === 'recipes' ? 'Potions' : ''));
+        return Number(record.threshold) - Number(skillByName[skill] || 0) - Number(valueByName[SKILL_ABILITIES[skill]] || 0);
+      };
+      const spellBand = record => {
+        const needed = requiredRoll(record);
+        if (needed === null) return 'No threshold';
+        if (needed > 10) return "Can't cast";
+        if (needed <= 3) return 'Easy to cast';
+        if (needed <= 6) return 'Medium confidence';
+        if (needed <= 8) return 'Difficult to cast';
+        return 'Very difficult to cast';
+      };
+      content.className = `ccgb-knowledge-browser ${collection === 'spells' ? 'is-spellbook' : ''}`;
       content.innerHTML = `
         <div class="ccgb-catalog-tools">
           <input type="search" data-catalog-search placeholder="Search ${collection}">
           ${optionList('skill', 'skills')}
           ${optionList('source', 'sources')}
           ${collection === 'spells' ? optionList('subtype', 'subtypes') : ''}
-          <label class="ccgb-threshold-filter">Difficulty <input type="number" min="0" data-catalog-min placeholder="Min"><span>–</span><input type="number" min="0" data-catalog-max placeholder="Max"></label>
+          <select data-catalog-tag aria-label="Filter by tag"><option value="">All tags</option>${tagValues.map(value => `<option value="${this.escapeHtml(value)}">#${this.escapeHtml(value)}</option>`).join('')}</select>
+          ${collection === 'spells' ? '<select data-catalog-band aria-label="Casting confidence"><option value="">All casting confidence</option><option>Easy to cast</option><option>Medium confidence</option><option>Difficult to cast</option><option>Very difficult to cast</option><option>Can\'t cast</option><option>No threshold</option></select>' : ''}
+          <label class="ccgb-threshold-filter"><span>Difficulty</span><input type="number" min="0" data-catalog-min placeholder="Min"><span>to</span><input type="number" min="0" data-catalog-max placeholder="Max"></label>
           <select data-catalog-sort aria-label="Sort results"><option value="name">Name A–Z</option><option value="difficulty">Difficulty</option><option value="skill">Skill</option><option value="source">Source</option></select>
           <label><input type="checkbox" data-favorites-only> Favorites</label>
           <button type="button" class="ccgb-teach-open" data-teach-open>Teach...</button>
@@ -871,7 +906,7 @@
         if (!query) return 1;
         const terms = query.split(/\s+/).filter(Boolean);
         const name = normalizedText(record.name);
-        const haystack = normalizedText([record.name, record.skill, record.subtype, record.source, record.description, record.raw_effect, record.raw_effects].join(' '));
+        const haystack = normalizedText([record.name, record.skill, record.subtype, record.source, record.description, record.raw_effect, record.raw_effects, ...(Array.isArray(record.tags) ? record.tags : String(record.tags || '').split(','))].join(' '));
         if (!terms.every(term => haystack.includes(term))) return -1;
         return terms.reduce((score, term) => score + (name.startsWith(term) ? 12 : name.includes(term) ? 6 : 1), 0);
       };
@@ -881,12 +916,12 @@
         const holder = content.querySelector('[data-knowledge-detail]');
         if (!record) { holder.innerHTML = `<p>Select a ${singular} to see its details.</p>`; return; }
         const favoriteKey = `${collection}:${record.record_id}`;
+        const tags = Array.isArray(record.tags) ? record.tags : String(record.tags || '').split(',').map(value => value.trim()).filter(Boolean);
         holder.innerHTML = `<header><div><p>${this.escapeHtml(record.skill || record.collection || singular)}</p><h2>${this.escapeHtml(record.name)}</h2></div><button type="button" class="ccgb-favorite ${this.favorites.has(favoriteKey) ? 'is-favorite' : ''}" data-detail-favorite title="Favorite">&#9733;</button></header>
-          <div class="ccgb-knowledge-badges">${record.threshold == null ? '' : `<span>Difficulty ${Number(record.threshold)}</span>`}${record.subtype ? `<span>${this.escapeHtml(record.subtype)}</span>` : ''}${record.source ? `<span>${this.escapeHtml(record.source)}</span>` : ''}</div>
+          <div class="ccgb-knowledge-badges">${record.threshold == null ? '' : `<span>Difficulty ${Number(record.threshold)}</span>`}${collection === 'spells' ? `<span>${this.escapeHtml(spellBand(record))}</span>` : ''}${record.subtype ? `<span>${this.escapeHtml(record.subtype)}</span>` : ''}${record.source ? `<span>Learned from ${this.escapeHtml(record.source)}</span>` : ''}${tags.map(tag => `<span>#${this.escapeHtml(tag)}</span>`).join('')}</div>
           <p>${this.escapeHtml(record.description || record.raw_effect || record.raw_effects || 'No description recorded.')}</p>
           ${this.renderRecordRequirements(record)}
-          <button type="button" class="ccgb-knowledge-roll" data-detail-roll>Roll ${this.escapeHtml(record.name)}</button>`;
-        holder.querySelector('[data-detail-roll]').addEventListener('click', () => this.requestRoll(singular, record.record_id));
+          <p class="ccgb-knowledge-help">Click rolls · Ctrl-click favorites · Alt-click shares to chat</p>`;
         holder.querySelector('[data-detail-favorite]').addEventListener('click', () => {
           if (this.favorites.has(favoriteKey)) this.favorites.delete(favoriteKey); else this.favorites.add(favoriteKey);
           localStorage.setItem(this.favoriteStorageKey, JSON.stringify([...this.favorites]));
@@ -903,10 +938,13 @@
         const maximum = maxText === '' ? null : Number(maxText);
         const favoritesOnly = content.querySelector('[data-favorites-only]').checked;
         const sort = content.querySelector('[data-catalog-sort]').value;
+        const band = content.querySelector('[data-catalog-band]')?.value || '';
+        const tag = content.querySelector('[data-catalog-tag]').value;
         const values = records.map(record => ({ record, score: fuzzyScore(record, query) })).filter(({ record, score }) => {
           const wrongFilter = filters.some(([field, value]) => value && String(record[field] || '') !== value);
           const difficulty = record.threshold == null ? null : Number(record.threshold);
-          return score >= 0 && !wrongFilter && (minimum === null || difficulty === null || difficulty >= minimum) && (maximum === null || difficulty === null || difficulty <= maximum) && (!favoritesOnly || this.favorites.has(`${collection}:${record.record_id}`));
+          const recordTags = (Array.isArray(record.tags) ? record.tags : String(record.tags || '').split(',')).map(value => String(value).trim());
+          return score >= 0 && !wrongFilter && (!tag || recordTags.includes(tag)) && (!band || spellBand(record) === band) && (minimum === null || difficulty === null || difficulty >= minimum) && (maximum === null || difficulty === null || difficulty <= maximum) && (!favoritesOnly || this.favorites.has(`${collection}:${record.record_id}`));
         });
         values.sort((left, right) => {
           if (query && right.score !== left.score) return right.score - left.score;
@@ -915,11 +953,32 @@
           return left.record.name.localeCompare(right.record.name);
         });
         const holder = content.querySelector('[data-knowledge-pills]');
-        holder.innerHTML = values.map(({ record }) => `<button type="button" class="ccgb-knowledge-pill ${record.record_id === selectedId ? 'is-selected' : ''}" data-record-id="${this.escapeHtml(record.record_id)}" title="${this.escapeHtml([record.skill, record.threshold == null ? '' : `Difficulty ${record.threshold}`, record.source].filter(Boolean).join(' · '))}">${this.escapeHtml(record.name)}</button>`).join('') || `<p class="ccgb-empty-result">No matching ${collection}.</p>`;
+        const grouped = collection === 'spells'
+          ? ['Easy to cast', 'Medium confidence', 'Difficult to cast', 'Very difficult to cast', "Can't cast", 'No threshold'].map(label => [label, values.filter(item => spellBand(item.record) === label)]).filter(([, items]) => items.length)
+          : [['', values]];
+        holder.innerHTML = grouped.map(([label, items]) => `${label ? `<h3>${this.escapeHtml(label)}</h3>` : ''}<div class="ccgb-knowledge-pill-group">${items.map(({ record }) => `<button type="button" class="ccgb-knowledge-pill ${record.record_id === selectedId ? 'is-selected' : ''}" data-record-id="${this.escapeHtml(record.record_id)}" title="${this.escapeHtml(record.description || record.raw_effect || record.raw_effects || 'No description recorded.')}\n\nClick to roll · Ctrl-click to favorite · Alt-click to share">${this.escapeHtml(record.name)}</button>`).join('')}</div>`).join('') || `<p class="ccgb-empty-result">No matching ${collection}.</p>`;
         content.querySelector('[data-result-count]').textContent = `${values.length} known ${values.length === 1 ? singular : collection}`;
-        holder.querySelectorAll('[data-record-id]').forEach(button => button.addEventListener('click', () => { selectedId = button.dataset.recordId; renderResults(); renderDetail(); }));
+        holder.querySelectorAll('[data-record-id]').forEach(button => button.addEventListener('click', event => {
+          const record = records.find(item => item.record_id === button.dataset.recordId);
+          if (!record) return;
+          if (event.ctrlKey || event.metaKey) {
+            const key = `${collection}:${record.record_id}`;
+            if (this.favorites.has(key)) this.favorites.delete(key); else this.favorites.add(key);
+            localStorage.setItem(this.favoriteStorageKey, JSON.stringify([...this.favorites]));
+            renderResults(); renderDetail();
+            return;
+          }
+          if (event.altKey) {
+            const threshold = record.threshold == null ? '' : ` (${record.threshold})`;
+            this.postChatText(`${record.name}${threshold}\n${record.description || record.raw_effect || record.raw_effects || 'No description recorded.'}`);
+            return;
+          }
+          selectedId = record.record_id;
+          renderResults(); renderDetail();
+          this.requestRoll(singular, record.record_id);
+        }));
       };
-      content.querySelectorAll('[data-catalog-search],[data-catalog-filter],[data-catalog-min],[data-catalog-max],[data-catalog-sort],[data-favorites-only]').forEach(element => element.addEventListener('input', renderResults));
+      content.querySelectorAll('[data-catalog-search],[data-catalog-filter],[data-catalog-tag],[data-catalog-band],[data-catalog-min],[data-catalog-max],[data-catalog-sort],[data-favorites-only]').forEach(element => element.addEventListener('input', renderResults));
       this.bindTeachingPanel(content, collection, singular, records);
       renderResults();
       renderDetail();

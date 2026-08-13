@@ -168,8 +168,15 @@ class BoardGroupBody(BaseModel):
     session_id: str = Field(min_length=1, max_length=100)
     name: str = Field(min_length=1, max_length=100)
     location_id: str = Field(min_length=1, max_length=100)
-    person_ids: list[str] = Field(min_length=2, max_length=100)
+    person_ids: list[str] = Field(min_length=1, max_length=100)
     color: str = Field(default="#b0b0b0", min_length=7, max_length=7)
+
+
+class BoardFactionBody(BaseModel):
+    session_id: str = Field(min_length=1, max_length=100)
+    person_id: str = Field(min_length=1, max_length=100)
+    name: str = Field(min_length=1, max_length=200)
+    color: str = Field(default="#808080", min_length=7, max_length=7)
 
 
 class ControlGrantBody(BaseModel):
@@ -938,6 +945,22 @@ def create_apps(
             await runtime.broadcast_board(session["id"])
         return result
 
+    @admin_app.post(
+        "/api/admin/board/factions",
+        dependencies=[Depends(admin_guard)],
+    )
+    async def create_board_faction(body: BoardFactionBody):
+        result = admin_result(
+            service.create_board_faction,
+            body.session_id,
+            body.person_id,
+            body.name,
+            body.color,
+        )
+        for session in service.sessions_view():
+            await runtime.broadcast_board(session["id"])
+        return result
+
     @admin_app.put(
         "/api/admin/board/groups/people/{person_id}",
         dependencies=[Depends(admin_guard)],
@@ -1407,6 +1430,29 @@ def create_apps(
                             "v": 1,
                             "type": "server_error",
                             "message": str(error),
+                        })
+                        await runtime.send_board_snapshot(connection)
+                elif message.get("type") == "board_label_move":
+                    try:
+                        person_id = str(message.get("person_id", ""))
+                        if person_id not in service.controlled_character_ids(
+                            connection.session_id, connection.contact_id
+                        ):
+                            raise PermissionError("You do not control that character")
+                        raw_offset = message.get("label_offset") or {}
+                        label_offset = {
+                            "x": float(raw_offset.get("x")),
+                            "y": float(raw_offset.get("y")),
+                        }
+                        service.update_person_board(
+                            connection.session_id,
+                            person_id,
+                            {"label_offset": label_offset},
+                        )
+                        await runtime.broadcast_board(connection.session_id)
+                    except (KeyError, PermissionError, RuntimeError, TypeError, ValueError) as error:
+                        await websocket.send_json({
+                            "v": 1, "type": "server_error", "message": str(error),
                         })
                         await runtime.send_board_snapshot(connection)
                 elif message.get("type") == "board_camera":

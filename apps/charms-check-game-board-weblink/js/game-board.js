@@ -131,6 +131,7 @@
               <div class="ccgb-sidebar-heading">Sections</div>
               <div class="ccgb-player-card">
                 <span class="ccgb-player-name" data-ccgb="player">Player</span>
+                <span class="ccgb-player-birth" data-ccgb="player-birth"></span>
               </div>
               <div class="ccgb-nav-list">${navigation}</div>
             </nav>
@@ -430,6 +431,7 @@
         this.element('session').textContent = message.session || '';
         this.show('connected', 'You are connected.', { connected: true });
         this.setQuality('good', 'Connected');
+        this.updatePlayerIdentity(message.player || 'Player');
       } else if (message.type === 'heartbeat') {
         this.send({ v: VERSION, type: 'heartbeat_ack', id: message.id });
       } else if (message.type === 'connection_quality') {
@@ -461,6 +463,7 @@
         }
         this.element('player').textContent = player;
         this.element('detail-player').textContent = player;
+        this.updatePlayerIdentity(player);
         this.releaseAssets();
         if (this.activeSection !== 'board') this.openSection(this.activeSection);
       } else if (message.type === 'board_snapshot' && message.board) {
@@ -471,6 +474,7 @@
           this.board.character_attributes = previousAttributes;
         }
         this.characterSheet = this.board.character_sheet || previousSheet || null;
+        this.updatePlayerIdentity();
         const campaignId = String(this.board.campaign_id || '');
         const firstCampaignSnapshot = campaignId !== this.hydratedCampaignId;
         if (firstCampaignSnapshot && this.savedViewCampaignId && campaignId !== this.savedViewCampaignId) {
@@ -499,6 +503,7 @@
       } else if ((message.type === 'character_sheet_snapshot' || message.type === 'character_sheet_updated') && message.character_sheet) {
         this.characterSheet = message.character_sheet;
         this.board.character_attributes = message.character_sheet.attributes;
+        this.updatePlayerIdentity();
         if (this.activeSection !== 'board') this.openSection(this.activeSection);
       } else if (message.type === 'board_move_preview') {
         const actor = (this.board.actors || []).find(item => item.actor_id === message.person_id);
@@ -548,6 +553,16 @@
         if (this.activeSection === 'board') this.showBoardNotice(errorMessage);
         else this.showChatNotice(errorMessage);
       }
+    }
+
+    updatePlayerIdentity(fallback = '') {
+      const overview = this.characterSheet?.overview;
+      const name = overview?.name || fallback || this.element('player').textContent || 'Player';
+      const eminence = Number(overview?.eminence);
+      this.element('player').textContent = Number.isFinite(eminence) ? `${name} (${eminence})` : name;
+      const birth = this.element('player-birth');
+      birth.textContent = overview?.birth ? `b. ${overview.birth}` : '';
+      birth.hidden = !birth.textContent;
     }
 
     sendChat() {
@@ -1373,7 +1388,7 @@
     positionPlayerViewportLocators(viewport, stage, tier, fontSize, overviewMode) {
       const layer = viewport.querySelector('.ccgb-player-locators');
       if (!layer) return;
-      const pieces = Array.from(stage.querySelectorAll('.ccgb-board-actor.is-player-character, .ccgb-board-actor.is-name-revealed'));
+      const pieces = Array.from(stage.querySelectorAll('.ccgb-board-actor'));
       layer.replaceChildren();
       if (!pieces.length) return;
 
@@ -1388,6 +1403,7 @@
       );
 
       pieces.forEach((piece, index) => {
+        piece.classList.add('has-viewport-locator');
         const actorX = stageBounds.left - viewportBounds.left + Number(piece.dataset.actorX ?? 0.5) * stageBounds.width;
         const actorY = stageBounds.top - viewportBounds.top + Number(piece.dataset.actorY ?? 0.5) * stageBounds.height;
         const onScreen = actorX >= margin && actorX <= viewport.clientWidth - margin &&
@@ -1403,8 +1419,10 @@
         const plaque = document.createElement('span');
         plaque.className = 'ccgb-player-locator-plaque';
         plaque.textContent = name;
-        plaque.style.backgroundColor = piece.style.getPropertyValue('--actor-group-color') || '#b0b0b0';
-        plaque.style.borderColor = piece.classList.contains('is-name-revealed') ? '#382719' : '#707070';
+        plaque.style.backgroundColor = piece.style.getPropertyValue('--actor-plaque-background') || '#b0b0b0';
+        plaque.style.borderColor = piece.style.getPropertyValue('--actor-plaque-border') || '#707070';
+        const controlled = piece.classList.contains('is-controlled');
+        plaque.classList.toggle('is-controlled', controlled);
         const individualScale = Math.max(0.5, Math.min(3, Number(piece.dataset.nameplateScale || 1)));
         plaque.style.fontSize = `${fontSize * individualScale}px`;
         plaque.style.maxWidth = `${widthLimit}px`;
@@ -1415,8 +1433,19 @@
         const plaqueHeight = Math.max(fontSize + 10, plaque.offsetHeight || fontSize + 10);
         const anchorX = Math.max(margin, Math.min(viewport.clientWidth - margin, actorX));
         const anchorY = Math.max(margin, Math.min(viewport.clientHeight - margin, actorY));
-        let plaqueX = Math.max(margin + plaqueWidth / 2, Math.min(viewport.clientWidth - margin - plaqueWidth / 2, actorX));
-        let plaqueY = Math.max(margin + plaqueHeight / 2, Math.min(viewport.clientHeight - margin - plaqueHeight / 2, actorY - 22));
+        const savedOffsetX = Number(piece.dataset.labelOffsetX || 0) * stageBounds.width;
+        const savedOffsetY = Number(piece.dataset.labelOffsetY || 0) * stageBounds.height;
+        let plaqueX = Math.max(
+          margin + plaqueWidth / 2,
+          Math.min(viewport.clientWidth - margin - plaqueWidth / 2, actorX + savedOffsetX)
+        );
+        let plaqueY = Math.max(
+          margin + plaqueHeight / 2,
+          Math.min(
+            viewport.clientHeight - margin - plaqueHeight / 2,
+            actorY + (savedOffsetX || savedOffsetY ? savedOffsetY : -22)
+          )
+        );
 
         // Keep multiple player plaques legible without ever allowing one to
         // leave the viewport.  The small stagger is deterministic per player.
@@ -1441,7 +1470,9 @@
         plaque.style.top = `${plaqueY}px`;
         dot.style.left = `${anchorX}px`;
         dot.style.top = `${anchorY}px`;
-        dot.hidden = onScreen && !overviewMode;
+        // The dot and its leader are permanent spatial anchors. They remain
+        // visible at every zoom so a plaque can never lose its character.
+        dot.hidden = false;
         const dx = anchorX - plaqueX;
         const dy = anchorY - plaqueY;
         const distance = Math.hypot(dx, dy);
@@ -1449,6 +1480,64 @@
         line.style.top = `${plaqueY}px`;
         line.style.width = `${Math.max(4, distance)}px`;
         line.style.transform = `rotate(${Math.atan2(dy, dx)}rad)`;
+        if (controlled) this.bindLocatorPlaqueDrag(plaque, piece, actorX, actorY, viewport, stage);
+      });
+    }
+
+    bindLocatorPlaqueDrag(plaque, piece, actorX, actorY, viewport, stage) {
+      plaque.addEventListener('pointerdown', event => {
+        if (event.button !== 0 || !event.ctrlKey) return;
+        event.preventDefault();
+        event.stopPropagation();
+        plaque.setPointerCapture(event.pointerId);
+        const actor = (this.board.actors || []).find(item => item.actor_id === piece.dataset.actorId);
+        if (!actor) return;
+        const viewportBounds = viewport.getBoundingClientRect();
+        const stageBounds = stage.getBoundingClientRect();
+        const move = moveEvent => {
+          const targetX = Math.max(8, Math.min(viewport.clientWidth - 8, moveEvent.clientX - viewportBounds.left));
+          const targetY = Math.max(8, Math.min(viewport.clientHeight - 8, moveEvent.clientY - viewportBounds.top));
+          const normalizedX = (targetX - actorX) / Math.max(1, stageBounds.width);
+          const normalizedY = (targetY - actorY) / Math.max(1, stageBounds.height);
+          actor.label_offset = {
+            x: Math.max(-1, Math.min(1, normalizedX)),
+            y: Math.max(-1, Math.min(1, normalizedY))
+          };
+          piece.dataset.labelOffsetX = String(actor.label_offset.x);
+          piece.dataset.labelOffsetY = String(actor.label_offset.y);
+          plaque.style.left = `${targetX}px`;
+          plaque.style.top = `${targetY}px`;
+          const locator = plaque.parentElement;
+          const dot = locator?.querySelector('.ccgb-player-locator-dot');
+          const line = locator?.querySelector('.ccgb-player-locator-line');
+          if (dot) {
+            dot.style.left = `${actorX}px`;
+            dot.style.top = `${actorY}px`;
+            dot.hidden = false;
+          }
+          if (line) {
+            const dx = actorX - targetX;
+            const dy = actorY - targetY;
+            line.style.left = `${targetX}px`;
+            line.style.top = `${targetY}px`;
+            line.style.width = `${Math.max(4, Math.hypot(dx, dy))}px`;
+            line.style.transform = `rotate(${Math.atan2(dy, dx)}rad)`;
+          }
+        };
+        const end = () => {
+          plaque.removeEventListener('pointermove', move);
+          plaque.removeEventListener('pointerup', end);
+          plaque.removeEventListener('pointercancel', end);
+          this.send({
+            v: VERSION,
+            type: 'board_label_move',
+            person_id: actor.actor_id,
+            label_offset: actor.label_offset
+          });
+        };
+        plaque.addEventListener('pointermove', move);
+        plaque.addEventListener('pointerup', end);
+        plaque.addEventListener('pointercancel', end);
       });
     }
 
@@ -1642,6 +1731,8 @@
       piece.dataset.actorX = String(Number(actor.x ?? 0.5));
       piece.dataset.actorY = String(Number(actor.y ?? 0.5));
       piece.dataset.nameplateScale = String(Number(actor.nameplate_scale ?? 1));
+      piece.dataset.labelOffsetX = String(Number(actor.label_offset?.x || 0));
+      piece.dataset.labelOffsetY = String(Number(actor.label_offset?.y || 0));
       piece.style.setProperty('--actor-nameplate-scale', String(Number(actor.nameplate_scale ?? 1)));
       piece.style.setProperty('--actor-label-offset-x', `${Number(actor.label_offset?.x || 0) * MAP_NATIVE_WIDTH}px`);
       piece.style.setProperty('--actor-label-offset-y', `${Number(actor.label_offset?.y || 0) * MAP_NATIVE_HEIGHT}px`);
@@ -1649,6 +1740,8 @@
       piece.classList.toggle('is-name-revealed', Boolean(actor.name_revealed));
       piece.style.setProperty('--actor-color', actor.faction_color || '#808080');
       piece.style.setProperty('--actor-group-color', actor.group_color || '#b0b0b0');
+      piece.style.setProperty('--actor-plaque-background', actor.plaque_background || '#b0b0b0');
+      piece.style.setProperty('--actor-plaque-border', actor.plaque_border || '#707070');
       piece.title = actor.faction_revealed && actor.faction_name
         ? `${actor.name || 'Unknown'} — ${actor.faction_name}`
         : (actor.name || 'Unknown');
@@ -1674,20 +1767,15 @@
         plate.textContent = actor.name || 'Character';
         piece.appendChild(plate);
       }
-      if (actor.display_mode !== 'nameplate') {
-        const label = document.createElement('span');
-        label.className = 'ccgb-actor-label';
-        label.textContent = actor.name || 'Unknown';
-        piece.appendChild(label);
-      }
-      if (actor.is_player_character || actor.name_revealed) {
-        const leader = document.createElement('span');
-        leader.className = 'ccgb-position-leader';
-        const positionLabel = document.createElement('span');
-        positionLabel.className = 'ccgb-position-label';
-        positionLabel.textContent = actor.name || 'Character';
-        piece.append(leader, positionLabel);
-      }
+      const label = document.createElement('span');
+      label.className = 'ccgb-actor-label';
+      label.textContent = actor.name || 'Unknown';
+      const leader = document.createElement('span');
+      leader.className = 'ccgb-position-leader';
+      const positionLabel = document.createElement('span');
+      positionLabel.className = 'ccgb-position-label';
+      positionLabel.textContent = actor.name || 'Unknown';
+      piece.append(label, leader, positionLabel);
       piece.style.left = `${Number(actor.x ?? 0.5) * 100}%`;
       piece.style.top = `${Number(actor.y ?? 0.5) * 100}%`;
       if (controlled) {

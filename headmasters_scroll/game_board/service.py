@@ -1887,8 +1887,8 @@ class GameBoardService:
         with self._lock:
             session = self._board_context(session_id)
             campaign, document = self._campaign_document(session)
-            if len(set(person_ids)) < 2:
-                raise ValueError("A board group requires at least two people")
+            if len(set(person_ids)) < 1:
+                raise ValueError("A board group requires at least one person")
             existing = {
                 member.get("actor_id")
                 for group in document.get("board_groups", [])
@@ -1901,7 +1901,7 @@ class GameBoardService:
                 if person_id not in people or person_id in existing or not placement or placement["location_id"] != location_id:
                     raise ValueError("Every group member must be an ungrouped person at this location")
             now = iso_utc(utc_now())
-            group = normalize_group({
+            group_data = {
                 "record_id": str(uuid4()),
                 "name": str(name or "").strip(),
                 "location_id": str(location_id),
@@ -1912,10 +1912,89 @@ class GameBoardService:
                 ],
                 "created_at": now,
                 "last_updated": now,
-            })
+            }
+            # The canonical group contract historically required two members.
+            # A one-person group is useful for preconfiguring presentation; it
+            # is retained as a campaign group and becomes canonical as soon as
+            # another member joins.
+            group = normalize_group(group_data) if len(person_ids) >= 2 else group_data
             document.setdefault("board_groups", []).append(group)
             self._persist_campaign_document(campaign["record_id"], document)
             return deepcopy(group)
+
+    def create_board_faction(
+        self,
+        session_id: str,
+        person_id: str,
+        name: str,
+        color: str,
+    ) -> dict[str, Any]:
+        """Create a world faction and join the character on the game date."""
+
+        normalized_name = str(name or "").strip()
+        normalized_color = str(color or "#808080").strip().lower()
+        if not normalized_name:
+            raise ValueError("Faction name is required")
+        if not re.fullmatch(r"#[0-9a-f]{6}", normalized_color):
+            raise ValueError("Faction color must use #RRGGBB")
+        with self._lock:
+            session = self._board_context(session_id)
+            campaign, _document = self._campaign_document(session)
+            world_session = self.shared_store.load("world.json")
+            if not any(str(person.get("record_id", "")) == person_id for person in world_session.data.get("people", [])):
+                raise KeyError("Unknown person")
+            existing = next(
+                (
+                    item for item in world_session.data.get("organizations", [])
+                    if isinstance(item, dict)
+                    and item.get("is_faction")
+                    and str(item.get("name", "")).strip().casefold() == normalized_name.casefold()
+                ),
+                None,
+            )
+            faction_id = str((existing or {}).get("record_id", "") or str(uuid4()))
+            if existing is None:
+                world_session.data.setdefault("organizations", []).append({
+                    "record_id": faction_id,
+                    "name": normalized_name,
+                    "organization_type": "Faction",
+                    "parent_organization_id": "",
+                    "is_faction": True,
+                    "faction_color": normalized_color,
+                    "events": [],
+                    "jobs": [],
+                })
+            game_datetime = str(campaign["game_state"]["current_game_datetime"])
+            event_date, _, event_time = game_datetime.partition("T")
+            world_session.data.setdefault("events", []).append({
+                "record_id": str(uuid4()),
+                "event_type": "joined_faction",
+                "title": f"Joined {normalized_name}",
+                "date": event_date,
+                "time": event_time,
+                "description": "",
+                "person_ids": [person_id],
+                "organization_id": faction_id,
+                "organization_name": normalized_name,
+            })
+            outcome = self.shared_store.save(world_session, "game-board")
+            if not outcome.saved:
+                raise RuntimeError("World Builder data changed; refresh and try again")
+            refreshed_session = self._board_context(session_id)
+            refreshed_campaign, refreshed_document = self._campaign_document(refreshed_session)
+            person = next(
+                item for item in refreshed_document.get("people", [])
+                if str(item.get("record_id", "")) == person_id
+            )
+            board = normalize_person_board(person.get("board"))
+            board["faction_organization_id"] = faction_id
+            person["board"] = board
+            self._persist_campaign_document(refreshed_campaign["record_id"], refreshed_document)
+            return {
+                "organization_id": faction_id,
+                "name": normalized_name,
+                "color": normalized_color,
+            }
 
     def set_board_group(
         self,

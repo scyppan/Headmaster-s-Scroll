@@ -114,6 +114,33 @@ def _started_school_years(
     return earned
 
 
+def _started_developmental_years(
+    person: dict[str, Any], game_date: tuple[int, int, int] | None
+) -> list[dict[str, Any]]:
+    """Return started developmental years, including years school was missed.
+
+    Missing school suppresses curriculum credit, not the character's annual
+    developmental ability choice.
+    """
+
+    plan = person.get("development_plan")
+    records = plan.get("school_years", []) if isinstance(plan, dict) else []
+    earned = []
+    for record in records if isinstance(records, list) else []:
+        if not isinstance(record, dict):
+            continue
+        try:
+            year = int(record.get("year"))
+        except (TypeError, ValueError):
+            continue
+        if not 1 <= year <= 7:
+            continue
+        boundary = _school_year_start(person, year)
+        if game_date is None or boundary is None or boundary <= game_date:
+            earned.append(record)
+    return earned
+
+
 def _initial_attribute_buys(person: dict[str, Any]) -> dict[str, int]:
     """Read the two explicitly selected initial attribute buys when present."""
 
@@ -135,6 +162,16 @@ def _initial_attribute_buys(person: dict[str, Any]) -> dict[str, int]:
             ability = str(candidate or "").strip()
             if ability in values:
                 values[ability] += 1
+        return values
+    # Legacy World Builder records predate the explicit ability-buy field.
+    # Their two initial skill choices identify the corresponding abilities.
+    if isinstance(initial, dict):
+        for candidate in initial.get("skill_bonuses", []) or []:
+            skill = str(candidate or "").strip()
+            for ability, skills in ABILITY_SKILLS.items():
+                if skill in skills:
+                    values[ability] += 1
+                    break
     return values
 
 
@@ -224,9 +261,10 @@ def calculate_character_attributes(
 
     game_date = _date_key(game_datetime)
     earned_years = _started_school_years(person, game_date)
+    developmental_years = _started_developmental_years(person, game_date)
 
     ability_values = _initial_attribute_buys(person)
-    for record in earned_years:
+    for record in developmental_years:
         ability = str(record.get("ability", "") or "").strip()
         if ability in ability_values:
             ability_values[ability] += 1
@@ -278,7 +316,7 @@ def calculate_character_attributes(
 
     characteristics = person.get("characteristics")
     characteristic_buys: Counter[str] = Counter()
-    for record in earned_years:
+    for record in developmental_years:
         name = str(record.get("characteristic", "") or "").strip().casefold()
         if name in CHARACTERISTIC_NAMES:
             characteristic_buys[name] += 1

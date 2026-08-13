@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "_headmasters_scroll": {
-    "revision_id": "9574981f-78bd-4eb7-af18-837d99a3a201",
-    "last_modified_at": "2026-08-13T03:01:30.363903Z",
+    "revision_id": "59e04a54-c451-49e2-bb58-e16d9caa150d",
+    "last_modified_at": "2026-08-13T05:24:57.498104Z",
     "last_modified_by": "game-board"
   },
   "campaigns": [
@@ -11,13 +11,12 @@
       "created_at": "2026-08-11T08:19:23.069609Z",
       "name": "Test camp",
       "game_world_start_date": "2000-08-27",
-      "last_updated": "2026-08-13T03:01:30.360226Z",
+      "last_updated": "2026-08-13T05:24:57.494158Z",
       "game_state": {
         "initialized": true,
         "current_game_datetime": "2000-08-27T08:00",
         "loaded_map_ids": [
-          "a5a85bd9-e989-4069-936c-8acda64f0fdd",
-          "4fc2ff78-e528-4ebd-b4db-9b34fc803622"
+          "a5a85bd9-e989-4069-936c-8acda64f0fdd"
         ],
         "active_map_id": "a5a85bd9-e989-4069-936c-8acda64f0fdd",
         "player_active_map_ids": {
@@ -114,8 +113,8 @@
             "start_point": null,
             "headmaster_camera": {
               "zoom": 1.1500000000000001,
-              "center_x": 0.5,
-              "center_y": 0.44776119402985065
+              "center_x": 0.0,
+              "center_y": 0.0
             },
             "player_cameras": {
               "6ca9e551-e305-4c3c-a763-d2ff9a13afff": {
@@ -225,15 +224,15 @@
             "token_scale": 0.0055,
             "start_point": null,
             "headmaster_camera": {
-              "zoom": 1.5208749999999998,
-              "center_x": 0.5776371423613964,
-              "center_y": 0.4835056445912852
+              "zoom": 2.2484902650123577,
+              "center_x": 0.7340169294331815,
+              "center_y": 0.5416166723542586
             },
             "player_cameras": {
               "6ca9e551-e305-4c3c-a763-d2ff9a13afff": {
                 "zoom": 1.0,
-                "center_x": 0.7954070292776291,
-                "center_y": 0.5318032204794466
+                "center_x": 0.8711483571069233,
+                "center_y": 0.5492028105149719
               }
             },
             "zoom_profile": {
@@ -257,6 +256,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -272,6 +272,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -281,18 +282,19 @@
               "location_id": "38b8b79b-0785-4213-826e-0e65998d3b41",
               "floor_id": "",
               "map_id": "a5a85bd9-e989-4069-936c-8acda64f0fdd",
-              "x": 0.9775801596908837,
-              "y": 0.43413519173368076
+              "x": 0.9829293017763163,
+              "y": 0.42868533753913923
             },
             "visibility": "players",
             "display_mode": "dot",
-            "name_revealed": false,
+            "name_revealed": true,
             "faction_revealed": false,
-            "faction_organization_id": "",
+            "faction_organization_id": "fe2acabd-333d-4d17-9e48-f19e2e3cbe93",
             "label_offset": {
-              "x": -0.03966256431381279,
-              "y": -0.034432232900453524
+              "x": -0.027150518456681046,
+              "y": -0.012915603444066056
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -308,6 +310,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -323,21 +326,29 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
           },
           "da621804-0d7d-4af5-8cd1-54e535323c8b": {
-            "placement": null,
+            "placement": {
+              "location_id": "38b8b79b-0785-4213-826e-0e65998d3b41",
+              "floor_id": "",
+              "map_id": "a5a85bd9-e989-4069-936c-8acda64f0fdd",
+              "x": 0.8727221751213594,
+              "y": 0.5114559493974926
+            },
             "visibility": "players",
             "display_mode": "dot",
             "name_revealed": false,
             "faction_revealed": false,
             "faction_organization_id": "",
             "label_offset": {
-              "x": 0.0,
-              "y": 0.0
+              "x": 0.010245273829240413,
+              "y": -0.021470345155663904
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -353,6 +364,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -368,6 +380,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -383,6 +396,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -398,6 +412,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -413,6 +428,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -428,6 +444,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -443,6 +460,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -458,6 +476,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -473,6 +492,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -488,6 +508,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -503,6 +524,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -518,6 +540,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -533,6 +556,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -548,6 +572,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -563,6 +588,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -578,6 +604,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -593,6 +620,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -608,6 +636,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -623,6 +652,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -638,6 +668,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -653,6 +684,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -668,6 +700,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -683,6 +716,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -698,6 +732,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -713,6 +748,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -728,6 +764,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -743,6 +780,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -758,6 +796,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -773,6 +812,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -788,6 +828,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -803,6 +844,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -818,6 +860,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -833,6 +876,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -848,6 +892,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -863,6 +908,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -872,33 +918,41 @@
               "location_id": "38b8b79b-0785-4213-826e-0e65998d3b41",
               "floor_id": "",
               "map_id": "a5a85bd9-e989-4069-936c-8acda64f0fdd",
-              "x": 0.888010368782359,
-              "y": 0.5503659152086138
+              "x": 0.8822509792980003,
+              "y": 0.5340035764572463
             },
             "visibility": "players",
-            "display_mode": "dot",
+            "display_mode": "token",
             "name_revealed": false,
-            "faction_revealed": false,
-            "faction_organization_id": "",
+            "faction_revealed": true,
+            "faction_organization_id": "c4cbf003-ab52-4da7-b341-e2cea0e34062",
             "label_offset": {
-              "x": 0.0,
-              "y": 0.0
+              "x": 0.0005819556212619417,
+              "y": 0.008682148728015997
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
           },
           "38a03510-bc09-4620-9f90-6a9ae207d799": {
-            "placement": null,
+            "placement": {
+              "location_id": "38b8b79b-0785-4213-826e-0e65998d3b41",
+              "floor_id": "",
+              "map_id": "a5a85bd9-e989-4069-936c-8acda64f0fdd",
+              "x": 0.838045863699315,
+              "y": 0.5232135193636895
+            },
             "visibility": "players",
             "display_mode": "dot",
             "name_revealed": false,
             "faction_revealed": false,
             "faction_organization_id": "",
             "label_offset": {
-              "x": 0.0,
-              "y": 0.0
+              "x": -0.00039404899343232363,
+              "y": 0.006645583024372161
             },
+            "nameplate_scale": 1.1,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -914,6 +968,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -929,6 +984,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -944,6 +1000,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -959,6 +1016,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -974,6 +1032,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -989,6 +1048,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1004,6 +1064,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1019,6 +1080,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1034,6 +1096,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1049,6 +1112,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1064,6 +1128,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1079,6 +1144,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1094,6 +1160,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1109,6 +1176,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1124,6 +1192,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1139,6 +1208,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1154,6 +1224,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1169,6 +1240,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1184,6 +1256,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1199,6 +1272,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1214,6 +1288,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1229,6 +1304,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1244,6 +1320,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1259,6 +1336,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1274,6 +1352,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1289,6 +1368,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1304,6 +1384,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1319,6 +1400,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1334,6 +1416,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1349,6 +1432,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1364,6 +1448,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1379,6 +1464,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1394,6 +1480,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1409,6 +1496,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1424,6 +1512,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1439,6 +1528,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1454,6 +1544,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1469,6 +1560,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1484,6 +1576,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1499,6 +1592,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1514,6 +1608,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1529,6 +1624,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1544,6 +1640,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1559,6 +1656,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1574,6 +1672,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1589,6 +1688,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1604,6 +1704,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1619,6 +1720,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1634,6 +1736,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1649,6 +1752,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1664,6 +1768,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1679,6 +1784,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1694,6 +1800,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1709,6 +1816,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1724,6 +1832,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1739,6 +1848,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1754,6 +1864,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1769,6 +1880,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1784,6 +1896,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1799,6 +1912,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1814,6 +1928,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1829,6 +1944,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1844,6 +1960,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1859,6 +1976,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1874,6 +1992,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1889,6 +2008,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1904,6 +2024,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1919,6 +2040,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1934,6 +2056,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1949,6 +2072,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1964,6 +2088,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1979,6 +2104,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -1994,6 +2120,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -2009,6 +2136,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -2024,6 +2152,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -2039,6 +2168,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -2054,6 +2184,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -2069,6 +2200,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -2084,6 +2216,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -2099,6 +2232,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -2114,6 +2248,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -2129,6 +2264,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -2144,6 +2280,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -2159,6 +2296,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -2174,6 +2312,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -2189,6 +2328,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -2204,6 +2344,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -2219,6 +2360,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -2234,6 +2376,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -2249,6 +2392,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -2264,6 +2408,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -2279,6 +2424,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -2294,6 +2440,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -2309,6 +2456,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -2324,6 +2472,7 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -2339,12 +2488,39 @@
               "x": 0.0,
               "y": 0.0
             },
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []
           }
         },
-        "groups": []
+        "groups": [
+          {
+            "record_id": "7b2556ac-0baa-4df3-8add-529e4fcfd645",
+            "name": "Party",
+            "location_id": "38b8b79b-0785-4213-826e-0e65998d3b41",
+            "color": "#d6ad52",
+            "members": [
+              {
+                "record_id": "a9a4ec9c-ce56-457e-8316-95b0b8f641ae",
+                "actor_type": "person",
+                "actor_id": "da621804-0d7d-4af5-8cd1-54e535323c8b"
+              },
+              {
+                "record_id": "06f31e0d-1341-462a-a6ff-bf5807716f57",
+                "actor_type": "person",
+                "actor_id": "594ad00f-0b79-4118-ba66-a875f7ba9811"
+              },
+              {
+                "record_id": "fbc340f4-5715-4e10-8e10-9716588ee56e",
+                "actor_type": "person",
+                "actor_id": "38a03510-bc09-4620-9f90-6a9ae207d799"
+              }
+            ],
+            "created_at": "2026-08-13T05:22:28.877682Z",
+            "last_updated": "2026-08-13T05:22:28.877682Z"
+          }
+        ]
       }
     },
     {
@@ -2477,7 +2653,7 @@
             },
             "visibility": "players",
             "display_mode": "dot",
-            "name_revealed": false,
+            "name_revealed": true,
             "faction_revealed": false,
             "faction_organization_id": ""
           },

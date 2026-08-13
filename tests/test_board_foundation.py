@@ -188,6 +188,8 @@ class BoardFoundationTests(unittest.TestCase):
         self.assertEqual(npc["name"], "Unknown")
         self.assertFalse(npc["name_revealed"])
         self.assertEqual(npc["group_color"], "#778899")
+        self.assertEqual(npc["plaque_background"], "#b0b0b0")
+        self.assertEqual(npc["plaque_border"], "#778899")
 
     def test_regions_validate_persist_and_enter_player_snapshot_safely(self):
         region = {

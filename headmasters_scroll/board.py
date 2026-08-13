@@ -514,7 +514,13 @@ def validate_world_board(document: dict[str, Any]) -> None:
                 raise ValueError("A person's placement must match an existing map and location")
             if placement["floor_id"] != map_record["floor_id"]:
                 raise ValueError("A person's placement floor must match the map")
-    groups = [normalize_group(item) for item in document.get("board_groups", [])]
+    groups = []
+    for item in document.get("board_groups", []):
+        members = item.get("members", []) if isinstance(item, dict) else []
+        if len(members) >= 2:
+            groups.append(normalize_group(item))
+        elif isinstance(item, dict) and len(members) == 1:
+            groups.append(deepcopy(item))
     memberships: set[str] = set()
     for group in groups:
         if group["location_id"] not in locations:
@@ -760,7 +766,10 @@ class WorldBoardRepository:
             placement = board.get("placement")
             if not placement or placement["map_id"] not in assigned_map_ids:
                 continue
-            is_player = person_id in player_ids or bool(person.get("player_character"))
+            # Player presentation belongs to the current session link, not a
+            # permanent character classification. A formerly linked character
+            # becomes an ordinary revealed occupant when ownership changes.
+            is_player = person_id in player_ids
             if for_players and (
                 placement["map_id"] not in visible_map_ids
                 or (board["visibility"] == "headmaster" and not is_player)
@@ -772,6 +781,8 @@ class WorldBoardRepository:
             faction = organizations.get(chosen, {})
             portrait = board.get("portrait")
             group = person_groups.get(person_id, {})
+            group_id = str(group.get("record_id", "") or "")
+            group_color = str(group.get("color", "#b0b0b0") or "#b0b0b0")
             display_mode = "token" if is_player else board["display_mode"]
             if display_mode == "token" and not portrait and not is_player:
                 display_mode = "dot"
@@ -793,9 +804,12 @@ class WorldBoardRepository:
                 "faction_id": chosen if (not for_players or board["faction_revealed"]) else "",
                 "faction_name": (str(faction.get("name", "") or "") or "Unknown") if (not for_players or board["faction_revealed"]) else "Unknown",
                 "faction_color": str(faction.get("faction_color", "#808080") or "#808080") if (not for_players or board["faction_revealed"]) else "#808080",
-                "group_id": str(group.get("record_id", "") or ""),
+                "group_id": group_id,
                 "group_name": str(group.get("name", "") or ""),
-                "group_color": str(group.get("color", "#b0b0b0") or "#b0b0b0"),
+                "group_color": group_color,
+                "plaque_background": "#d6ad52" if is_player else "#b0b0b0",
+                "plaque_border": group_color if group_id else ("#8a6727" if is_player else "#707070"),
+                "owned_by_player": is_player,
                 "active_faction_ids": active_factions if not for_players else [],
                 "active_factions": [
                     {
@@ -819,6 +833,15 @@ class WorldBoardRepository:
             "maps": maps,
             "actors": actors,
             "groups": deepcopy(document.get("board_groups", [])) if not for_players else [],
+            "factions": [
+                {
+                    "organization_id": str(item.get("record_id", "") or ""),
+                    "name": str(item.get("name", "") or ""),
+                    "color": str(item.get("faction_color", "#808080") or "#808080"),
+                }
+                for item in document.get("organizations", [])
+                if not for_players and isinstance(item, dict) and item.get("is_faction")
+            ],
             "visible_map_ids": sorted(visible_map_ids),
         }
 

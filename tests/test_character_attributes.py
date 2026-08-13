@@ -114,15 +114,31 @@ class CharacterAttributesTests(unittest.TestCase):
             "Power": 2,
             "Erudition": 1,
             "Panache": 1,
-            "Naturalism": 0,
+            "Naturalism": 1,
         })
         self.assertEqual(skills["Defense"], 4)  # course + two buys + one eminence
         self.assertEqual(characteristics["Fortitude"], 1)
         self.assertEqual(characteristics["Willpower"], 5)  # capped after earned year-one buy
         self.assertEqual(characteristics["Intellect"], 4)
-        self.assertEqual(characteristics["Fortitude"], 1)  # skipped year does not count
+        self.assertEqual(characteristics["Fortitude"], 1)  # base 0 + missed-year development
         self.assertEqual(parental["Generosity"], 8)
         self.assertEqual(summary["traits"], ["Bookworm"])
+
+    def test_legacy_initial_skill_buys_supply_corresponding_abilities(self):
+        person = dict(self.person)
+        person.pop("initial_attribute_buys")
+        person["initial_bonuses"] = {
+            "skill_bonuses": ["Charms", "Runes"],
+            "traits": [],
+        }
+        summary = calculate_character_attributes(
+            person, {"people": [person], "events": []}, self.database,
+            "2001-09-01T08:00",
+        )
+        attributes = self.values(summary, "attributes")
+        self.assertEqual(sum(attributes.values()), 5)
+        self.assertEqual(attributes["Power"], 1)
+        self.assertEqual(attributes["Erudition"], 2)
 
 
 if __name__ == "__main__":

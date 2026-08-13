@@ -273,7 +273,13 @@ def normalize_campaign_game_state(
             "character_notes": notes,
         }
 
-    groups = [normalize_group(item) for item in (raw.get("groups", []) or [])]
+    groups = []
+    for item in (raw.get("groups", []) or []):
+        members = item.get("members", []) if isinstance(item, dict) else []
+        if len(members) >= 2:
+            groups.append(normalize_group(item))
+        elif isinstance(item, dict) and len(members) == 1:
+            groups.append(deepcopy(item))
     if len({item["record_id"] for item in groups}) != len(groups):
         raise ValueError("Campaign board group IDs must be unique")
     return {

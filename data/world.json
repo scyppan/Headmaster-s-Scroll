@@ -2,7 +2,7 @@
   "_database": {
     "schema_version": 36,
     "database_version": "0.36.0",
-    "last_saved": "2026-08-13T02:17:33.539503+00:00"
+    "last_saved": "2026-08-13T04:11:36.223936+00:00"
   },
   "people": [
     {
@@ -5574,7 +5574,7 @@
         },
         "visibility": "players",
         "display_mode": "dot",
-        "name_revealed": false,
+        "name_revealed": true,
         "faction_revealed": false,
         "faction_organization_id": ""
       }
@@ -101703,6 +101703,26 @@
       "last_updated": "2026-08-08T14:41:51.876686+00:00",
       "is_faction": false,
       "faction_color": "#808080"
+    },
+    {
+      "record_id": "fe2acabd-333d-4d17-9e48-f19e2e3cbe93",
+      "name": "Neutrals",
+      "organization_type": "Faction",
+      "parent_organization_id": "",
+      "is_faction": true,
+      "faction_color": "#808080",
+      "events": [],
+      "jobs": []
+    },
+    {
+      "record_id": "c4cbf003-ab52-4da7-b341-e2cea0e34062",
+      "name": "Player Characters",
+      "organization_type": "Faction",
+      "parent_organization_id": "",
+      "is_faction": true,
+      "faction_color": "#808080",
+      "events": [],
+      "jobs": []
     }
   ],
   "events": [
@@ -121809,13 +121829,39 @@
       "died_in_office_death_event_id": "",
       "died_in_office_created_death_event": false,
       "source_job_event_id": ""
+    },
+    {
+      "record_id": "da87995b-d39d-4d56-805e-de9cfe7c9f55",
+      "event_type": "joined_faction",
+      "title": "Joined Neutrals",
+      "date": "2000-08-27",
+      "time": "08:00",
+      "description": "",
+      "person_ids": [
+        "6882e7fb-529a-4b3e-8929-a795b91b816d"
+      ],
+      "organization_id": "fe2acabd-333d-4d17-9e48-f19e2e3cbe93",
+      "organization_name": "Neutrals"
+    },
+    {
+      "record_id": "bdfef088-ddfe-47f6-aae2-9447561299ed",
+      "event_type": "joined_faction",
+      "title": "Joined Player Characters",
+      "date": "2000-08-27",
+      "time": "08:00",
+      "description": "",
+      "person_ids": [
+        "594ad00f-0b79-4118-ba66-a875f7ba9811"
+      ],
+      "organization_id": "c4cbf003-ab52-4da7-b341-e2cea0e34062",
+      "organization_name": "Player Characters"
     }
   ],
   "_recent_people": [
+    "594ad00f-0b79-4118-ba66-a875f7ba9811",
     "ee2b39ed-706b-462f-9d1a-9bb5a84679b1",
     "da621804-0d7d-4af5-8cd1-54e535323c8b",
     "19cdecaf-4b65-400b-9b05-75ac1c549f24",
-    "594ad00f-0b79-4118-ba66-a875f7ba9811",
     "6882e7fb-529a-4b3e-8929-a795b91b816d",
     "62ca5c0d-a14f-4450-9581-f36c9396fbcb",
     "a7bc9826-202b-47c5-876e-bed43ac5c92d",
@@ -129094,9 +129140,9 @@
   ],
   "board_groups": [],
   "_headmasters_scroll": {
-    "revision_id": "867b4305-2064-45bd-978b-e1fba3f4f126",
-    "last_modified_at": "2026-08-13T02:17:33.616982Z",
-    "last_modified_by": "world-builder"
+    "revision_id": "87e2dda9-1979-4a46-bde9-632ab2260646",
+    "last_modified_at": "2026-08-13T05:19:58.459523Z",
+    "last_modified_by": "game-board"
   },
   "named_creatures": []
 }

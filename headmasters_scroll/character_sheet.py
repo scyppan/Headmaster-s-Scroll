@@ -362,6 +362,14 @@ def build_character_sheet(
     knowledge = _knowledge(person_id, world, database, campaign, events)
     campaign_person = (campaign.get("game_state", {}).get("people", {}) or {}).get(person_id, {})
     birth_parts = [person.get("birth_year"), person.get("birth_month"), person.get("birth_day")]
+    try:
+        birth_display = (
+            f"{int(person.get('birth_day')):02d} "
+            f"{calendar.month_abbr[int(person.get('birth_month'))]} "
+            f"{int(person.get('birth_year'))}"
+        )
+    except (TypeError, ValueError, IndexError):
+        birth_display = "-".join(str(item) for item in birth_parts if item not in (None, ""))
     portrait = ((person.get("board") or {}).get("portrait") or {}) if isinstance(person.get("board"), dict) else {}
     return {
         "character_id": person_id,
@@ -371,7 +379,7 @@ def build_character_sheet(
         "overview": {
             "name": str(person.get("displayed_name") or ""),
             "portrait_asset_id": str(portrait.get("asset_id") or ""),
-            "birth": "-".join(str(item) for item in birth_parts if item not in (None, "")),
+            "birth": birth_display,
             "school": str(person.get("school") or ""),
             "canon": bool(person.get("canon", False)),
             "narrative": str(person.get("narrative") or person.get("notes") or ""),

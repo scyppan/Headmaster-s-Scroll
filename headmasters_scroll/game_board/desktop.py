@@ -1615,57 +1615,51 @@ class GameBoardWindow(tk.Tk):
         widget.bind("<ButtonPress>", hide, add="+")
 
     def _create_board_groups_controls(self, parent: tk.Misc) -> None:
-        shell = ttk.Frame(parent, style="Card.TFrame", padding=8)
+        shell = ttk.Frame(parent, style="Card.TFrame", padding=5)
         self.board_groups_dock = shell
         self.board_tools_panels["groups"] = shell
         group_header = ttk.Frame(shell, style="Card.TFrame")
         group_header.pack(fill="x")
-        ttk.Label(group_header, text="GROUPS", style="Card.TLabel", font=("Segoe UI", 8, "bold")).pack(side="left")
+        ttk.Label(group_header, text="CHARACTERS", style="Card.TLabel", font=("Segoe UI", 8, "bold")).pack(side="left")
         for text, command, help_text in (
-            ("P+", self.open_add_character_menu, "Add a character to this map"),
-            ("+", self.create_board_group, "Create a group"),
-            ("↔", self.manage_actor_group, "Join or leave a group"),
-            ("⌁", self.grant_actor_control, "Grant player control"),
-            ("⚑", self.select_actor_faction, "Choose the displayed faction"),
+            ("G+", self.create_board_group, "Create a colored character group"),
+            ("+", self.open_add_character_menu, "Add a character to this map"),
         ):
             button = ttk.Button(group_header, text=text, width=3, style="Quiet.TButton", command=command)
             button.pack(side="right", padx=(3, 0))
             self._attach_tooltip(button, help_text)
-        self.board_actor_tree = ttk.Treeview(
-            shell,
-            columns=("name", "display", "visibility"),
-            show="headings",
-            selectmode="browse",
-            height=5,
+        self.board_actor_search_var = tk.StringVar()
+        search = ttk.Entry(shell, textvariable=self.board_actor_search_var)
+        search.pack(fill="x", pady=(4, 3))
+        self._attach_tooltip(search, "Search characters on this map")
+        self.board_actor_search_var.trace_add("write", lambda *_args: self._render_board_actor_list())
+        self.board_actor_rows_canvas = tk.Canvas(
+            shell, background="#fff8e6", borderwidth=0, highlightthickness=1,
+            highlightbackground=self.EDGE, height=190,
         )
-        for column, label, width in (
-            ("name", "Character", 124),
-            ("display", "Piece", 52),
-            ("visibility", "View", 52),
-        ):
-            self.board_actor_tree.heading(column, text=label)
-            self.board_actor_tree.column(column, width=width, minwidth=55, anchor="w")
-        self.board_actor_tree.pack(fill="x", pady=(5, 6))
-        self.board_actor_tree.bind("<<TreeviewSelect>>", self._board_actor_selected)
-
+        actor_scroll = ttk.Scrollbar(shell, orient="vertical", command=self.board_actor_rows_canvas.yview)
+        self.board_actor_rows_canvas.configure(yscrollcommand=actor_scroll.set)
+        self.board_actor_rows_canvas.pack(side="left", fill="both", expand=True, pady=(0, 2))
+        actor_scroll.pack(side="right", fill="y", pady=(0, 2))
+        self.board_actor_rows_frame = tk.Frame(self.board_actor_rows_canvas, background="#fff8e6")
+        self._board_actor_rows_window = self.board_actor_rows_canvas.create_window(
+            (0, 0), window=self.board_actor_rows_frame, anchor="nw"
+        )
+        self.board_actor_rows_frame.bind(
+            "<Configure>",
+            lambda _event: self.board_actor_rows_canvas.configure(
+                scrollregion=self.board_actor_rows_canvas.bbox("all")
+            ),
+        )
+        self.board_actor_rows_canvas.bind(
+            "<Configure>",
+            lambda event: self.board_actor_rows_canvas.itemconfigure(
+                self._board_actor_rows_window, width=max(1, event.width)
+            ),
+        )
+        self.board_actor_tree = None
         self.board_transfer_map = None
-
-        actor_actions = ttk.Frame(shell, style="Card.TFrame")
-        actor_actions.pack(fill="x", pady=(0, 2))
-        for text, style, command, help_text in (
-            ("●", "Quiet.TButton", lambda: self.update_selected_actor(display_mode="dot"), "Show as a dot"),
-            ("▣", "Quiet.TButton", lambda: self.update_selected_actor(display_mode="token"), "Show as a portrait token"),
-            ("◌", "Quiet.TButton", lambda: self.update_selected_actor(visibility="headmaster"), "Hide from players"),
-            ("◉", "Good.TButton", lambda: self.update_selected_actor(visibility="players"), "Reveal to players"),
-            ("N", "Quiet.TButton", self.toggle_selected_name, "Reveal or conceal the name"),
-            ("F", "Quiet.TButton", self.toggle_selected_faction, "Reveal or conceal the faction"),
-        ):
-            button = ttk.Button(actor_actions, text=text, width=2, style=style, command=command)
-            button.pack(side="left", fill="x", expand=True, padx=(0, 2))
-            self._attach_tooltip(button, help_text)
         self._render_board_actor_list()
-        if self.selected_board_actor_id and self.board_actor_tree.exists(self.selected_board_actor_id):
-            self.board_actor_tree.selection_set(self.selected_board_actor_id)
 
     def open_add_character_menu(self) -> None:
         if not self.selected_session_id or not self.selected_board_map_id:
@@ -2884,6 +2878,13 @@ class GameBoardWindow(tk.Tk):
             selected = actor_id == self.selected_board_actor_id
             is_player = bool(actor.get("is_player_character"))
             name = str(actor.get("name") or ("Character" if is_player else "Unknown"))
+            group_id = str(actor.get("group_id", "") or "")
+            group_color = str(actor.get("group_color") or "#b0b0b0")
+            # Ownership controls the plaque fill; a board group contributes
+            # only its border color.  This keeps an unowned, ungrouped NPC
+            # unmistakably grey while still making groups easy to scan.
+            plaque_fill = "#d6ad52" if is_player else "#b0b0b0"
+            plaque_outline = group_color if group_id else (self.INK if is_player else "#707070")
             actor_label_font_size = max(
                 6,
                 min(
@@ -2905,7 +2906,7 @@ class GameBoardWindow(tk.Tk):
                 item = canvas.create_oval(
                     marker_x - radius, marker_y - radius,
                     marker_x + radius, marker_y + radius,
-                    fill="#d6ad52", outline="#fff3cf" if selected else self.INK, width=2,
+                    fill=plaque_fill, outline="#fff3cf" if selected else plaque_outline, width=2,
                 )
                 line = canvas.create_line(marker_x, marker_y, line_end_x, line_end_y, fill=self.INK, width=2)
                 plaque_x = max(50.0, min(width - 50.0, marker_x - math.cos(angle) * 54 + label_dx))
@@ -2918,7 +2919,7 @@ class GameBoardWindow(tk.Tk):
                 label_bg = canvas.create_rectangle(
                     label_box[0] - 5, label_box[1] - 3,
                     label_box[2] + 5, label_box[3] + 3,
-                    fill="#d6ad52", outline=self.INK, width=1,
+                    fill=plaque_fill, outline=plaque_outline, width=1,
                 )
                 canvas.tag_raise(line)
                 canvas.tag_raise(item)
@@ -2933,7 +2934,7 @@ class GameBoardWindow(tk.Tk):
                 radius = dot_diameter / 2
                 item = canvas.create_oval(
                     x - radius, y - radius, x + radius, y + radius,
-                    fill="#d6ad52", outline="#fff3cf" if selected else self.INK, width=2,
+                    fill=plaque_fill, outline="#fff3cf" if selected else plaque_outline, width=2,
                 )
                 direction = -1 if actor_index % 2 == 0 else 1
                 label_y = y - 24 + label_dy
@@ -2947,7 +2948,7 @@ class GameBoardWindow(tk.Tk):
                 label_bg = canvas.create_rectangle(
                     label_box[0] - 5, label_box[1] - 3,
                     label_box[2] + 5, label_box[3] + 3,
-                    fill="#d6ad52", outline=self.INK, width=1,
+                    fill=plaque_fill, outline=plaque_outline, width=1,
                 )
                 canvas.tag_raise(line)
                 canvas.tag_raise(item)
@@ -2976,33 +2977,34 @@ class GameBoardWindow(tk.Tk):
                     radius = dot_diameter / 2
                     item = canvas.create_oval(x - radius, y - radius, x + radius, y + radius, fill=color, outline="#d6ad52" if selected else self.INK, width=2)
             elif actor.get("display_mode") == "nameplate":
-                text_item = canvas.create_text(x + label_dx, y + label_dy, text=name, fill=self.INK, font=("Segoe UI", actor_label_font_size, "bold"))
-                box = canvas.bbox(text_item) or (x - 25, y - 10, x + 25, y + 10)
-                item = canvas.create_rectangle(box[0] - 6, box[1] - 4, box[2] + 6, box[3] + 4, fill="#d6ad52", outline="#fff3cf" if selected else self.INK, width=2)
-                canvas.tag_raise(text_item)
-                self._board_canvas_actors[(map_id, text_item)] = actor_id
-                self._board_canvas_actor_parts[(map_id, text_item)] = "label"
+                # Legacy plaque-only records now retain a real spatial dot and
+                # the same permanent dot-to-plaque leader as every other piece.
+                radius = dot_diameter / 2
+                item = canvas.create_oval(
+                    x - radius, y - radius, x + radius, y + radius,
+                    fill=plaque_fill, outline="#fff3cf" if selected else plaque_outline, width=2,
+                )
             else:
                 radius = dot_diameter / 2
                 item = canvas.create_oval(x - radius, y - radius, x + radius, y + radius, fill=color, outline="#fff3cf" if selected else self.INK, width=2)
             self._board_canvas_actors[(map_id, item)] = actor_id
-            if actor.get("display_mode") == "nameplate":
-                self._board_canvas_actor_parts[(map_id, item)] = "label"
-            if actor.get("display_mode") != "nameplate":
-                label_offset = max(token_diameter, dot_diameter) / 2 + 10
-                label_x, label_y = x + label_dx, y + label_offset + label_dy
-                label = canvas.create_text(label_x, label_y, text=name, fill="#000000", font=("Segoe UI", actor_label_font_size, "bold"))
-                label_box = canvas.bbox(label) or (label_x - 20, label_y - 7, label_x + 20, label_y + 7)
-                label_bg = canvas.create_rectangle(
-                    label_box[0] - 4, label_box[1] - 2,
-                    label_box[2] + 4, label_box[3] + 2,
-                    fill="#d6ad52", outline=self.INK, width=1,
-                )
-                canvas.tag_raise(label)
-                self._board_canvas_actors[(map_id, label_bg)] = actor_id
-                self._board_canvas_actors[(map_id, label)] = actor_id
-                self._board_canvas_actor_parts[(map_id, label_bg)] = "label"
-                self._board_canvas_actor_parts[(map_id, label)] = "label"
+            label_offset = max(token_diameter, dot_diameter) / 2 + 10
+            label_x, label_y = x + label_dx, y + label_offset + label_dy
+            line = canvas.create_line(x, y, label_x, label_y, fill=self.INK, width=2)
+            label = canvas.create_text(label_x, label_y, text=name, fill="#000000", font=("Segoe UI", actor_label_font_size, "bold"))
+            label_box = canvas.bbox(label) or (label_x - 20, label_y - 7, label_x + 20, label_y + 7)
+            label_bg = canvas.create_rectangle(
+                label_box[0] - 4, label_box[1] - 2,
+                label_box[2] + 4, label_box[3] + 2,
+                fill=plaque_fill, outline=plaque_outline, width=1,
+            )
+            canvas.tag_raise(line)
+            canvas.tag_raise(label)
+            self._board_canvas_actors[(map_id, line)] = actor_id
+            self._board_canvas_actors[(map_id, label_bg)] = actor_id
+            self._board_canvas_actors[(map_id, label)] = actor_id
+            self._board_canvas_actor_parts[(map_id, label_bg)] = "label"
+            self._board_canvas_actor_parts[(map_id, label)] = "label"
 
         draft = self._board_presentation_draft(map_id)
         obscurations = list((draft or {}).get("obscurations", []))
@@ -4030,21 +4032,66 @@ class GameBoardWindow(tk.Tk):
         editor.focus_set()
 
     def _render_board_actor_list(self) -> None:
-        tree = self.board_actor_tree
-        if tree is None or not tree.winfo_exists():
+        frame = getattr(self, "board_actor_rows_frame", None)
+        if frame is None or not frame.winfo_exists():
             return
-        rows = []
-        for actor in self.board_snapshot.get("actors", []):
-            if actor.get("map_id") != self.selected_board_map_id:
-                continue
-            rows.append((str(actor.get("actor_id")), (
-                actor.get("name") or "Unknown",
-                actor.get("display_mode", "dot").title(),
-                "Visible" if actor.get("visibility") == "players" else "Hidden",
-            )))
-        self._replace_tree(tree, rows)
-        if self.selected_board_actor_id and tree.exists(self.selected_board_actor_id):
-            tree.selection_set(self.selected_board_actor_id)
+        for child in frame.winfo_children():
+            child.destroy()
+        search_value = self.board_actor_search_var.get() if hasattr(self, "board_actor_search_var") else ""
+        query = str(search_value or "").strip().casefold()
+        actors = [
+            actor for actor in self.board_snapshot.get("actors", [])
+            if actor.get("map_id") == self.selected_board_map_id
+            and (not query or query in str(actor.get("name") or "Unknown").casefold())
+        ]
+        actors.sort(key=lambda actor: str(actor.get("name") or "Unknown").casefold())
+        for row_index, actor in enumerate(actors):
+            actor_id = str(actor.get("actor_id"))
+            row = tk.Frame(
+                frame,
+                background="#ead8aa" if actor_id == self.selected_board_actor_id else "#fff8e6",
+                highlightbackground=self.EDGE,
+                highlightthickness=0 if row_index == 0 else 1,
+            )
+            row.pack(fill="x")
+            name_button = tk.Button(
+                row, text=str(actor.get("name") or "Unknown"), anchor="w",
+                background=row.cget("background"), activebackground="#ead8aa",
+                foreground=self.INK, relief="flat", borderwidth=0,
+                font=("Segoe UI", 8, "bold"), padx=3, pady=2,
+                command=lambda value=actor_id: self._select_board_actor(value),
+            )
+            name_button.pack(side="left", fill="x", expand=True)
+            controls = (
+                ("⚑", lambda value=actor_id: self._actor_row_action(value, self.select_actor_faction), "Choose or create a faction", actor.get("faction_color") if actor.get("faction_id") else "#d8c9a1"),
+                ("F" if actor.get("faction_revealed") else "f", lambda value=actor_id: self._actor_row_action(value, self.toggle_selected_faction), "Reveal or conceal faction", "#4d6b43" if actor.get("faction_revealed") else "#d8c9a1"),
+                ("G", lambda value=actor_id: self._actor_row_action(value, self.manage_actor_group), "Choose or create a colored group", actor.get("group_color") if actor.get("group_id") else "#d8c9a1"),
+                ("◉" if actor.get("visibility") == "players" else "○", lambda value=actor_id, current=actor.get("visibility"): self._actor_row_update(value, visibility="headmaster" if current == "players" else "players"), "Reveal or conceal character", "#4d6b43" if actor.get("visibility") == "players" else "#d8c9a1"),
+                ("▣" if actor.get("display_mode") == "token" else "●", lambda value=actor_id, current=actor.get("display_mode"): self._actor_row_update(value, display_mode="dot" if current == "token" else "token"), "Toggle dot or portrait token", "#4d6b43" if actor.get("display_mode") == "token" else "#d8c9a1"),
+                ("N" if actor.get("name_revealed") else "n", lambda value=actor_id: self._actor_row_action(value, self.toggle_selected_name), "Reveal or conceal name", "#4d6b43" if actor.get("name_revealed") else "#d8c9a1"),
+            )
+            for text, command, help_text, button_color in controls:
+                button = tk.Button(
+                    row, text=text, width=2, command=command,
+                    background=str(button_color or "#d8c9a1"),
+                    activebackground="#ead8aa", foreground=self.INK,
+                    relief="flat", borderwidth=0, font=("Segoe UI", 8, "bold"), padx=1, pady=2,
+                )
+                button.pack(side="left", padx=(1, 0))
+                self._attach_tooltip(button, help_text)
+
+    def _select_board_actor(self, actor_id: str) -> None:
+        self.selected_board_actor_id = actor_id
+        self._render_board_actor_list()
+        self._draw_board_map(self.selected_board_map_id)
+
+    def _actor_row_action(self, actor_id: str, command: Callable[[], None]) -> None:
+        self.selected_board_actor_id = actor_id
+        command()
+
+    def _actor_row_update(self, actor_id: str, **updates: Any) -> None:
+        self.selected_board_actor_id = actor_id
+        self.update_selected_actor(**updates)
 
     def _board_actor_selected(self, _event: tk.Event | None = None) -> None:
         tree = self.board_actor_tree
@@ -4094,20 +4141,81 @@ class GameBoardWindow(tk.Tk):
             messagebox.showinfo("Board", "Select a character first.", parent=self)
             return
         choices = list(actor.get("active_factions", []))
-        if not choices:
-            messagebox.showinfo("Faction", "This character has no active faction on the current Game World Date.", parent=self)
-            return
         chooser = tk.Toplevel(self)
         chooser.title("Displayed faction")
         chooser.transient(self)
         chooser.grab_set()
-        ttk.Label(chooser, text="Choose the active faction to display:", padding=12).pack(anchor="w")
+        chooser.geometry("440x470")
+        apply_window_icon(chooser, GAME_BOARD_ICON)
+        ttk.Label(chooser, text="Faction", style="Title.TLabel", padding=(12, 10, 12, 3)).pack(anchor="w")
+        query = tk.StringVar()
+        search = ttk.Entry(chooser, textvariable=query)
+        search.pack(fill="x", padx=12, pady=(0, 6))
         choice_ids = [str(item.get("organization_id")) for item in choices]
-        value = tk.StringVar(value=str(actor.get("faction_id") or choice_ids[0]))
-        for faction in choices:
-            faction_id = str(faction.get("organization_id"))
-            ttk.Radiobutton(chooser, text=str(faction.get("name") or faction_id), value=faction_id, variable=value).pack(anchor="w", padx=12, pady=2)
-        ttk.Button(chooser, text="Use faction", command=lambda: (self.update_selected_actor(faction_organization_id=value.get()), chooser.destroy())).pack(pady=12)
+        value = tk.StringVar(value=str(actor.get("faction_id") or (choice_ids[0] if choice_ids else "")))
+        results = ttk.Frame(chooser)
+        results.pack(fill="both", expand=True, padx=12)
+
+        def render(*_args: Any) -> None:
+            for child in results.winfo_children():
+                child.destroy()
+            needle = query.get().strip().casefold()
+            for faction in choices:
+                name = str(faction.get("name") or faction.get("organization_id"))
+                if needle and needle not in name.casefold():
+                    continue
+                row = ttk.Frame(results)
+                row.pack(fill="x", pady=1)
+                tk.Label(row, background=str(faction.get("color") or "#808080"), width=2).pack(side="left", fill="y")
+                ttk.Radiobutton(
+                    row, text=name, value=str(faction.get("organization_id")), variable=value
+                ).pack(side="left", fill="x", expand=True)
+
+        query.trace_add("write", render)
+        render()
+        create = ttk.LabelFrame(chooser, text="Create and join", padding=8)
+        create.pack(fill="x", padx=12, pady=6)
+        new_name = ttk.Entry(create)
+        new_name.pack(side="left", fill="x", expand=True)
+        color_value = tk.StringVar(value="#808080")
+        color_button = tk.Button(create, text="■", width=3, background=color_value.get())
+        color_button.pack(side="left", padx=4)
+
+        def choose_color() -> None:
+            selected = colorchooser.askcolor(color_value.get(), parent=chooser)[1]
+            if selected:
+                color_value.set(selected.lower())
+                color_button.configure(background=selected)
+
+        color_button.configure(command=choose_color)
+
+        def create_faction() -> None:
+            name = new_name.get().strip()
+            if not name:
+                return
+            self._background(
+                lambda: self.client.request("POST", "/api/admin/board/factions", {
+                    "session_id": self.selected_session_id,
+                    "person_id": actor["actor_id"],
+                    "name": name,
+                    "color": color_value.get(),
+                }),
+                lambda _result: self.refresh(silent=True),
+            )
+            chooser.destroy()
+
+        ttk.Button(create, text="+", width=3, command=create_faction).pack(side="left")
+        actions = ttk.Frame(chooser, padding=(12, 0, 12, 12))
+        actions.pack(fill="x")
+        ttk.Button(actions, text="Cancel", style="Quiet.TButton", command=chooser.destroy).pack(side="right")
+        ttk.Button(
+            actions, text="Use faction",
+            command=lambda: (
+                self.update_selected_actor(faction_organization_id=value.get()),
+                chooser.destroy(),
+            ) if value.get() else None,
+        ).pack(side="right", padx=(0, 5))
+        search.focus_set()
 
     def transfer_selected_actor(self) -> None:
         actor = self._selected_board_actor()
@@ -4203,8 +4311,8 @@ class GameBoardWindow(tk.Tk):
 
     def create_board_group(self) -> None:
         actors = [item for item in self.board_snapshot.get("actors", []) if item.get("map_id") == self.selected_board_map_id]
-        if len(actors) < 2:
-            messagebox.showinfo("Groups", "At least two people must occupy this map.", parent=self)
+        if not actors:
+            messagebox.showinfo("Groups", "Add a character to this map first.", parent=self)
             return
         dialog = tk.Toplevel(self)
         dialog.title("Create board group")
@@ -4213,7 +4321,8 @@ class GameBoardWindow(tk.Tk):
         ttk.Label(dialog, text="Group name", padding=(10, 10, 10, 2)).pack(anchor="w")
         name = ttk.Entry(dialog)
         name.pack(fill="x", padx=10)
-        color_value = tk.StringVar(value="#b0b0b0")
+        name.insert(0, "Party")
+        color_value = tk.StringVar(value="#d6ad52")
         color_row = ttk.Frame(dialog, padding=(10, 6, 10, 2))
         color_row.pack(fill="x")
         ttk.Label(color_row, text="Plaque color").pack(side="left")
@@ -4240,8 +4349,8 @@ class GameBoardWindow(tk.Tk):
         def save() -> None:
             person_ids = [actor_id for actor_id, variable in values.items() if variable.get()]
             current_map = self._current_board_map()
-            if len(person_ids) < 2 or not current_map:
-                messagebox.showerror("Groups", "Choose at least two people.", parent=dialog)
+            if not person_ids or not current_map:
+                messagebox.showerror("Groups", "Choose at least one character.", parent=dialog)
                 return
             payload = {
                 "session_id": self.selected_session_id,
@@ -4264,9 +4373,12 @@ class GameBoardWindow(tk.Tk):
             if str(group.get("location_id")) == str(actor.get("location_id"))
         ]
         dialog = tk.Toplevel(self)
-        dialog.title("Board group")
+        dialog.title("Choose or Create Group")
         dialog.transient(self)
         dialog.grab_set()
+        dialog.geometry("440x460")
+        dialog.minsize(360, 360)
+        apply_window_icon(dialog, GAME_BOARD_ICON)
         value = tk.StringVar(value="")
         current = ""
         for group in groups:
@@ -4274,10 +4386,75 @@ class GameBoardWindow(tk.Tk):
                 current = str(group.get("record_id"))
                 break
         value.set(current)
-        ttk.Label(dialog, text="Choose a group at this location, or remain solo.", padding=10).pack(anchor="w")
-        ttk.Radiobutton(dialog, text="Remain solo", variable=value, value="").pack(anchor="w", padx=10, pady=2)
-        for group in groups:
-            ttk.Radiobutton(dialog, text=str(group.get("name") or "Group"), variable=value, value=str(group.get("record_id"))).pack(anchor="w", padx=10, pady=2)
+        body = ttk.Frame(dialog, padding=12)
+        body.pack(fill="both", expand=True)
+        ttk.Label(body, text="Group", style="Title.TLabel").pack(anchor="w")
+        query = tk.StringVar()
+        search = ttk.Entry(body, textvariable=query)
+        search.pack(fill="x", pady=(5, 5))
+        self._attach_tooltip(search, "Search groups at this location")
+        results = ttk.Frame(body)
+        results.pack(fill="both", expand=True)
+
+        def render(*_args: Any) -> None:
+            for child in results.winfo_children():
+                child.destroy()
+            ttk.Radiobutton(
+                results, text="Remain solo", variable=value, value=""
+            ).pack(fill="x", anchor="w", pady=1)
+            needle = query.get().strip().casefold()
+            for group in groups:
+                name = str(group.get("name") or "Group")
+                if needle and needle not in name.casefold():
+                    continue
+                row = ttk.Frame(results)
+                row.pack(fill="x", pady=1)
+                tk.Label(
+                    row, background=str(group.get("color") or "#b0b0b0"), width=2
+                ).pack(side="left", fill="y")
+                ttk.Radiobutton(
+                    row, text=name, variable=value, value=str(group.get("record_id"))
+                ).pack(side="left", fill="x", expand=True)
+
+        query.trace_add("write", render)
+        render()
+
+        create = ttk.LabelFrame(body, text="New group", padding=6)
+        create.pack(fill="x", pady=(6, 0))
+        new_name = ttk.Entry(create)
+        new_name.insert(0, "Party")
+        new_name.pack(side="left", fill="x", expand=True)
+        color_value = tk.StringVar(value="#d6ad52")
+        color_button = tk.Button(create, text="■", width=3, background=color_value.get())
+        color_button.pack(side="left", padx=4)
+
+        def choose_color() -> None:
+            selected = colorchooser.askcolor(color_value.get(), parent=dialog)[1]
+            if selected:
+                color_value.set(selected.lower())
+                color_button.configure(background=selected)
+
+        color_button.configure(command=choose_color)
+
+        def create_group() -> None:
+            name = new_name.get().strip()
+            if not name:
+                return
+            payload = {
+                "session_id": self.selected_session_id,
+                "name": name,
+                "location_id": actor.get("location_id"),
+                "person_ids": [actor["actor_id"]],
+                "color": color_value.get(),
+            }
+            self._background(
+                lambda: self.client.request("POST", "/api/admin/board/groups", payload),
+                lambda _result: self.refresh(silent=True),
+            )
+            dialog.destroy()
+
+        ttk.Button(create, text="+", width=3, command=create_group).pack(side="left")
+
         def save() -> None:
             self._background(
                 lambda: self.client.request("PUT", f"/api/admin/board/groups/people/{actor['actor_id']}", {
@@ -4287,7 +4464,11 @@ class GameBoardWindow(tk.Tk):
                 lambda _result: self.refresh(silent=True),
             )
             dialog.destroy()
-        ttk.Button(dialog, text="Apply", command=save).pack(pady=10)
+        actions = ttk.Frame(body)
+        actions.pack(fill="x", pady=(8, 0))
+        ttk.Button(actions, text="Cancel", style="Quiet.TButton", command=dialog.destroy).pack(side="right")
+        ttk.Button(actions, text="Use group", command=save).pack(side="right", padx=(0, 5))
+        search.focus_set()
 
     def _build_game_clock(self, parent: tk.Misc) -> None:
         shell = tk.Frame(
@@ -4405,7 +4586,7 @@ class GameBoardWindow(tk.Tk):
         ).pack(fill="x")
         self.headmaster_tool_buttons: dict[str, tk.Button] = {}
         tools = (
-            ("groups", "●", "Groups"),
+            ("groups", "●", "Characters"),
             ("obfuscation-tools", "▧", "Obfuscation"),
             ("token-tools", "◉", "Tokens & Zoom"),
             ("reveal", "✦", "Reveal"),
@@ -4431,7 +4612,7 @@ class GameBoardWindow(tk.Tk):
             )
             button.pack(fill="x", pady=(0, 1))
             self.headmaster_tool_buttons[key] = button
-        self.select_headmaster_tool("groups", "Groups")
+        self.select_headmaster_tool("groups", "Characters")
 
     def select_headmaster_tool(self, key: str, label: str) -> None:
         """Select a future quick tool without changing the visible app panel."""
@@ -4799,7 +4980,14 @@ class GameBoardWindow(tk.Tk):
         if not hasattr(self, "board_tools_host") or not self.board_tools_host.winfo_exists():
             return
         available = max(1, self.chat_expanded.winfo_height())
+        groups_visible = bool(
+            self.board_groups_dock is not None
+            and self.board_groups_dock.winfo_exists()
+            and self.board_groups_dock.winfo_manager()
+        )
         maximum = max(1, round(available * 0.35))
+        if groups_visible:
+            maximum = max(maximum, round(available * 0.50))
         requested = max(1, self.board_tools_content.winfo_reqheight())
         self.board_tools_host.configure(height=min(requested, maximum))
 

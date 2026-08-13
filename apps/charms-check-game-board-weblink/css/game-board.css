@@ -254,6 +254,9 @@
   padding: 9px 13px;
 }
 
+#gameboard .ccgb-player-card { align-items: flex-start; flex-direction: column; gap: 2px; }
+#gameboard .ccgb-player-birth { color: #65452c; font-size: 11px; line-height: 1.2; }
+
 #gameboard .ccgb-player-name {
   font-weight: 700;
   min-width: 0;
@@ -460,12 +463,12 @@
 
 #gameboard .ccgb-roll-pill strong { font-weight: 500; }
 #gameboard .ccgb-roll-pill.is-ability { background-color: #e1c56e !important; color: #000 !important; }
-#gameboard .ccgb-roll-pill.is-skill { background-color: #c9e2ec !important; border-color: #7296a4 !important; color: #000 !important; }
+#gameboard .ccgb-roll-pill.is-skill { background-color: #eee7d4 !important; border-color: #99917c !important; color: #000 !important; }
 #gameboard .ccgb-roll-pill.is-characteristic { background-color: #bfe0b3 !important; border-color: #6eaa69 !important; color: #000 !important; }
 #gameboard .ccgb-roll-pill.is-parental { background-color: #e8b8bd !important; border-color: #bc7e83 !important; color: #000 !important; }
 #gameboard .ccgb-roll-pill.is-trait { background: #e7d49e; border-color: #a9853e; }
 #gameboard .ccgb-roll-pill.is-ability:hover { background-color: #566c76 !important; color: #fff !important; }
-#gameboard .ccgb-roll-pill.is-skill:hover { background-color: #9fc9d9 !important; color: #000 !important; }
+#gameboard .ccgb-roll-pill.is-skill:hover { background-color: #c9e2ec !important; border-color: #7296a4 !important; color: #000 !important; }
 #gameboard .ccgb-roll-pill.is-characteristic:hover { background-color: #66745d !important; color: #fff !important; }
 #gameboard .ccgb-roll-pill.is-parental:hover { background-color: #705c5c !important; color: #fff !important; }
 #gameboard .ccgb-roll-pill.is-trait:hover { background: #8b743d; color: #fff; }
@@ -838,6 +841,13 @@
   z-index: 3;
 }
 
+#gameboard .ccgb-player-locator-plaque.is-controlled {
+  cursor: grab;
+  pointer-events: auto;
+}
+
+#gameboard .ccgb-player-locator-plaque.is-controlled:active { cursor: grabbing; }
+
 #gameboard .ccgb-map-stage {
   aspect-ratio: 3840 / 2960;
   background: #30251c;
@@ -963,6 +973,12 @@
   display: none !important;
 }
 
+#gameboard .ccgb-board-actor.has-viewport-locator > .ccgb-actor-label,
+#gameboard .ccgb-board-actor.has-viewport-locator > .ccgb-position-leader,
+#gameboard .ccgb-board-actor.has-viewport-locator > .ccgb-position-label {
+  display: none !important;
+}
+
 #gameboard .ccgb-board-actor.is-player-character.is-controlled { z-index: 13; }
 
 #gameboard .ccgb-board-actor.is-token {
@@ -983,17 +999,11 @@
 }
 
 #gameboard .ccgb-board-actor.is-nameplate {
-  background: #d6ad52;
-  border-color: #382719;
-  border-radius: var(--map-label-radius, 0.15px);
-  color: var(--ccgb-ink);
-  font-size: calc(var(--map-label-font-size, 0.65px) * var(--actor-nameplate-scale, 1));
-  font-weight: 800;
-  height: auto;
-  min-width: var(--map-nameplate-width, 15px);
-  padding: var(--map-label-pad-y, 0.12px) var(--map-label-pad-x, 0.25px);
-  width: auto;
+  background: var(--actor-plaque-background, #b0b0b0);
+  border-color: var(--actor-plaque-border, #707070);
 }
+
+#gameboard .ccgb-board-actor.is-nameplate > .ccgb-nameplate-body { display: none; }
 
 #gameboard .ccgb-board-actor.is-controlled {
   cursor: grab;

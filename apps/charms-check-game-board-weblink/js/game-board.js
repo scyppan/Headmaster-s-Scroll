@@ -897,8 +897,7 @@
           <p data-teach-selection>Select a pupil and subject.</p>
           <div><button type="button" data-teach-cancel>Cancel</button><button type="button" data-teach-submit disabled>Send request</button></div>
         </section>
-        <div class="ccgb-knowledge-results"><span data-result-count></span><div class="ccgb-knowledge-pills" data-knowledge-pills></div></div>
-        <aside class="ccgb-knowledge-detail" data-knowledge-detail><p>Select a ${singular} to see its details.</p></aside>`;
+        <div class="ccgb-knowledge-results"><span data-result-count></span><div class="ccgb-knowledge-pills" data-knowledge-pills></div></div>`;
 
       let selectedId = records[0]?.record_id || '';
       const normalizedText = value => String(value || '').toLocaleLowerCase();
@@ -909,24 +908,6 @@
         const haystack = normalizedText([record.name, record.skill, record.subtype, record.source, record.description, record.raw_effect, record.raw_effects, ...(Array.isArray(record.tags) ? record.tags : String(record.tags || '').split(','))].join(' '));
         if (!terms.every(term => haystack.includes(term))) return -1;
         return terms.reduce((score, term) => score + (name.startsWith(term) ? 12 : name.includes(term) ? 6 : 1), 0);
-      };
-
-      const renderDetail = () => {
-        const record = records.find(item => item.record_id === selectedId);
-        const holder = content.querySelector('[data-knowledge-detail]');
-        if (!record) { holder.innerHTML = `<p>Select a ${singular} to see its details.</p>`; return; }
-        const favoriteKey = `${collection}:${record.record_id}`;
-        const tags = Array.isArray(record.tags) ? record.tags : String(record.tags || '').split(',').map(value => value.trim()).filter(Boolean);
-        holder.innerHTML = `<header><div><p>${this.escapeHtml(record.skill || record.collection || singular)}</p><h2>${this.escapeHtml(record.name)}</h2></div><button type="button" class="ccgb-favorite ${this.favorites.has(favoriteKey) ? 'is-favorite' : ''}" data-detail-favorite title="Favorite">&#9733;</button></header>
-          <div class="ccgb-knowledge-badges">${record.threshold == null ? '' : `<span>Difficulty ${Number(record.threshold)}</span>`}${collection === 'spells' ? `<span>${this.escapeHtml(spellBand(record))}</span>` : ''}${record.subtype ? `<span>${this.escapeHtml(record.subtype)}</span>` : ''}${record.source ? `<span>Learned from ${this.escapeHtml(record.source)}</span>` : ''}${tags.map(tag => `<span>#${this.escapeHtml(tag)}</span>`).join('')}</div>
-          <p>${this.escapeHtml(record.description || record.raw_effect || record.raw_effects || 'No description recorded.')}</p>
-          ${this.renderRecordRequirements(record)}
-          <p class="ccgb-knowledge-help">Click rolls · Ctrl-click favorites · Alt-click shares to chat</p>`;
-        holder.querySelector('[data-detail-favorite]').addEventListener('click', () => {
-          if (this.favorites.has(favoriteKey)) this.favorites.delete(favoriteKey); else this.favorites.add(favoriteKey);
-          localStorage.setItem(this.favoriteStorageKey, JSON.stringify([...this.favorites]));
-          renderDetail(); renderResults();
-        });
       };
 
       const renderResults = () => {
@@ -956,16 +937,27 @@
         const grouped = collection === 'spells'
           ? ['Easy to cast', 'Medium confidence', 'Difficult to cast', 'Very difficult to cast', "Can't cast", 'No threshold'].map(label => [label, values.filter(item => spellBand(item.record) === label)]).filter(([, items]) => items.length)
           : [['', values]];
-        holder.innerHTML = grouped.map(([label, items]) => `${label ? `<h3>${this.escapeHtml(label)}</h3>` : ''}<div class="ccgb-knowledge-pill-group">${items.map(({ record }) => `<button type="button" class="ccgb-knowledge-pill ${record.record_id === selectedId ? 'is-selected' : ''}" data-record-id="${this.escapeHtml(record.record_id)}" title="${this.escapeHtml(record.description || record.raw_effect || record.raw_effects || 'No description recorded.')}\n\nClick to roll · Ctrl-click to favorite · Alt-click to share">${this.escapeHtml(record.name)}</button>`).join('')}</div>`).join('') || `<p class="ccgb-empty-result">No matching ${collection}.</p>`;
+        holder.innerHTML = grouped.map(([label, items]) => `${label ? `<h3>${this.escapeHtml(label)}</h3>` : ''}<div class="ccgb-knowledge-pill-group">${items.map(({ record }) => {
+          const favorite = this.favorites.has(`${collection}:${record.record_id}`);
+          const bandClass = collection === 'spells' ? ` is-band-${spellBand(record).toLowerCase().replaceAll(/[^a-z]+/g, '-').replace(/^-|-$/g, '')}` : '';
+          return `<button type="button" class="ccgb-knowledge-pill${bandClass} ${record.record_id === selectedId ? 'is-selected' : ''} ${favorite ? 'is-favorite' : ''}" data-record-id="${this.escapeHtml(record.record_id)}" title="${this.escapeHtml(record.description || record.raw_effect || record.raw_effects || 'No description recorded.')}\n\nClick to roll · Ctrl-click to favorite · Alt-click to share"><span class="ccgb-pill-star" aria-hidden="true">${favorite ? '★' : ''}</span><span>${this.escapeHtml(record.name)}</span></button>`;
+        }).join('')}</div>`).join('') || `<p class="ccgb-empty-result">No matching ${collection}.</p>`;
         content.querySelector('[data-result-count]').textContent = `${values.length} known ${values.length === 1 ? singular : collection}`;
-        holder.querySelectorAll('[data-record-id]').forEach(button => button.addEventListener('click', event => {
+        holder.querySelectorAll('[data-record-id]').forEach(button => {
+          button.addEventListener('contextmenu', event => event.preventDefault());
+          button.addEventListener('mousedown', event => {
+            if ((event.ctrlKey || event.metaKey) && event.button === 0) event.preventDefault();
+          });
+          button.addEventListener('click', event => {
+          event.preventDefault();
+          event.stopPropagation();
           const record = records.find(item => item.record_id === button.dataset.recordId);
           if (!record) return;
           if (event.ctrlKey || event.metaKey) {
             const key = `${collection}:${record.record_id}`;
             if (this.favorites.has(key)) this.favorites.delete(key); else this.favorites.add(key);
             localStorage.setItem(this.favoriteStorageKey, JSON.stringify([...this.favorites]));
-            renderResults(); renderDetail();
+            renderResults();
             return;
           }
           if (event.altKey) {
@@ -974,14 +966,14 @@
             return;
           }
           selectedId = record.record_id;
-          renderResults(); renderDetail();
+          renderResults();
           this.requestRoll(singular, record.record_id);
-        }));
+          });
+        });
       };
       content.querySelectorAll('[data-catalog-search],[data-catalog-filter],[data-catalog-tag],[data-catalog-band],[data-catalog-min],[data-catalog-max],[data-catalog-sort],[data-favorites-only]').forEach(element => element.addEventListener('input', renderResults));
       this.bindTeachingPanel(content, collection, singular, records);
       renderResults();
-      renderDetail();
     }
 
     bindTeachingPanel(content, collection, kind, records) {

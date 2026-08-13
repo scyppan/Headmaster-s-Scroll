@@ -779,6 +779,8 @@ class GameBoardWindow(tk.Tk):
         self.board_settings_window: tk.Toplevel | None = None
         self._known_pending_ids: set[str] = set()
         self._known_campaign_request_ids: set[str] = set()
+        self._board_actor_list_signature: tuple[Any, ...] | None = None
+        self._admission_desktop_popup: tk.Toplevel | None = None
         self._chat_layout_after_id: str | None = None
         self._chat_layout_compact: bool | None = None
         self.title("Game Board — Headmaster Controls")
@@ -4393,8 +4395,6 @@ class GameBoardWindow(tk.Tk):
         frame = getattr(self, "board_actor_rows_frame", None)
         if frame is None or not frame.winfo_exists():
             return
-        for child in frame.winfo_children():
-            child.destroy()
         search_value = self.board_actor_search_var.get() if hasattr(self, "board_actor_search_var") else ""
         query = str(search_value or "").strip().casefold()
         actors = [
@@ -4403,6 +4403,29 @@ class GameBoardWindow(tk.Tk):
             and (not query or query in str(actor.get("name") or "Unknown").casefold())
         ]
         actors.sort(key=lambda actor: str(actor.get("name") or "Unknown").casefold())
+        signature = (
+            self.selected_board_map_id,
+            self.selected_board_actor_id,
+            query,
+            tuple((
+                str(actor.get("actor_id") or ""),
+                str(actor.get("name") or "Unknown"),
+                str(actor.get("faction_id") or ""),
+                str(actor.get("faction_color") or ""),
+                bool(actor.get("faction_revealed")),
+                str(actor.get("group_id") or ""),
+                str(actor.get("group_color") or ""),
+                str(actor.get("visibility") or ""),
+                str(actor.get("display_mode") or ""),
+                bool(actor.get("name_revealed")),
+            ) for actor in actors),
+        )
+        if signature == self._board_actor_list_signature:
+            return
+        self._board_actor_list_signature = signature
+        previous_y = self.board_actor_rows_canvas.yview()[0]
+        for child in frame.winfo_children():
+            child.destroy()
         for row_index, actor in enumerate(actors):
             actor_id = str(actor.get("actor_id"))
             row = tk.Frame(
@@ -4456,6 +4479,11 @@ class GameBoardWindow(tk.Tk):
                 )
                 button.pack(side="left", padx=(1, 0))
                 self._attach_tooltip(button, help_text)
+        frame.update_idletasks()
+        self.board_actor_rows_canvas.configure(
+            scrollregion=self.board_actor_rows_canvas.bbox("all")
+        )
+        self.board_actor_rows_canvas.yview_moveto(previous_y)
 
     def _open_actor_row_menu(self, event: tk.Event, actor_id: str) -> str:
         self.selected_board_actor_id = actor_id
@@ -5740,7 +5768,7 @@ class GameBoardWindow(tk.Tk):
         self.chat_log.configure(yscrollcommand=chat_scroll.set)
         self.chat_log.pack(side="left", fill="both", expand=True)
         chat_scroll.pack(side="right", fill="y")
-        self.chat_log.bind("<Double-Button-1>", self._inspect_chat_roll)
+        self.chat_log.bind("<Button-1>", self._inspect_chat_roll)
         self._configure_chat_fonts()
         composer = ttk.Frame(card, style="Card.TFrame")
         composer.pack(fill="x", pady=(10, 0))
@@ -5782,7 +5810,8 @@ class GameBoardWindow(tk.Tk):
         self.chat_log.tag_configure(
             "roll_summary", background="#ead18e", foreground=self.INK,
             font=("Segoe UI", max(8, self.chat_font_size - 1), "bold"),
-            lmargin1=8, lmargin2=8, rmargin=8, spacing1=2, spacing3=4,
+            relief="raised", borderwidth=1,
+            lmargin1=8, lmargin2=8, rmargin=8, spacing1=3, spacing3=5,
         )
         self.chat_log.tag_configure(
             "critical_failure", background="#6f1717", foreground="#ffe2e2",
@@ -6267,9 +6296,13 @@ class GameBoardWindow(tk.Tk):
                 self.admission_alert.pack_forget()
             self.control_panel_button.configure(text="Control Room")
         if new_ids:
-            self._notify_join_request()
+            self._notify_join_request(new_ids, pending_rows)
 
-    def _notify_join_request(self) -> None:
+    def _notify_join_request(
+        self,
+        new_ids: set[str] | None = None,
+        pending_rows: list[tuple[str, tuple[Any, ...]]] | None = None,
+    ) -> None:
         self.bell()
         self.set_notice("A player is waiting for admission approval")
         if sys.platform == "win32":
@@ -6278,6 +6311,93 @@ class GameBoardWindow(tk.Tk):
                 ctypes.windll.user32.FlashWindow(self.winfo_id(), True)
             except Exception:
                 pass
+        request_ids = list(new_ids or [])
+        if not request_ids:
+            return
+        names_by_id = {
+            request_id: str(values[0])
+            for request_id, values in (pending_rows or [])
+        }
+        if (
+            self._admission_desktop_popup is not None
+            and self._admission_desktop_popup.winfo_exists()
+        ):
+            self._admission_desktop_popup.destroy()
+        popup = tk.Toplevel(self)
+        self._admission_desktop_popup = popup
+        popup.title("Game Board admission")
+        popup.configure(background="#f6e7b8")
+        popup.resizable(False, False)
+        popup.attributes("-topmost", True)
+        apply_window_icon(popup, GAME_BOARD_ICON)
+        shell = tk.Frame(
+            popup, background="#f6e7b8", padx=12, pady=10,
+            highlightbackground=self.ACCENT, highlightthickness=1,
+        )
+        shell.pack(fill="both", expand=True)
+        tk.Label(
+            shell, text="Player waiting for approval",
+            background="#f6e7b8", foreground=self.INK,
+            font=("Segoe UI", 10, "bold"), anchor="w",
+        ).pack(fill="x")
+        display_names = [names_by_id.get(item, "Player") for item in request_ids]
+        tk.Label(
+            shell, text="\n".join(display_names[:3]),
+            background="#f6e7b8", foreground=self.INK,
+            font=("Segoe UI", 9), justify="left", anchor="w", wraplength=330,
+        ).pack(fill="x", pady=(3, 8))
+        actions = tk.Frame(shell, background="#f6e7b8")
+        actions.pack(fill="x")
+
+        def close_popup() -> None:
+            if popup.winfo_exists():
+                popup.destroy()
+            self._admission_desktop_popup = None
+
+        def approve() -> None:
+            ids = list(request_ids)
+            close_popup()
+
+            def work() -> None:
+                for request_id in ids:
+                    self.client.request(
+                        "POST", f"/api/admin/admissions/{request_id}/approve"
+                    )
+
+            self._background(
+                work,
+                lambda _result: (
+                    self.set_notice(f"Admitted {len(ids)} player(s)"),
+                    self.refresh(silent=True),
+                ),
+            )
+
+        def review() -> None:
+            close_popup()
+            self.deiconify()
+            self.lift()
+            self.show_control_page("live-room")
+
+        tk.Button(
+            actions, text="Dismiss", command=close_popup,
+            background="#d2b274", foreground=self.INK, relief="flat", padx=10, pady=5,
+        ).pack(side="right")
+        tk.Button(
+            actions, text="Review", command=review,
+            background=self.ACCENT, foreground="#fff8e7", relief="flat", padx=12, pady=5,
+        ).pack(side="right", padx=(0, 5))
+        tk.Button(
+            actions, text="Approve" if len(request_ids) == 1 else "Approve all",
+            command=approve, background=self.GREEN, foreground="#fff8e7",
+            relief="flat", padx=12, pady=5,
+        ).pack(side="right", padx=(0, 5))
+        popup.update_idletasks()
+        width = max(360, popup.winfo_reqwidth())
+        height = popup.winfo_reqheight()
+        x = popup.winfo_screenwidth() - width - 18
+        y = popup.winfo_screenheight() - height - 58
+        popup.geometry(f"{width}x{height}+{x}+{y}")
+        popup.protocol("WM_DELETE_WINDOW", close_popup)
 
     @staticmethod
     def _replace_tree(tree: ttk.Treeview, rows: list[tuple[str, tuple[Any, ...]]]) -> None:
@@ -6989,27 +7109,26 @@ class GameBoardWindow(tk.Tk):
                 "end", f"{message.get('text', '')}\n", body_tags,
             )
             if isinstance(activity, dict):
-                component_text = "  ·  ".join(
-                    f"{item.get('label', 'Value')} {item.get('value', 0)}"
-                    for item in activity.get("components", []) or []
-                    if isinstance(item, dict)
-                )
                 summary_start = self.chat_log.index("end-1c")
                 self.chat_log.insert(
                     "end",
-                    f"{activity.get('target_name') or 'Roll'} · {activity.get('total', 0)}\n",
+                    f"  {activity.get('target_name') or 'Roll'} · {activity.get('total', 0)}  ▾  \n",
                     ("roll_summary", outcome_tag) if outcome_tag else ("roll_summary",),
                 )
-                if component_text:
-                    self.chat_log.insert(
-                        "end", f"{component_text}\n", body_tags,
-                    )
                 summary_end = self.chat_log.index("end-1c")
                 self._chat_roll_ranges.append(
                     (summary_start, summary_end, deepcopy(activity))
                 )
                 self.chat_log.tag_add("roll", summary_start, summary_end)
-                self.chat_log.tag_configure("roll", underline=True)
+                self.chat_log.tag_configure("roll", underline=False)
+                self.chat_log.tag_bind(
+                    "roll", "<Enter>",
+                    lambda _event: self.chat_log.configure(cursor="hand2"),
+                )
+                self.chat_log.tag_bind(
+                    "roll", "<Leave>",
+                    lambda _event: self.chat_log.configure(cursor="xterm"),
+                )
             end = self.chat_log.index("end-1c")
             self.chat_log.insert("end", "\n")
         self.chat_log.configure(state="disabled")
@@ -7019,24 +7138,82 @@ class GameBoardWindow(tk.Tk):
         index = self.chat_log.index(f"@{event.x},{event.y}")
         for start, end, activity in self._chat_roll_ranges:
             if self.chat_log.compare(index, ">=", start) and self.chat_log.compare(index, "<", end):
-                components = activity.get("components", []) or []
-                lines = [
-                    f"{item.get('label', 'Value')}: {item.get('value', 0)}"
-                    for item in components if isinstance(item, dict)
-                ]
-                if activity.get("threshold") is not None:
-                    lines.append(f"Threshold: {activity['threshold']}")
-                lines.extend([
-                    f"Formula: {activity.get('formula', activity.get('total', 0))} = {activity.get('total', 0)}",
-                    f"Outcome: {str(activity.get('outcome', 'rolled')).replace('_', ' ').title()}",
-                ])
-                messagebox.showinfo(
-                    str(activity.get("target_name") or "Roll details"),
-                    "\n".join(lines),
-                    parent=self,
-                )
+                self._show_roll_details(activity)
                 return "break"
         return None
+
+    def _show_roll_details(self, activity: dict[str, Any]) -> None:
+        dialog = tk.Toplevel(self)
+        dialog.title(str(activity.get("target_name") or "Roll details"))
+        dialog.transient(self)
+        dialog.geometry("420x480")
+        dialog.minsize(340, 320)
+        apply_window_icon(dialog, GAME_BOARD_ICON)
+        shell = ttk.Frame(dialog, padding=12, style="Card.TFrame")
+        shell.pack(fill="both", expand=True)
+        ttk.Label(
+            shell, text=str(activity.get("target_name") or "Roll"),
+            style="Section.TLabel",
+        ).pack(anchor="w")
+        outcome = str(activity.get("outcome") or "rolled").replace("_", " ").title()
+        ttk.Label(
+            shell,
+            text=f"{outcome}  ·  Total {activity.get('total', 0)}",
+            style="Card.TLabel",
+        ).pack(anchor="w", pady=(1, 8))
+        table = ttk.Frame(shell, style="Card.TFrame")
+        table.pack(fill="both", expand=True)
+        row = 0
+        for component in activity.get("components", []) or []:
+            if not isinstance(component, dict):
+                continue
+            ttk.Label(
+                table, text=str(component.get("label") or "Value"),
+                style="Card.TLabel",
+            ).grid(row=row, column=0, sticky="w", padx=(4, 12), pady=2)
+            ttk.Label(
+                table, text=str(component.get("value", 0)),
+                style="CardTitle.TLabel",
+            ).grid(row=row, column=1, sticky="e", padx=4, pady=2)
+            row += 1
+            for source in component.get("sources", []) or []:
+                if not isinstance(source, dict):
+                    continue
+                ttk.Label(
+                    table, text=f"↳ {source.get('label') or 'Source'}",
+                    style="Status.TLabel",
+                ).grid(row=row, column=0, sticky="w", padx=(16, 12), pady=1)
+                ttk.Label(
+                    table, text=str(source.get("value", 0)),
+                    style="Status.TLabel",
+                ).grid(row=row, column=1, sticky="e", padx=4, pady=1)
+                row += 1
+        if activity.get("threshold") is not None:
+            ttk.Separator(table).grid(
+                row=row, column=0, columnspan=2, sticky="ew", pady=5
+            )
+            row += 1
+            ttk.Label(table, text="Threshold", style="Card.TLabel").grid(
+                row=row, column=0, sticky="w", padx=4, pady=2
+            )
+            ttk.Label(
+                table, text=str(activity["threshold"]), style="CardTitle.TLabel"
+            ).grid(row=row, column=1, sticky="e", padx=4, pady=2)
+            row += 1
+        ttk.Separator(table).grid(
+            row=row, column=0, columnspan=2, sticky="ew", pady=5
+        )
+        row += 1
+        ttk.Label(table, text="TOTAL", style="CardTitle.TLabel").grid(
+            row=row, column=0, sticky="w", padx=4, pady=2
+        )
+        ttk.Label(
+            table, text=str(activity.get("total", 0)), style="CardTitle.TLabel"
+        ).grid(row=row, column=1, sticky="e", padx=4, pady=2)
+        table.columnconfigure(0, weight=1)
+        ttk.Button(dialog, text="Close", command=dialog.destroy).pack(
+            side="bottom", pady=(0, 10), ipadx=12
+        )
 
     def send_chat(self) -> None:
         message = self.chat_entry.get().strip()

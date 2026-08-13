@@ -510,7 +510,7 @@
 #gameboard .ccgb-knowledge-browser {
   display: grid;
   gap: 9px;
-  grid-template-columns: minmax(0, 1fr) clamp(250px, 29%, 390px);
+  grid-template-columns: minmax(0, 1fr);
 }
 #gameboard .ccgb-knowledge-browser > .ccgb-catalog-tools,
 #gameboard .ccgb-knowledge-browser > .ccgb-teach-panel { grid-column: 1 / -1; }
@@ -542,23 +542,47 @@
   min-height: 28px;
   padding: 3px 11px;
 }
-#gameboard .ccgb-knowledge-pill:hover { background: #c9e2ec; }
+#gameboard .ccgb-knowledge-pill:hover { filter: brightness(0.93); }
+#gameboard .ccgb-pill-star {
+  color: #9a6800;
+  display: inline-block;
+  margin-right: 4px;
+  min-width: 0;
+}
+#gameboard .ccgb-knowledge-pill.is-favorite .ccgb-pill-star { min-width: 12px; }
+#gameboard .ccgb-knowledge-pill.is-band-easy-to-cast {
+  background: #d9efd2;
+  border-color: #3f6c37;
+  color: #173c13;
+}
+#gameboard .ccgb-knowledge-pill.is-band-medium-confidence {
+  background: #f5e9a9;
+  border-color: #9c771b;
+  color: #604700;
+}
+#gameboard .ccgb-knowledge-pill.is-band-difficult-to-cast {
+  background: #efc2c7;
+  border-color: #8b2831;
+  color: #4c0c12;
+}
+#gameboard .ccgb-knowledge-pill.is-band-very-difficult-to-cast {
+  background: #741e25;
+  border-color: #451015;
+  color: #ffe1e4;
+}
+#gameboard .ccgb-knowledge-pill.is-band-can-t-cast {
+  background: #c9c9c9;
+  border-color: #686868;
+  color: #242424;
+}
+#gameboard .ccgb-knowledge-pill.is-band-no-threshold {
+  background: #ddd8ca;
+  border-color: #777267;
+  color: #292720;
+}
 #gameboard .ccgb-knowledge-pill.is-selected {
-  background: #5e4434;
-  color: #fff8e7;
+  box-shadow: 0 0 0 2px #5e4434;
 }
-#gameboard .ccgb-knowledge-detail {
-  align-self: start;
-  background: #fff8e6;
-  border: 1px solid #a9683d;
-  min-height: 220px;
-  padding: 13px;
-  position: sticky;
-  top: 0;
-}
-#gameboard .ccgb-knowledge-detail header { align-items: start; display: flex; justify-content: space-between; }
-#gameboard .ccgb-knowledge-detail header p { color: #735031; font-size: 11px; margin: 0; text-transform: uppercase; }
-#gameboard .ccgb-knowledge-detail h2 { font: 700 19px Georgia, serif; margin: 2px 0 8px; }
 #gameboard .ccgb-knowledge-badges { display: flex; flex-wrap: wrap; gap: 5px; }
 #gameboard .ccgb-knowledge-badges span { background: #ead18e; border-radius: 999px; font-size: 11px; padding: 2px 7px; }
 #gameboard .ccgb-knowledge-roll { background: #8a422c; color: #fff8e7; cursor: pointer; min-height: 36px; width: 100%; }
@@ -1376,7 +1400,6 @@
 
 @media (max-width: 1180px) {
   #gameboard .ccgb-knowledge-browser { grid-template-columns: 1fr; }
-  #gameboard .ccgb-knowledge-detail { position: static; }
   #gameboard .ccgb-teach-columns { grid-template-columns: 1fr; }
   #gameboard .ccgb-workspace {
     --ccgb-nav-width: 168px;

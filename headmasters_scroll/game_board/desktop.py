@@ -2199,11 +2199,19 @@ class GameBoardWindow(tk.Tk):
         if record is None or not map_id:
             return
         current = float(record.get("token_scale", 0.0055))
-        value = max(0.002, min(0.03, round(current + 0.001 * direction, 4)))
+        # Token sizing is perceptual. A 15% step is immediately visible at
+        # any zoom and remains proportional whether tokens are tiny or large.
+        value = max(0.002, min(0.03, round(current * (1.15 if direction > 0 else 1 / 1.15), 6)))
         if value == current:
             return
         record["token_scale"] = value
-        self.board_token_size_label.configure(text=f"{round(value / 0.0055 * 100):d}%")
+        percent = round(value / 0.0055 * 100)
+        self.board_token_size_label.configure(text=f"{percent:d}%")
+        if hasattr(self, "board_default_token_value"):
+            self.board_default_token_value.set(str(percent))
+        if self._board_token_preview_after_id is not None:
+            self.after_cancel(self._board_token_preview_after_id)
+            self._board_token_preview_after_id = None
         self._draw_board_map(map_id)
         self._background(
             lambda: self.client.request(
@@ -4231,6 +4239,33 @@ class GameBoardWindow(tk.Tk):
                 ttk.Radiobutton(
                     row, text=name, value=str(faction.get("organization_id")), variable=value
                 ).pack(side="left", fill="x", expand=True)
+                edit = ttk.Button(
+                    row,
+                    text="Color…",
+                    width=7,
+                    style="Quiet.TButton",
+                    command=lambda selected=faction: edit_faction_color(selected),
+                )
+                edit.pack(side="right", padx=(4, 0))
+
+        def edit_faction_color(faction: dict[str, Any]) -> None:
+            current_color = str(faction.get("color") or "#808080")
+            selected = colorchooser.askcolor(current_color, parent=chooser)[1]
+            if not selected:
+                return
+            faction["color"] = selected.lower()
+            self._background(
+                lambda: self.client.request(
+                    "PUT",
+                    f"/api/admin/board/factions/{faction.get('organization_id')}",
+                    {
+                    "session_id": self.selected_session_id,
+                    "color": selected.lower(),
+                    },
+                ),
+                lambda _result: self.refresh(silent=True),
+            )
+            render()
 
         query.trace_add("write", render)
         render()
@@ -5311,6 +5346,7 @@ class GameBoardWindow(tk.Tk):
         self.chat_log.configure(yscrollcommand=chat_scroll.set)
         self.chat_log.pack(side="left", fill="both", expand=True)
         chat_scroll.pack(side="right", fill="y")
+        self.chat_log.bind("<Double-Button-1>", self._inspect_chat_roll)
         self._configure_chat_fonts()
         composer = ttk.Frame(card, style="Card.TFrame")
         composer.pack(fill="x", pady=(10, 0))
@@ -5321,6 +5357,7 @@ class GameBoardWindow(tk.Tk):
         self.chat_entry.bind("<Return>", lambda _event: self.send_chat())
         ttk.Button(composer, text="Send", command=self.send_chat).pack(side="right", padx=(10, 0))
         self._rendered_chat_ids: tuple[str, ...] = ()
+        self._chat_roll_ranges: list[tuple[str, str, dict[str, Any]]] = []
 
     def _configure_chat_fonts(self) -> None:
         if not hasattr(self, "chat_log"):
@@ -6478,13 +6515,44 @@ class GameBoardWindow(tk.Tk):
         self._rendered_chat_ids = message_ids
         self.chat_log.configure(state="normal")
         self.chat_log.delete("1.0", "end")
+        self._chat_roll_ranges = []
         for message in messages:
+            start = self.chat_log.index("end-1c")
             stamp = str(message.get("sent_at", ""))[11:16] or "--:--"
             role = message.get("sender_role") if message.get("sender_role") in {"headmaster", "system"} else "player"
             self.chat_log.insert("end", f"{stamp}  {message.get('sender_name', 'Player')}: ", role)
             self.chat_log.insert("end", f"{message.get('text', '')}\n")
+            end = self.chat_log.index("end-1c")
+            activity = message.get("activity")
+            if isinstance(activity, dict):
+                self._chat_roll_ranges.append((start, end, deepcopy(activity)))
+                self.chat_log.tag_add("roll", start, end)
+                self.chat_log.tag_configure("roll", underline=True)
         self.chat_log.configure(state="disabled")
         self.chat_log.see("end")
+
+    def _inspect_chat_roll(self, event: tk.Event) -> str | None:
+        index = self.chat_log.index(f"@{event.x},{event.y}")
+        for start, end, activity in self._chat_roll_ranges:
+            if self.chat_log.compare(index, ">=", start) and self.chat_log.compare(index, "<", end):
+                components = activity.get("components", []) or []
+                lines = [
+                    f"{item.get('label', 'Value')}: {item.get('value', 0)}"
+                    for item in components if isinstance(item, dict)
+                ]
+                if activity.get("threshold") is not None:
+                    lines.append(f"Threshold: {activity['threshold']}")
+                lines.extend([
+                    f"Formula: {activity.get('formula', activity.get('total', 0))} = {activity.get('total', 0)}",
+                    f"Outcome: {str(activity.get('outcome', 'rolled')).replace('_', ' ').title()}",
+                ])
+                messagebox.showinfo(
+                    str(activity.get("target_name") or "Roll details"),
+                    "\n".join(lines),
+                    parent=self,
+                )
+                return "break"
+        return None
 
     def send_chat(self) -> None:
         message = self.chat_entry.get().strip()

@@ -123,6 +123,23 @@ class CharacterAttributesTests(unittest.TestCase):
         self.assertEqual(characteristics["Fortitude"], 1)  # base 0 + missed-year development
         self.assertEqual(parental["Generosity"], 8)
         self.assertEqual(summary["traits"], ["Bookworm"])
+        defense = next(item for item in summary["skills"] if item["name"] == "Defense")
+        self.assertEqual(defense["breakdown"], {
+            "initial_buys": 0,
+            "developmental_buys": 2,
+            "core_courses": 1,
+            "elective_courses": 0,
+            "eminence": 1,
+            "total": 4,
+        })
+        self.assertEqual(
+            defense["sources"],
+            [
+                {"label": "Developmental buys", "points": 2},
+                {"label": "Core courses", "points": 1},
+                {"label": "Eminence", "points": 1},
+            ],
+        )
 
     def test_legacy_initial_skill_buys_supply_corresponding_abilities(self):
         person = dict(self.person)

@@ -179,6 +179,11 @@ class BoardFactionBody(BaseModel):
     color: str = Field(default="#808080", min_length=7, max_length=7)
 
 
+class BoardFactionColorBody(BaseModel):
+    session_id: str = Field(min_length=1, max_length=100)
+    color: str = Field(min_length=7, max_length=7)
+
+
 class ControlGrantBody(BaseModel):
     session_id: str = Field(min_length=1, max_length=100)
     contact_id: str = Field(min_length=1, max_length=100)
@@ -955,6 +960,24 @@ def create_apps(
             body.session_id,
             body.person_id,
             body.name,
+            body.color,
+        )
+        for session in service.sessions_view():
+            await runtime.broadcast_board(session["id"])
+        return result
+
+    @admin_app.put(
+        "/api/admin/board/factions/{organization_id}",
+        dependencies=[Depends(admin_guard)],
+    )
+    async def update_board_faction_color(
+        organization_id: str,
+        body: BoardFactionColorBody,
+    ):
+        result = admin_result(
+            service.update_board_faction_color,
+            body.session_id,
+            organization_id,
             body.color,
         )
         for session in service.sessions_view():

@@ -95,6 +95,9 @@ class CharacterSheetTests(unittest.TestCase):
         result = perform_character_roll(sheet, "spell", "spell-1", roller=lambda _a, _b: 10)
         self.assertEqual(result["critical"], "success")
         self.assertTrue(result["success"])
+        self.assertEqual(result["outcome"], "critical_success")
+        self.assertEqual(result["components"][0], {"label": "d10", "value": 10, "kind": "die"})
+        self.assertIn("CRITICALLY SUCCEEDS in casting Lumos", result["text"])
         with self.assertRaises(PermissionError):
             perform_character_roll(sheet, "spell", "hidden-spell", roller=lambda _a, _b: 10)
 
@@ -112,6 +115,14 @@ class CharacterSheetTests(unittest.TestCase):
             self.assertTrue(result["dice"])
         failure = perform_character_roll(sheet, "ability", "Power", roller=lambda _a, _b: 1)
         self.assertEqual(failure["critical"], "failure")
+        self.assertEqual(failure["text"], "Ada CRITICALLY FAILS a straight Power roll.")
+
+    def test_skill_roll_retains_character_controls_wording_and_components(self):
+        sheet = build_character_sheet(self.person, self.world, self.database, self.campaign())
+        result = perform_character_roll(sheet, "skill", "Charms", roller=lambda _a, _b: 6)
+        self.assertIn("attempts to cast a straight Charms spell", result["text"])
+        self.assertEqual([item["label"] for item in result["components"]], ["d10", "Power", "Charms"])
+        self.assertEqual(result["formula"], "6 + 2 + 1")
 
 
 if __name__ == "__main__":

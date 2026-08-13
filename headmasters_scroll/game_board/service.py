@@ -1975,6 +1975,11 @@ class GameBoardService:
                     "events": [],
                     "jobs": [],
                 })
+            else:
+                # A faction is a shared world organization. Changing its
+                # color changes the one faction record for every character,
+                # rather than creating a person-specific presentation value.
+                existing["faction_color"] = normalized_color
             game_datetime = str(campaign["game_state"]["current_game_datetime"])
             event_date, _, event_time = game_datetime.partition("T")
             if faction_id not in active_faction_ids(world_session.data, person_id, game_datetime):
@@ -2005,6 +2010,41 @@ class GameBoardService:
             return {
                 "organization_id": faction_id,
                 "name": normalized_name,
+                "color": normalized_color,
+            }
+
+    def update_board_faction_color(
+        self,
+        session_id: str,
+        organization_id: str,
+        color: str,
+    ) -> dict[str, Any]:
+        """Change the shared color of an existing world faction."""
+
+        normalized_color = str(color or "").strip().lower()
+        if not re.fullmatch(r"#[0-9a-f]{6}", normalized_color):
+            raise ValueError("Faction color must use #RRGGBB")
+        with self._lock:
+            self._board_context(session_id)
+            world_session = self.shared_store.load("world.json")
+            faction = next(
+                (
+                    item for item in world_session.data.get("organizations", [])
+                    if isinstance(item, dict)
+                    and item.get("is_faction")
+                    and str(item.get("record_id", "")) == organization_id
+                ),
+                None,
+            )
+            if faction is None:
+                raise KeyError("Unknown faction")
+            faction["faction_color"] = normalized_color
+            outcome = self.shared_store.save(world_session, "game-board")
+            if not outcome.saved:
+                raise RuntimeError("World Builder data changed; refresh and try again")
+            return {
+                "organization_id": organization_id,
+                "name": str(faction.get("name") or organization_id),
                 "color": normalized_color,
             }
 

@@ -270,12 +270,23 @@ def calculate_character_attributes(
             ability_values[ability] += 1
 
     skill_values: Counter[str] = Counter({skill: 0 for skill in SKILL_NAMES})
+    skill_sources: dict[str, Counter[str]] = {
+        skill: Counter({
+            "initial_buys": 0,
+            "developmental_buys": 0,
+            "core_courses": 0,
+            "elective_courses": 0,
+            "eminence": 0,
+        })
+        for skill in SKILL_NAMES
+    }
     initial = person.get("initial_bonuses")
     if isinstance(initial, dict):
         for skill in initial.get("skill_bonuses", []) or []:
             normalized = str(skill or "").strip()
             if normalized in skill_values:
                 skill_values[normalized] += 1
+                skill_sources[normalized]["initial_buys"] += 1
 
     schools = _school_catalog(database)
     default_school = str(person.get("school", "") or "").strip()
@@ -289,6 +300,7 @@ def calculate_character_attributes(
             skill_name = str(skill or "").strip()
             if skill_name in skill_values:
                 skill_values[skill_name] += 1
+                skill_sources[skill_name]["developmental_buys"] += 1
         try:
             school_year = int(record.get("year"))
         except (TypeError, ValueError):
@@ -300,6 +312,7 @@ def calculate_character_attributes(
             course_name = str(course or "").strip()
             if course_name in skill_values:
                 skill_values[course_name] += 1
+                skill_sources[course_name]["core_courses"] += 1
         offered = {
             str(course or "").strip()
             for course in curriculum.get("electives", []) or []
@@ -311,8 +324,13 @@ def calculate_character_attributes(
         for course_name in offered & selected:
             if course_name in skill_values:
                 skill_values[course_name] += 1
+                skill_sources[course_name]["elective_courses"] += 1
 
-    skill_values.update(_earned_eminence(person, world, game_date))
+    earned_eminence = _earned_eminence(person, world, game_date)
+    skill_values.update(earned_eminence)
+    for skill, points in earned_eminence.items():
+        if skill in skill_sources:
+            skill_sources[skill]["eminence"] += int(points)
 
     characteristics = person.get("characteristics")
     characteristic_buys: Counter[str] = Counter()
@@ -350,7 +368,25 @@ def calculate_character_attributes(
             for ability in ABILITY_NAMES
         ],
         "skills": [
-            {"name": skill, "value": int(skill_values[skill])}
+            {
+                "name": skill,
+                "value": int(skill_values[skill]),
+                "breakdown": {
+                    **dict(skill_sources[skill]),
+                    "total": int(skill_values[skill]),
+                },
+                "sources": [
+                    {"label": label, "points": int(points)}
+                    for label, points in (
+                        ("Initial buys", skill_sources[skill]["initial_buys"]),
+                        ("Developmental buys", skill_sources[skill]["developmental_buys"]),
+                        ("Core courses", skill_sources[skill]["core_courses"]),
+                        ("Chosen electives", skill_sources[skill]["elective_courses"]),
+                        ("Eminence", skill_sources[skill]["eminence"]),
+                    )
+                    if points
+                ],
+            }
             for skill in SKILL_NAMES
         ],
         "characteristics": characteristic_values,

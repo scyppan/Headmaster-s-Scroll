@@ -528,6 +528,32 @@
 #gameboard .ccgb-history-list { white-space: pre-wrap; }
 #gameboard .ccgb-roll-details { border-top: 1px solid #d0b476; font-size: 12px; margin-top: 5px; padding-top: 4px; }
 #gameboard .ccgb-roll-details summary { cursor: pointer; }
+#gameboard .ccgb-roll-object { display: grid; gap: 5px; padding-top: 6px; }
+#gameboard .ccgb-roll-dice { display: flex; flex-wrap: wrap; gap: 5px; }
+#gameboard .ccgb-roll-die {
+  align-items: center;
+  background: #fff8e2;
+  border: 1px solid #8f532f;
+  border-radius: 5px;
+  box-shadow: 0 1px 1px rgba(56, 39, 25, 0.25);
+  display: inline-flex;
+  font-size: 14px;
+  font-weight: 800;
+  height: 28px;
+  justify-content: center;
+  width: 28px;
+}
+#gameboard .ccgb-roll-die.is-critical-success { background: #d7efcb; border-color: #4d6b43; }
+#gameboard .ccgb-roll-die.is-critical-failure { background: #f3c5bd; border-color: #9b352a; }
+#gameboard .ccgb-roll-formula { font-family: ui-monospace, "Cascadia Mono", monospace; margin: 0; }
+#gameboard .ccgb-roll-components { display: grid; gap: 2px; margin: 0; }
+#gameboard .ccgb-roll-components > div { display: flex; justify-content: space-between; }
+#gameboard .ccgb-roll-components dd { font-weight: 700; margin: 0; }
+#gameboard .ccgb-roll-outcome { font-size: 11px !important; font-weight: 800; margin: 0 !important; text-transform: uppercase; }
+#gameboard .ccgb-roll-outcome.is-critical_success,
+#gameboard .ccgb-roll-outcome.is-success { color: #3e6136; }
+#gameboard .ccgb-roll-outcome.is-critical_failure,
+#gameboard .ccgb-roll-outcome.is-failure { color: #9b352a; }
 #gameboard .ccgb-roll-pill { font: inherit; text-align: left; }
 
 #gameboard .ccgb-attribute-lower-grid {

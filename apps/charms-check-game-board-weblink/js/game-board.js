@@ -624,9 +624,41 @@
           const details = document.createElement('details');
           details.className = 'ccgb-roll-details';
           const summary = document.createElement('summary');
-          summary.textContent = 'Roll details';
-          const body = document.createElement('p');
-          body.textContent = `Dice: ${(message.activity.dice || []).join(', ') || '-'}  Bonus: ${Number(message.activity.bonus || 0)}  Total: ${Number(message.activity.total || 0)}${message.activity.threshold == null ? '' : `  Threshold: ${message.activity.threshold}`}`;
+          summary.textContent = `${message.activity.target_name || 'Roll'} · ${Number(message.activity.total || 0)}`;
+          const body = document.createElement('div');
+          body.className = 'ccgb-roll-object';
+          const dice = document.createElement('div');
+          dice.className = 'ccgb-roll-dice';
+          (message.activity.dice || []).forEach((value, index) => {
+            const die = document.createElement('span');
+            die.className = `ccgb-roll-die ${value === 10 ? 'is-critical-success' : value === 1 ? 'is-critical-failure' : ''}`;
+            die.title = `d10 ${index + 1}: ${value}`;
+            die.textContent = String(value);
+            dice.appendChild(die);
+          });
+          const formula = document.createElement('p');
+          formula.className = 'ccgb-roll-formula';
+          formula.textContent = `${message.activity.formula || `${(message.activity.dice || []).join(' + ')} + ${Number(message.activity.bonus || 0)}`} = ${Number(message.activity.total || 0)}`;
+          const components = document.createElement('dl');
+          components.className = 'ccgb-roll-components';
+          (message.activity.components || []).forEach(component => {
+            const term = document.createElement('div');
+            const label = document.createElement('dt');
+            const value = document.createElement('dd');
+            label.textContent = component.label || component.kind || 'Value';
+            value.textContent = String(Number(component.value || 0));
+            term.append(label, value);
+            components.appendChild(term);
+          });
+          if (message.activity.threshold != null) {
+            const term = document.createElement('div');
+            term.innerHTML = `<dt>Threshold</dt><dd>${Number(message.activity.threshold)}</dd>`;
+            components.appendChild(term);
+          }
+          const outcome = document.createElement('p');
+          outcome.className = `ccgb-roll-outcome is-${message.activity.outcome || 'rolled'}`;
+          outcome.textContent = String(message.activity.outcome || 'rolled').replaceAll('_', ' ');
+          body.append(dice, formula, components, outcome);
           details.append(summary, body);
           article.appendChild(details);
         }
@@ -940,7 +972,19 @@
         .replaceAll('"', '&quot;')
         .replaceAll("'", '&#039;');
       const abilities = new Map((summary.attributes || []).map(item => [item.name, item.value]));
+      const skillRecords = new Map((summary.skills || []).map(item => [item.name, item]));
       const skills = new Map((summary.skills || []).map(item => [item.name, item.value]));
+      const skillTitle = skill => {
+        const record = skillRecords.get(skill) || {};
+        const sources = Array.isArray(record.sources) ? record.sources : [];
+        const lines = [`${skill}: ${Number(record.value || 0)}`];
+        if (sources.length) {
+          sources.forEach(source => lines.push(`${source.label}: ${Number(source.points || 0)}`));
+        } else {
+          lines.push('No points earned yet.');
+        }
+        return lines.join('\n');
+      };
       const abilityOrder = ['Power', 'Erudition', 'Panache', 'Naturalism'];
       const skillsByAbility = {
         Power: ['Charms', 'Dark Arts', 'Defense', 'Transfiguration'],
@@ -955,7 +999,7 @@
           </button>
           <div class="ccgb-skill-pills">
             ${(skillsByAbility[ability] || []).map(skill => `
-              <button class="ccgb-roll-pill is-skill" data-roll-type="skill" data-target-id="${escapeHtml(skill)}" title="Roll ${escapeHtml(skill)}">
+              <button class="ccgb-roll-pill is-skill" data-roll-type="skill" data-target-id="${escapeHtml(skill)}" title="${escapeHtml(skillTitle(skill))}">
                 <span>${escapeHtml(skill)}</span><strong>${Number(skills.get(skill) || 0)}</strong>
               </button>`).join('')}
           </div>
@@ -1399,6 +1443,20 @@
         left + width + 4 <= other.left || left >= other.right + 4 ||
         top + height + 4 <= other.top || top >= other.bottom + 4
       );
+      const edgePointToward = (targetX, targetY, halfWidth, halfHeight) => {
+        const centerX = viewport.clientWidth / 2;
+        const centerY = viewport.clientHeight / 2;
+        const dx = targetX - centerX;
+        const dy = targetY - centerY;
+        if (!dx && !dy) return { x: centerX, y: centerY };
+        const limitX = Math.max(1, centerX - margin - halfWidth);
+        const limitY = Math.max(1, centerY - margin - halfHeight);
+        const factor = Math.min(
+          dx ? limitX / Math.abs(dx) : Infinity,
+          dy ? limitY / Math.abs(dy) : Infinity
+        );
+        return { x: centerX + dx * factor, y: centerY + dy * factor };
+      };
 
       pieces.forEach((piece, index) => {
         piece.classList.add('has-viewport-locator');
@@ -1429,21 +1487,23 @@
 
         const plaqueWidth = Math.min(widthLimit, Math.max(72, plaque.offsetWidth || name.length * fontSize * 0.62 + 18));
         const plaqueHeight = Math.max(fontSize + 10, plaque.offsetHeight || fontSize + 10);
-        const anchorX = Math.max(margin, Math.min(viewport.clientWidth - margin, actorX));
-        const anchorY = Math.max(margin, Math.min(viewport.clientHeight - margin, actorY));
+        const edgeAnchor = onScreen
+          ? { x: actorX, y: actorY }
+          : edgePointToward(actorX, actorY, 0, 0);
+        const anchorX = edgeAnchor.x;
+        const anchorY = edgeAnchor.y;
         const savedOffsetX = Number(piece.dataset.labelOffsetX || 0) * stageBounds.width;
         const savedOffsetY = Number(piece.dataset.labelOffsetY || 0) * stageBounds.height;
-        let plaqueX = Math.max(
-          margin + plaqueWidth / 2,
-          Math.min(viewport.clientWidth - margin - plaqueWidth / 2, actorX + savedOffsetX)
-        );
-        let plaqueY = Math.max(
-          margin + plaqueHeight / 2,
-          Math.min(
-            viewport.clientHeight - margin - plaqueHeight / 2,
-            actorY + (savedOffsetX || savedOffsetY ? savedOffsetY : -22)
-          )
-        );
+        const offscreenPlaque = edgePointToward(actorX, actorY, plaqueWidth / 2, plaqueHeight / 2);
+        let plaqueX = onScreen
+          ? Math.max(margin + plaqueWidth / 2, Math.min(viewport.clientWidth - margin - plaqueWidth / 2, actorX + savedOffsetX))
+          : offscreenPlaque.x;
+        let plaqueY = onScreen
+          ? Math.max(
+              margin + plaqueHeight / 2,
+              Math.min(viewport.clientHeight - margin - plaqueHeight / 2, actorY + (savedOffsetX || savedOffsetY ? savedOffsetY : -22))
+            )
+          : offscreenPlaque.y;
 
         // Keep multiple player plaques legible without ever allowing one to
         // leave the viewport.  The small stagger is deterministic per player.
@@ -1471,8 +1531,13 @@
         // The label and leader remain visible, but an off-screen character's
         // clamped edge marker must not masquerade as their real position.
         dot.hidden = !onScreen;
-        const dx = anchorX - plaqueX;
-        const dy = anchorY - plaqueY;
+        // An off-screen actor has no fake edge dot. Its leader begins at the
+        // plaque and points through the viewport toward the actor's true
+        // camera-relative position.
+        const lineTargetX = onScreen ? anchorX : actorX;
+        const lineTargetY = onScreen ? anchorY : actorY;
+        const dx = lineTargetX - plaqueX;
+        const dy = lineTargetY - plaqueY;
         const distance = Math.hypot(dx, dy);
         const pieceBounds = piece.getBoundingClientRect();
         const tokenEdge = onScreen && piece.classList.contains('is-token')
@@ -1480,7 +1545,10 @@
           : 0;
         line.style.left = `${plaqueX}px`;
         line.style.top = `${plaqueY}px`;
-        line.style.width = `${Math.max(4, distance - tokenEdge)}px`;
+        const visibleDistance = onScreen
+          ? Math.max(4, distance - tokenEdge)
+          : Math.max(18, Math.min(72, distance));
+        line.style.width = `${visibleDistance}px`;
         line.style.transform = `rotate(${Math.atan2(dy, dx)}rad)`;
         if (controlled) this.bindLocatorPlaqueDrag(plaque, piece, actorX, actorY, viewport, stage);
       });

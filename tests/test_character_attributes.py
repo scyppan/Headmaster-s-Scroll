@@ -130,6 +130,7 @@ class CharacterAttributesTests(unittest.TestCase):
             "core_courses": 1,
             "elective_courses": 0,
             "trait_bonus": 0,
+            "wand_parts": 0,
             "wand": 0,
             "accessories": 0,
             "eminence": 1,
@@ -140,10 +141,10 @@ class CharacterAttributesTests(unittest.TestCase):
             "total": 4,
         })
         self.assertEqual([item["label"] for item in defense["sources"]], [
-            "Buys", "Core courses", "Elective courses", "Trait bonus", "Wand",
-            "Accessories", "Eminence", "Wand quality", "Passive", "Temporary",
+            "Buys", "Corecourses", "Electives", "Traits", "Wand parts", "Wand",
+            "Quality", "Accessories", "Passive", "Eminence", "Temp",
         ])
-        self.assertEqual(next(item for item in defense["sources"] if item["label"] == "Elective courses")["points"], 0)
+        self.assertEqual(next(item for item in defense["sources"] if item["label"] == "Electives")["points"], 0)
 
     def test_complete_hover_ledgers_and_parenthetical_modifiers(self):
         person = dict(self.person)
@@ -164,6 +165,32 @@ class CharacterAttributesTests(unittest.TestCase):
         self.assertEqual((charms["bonus"], charms["total"]), (5, charms["value"] + 5))
         self.assertTrue(all("points" in item for item in charms["sources"]))
         self.assertIn({"label": "Accessories", "points": 0}, charms["sources"])
+        self.assertEqual([item["label"] for item in charms["sources"]], [
+            "Buys", "Corecourses", "Electives", "Traits", "Wand parts", "Wand",
+            "Quality", "Accessories", "Passive", "Eminence", "Temp",
+        ])
+        fortitude = next(
+            item for item in summary["characteristics"] if item["name"] == "Fortitude"
+        )
+        self.assertEqual(fortitude["sources"], [
+            {"label": "Base", "points": 1},
+            {"label": "Passive", "points": 0},
+        ])
+
+    def test_characteristic_hover_includes_base_and_passive(self):
+        person = dict(self.person)
+        person["roll_modifiers"] = {
+            "characteristics": {"Fortitude": {"passive": 2}},
+        }
+        summary = calculate_character_attributes(
+            person, {"people": [person], "events": []}, self.database,
+            "2001-09-01T08:00",
+        )
+        fortitude = next(
+            item for item in summary["characteristics"] if item["name"] == "Fortitude"
+        )
+        self.assertEqual(fortitude["breakdown"], {"base": 1, "passive": 2})
+        self.assertEqual(fortitude["dice"], 3)
 
     def test_legacy_initial_skill_buys_supply_corresponding_abilities(self):
         person = dict(self.person)

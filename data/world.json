@@ -96928,81 +96928,87 @@
       "is_building": false,
       "floors": [
         {
-          "record_id": "8fb7fdd4-b9fb-466b-abf6-903a8cf2f2e5",
-          "name": "Floor 1",
+          "record_id": "5431ef2f-dc01-4272-bbb6-be1d4a29228f",
+          "name": "Chamber of Secrets",
           "sort_order": 0,
           "primary_map_id": ""
         },
         {
-          "record_id": "77a5810f-216b-406d-9709-55924cc7e8b9",
-          "name": "Floor 2",
+          "record_id": "8fb7fdd4-b9fb-466b-abf6-903a8cf2f2e5",
+          "name": "Dungeons",
           "sort_order": 1,
+          "primary_map_id": ""
+        },
+        {
+          "record_id": "77a5810f-216b-406d-9709-55924cc7e8b9",
+          "name": "Kitchens",
+          "sort_order": 2,
           "primary_map_id": "cbb468df-c46b-44db-8a1a-e698cca7fbf6"
         },
         {
           "record_id": "2eec0737-b9c2-4666-aa18-cb5d7fc1d3fb",
-          "name": "Floor 3",
-          "sort_order": 2,
-          "primary_map_id": ""
+          "name": "Ground Floor",
+          "sort_order": 3,
+          "primary_map_id": "e3b02941-1bac-4b0f-a91d-095d27989325"
         },
         {
           "record_id": "5f55c11a-b390-419a-9a8c-6c09b827a5c0",
-          "name": "Floor 4",
-          "sort_order": 3,
-          "primary_map_id": ""
-        },
-        {
-          "record_id": "a898ef84-56a8-4c04-8d3e-db8a52436413",
-          "name": "Floor 5",
+          "name": "1st Floor",
           "sort_order": 4,
           "primary_map_id": ""
         },
         {
-          "record_id": "8f4fd1f7-c6e2-41f6-9d23-089766c16dcc",
-          "name": "Floor 6",
+          "record_id": "a898ef84-56a8-4c04-8d3e-db8a52436413",
+          "name": "2nd Floor",
           "sort_order": 5,
           "primary_map_id": ""
         },
         {
-          "record_id": "6e46283a-3248-4245-91ca-b552dc7558ae",
-          "name": "Floor 7",
+          "record_id": "8f4fd1f7-c6e2-41f6-9d23-089766c16dcc",
+          "name": "3rd Floor",
           "sort_order": 6,
           "primary_map_id": ""
         },
         {
-          "record_id": "d29bdb14-7e25-468d-b71c-9113a03cf835",
-          "name": "Floor 8",
+          "record_id": "6e46283a-3248-4245-91ca-b552dc7558ae",
+          "name": "4th Floor",
           "sort_order": 7,
           "primary_map_id": ""
         },
         {
-          "record_id": "fa9b3de3-e158-4e9c-b623-01a2a85d8d7a",
-          "name": "Floor 9",
+          "record_id": "d29bdb14-7e25-468d-b71c-9113a03cf835",
+          "name": "5th Floor",
           "sort_order": 8,
           "primary_map_id": ""
         },
         {
-          "record_id": "8588a6cd-0974-4545-a91b-88b3b21b5ebb",
-          "name": "Floor 10",
+          "record_id": "fa9b3de3-e158-4e9c-b623-01a2a85d8d7a",
+          "name": "6th Floor",
           "sort_order": 9,
           "primary_map_id": ""
         },
         {
-          "record_id": "5fb39aab-4a78-4c2b-86df-49157e59a945",
-          "name": "Floor 11",
+          "record_id": "8588a6cd-0974-4545-a91b-88b3b21b5ebb",
+          "name": "7th Floor",
           "sort_order": 10,
           "primary_map_id": ""
         },
         {
-          "record_id": "7d19f22d-3f33-49a0-ad07-bb09db9d4e45",
-          "name": "Floor 12",
+          "record_id": "5fb39aab-4a78-4c2b-86df-49157e59a945",
+          "name": "8th Floor",
           "sort_order": 11,
           "primary_map_id": ""
         },
         {
-          "record_id": "5cf40a2c-8bdf-4e9d-9bb6-00dbb9ca0f13",
-          "name": "Floor 13",
+          "record_id": "7d19f22d-3f33-49a0-ad07-bb09db9d4e45",
+          "name": "9th Floor",
           "sort_order": 12,
+          "primary_map_id": ""
+        },
+        {
+          "record_id": "5cf40a2c-8bdf-4e9d-9bb6-00dbb9ca0f13",
+          "name": "10th Floor",
+          "sort_order": 13,
           "primary_map_id": ""
         }
       ],
@@ -131675,9 +131681,9 @@
       ],
       "start_point": null,
       "token_scale": 0.055,
-      "name": "Hogwarts",
+      "name": "Hogwarts — Ground Floor",
       "location_id": "e9cdd1f9-3e84-4408-b2c2-98ed4b3dabef",
-      "floor_id": "",
+      "floor_id": "2eec0737-b9c2-4666-aa18-cb5d7fc1d3fb",
       "last_updated": "2026-08-13T07:29:50.784635Z"
     },
     {
@@ -132476,7 +132482,7 @@
       "warp_points": [],
       "start_point": null,
       "token_scale": 0.055,
-      "name": "Hogwarts — Floor 2",
+      "name": "Hogwarts — Kitchens",
       "location_id": "e9cdd1f9-3e84-4408-b2c2-98ed4b3dabef",
       "floor_id": "77a5810f-216b-406d-9709-55924cc7e8b9",
       "last_updated": "2026-08-13T10:53:08.093104Z"
@@ -132484,8 +132490,8 @@
   ],
   "board_groups": [],
   "_headmasters_scroll": {
-    "revision_id": "714a5eca-9b02-491a-ad1c-d79a7bcb2f12",
-    "last_modified_at": "2026-08-13T10:53:08.161435Z",
+    "revision_id": "096ecefd-2c59-4897-ba4c-ebaa8c9fd7da",
+    "last_modified_at": "2026-08-13T11:17:28.084421Z",
     "last_modified_by": "mapper"
   },
   "named_creatures": []

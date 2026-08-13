@@ -282,6 +282,7 @@ def _named_modifier_sources(
     """
 
     aliases = {
+        "wand_parts": ("wand_parts", "wandparts", "wand_part_bonus"),
         "wand": ("wand", "wandbonus", "wand_bonus"),
         "accessories": ("accessories", "accessory", "accessory_bonus"),
         "passive": ("passive", "passive_bonus"),
@@ -295,7 +296,10 @@ def _named_modifier_sources(
         collection,
         "attributes" if collection == "abilities" else collection,
     )))
-    legacy_key = "attribute_modifiers" if collection == "abilities" else "skill_modifiers"
+    legacy_key = {
+        "abilities": "attribute_modifiers",
+        "characteristics": "characteristic_modifiers",
+    }.get(collection, "skill_modifiers")
     for source in sources:
         if not isinstance(source, dict):
             continue
@@ -410,12 +414,31 @@ def calculate_character_attributes(
         if name in CHARACTERISTIC_NAMES:
             characteristic_buys[name] += 1
     characteristic_values = []
+    characteristic_modifier_sources = (person, campaign_person or {})
     for name in CHARACTERISTIC_NAMES:
         try:
-            dice = int((characteristics or {}).get(name, 1)) + characteristic_buys[name]
+            raw_base = int((characteristics or {}).get(name, 1)) + characteristic_buys[name]
         except (TypeError, ValueError):
-            dice = 1 + characteristic_buys[name]
-        characteristic_values.append({"name": name.title(), "dice": min(5, max(1, dice))})
+            raw_base = 1 + characteristic_buys[name]
+        base = min(5, max(1, raw_base))
+        display_name = name.title()
+        modifiers = _named_modifier_sources(
+            characteristic_modifier_sources, "characteristics", display_name
+        )
+        passive = int(modifiers["passive"])
+        dice = min(5, max(1, base + passive))
+        characteristic_values.append({
+            "name": display_name,
+            "value": int(base),
+            "bonus": passive,
+            "total": dice,
+            "dice": dice,
+            "breakdown": {"base": int(base), "passive": passive},
+            "sources": [
+                {"label": "Base", "points": int(base)},
+                {"label": "Passive", "points": passive},
+            ],
+        })
 
     parental = person.get("parental_values")
     parental_values = []
@@ -468,13 +491,17 @@ def calculate_character_attributes(
         trait_bonus = int(modifiers["trait_bonus"] or trait_skill_bonuses[skill])
         base = int(skill_values[skill]) + background + trait_bonus
         wand_quality = int(modifiers["wand_quality"]) if skill in spell_skills else 0
-        bonus = sum(modifiers[key] for key in ("wand", "accessories", "passive", "temporary")) + wand_quality
+        bonus = sum(
+            modifiers[key]
+            for key in ("wand_parts", "wand", "accessories", "passive", "temporary")
+        ) + wand_quality
         breakdown = {
             "background": background,
             "buys": buys,
             "core_courses": int(skill_sources[skill]["core_courses"]),
             "elective_courses": int(skill_sources[skill]["elective_courses"]),
             "trait_bonus": trait_bonus,
+            "wand_parts": int(modifiers["wand_parts"]),
             "wand": int(modifiers["wand"]),
             "accessories": int(modifiers["accessories"]),
             "eminence": int(skill_sources[skill]["eminence"]),
@@ -485,17 +512,17 @@ def calculate_character_attributes(
             "total": base + int(bonus),
         }
         labels = (
-            ("Background", "background"),
             ("Buys", "buys"),
-            ("Core courses", "core_courses"),
-            ("Elective courses", "elective_courses"),
-            ("Trait bonus", "trait_bonus"),
+            ("Corecourses", "core_courses"),
+            ("Electives", "elective_courses"),
+            ("Traits", "trait_bonus"),
+            ("Wand parts", "wand_parts"),
             ("Wand", "wand"),
+            ("Quality", "wand_quality"),
             ("Accessories", "accessories"),
-            ("Eminence", "eminence"),
-            ("Wand quality", "wand_quality"),
             ("Passive", "passive"),
-            ("Temporary", "temporary"),
+            ("Eminence", "eminence"),
+            ("Temp", "temporary"),
         )
         skill_records.append({
             "name": skill,
@@ -508,8 +535,6 @@ def calculate_character_attributes(
             "sources": [
                 {"label": label, "points": int(breakdown[key])}
                 for label, key in labels
-                if not (key == "background" and skill != "Muggles")
-                and not (key == "wand_quality" and skill not in spell_skills)
             ],
         })
 

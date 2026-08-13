@@ -627,31 +627,30 @@
           details.className = 'ccgb-roll-details';
           const summary = document.createElement('summary');
           summary.className = 'ccgb-roll-result';
-          summary.title = `${message.activity.target_name || 'Roll'}\n${message.activity.formula || ''}\nClick to inspect the dice and every modifier`;
-          summary.textContent = `🎲 ${Number(message.activity.total || 0)}`;
+          summary.title = `Click to inspect the dice and every modifier`;
           summary.textContent = `${message.activity.target_name || 'Roll'} · ${Number(message.activity.total || 0)}`;
           const body = document.createElement('div');
           body.className = 'ccgb-roll-object';
-          const dice = document.createElement('div');
-          dice.className = 'ccgb-roll-dice';
-          (message.activity.dice || []).forEach((value, index) => {
-            const die = document.createElement('span');
-            die.className = `ccgb-roll-die ${value === 10 ? 'is-critical-success' : value === 1 ? 'is-critical-failure' : ''}`;
-            die.title = `d10 ${index + 1}: ${value}`;
-            die.textContent = String(value);
-            dice.appendChild(die);
-          });
-          const formula = document.createElement('p');
-          formula.className = 'ccgb-roll-formula';
-          formula.textContent = `${message.activity.formula || `${(message.activity.dice || []).join(' + ')} + ${Number(message.activity.bonus || 0)}`} = ${Number(message.activity.total || 0)}`;
           const components = document.createElement('dl');
           components.className = 'ccgb-roll-components';
-          (message.activity.components || []).forEach(component => {
+          (message.activity.components || []).forEach((component, index) => {
             const term = document.createElement('div');
             const label = document.createElement('dt');
             const value = document.createElement('dd');
-            label.textContent = component.label || component.kind || 'Value';
-            value.textContent = String(Number(component.value || 0));
+            const isDie = component.kind === 'die';
+            label.textContent = isDie && (message.activity.dice || []).length === 1
+              ? 'd10'
+              : (component.label || component.kind || 'Value');
+            if (isDie) {
+              const die = document.createElement('span');
+              const dieValue = Number(component.value || 0);
+              die.className = `ccgb-roll-die ${dieValue === 10 ? 'is-critical-success' : dieValue === 1 ? 'is-critical-failure' : ''}`;
+              die.title = `${label.textContent}: ${dieValue}`;
+              die.textContent = String(dieValue);
+              value.appendChild(die);
+            } else {
+              value.textContent = String(Number(component.value || 0));
+            }
             term.append(label, value);
             components.appendChild(term);
           });
@@ -660,10 +659,11 @@
             term.innerHTML = `<dt>Threshold</dt><dd>${Number(message.activity.threshold)}</dd>`;
             components.appendChild(term);
           }
-          const outcome = document.createElement('p');
-          outcome.className = `ccgb-roll-outcome is-${message.activity.outcome || 'rolled'}`;
-          outcome.textContent = String(message.activity.outcome || 'rolled').replaceAll('_', ' ');
-          body.append(dice, formula, components, outcome);
+          const totalTerm = document.createElement('div');
+          totalTerm.className = 'ccgb-roll-total';
+          totalTerm.innerHTML = `<dt>Total</dt><dd>${Number(message.activity.total || 0)}</dd>`;
+          components.appendChild(totalTerm);
+          body.append(components);
           details.append(summary, body);
           article.appendChild(details);
         }
@@ -950,8 +950,14 @@
           `Base: ${Number(breakdown.base || 0)}`,
           `Wand: ${Number(breakdown.wand || 0)}`,
           `Accessories: ${Number(breakdown.accessories || 0)}`,
-          `Passive: ${Number(breakdown.passive || 0)}`,
-          `Temporary: ${Number(breakdown.temporary || 0)}`
+          `Passive: ${Number(breakdown.passive || 0)}`
+        ].join('\n');
+      };
+      const characteristicTitle = item => {
+        const breakdown = item?.breakdown || {};
+        return [
+          `Base: ${Number(breakdown.base || 0)}`,
+          `Passive: ${Number(breakdown.passive || 0)}`
         ].join('\n');
       };
       const skillTitle = skill => {
@@ -979,7 +985,7 @@
           </div>
         </div>`).join('');
       const characteristicPills = (summary.characteristics || []).map(item => `
-        <button class="ccgb-roll-pill is-characteristic" data-roll-type="characteristic" data-target-id="${escapeHtml(item.name)}" title="Roll ${escapeHtml(item.name)}">
+        <button class="ccgb-roll-pill is-characteristic" data-roll-type="characteristic" data-target-id="${escapeHtml(item.name)}" title="${escapeHtml(characteristicTitle(item))}">
           <span>${escapeHtml(item.name)}</span><strong>${Math.max(1, Math.min(5, Number(item.dice) || 1))}d10</strong>
         </button>`).join('');
       const parentalPills = (summary.parental_values || []).map(item => `

@@ -48,6 +48,53 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
+def assign_location_map_to_floor(
+    location: dict, maps: list[dict], floor_id: str
+) -> None:
+    """Give the location's default map a second role as one named floor map."""
+
+    default_map_id = str(location.get("default_map_id", "") or "")
+    target = next(
+        (
+            floor for floor in location.get("floors", []) or []
+            if str(floor.get("record_id", "")) == str(floor_id or "")
+        ),
+        None,
+    )
+    if not default_map_id:
+        raise ValueError("This location does not have a default map yet.")
+    if target is None:
+        raise ValueError("Choose a valid named floor.")
+    map_record = next(
+        (item for item in maps if str(item.get("record_id", "")) == default_map_id),
+        None,
+    )
+    if map_record is None:
+        raise ValueError("The location's default map record is missing.")
+    for floor in location.get("floors", []) or []:
+        if str(floor.get("primary_map_id", "") or "") == default_map_id:
+            floor["primary_map_id"] = ""
+    target["primary_map_id"] = default_map_id
+    map_record["floor_id"] = str(target.get("record_id", ""))
+
+
+def map_name_for_floor(location: dict, floor_id: str) -> str:
+    """Build a display name from the current location and floor names."""
+
+    location_name = str(location.get("name", "") or "Unnamed location")
+    if not floor_id:
+        return location_name
+    floor_name = next(
+        (
+            str(floor.get("name", "") or "Unnamed floor")
+            for floor in location.get("floors", []) or []
+            if str(floor.get("record_id", "")) == str(floor_id)
+        ),
+        "Unnamed floor",
+    )
+    return f"{location_name} — {floor_name}"
+
+
 def point_in_polygon(x: float, y: float, points: list[dict]) -> bool:
     inside = False
     previous = points[-1]
@@ -429,10 +476,13 @@ class MapperWindow(tk.Tk):
             }
             self.render_catalog()
             self.render_completeness()
+            record = None
             if self.selected_map_id:
                 record = next((item for item in self.maps if str(item.get("record_id")) == self.selected_map_id), None)
-                if record:
-                    self.load_map(record)
+            if record:
+                # Keep the selected catalog role. A location default map can
+                # simultaneously be the primary map of one named floor.
+                self.load_map(record, self.selected_floor_id)
             selected = f"floor:{self.selected_location_id}:{self.selected_floor_id}" if self.selected_floor_id else f"location:{self.selected_location_id}"
             if self.selected_location_id and self.map_tree.exists(selected):
                 self.map_tree.selection_set(selected)
@@ -565,13 +615,15 @@ class MapperWindow(tk.Tk):
             map_id = str(floor.get("primary_map_id", ""))
         record = next((item for item in self.maps if str(item.get("record_id")) == map_id), None)
         if record:
-            self.load_map(record)
+            # The same record may be selected through the location row or its
+            # named floor row, so retain the row's role explicitly.
+            self.load_map(record, floor_id)
         else:
             self.clear_map_editor()
             self.status_value.set(f"{self.map_display_name()} has no map yet")
             self.remember_catalog_selection()
 
-    def load_map(self, record: dict) -> None:
+    def load_map(self, record: dict, floor_context: str | None = None) -> None:
         # A map switch is a hard isolation boundary.  Clear the old map before
         # copying in the new record so stale shapes, warps, selections, history,
         # or cached image fragments can never bleed into the next location.
@@ -581,7 +633,11 @@ class MapperWindow(tk.Tk):
         location_id = str(record.get("location_id", ""))
         self.selected_location_id = location_id
         location = next((item for item in self.locations if str(item.get("record_id")) == location_id), None)
-        self.selected_floor_id = str(record.get("floor_id", ""))
+        self.selected_floor_id = (
+            str(record.get("floor_id", ""))
+            if floor_context is None
+            else str(floor_context or "")
+        )
         self.floor_value.set(next((str(floor.get("name", "Unnamed")) for floor in (location or {}).get("floors", []) or [] if str(floor.get("record_id")) == self.selected_floor_id), "Default location map"))
         self.has_floors_value.set(bool((location or {}).get("has_floors", False)))
         self.regions = deepcopy(record.get("regions", []) or [])
@@ -676,6 +732,251 @@ class MapperWindow(tk.Tk):
             messagebox.showerror("Cannot update location", str(error), parent=self)
 
     def manage_floors(self) -> None:
+        """Rename, order, and map stable floor records for one location."""
+
+        location = next(
+            (item for item in self.locations if str(item.get("record_id")) == self.selected_location_id),
+            None,
+        )
+        if location is None:
+            messagebox.showinfo("Floors", "Select a location first.", parent=self)
+            return
+        if not self.has_floors_value.get():
+            self.has_floors_value.set(True)
+
+        working = sorted(
+            deepcopy(location.get("floors", []) or []),
+            key=lambda item: int(item.get("sort_order", 0)),
+        )
+        default_map_id = str(location.get("default_map_id", "") or "")
+        dialog = tk.Toplevel(self)
+        dialog.title(f"Floors — {location.get('name', 'Location')}")
+        dialog.transient(self)
+        dialog.grab_set()
+        dialog.geometry("520x500")
+        dialog.minsize(430, 380)
+        body = ttk.Frame(dialog, padding=12)
+        body.pack(fill="both", expand=True)
+        header = ttk.Frame(body)
+        header.pack(fill="x")
+        ttk.Label(header, text="Named floors", font=("Segoe UI", 9, "bold")).pack(side="left")
+        count_value = tk.StringVar()
+        ttk.Label(header, textvariable=count_value).pack(side="right")
+        ttk.Label(
+            body,
+            text=(
+                "Floors are ordered from lowest to highest. The location map may also "
+                "serve as one named floor, such as Ground Floor."
+            ),
+            wraplength=470,
+        ).pack(fill="x", pady=(7, 8))
+        preview = tk.Listbox(body, height=13, exportselection=False)
+        preview.pack(fill="both", expand=True)
+
+        def selected_index() -> int | None:
+            selected = preview.curselection()
+            return int(selected[0]) if selected else None
+
+        def render(selected: int | None = None) -> None:
+            previous = selected_index()
+            if selected is None:
+                selected = previous
+            preview.delete(0, "end")
+            for floor in working:
+                map_id = str(floor.get("primary_map_id", "") or "")
+                suffix = (
+                    "  • location map" if map_id and map_id == default_map_id
+                    else "  • map attached" if map_id
+                    else "  • no map"
+                )
+                preview.insert("end", f"{floor.get('name', 'Unnamed')}{suffix}")
+            count_value.set(f"{len(working)} floor{'s' if len(working) != 1 else ''}")
+            if working and selected is not None:
+                selected = max(0, min(len(working) - 1, selected))
+                preview.selection_set(selected)
+                preview.see(selected)
+
+        def add_floor() -> None:
+            name = simpledialog.askstring(
+                "Add floor",
+                "Floor name",
+                initialvalue=f"Floor {len(working) + 1}",
+                parent=dialog,
+            )
+            if not name or not name.strip():
+                return
+            working.append({
+                "record_id": str(uuid4()),
+                "name": name.strip(),
+                "sort_order": len(working),
+                "primary_map_id": "",
+            })
+            render(len(working) - 1)
+
+        def rename_floor(_event: object = None) -> None:
+            index = selected_index()
+            if index is None:
+                return
+            name = simpledialog.askstring(
+                "Rename floor",
+                "Floor name",
+                initialvalue=str(working[index].get("name", "")),
+                parent=dialog,
+            )
+            if not name or not name.strip():
+                return
+            working[index]["name"] = name.strip()
+            render(index)
+
+        def remove_floor() -> None:
+            index = selected_index()
+            if index is None:
+                return
+            if str(working[index].get("primary_map_id", "") or ""):
+                messagebox.showerror(
+                    "Cannot remove floor",
+                    "Clear this floor's map assignment before removing the floor.",
+                    parent=dialog,
+                )
+                return
+            working.pop(index)
+            render(min(index, len(working) - 1))
+
+        def move_floor(amount: int) -> None:
+            index = selected_index()
+            if index is None or not 0 <= index + amount < len(working):
+                return
+            target = index + amount
+            working[index], working[target] = working[target], working[index]
+            render(target)
+
+        def use_location_map() -> None:
+            index = selected_index()
+            if index is None:
+                messagebox.showinfo("Location map", "Select a floor first.", parent=dialog)
+                return
+            if not default_map_id:
+                messagebox.showinfo(
+                    "Location map",
+                    "Import a map on the main location entry first.",
+                    parent=dialog,
+                )
+                return
+            current_map_id = str(working[index].get("primary_map_id", "") or "")
+            if current_map_id and current_map_id != default_map_id and not messagebox.askyesno(
+                "Replace primary map",
+                f"Use the location map instead of {working[index]['name']}'s current primary map?",
+                parent=dialog,
+            ):
+                return
+            working_location = {**location, "floors": working}
+            working_maps = deepcopy(self.maps)
+            assign_location_map_to_floor(
+                working_location, working_maps, str(working[index].get("record_id", ""))
+            )
+            render(index)
+
+        def clear_floor_map() -> None:
+            index = selected_index()
+            if index is None:
+                return
+            working[index]["primary_map_id"] = ""
+            render(index)
+
+        def save() -> None:
+            if not working:
+                messagebox.showerror("Floors", "Add at least one named floor.", parent=dialog)
+                return
+            names = [str(floor.get("name", "")).strip().casefold() for floor in working]
+            if any(not name for name in names) or len(set(names)) != len(names):
+                messagebox.showerror("Floors", "Every floor needs a unique name.", parent=dialog)
+                return
+            floors = deepcopy(working)
+            for index, floor in enumerate(floors):
+                floor["sort_order"] = index
+                floor.setdefault("primary_map_id", "")
+            try:
+                session = self.repository.load()
+                stored = next(
+                    item for item in session.data["locations"]
+                    if str(item.get("record_id")) == self.selected_location_id
+                )
+                stored["has_floors"] = True
+                stored["floors"] = floors
+                default_floor_id = next((
+                    str(floor.get("record_id", "")) for floor in floors
+                    if default_map_id
+                    and str(floor.get("primary_map_id", "") or "") == default_map_id
+                ), "")
+                if default_map_id and default_floor_id:
+                    assign_location_map_to_floor(
+                        stored, session.data.get("maps", []), default_floor_id
+                    )
+                elif default_map_id:
+                    default_map = next((
+                        item for item in session.data.get("maps", [])
+                        if str(item.get("record_id", "")) == default_map_id
+                    ), None)
+                    if default_map is not None:
+                        default_map["floor_id"] = ""
+                floor_ids = {
+                    str(floor.get("record_id", ""))
+                    for floor in stored.get("floors", []) or []
+                }
+                for map_record in session.data.get("maps", []):
+                    if str(map_record.get("location_id", "")) != self.selected_location_id:
+                        continue
+                    map_floor_id = str(map_record.get("floor_id", "") or "")
+                    if map_floor_id in floor_ids:
+                        map_record["name"] = map_name_for_floor(stored, map_floor_id)
+                saved = self.repository.save(session, "mapper")
+                self.locations = sorted(
+                    saved.get("locations", []),
+                    key=lambda item: str(item.get("name", "")).casefold(),
+                )
+                self.maps = list(saved.get("maps", []))
+                self.has_floors_value.set(True)
+                self.render_catalog()
+                location_tree_id = f"location:{self.selected_location_id}"
+                if self.map_tree.exists(location_tree_id):
+                    self.map_tree.item(location_tree_id, open=True)
+                    self.map_tree.selection_set(location_tree_id)
+                    self.map_tree.see(location_tree_id)
+                self.render_completeness()
+                self.status_value.set(
+                    f"{len(floors)} floor{'s' if len(floors) != 1 else ''} saved"
+                )
+                dialog.destroy()
+            except Exception as error:
+                messagebox.showerror("Cannot save floors", str(error), parent=dialog)
+
+        preview.bind("<Double-1>", rename_floor)
+        render()
+        edit_actions = ttk.Frame(body)
+        edit_actions.pack(fill="x", pady=(8, 0))
+        for text, command in (
+            ("Add", add_floor),
+            ("Rename", rename_floor),
+            ("Remove", remove_floor),
+            ("↑", lambda: move_floor(-1)),
+            ("↓", lambda: move_floor(1)),
+        ):
+            ttk.Button(edit_actions, text=text, command=command).pack(side="left", padx=(0, 4))
+        map_actions = ttk.Frame(body)
+        map_actions.pack(fill="x", pady=(6, 0))
+        ttk.Button(
+            map_actions, text="Use location map for floor", command=use_location_map
+        ).pack(side="left")
+        ttk.Button(map_actions, text="Clear floor map", command=clear_floor_map).pack(
+            side="left", padx=(5, 0)
+        )
+        footer = ttk.Frame(body)
+        footer.pack(fill="x", pady=(10, 0))
+        ttk.Button(footer, text="Cancel", command=dialog.destroy).pack(side="right")
+        ttk.Button(footer, text="Apply", command=save).pack(side="right", padx=(0, 5))
+        preview.focus_set()
+
+    def _manage_floors_legacy(self) -> None:
         """Create stable floor records that become independently editable maps."""
 
         location = next(
@@ -889,16 +1190,28 @@ class MapperWindow(tk.Tk):
             imported_image = self.pending_image is not None
             if self.pending_image is not None:
                 asset = self.repository.assets.import_map(map_id, self.pending_image)
+            location = next(item for item in session.data["locations"] if str(item.get("record_id")) == location_id)
+            existing_floor_id = str(record.get("floor_id", "") or "")
+            record_floor_id = floor_id
+            if (
+                not floor_id
+                and str(location.get("default_map_id", "") or "") == map_id
+                and any(
+                    str(floor.get("record_id", "")) == existing_floor_id
+                    and str(floor.get("primary_map_id", "") or "") == map_id
+                    for floor in location.get("floors", []) or []
+                )
+            ):
+                record_floor_id = existing_floor_id
             record.update(
-                name=name,
+                name=map_name_for_floor(location, record_floor_id),
                 location_id=location_id,
-                floor_id=floor_id,
+                floor_id=record_floor_id,
                 asset=asset,
                 regions=regions,
                 warp_points=warp_points,
                 last_updated=now,
             )
-            location = next(item for item in session.data["locations"] if str(item.get("record_id")) == location_id)
             location["has_floors"] = bool(location.get("has_floors", False) or self.has_floors_value.get())
             if not floor_id:
                 location["default_map_id"] = map_id

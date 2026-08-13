@@ -79,6 +79,52 @@ class MapperGeometryTests(unittest.TestCase):
         self.assertEqual(window.canvas.deleted, ["all"])
         self.assertEqual(rendered, ["regions", "canvas"])
 
+    def test_location_default_map_can_also_serve_one_named_floor(self):
+        location = {
+            "record_id": "hogwarts",
+            "default_map_id": "ground-map",
+            "floors": [
+                {"record_id": "dungeons", "name": "Dungeons", "primary_map_id": ""},
+                {"record_id": "ground", "name": "Ground Floor", "primary_map_id": ""},
+            ],
+        }
+        maps = [{"record_id": "ground-map", "location_id": "hogwarts", "floor_id": ""}]
+
+        mapper.assign_location_map_to_floor(location, maps, "ground")
+
+        self.assertEqual(location["default_map_id"], "ground-map")
+        self.assertEqual(location["floors"][1]["primary_map_id"], "ground-map")
+        self.assertEqual(maps[0]["floor_id"], "ground")
+
+    def test_reassigning_location_map_clears_previous_floor_role(self):
+        location = {
+            "record_id": "castle",
+            "default_map_id": "map-1",
+            "floors": [
+                {"record_id": "ground", "name": "Ground", "primary_map_id": "map-1"},
+                {"record_id": "first", "name": "First", "primary_map_id": ""},
+            ],
+        }
+        maps = [{"record_id": "map-1", "location_id": "castle", "floor_id": "ground"}]
+
+        mapper.assign_location_map_to_floor(location, maps, "first")
+
+        self.assertEqual(location["floors"][0]["primary_map_id"], "")
+        self.assertEqual(location["floors"][1]["primary_map_id"], "map-1")
+        self.assertEqual(maps[0]["floor_id"], "first")
+
+    def test_map_display_name_tracks_renamed_floor(self):
+        location = {
+            "name": "Hogwarts",
+            "floors": [{"record_id": "ground", "name": "Ground Floor"}],
+        }
+
+        self.assertEqual(
+            mapper.map_name_for_floor(location, "ground"),
+            "Hogwarts — Ground Floor",
+        )
+        self.assertEqual(mapper.map_name_for_floor(location, ""), "Hogwarts")
+
     def test_completing_polygon_triggers_automatic_save(self):
         window = mapper.MapperWindow.__new__(mapper.MapperWindow)
         window.mode = "draw"

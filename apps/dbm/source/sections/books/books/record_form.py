@@ -100,8 +100,8 @@ class BookForm(tk.Frame):
         self.overview_view.grid(row=0, column=0, sticky="nsew")
         self.overview_view.grid_columnconfigure(0, weight=1)
         self.overview_view.grid_columnconfigure(1, weight=1)
-        self.overview_view.grid_rowconfigure(1, weight=3, minsize=260)
-        self.overview_view.grid_rowconfigure(2, weight=2, minsize=170)
+        self.overview_view.grid_rowconfigure(2, weight=3, minsize=240)
+        self.overview_view.grid_rowconfigure(3, weight=2, minsize=150)
         bind_theme(self.overview_view, background="SURFACE")
         self.views["overview"] = self.overview_view
 
@@ -133,6 +133,20 @@ class BookForm(tk.Frame):
             pady=(0, 12),
         )
 
+        self.publication_date_field = LabeledEntry(
+            self.overview_view,
+            "Publication Date (YYYY-MM-DD)",
+            self.handle_field_change,
+            font_size=12,
+        )
+        self.publication_date_field.grid(
+            row=1,
+            column=0,
+            columnspan=2,
+            sticky="ew",
+            pady=(0, 12),
+        )
+
         self.description_field = MultilineField(
             self.overview_view,
             "Description",
@@ -140,7 +154,7 @@ class BookForm(tk.Frame):
             height=12,
         )
         self.description_field.grid(
-            row=1,
+            row=2,
             column=0,
             sticky="nsew",
             padx=(0, 8),
@@ -156,7 +170,7 @@ class BookForm(tk.Frame):
             text="Add a category"
         )
         self.categories_editor.grid(
-            row=1,
+            row=2,
             column=1,
             sticky="nsew",
             padx=(8, 0),
@@ -170,7 +184,7 @@ class BookForm(tk.Frame):
             height=8,
         )
         self.dbnotes_field.grid(
-            row=2,
+            row=3,
             column=0,
             columnspan=2,
             sticky="nsew",
@@ -234,6 +248,7 @@ class BookForm(tk.Frame):
         self.loading_record = True
         self.name_field.set_value(record.get("name", ""))
         self.author_field.set_value(record.get("author", ""))
+        self.publication_date_field.set_value(record.get("publication_date", "1900-01-01"))
         self.description_field.set_value(record.get("description", ""))
         self.categories_editor.set_tags(record.get("categories", []))
         self.dbnotes_field.set_value(record.get("dbnotes", ""))
@@ -260,6 +275,7 @@ class BookForm(tk.Frame):
         return {
             "name": self.name_field.get_value(),
             "author": self.author_field.get_value(),
+            "publication_date": self.publication_date_field.get_value(),
             "categories": self.categories_editor.get_tags(),
             "description": self.description_field.get_value(),
             "spells": self.spells_editor.get_references(),

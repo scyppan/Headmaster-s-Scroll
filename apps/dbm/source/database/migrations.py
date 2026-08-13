@@ -1,4 +1,4 @@
-CURRENT_SCHEMA_VERSION = 1
+CURRENT_SCHEMA_VERSION = 2
 
 
 def migrate_database(database_data):
@@ -9,6 +9,11 @@ def migrate_database(database_data):
         raise ValueError(
             "This database was created by a newer version of the application"
         )
+
+    if schema_version < 2:
+        for book in database_data.get("books", []):
+            if isinstance(book, dict) and not str(book.get("publication_date", "") or "").strip():
+                book["publication_date"] = "1900-01-01"
 
     database_data["_database"] = {
         **database_metadata,

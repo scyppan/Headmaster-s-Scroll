@@ -34,6 +34,7 @@ def default_person_board() -> dict[str, Any]:
         "faction_revealed": False,
         "faction_organization_id": "",
         "label_offset": {"x": 0.0, "y": 0.0},
+        "nameplate_scale": 1.0,
     }
 
 
@@ -87,6 +88,10 @@ def normalize_person_board(value: Any) -> dict[str, Any]:
     if not -1.0 <= offset_x <= 1.0 or not -1.0 <= offset_y <= 1.0:
         raise ValueError("Nameplate offsets must remain within one map width or height")
     result["label_offset"] = {"x": offset_x, "y": offset_y}
+    nameplate_scale = float(source.get("nameplate_scale", 1.0))
+    if not 0.5 <= nameplate_scale <= 3.0:
+        raise ValueError("Individual nameplate size must be between 50% and 300%")
+    result["nameplate_scale"] = nameplate_scale
     return result
 
 
@@ -803,6 +808,7 @@ class WorldBoardRepository:
                 "is_player_character": is_player,
                 "visibility": board["visibility"] if not for_players else "players",
                 "label_offset": deepcopy(board["label_offset"]),
+                "nameplate_scale": board["nameplate_scale"],
             }
             actors.append(actor)
         return {

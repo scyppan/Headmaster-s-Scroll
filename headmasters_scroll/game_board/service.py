@@ -3,12 +3,15 @@ from __future__ import annotations
 import calendar
 import hashlib
 import math
+import os
 import re
+import sys
 import threading
 from copy import deepcopy
 from datetime import date, datetime, time, timedelta, timezone
 from secrets import token_urlsafe
 from typing import Any
+from pathlib import Path
 from urllib.parse import quote, urlsplit
 from uuid import uuid4
 from zoneinfo import ZoneInfo
@@ -1205,6 +1208,257 @@ class GameBoardService:
             )
             self._persist_campaign_document(campaign["record_id"], document)
             return deepcopy(board["placement"])
+
+    def place_person_on_map(
+        self,
+        session_id: str,
+        person_id: str,
+        map_id: str,
+        x: float = 0.5,
+        y: float = 0.5,
+        *,
+        confirm_move: bool = False,
+    ) -> dict[str, Any]:
+        """Place any world character, confirming an inter-map move first."""
+
+        with self._lock:
+            session = self._board_context(session_id)
+            campaign, document = self._campaign_document(session)
+            target = self._campaign_map(document, map_id)
+            person = next(
+                (
+                    item for item in document.get("people", [])
+                    if str(item.get("record_id", "")) == person_id
+                ),
+                None,
+            )
+            if person is None:
+                raise KeyError("Unknown person")
+            board = normalize_person_board(person.get("board"))
+            previous = board.get("placement")
+            if previous and str(previous.get("map_id", "")) == map_id:
+                return {
+                    "placed": False,
+                    "already_on_map": True,
+                    "person_id": person_id,
+                    "person_name": str(person.get("displayed_name", "") or "Character"),
+                    "placement": deepcopy(previous),
+                }
+            if previous and not confirm_move:
+                previous_map = next(
+                    (
+                        item for item in document.get("maps", [])
+                        if str(item.get("record_id", "")) == str(previous.get("map_id", ""))
+                    ),
+                    {},
+                )
+                return {
+                    "requires_confirmation": True,
+                    "person_id": person_id,
+                    "person_name": str(person.get("displayed_name", "") or "Character"),
+                    "current_map_id": str(previous.get("map_id", "")),
+                    "current_map_name": str(previous_map.get("name", "") or "another map"),
+                }
+
+            occupied = []
+            for other in document.get("people", []):
+                if not isinstance(other, dict) or other is person:
+                    continue
+                placement = normalize_person_board(other.get("board")).get("placement")
+                if placement and str(placement.get("map_id", "")) == map_id:
+                    occupied.append((float(placement["x"]), float(placement["y"])))
+            spacing = max(
+                0.006,
+                float(target.get("token_scale", DEFAULT_MAP_TOKEN_SCALE)) * 1.15,
+            )
+            requested = (
+                max(0.005, min(0.995, float(x))),
+                max(0.005, min(0.995, float(y))),
+            )
+            candidates = [requested]
+            for ring in range(1, 7):
+                radius = spacing * ring
+                for index in range(max(8, ring * 8)):
+                    angle = (2.0 * math.pi * index) / max(8, ring * 8)
+                    candidates.append((
+                        max(0.005, min(0.995, requested[0] + math.cos(angle) * radius)),
+                        max(0.005, min(0.995, requested[1] + math.sin(angle) * radius)),
+                    ))
+            px, py = next(
+                (
+                    point for point in candidates
+                    if all(
+                        math.hypot(point[0] - ox, point[1] - oy) >= spacing
+                        for ox, oy in occupied
+                    )
+                ),
+                candidates[-1],
+            )
+            board["placement"] = {
+                "location_id": str(target["location_id"]),
+                "floor_id": str(target.get("floor_id", "") or ""),
+                "map_id": map_id,
+                "x": px,
+                "y": py,
+            }
+            person["board"] = board
+            self.world_board._remove_from_incompatible_groups(
+                document, person_id, board["placement"]["location_id"]
+            )
+            self._persist_campaign_document(campaign["record_id"], document)
+
+            contact_ids = [
+                str(player.get("contact_id", ""))
+                for player in session.get("roster", [])
+                if str(player.get("character_id", "") or "") == person_id
+            ]
+            if contact_ids:
+                camera = {
+                    "zoom": float(normalize_zoom_profile(target.get("zoom_profile")).get("default_zoom", 1.0)),
+                    "center_x": px,
+                    "center_y": py,
+                }
+
+                def update(state: dict[str, Any]) -> None:
+                    loaded = state.setdefault("loaded_map_ids", [])
+                    if map_id not in loaded:
+                        loaded.append(map_id)
+                    map_state = state.setdefault("maps", {}).setdefault(map_id, {})
+                    cameras = map_state.setdefault("player_cameras", {})
+                    active_maps = state.setdefault("player_active_map_ids", {})
+                    for contact_id in contact_ids:
+                        cameras[contact_id] = deepcopy(camera)
+                        active_maps[contact_id] = map_id
+
+                self.campaign_repository.update_game_state(campaign["record_id"], update)
+            return {
+                "placed": True,
+                "person_id": person_id,
+                "person_name": str(person.get("displayed_name", "") or "Character"),
+                "placement": deepcopy(board["placement"]),
+                "moved_from_another_map": bool(previous),
+            }
+
+    def create_quick_character(
+        self,
+        session_id: str,
+        map_id: str,
+        name: str,
+        age: int,
+        development_strategy: str = "random",
+        player_character: bool = False,
+    ) -> dict[str, Any]:
+        """Create a lightweight World Builder person and progress their youth."""
+
+        clean_name = " ".join(str(name or "").split())
+        if not clean_name:
+            raise ValueError("Character name is required")
+        age = int(age)
+        if not 0 <= age <= 1000:
+            raise ValueError("Rough age must be between 0 and 1000")
+        with self._lock:
+            session = self._board_context(session_id)
+            current = normalize_game_datetime(
+                str(session.get("game_datetime", "") or ""),
+                str(session.get("event_date", "") or date.today().isoformat()),
+            )
+            current_year = int(GAME_DATETIME.fullmatch(current).group("year"))
+            source_directory = Path(__file__).resolve().parents[2] / "apps" / "world-builder" / "source"
+            source_text = str(source_directory)
+            if source_text not in sys.path:
+                sys.path.insert(0, source_text)
+            data_directory = (
+                Path(self.shared_store.data_directory)
+                if self.shared_store.data_directory is not None
+                else Path(__file__).resolve().parents[2] / "data"
+            )
+            os.environ.setdefault(
+                "HEADMASTERS_SCROLL_DATA_DIRECTORY",
+                str(data_directory),
+            )
+            from mage_maker.core.database import JsonDatabase
+            from mage_maker.core.controller import PeopleController
+            from mage_maker.core.dates import historical_year_shift
+            from mage_maker.sections.development.characteristics import randomized_characteristics
+            from mage_maker.sections.development.initial_bonuses import initialize_initial_bonuses
+            from mage_maker.sections.development.initial_values import initialize_parental_values
+            from mage_maker.sections.development.models import (
+                DEVELOPMENT_SCHEMA_OPTIONS,
+                randomized_development_plan,
+            )
+            from mage_maker.sections.development.school_years import ensure_school_year_records
+
+            strategy = str(development_strategy or "random").strip()
+            if strategy.casefold() == "random":
+                plan = randomized_development_plan()
+            else:
+                matches = {
+                    option.casefold(): option for option in DEVELOPMENT_SCHEMA_OPTIONS
+                }
+                selected = matches.get(strategy.casefold())
+                if selected is None:
+                    raise ValueError("Unknown development strategy")
+                plan = randomized_development_plan(selected_schema=selected)
+            birth_year = historical_year_shift(current_year, -age) if age else current_year
+            visible_school_years = min(7, max(0, age - 10))
+            plan["school_started"] = visible_school_years > 0
+            plan["academic_years_advanced"] = (
+                7 if age >= 18 else max(0, visible_school_years - 1)
+            )
+            db = JsonDatabase(data_directory / "world.json")
+            # Use this service's store explicitly.  This is important for
+            # portable installs and temporary/test data directories, and it
+            # retains the shared revision-aware save contract.
+            db.shared_store = self.shared_store
+            db.load()
+            controller = PeopleController(db)
+            draft = {
+                "displayed_name": clean_name,
+                "birth_year": birth_year,
+                "birth_month": None,
+                "birth_day": None,
+                "player_character": bool(player_character),
+                "blood_status": "Pureblood",
+                "developmental_environment": "Magical",
+                "development_plan": plan,
+                "unfinished": True,
+            }
+            draft["parental_values"] = initialize_parental_values(draft, db.list_people())
+            draft["initial_bonuses"] = initialize_initial_bonuses(draft, plan)
+            draft["characteristics"] = randomized_characteristics()
+            rules = self.shared_store.load("db.json").data
+            plan["school_years"] = ensure_school_year_records(
+                [],
+                visible_school_years,
+                plan,
+                books=rules.get("books", []),
+                spells=rules.get("spells", []),
+                proficiencies=rules.get("proficiencies", []),
+                school_name="",
+                initial_characteristics=draft["characteristics"],
+                manage_books=True,
+                schools=rules.get("schools", []),
+            )
+            draft["development_plan"] = plan
+            created = controller.create_person(draft)
+            placement = self.place_person_on_map(
+                session_id,
+                str(created["record_id"]),
+                map_id,
+                0.5,
+                0.5,
+                confirm_move=True,
+            )
+            return {
+                "character": {
+                    "id": str(created["record_id"]),
+                    "name": str(created["displayed_name"]),
+                    "birth_year": created.get("birth_year"),
+                    "development_strategy": plan.get("schema"),
+                    "development_years": visible_school_years,
+                },
+                "placement": placement.get("placement"),
+            }
 
     def transport_person(
         self,

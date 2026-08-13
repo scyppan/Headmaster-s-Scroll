@@ -1622,6 +1622,7 @@ class GameBoardWindow(tk.Tk):
         group_header.pack(fill="x")
         ttk.Label(group_header, text="GROUPS", style="Card.TLabel", font=("Segoe UI", 8, "bold")).pack(side="left")
         for text, command, help_text in (
+            ("P+", self.open_add_character_menu, "Add a character to this map"),
             ("+", self.create_board_group, "Create a group"),
             ("↔", self.manage_actor_group, "Join or leave a group"),
             ("⌁", self.grant_actor_control, "Grant player control"),
@@ -1665,6 +1666,215 @@ class GameBoardWindow(tk.Tk):
         self._render_board_actor_list()
         if self.selected_board_actor_id and self.board_actor_tree.exists(self.selected_board_actor_id):
             self.board_actor_tree.selection_set(self.selected_board_actor_id)
+
+    def open_add_character_menu(self) -> None:
+        if not self.selected_session_id or not self.selected_board_map_id:
+            messagebox.showinfo(
+                "Add character",
+                "Open a campaign session and a map first.",
+                parent=self,
+            )
+            return
+        menu = tk.Menu(self, tearoff=False)
+        menu.add_command(label="Choose from World Builderâ€¦", command=self.choose_character_for_map)
+        menu.add_command(label="Quick new characterâ€¦", command=self.quick_create_character_for_map)
+        try:
+            menu.tk_popup(self.winfo_pointerx(), self.winfo_pointery())
+        finally:
+            menu.grab_release()
+
+    def choose_character_for_map(self) -> None:
+        characters = list(self.character_choices)
+        if not characters:
+            messagebox.showinfo(
+                "Add character",
+                "No characters are available in World Builder.",
+                parent=self,
+            )
+            return
+        dialog = tk.Toplevel(self)
+        dialog.title("Add Character to Map")
+        dialog.transient(self)
+        dialog.grab_set()
+        dialog.geometry("600x560")
+        dialog.minsize(440, 360)
+        apply_window_icon(dialog, GAME_BOARD_ICON)
+        body = ttk.Frame(dialog, padding=12)
+        body.pack(fill="both", expand=True)
+        ttk.Label(body, text="Add Character", style="Title.TLabel").pack(anchor="w")
+        query = tk.StringVar()
+        search = ttk.Entry(body, textvariable=query)
+        search.pack(fill="x", pady=(6, 7))
+        results = tk.Listbox(
+            body,
+            exportselection=False,
+            background="#fff8e6",
+            foreground=self.INK,
+            selectbackground=self.ACCENT,
+            selectforeground="#fff8e7",
+        )
+        results.pack(fill="both", expand=True)
+        status = ttk.Label(body, text="", style="Status.TLabel")
+        status.pack(anchor="w", pady=(5, 0))
+        visible: list[dict[str, Any]] = []
+
+        def fill(*_args: object) -> None:
+            search_text = " ".join(query.get().strip().casefold().split())
+            ranked: list[tuple[float, dict[str, Any]]] = []
+            for item in characters:
+                name = " ".join(str(item.get("name", "")).casefold().split())
+                if not search_text:
+                    score = 1.0
+                elif search_text in name:
+                    score = 2.0 - (name.index(search_text) / max(1, len(name)))
+                else:
+                    score = SequenceMatcher(None, search_text, name).ratio()
+                    word_scores = [
+                        SequenceMatcher(None, word, candidate).ratio()
+                        for word in search_text.split()
+                        for candidate in name.split()
+                    ]
+                    score = max([score, *word_scores])
+                    if score < 0.58:
+                        continue
+                ranked.append((score, item))
+            ranked.sort(
+                key=lambda value: (
+                    -value[0],
+                    str(value[1].get("name", "")).casefold(),
+                )
+            )
+            visible[:] = [item for _score, item in ranked]
+            results.delete(0, "end")
+            for item in visible:
+                results.insert("end", str(item.get("name") or "Unnamed character"))
+            status.configure(text=f"{len(visible)} character(s) shown")
+            if visible:
+                results.selection_set(0)
+
+        def place(confirm_move: bool = False) -> None:
+            selection = results.curselection()
+            if not selection:
+                return
+            character = visible[selection[0]]
+            payload = {
+                "session_id": self.selected_session_id,
+                "person_id": character["id"],
+                "map_id": self.selected_board_map_id,
+                "x": 0.5,
+                "y": 0.5,
+                "confirm_move": confirm_move,
+            }
+
+            def handled(result: dict[str, Any]) -> None:
+                if result.get("requires_confirmation"):
+                    if messagebox.askyesno(
+                        "Move character?",
+                        (
+                            f"{result.get('person_name') or character['name']} is currently on "
+                            f"{result.get('current_map_name') or 'another map'}.\n\n"
+                            "Move them to this map?"
+                        ),
+                        parent=dialog,
+                    ):
+                        place(True)
+                    return
+                dialog.destroy()
+                if result.get("already_on_map"):
+                    self.set_notice(f"{character['name']} is already on this map")
+                else:
+                    self.set_notice(f"{character['name']} added to map")
+                self.refresh(silent=True)
+
+            self._background(
+                lambda: self.client.request("POST", "/api/admin/board/place-character", payload),
+                handled,
+            )
+
+        query.trace_add("write", fill)
+        results.bind("<Double-Button-1>", lambda _event: place())
+        results.bind("<Return>", lambda _event: place())
+        controls = ttk.Frame(body)
+        controls.pack(fill="x", pady=(8, 0))
+        ttk.Button(controls, text="Cancel", style="Quiet.TButton", command=dialog.destroy).pack(side="right")
+        ttk.Button(controls, text="Add to Map", command=place).pack(side="right", padx=(0, 6))
+        fill()
+        search.focus_set()
+
+    def quick_create_character_for_map(self) -> None:
+        dialog = tk.Toplevel(self)
+        dialog.title("Quick New Character")
+        dialog.transient(self)
+        dialog.grab_set()
+        dialog.geometry("520x330")
+        dialog.resizable(False, False)
+        apply_window_icon(dialog, GAME_BOARD_ICON)
+        body = ttk.Frame(dialog, padding=16)
+        body.pack(fill="both", expand=True)
+        ttk.Label(body, text="Quick New Character", style="Title.TLabel").grid(row=0, column=0, columnspan=2, sticky="w")
+        ttk.Label(body, text="Name", style="Card.TLabel").grid(row=1, column=0, sticky="w", pady=(14, 4))
+        name_value = tk.StringVar()
+        name_entry = ttk.Entry(body, textvariable=name_value)
+        name_entry.grid(row=1, column=1, sticky="ew", pady=(14, 4))
+        ttk.Label(body, text="Rough age", style="Card.TLabel").grid(row=2, column=0, sticky="w", pady=4)
+        age_value = tk.StringVar(value="17")
+        age_entry = ttk.Spinbox(body, from_=0, to=1000, textvariable=age_value, width=10)
+        age_entry.grid(row=2, column=1, sticky="w", pady=4)
+        ttk.Label(body, text="Development strategy", style="Card.TLabel").grid(row=3, column=0, sticky="w", pady=4)
+        strategy_value = tk.StringVar(value="Random")
+        strategies = (
+            "Random", "One skill", "Two skill", "Three skills", "Ability-focus",
+            "Material Crafting", "Ingredient Crafting", "Spell-crafting", "Social", "Scattershot",
+        )
+        strategy = ttk.Combobox(body, textvariable=strategy_value, values=strategies, state="readonly")
+        strategy.grid(row=3, column=1, sticky="ew", pady=4)
+        player_value = tk.BooleanVar(value=False)
+        ttk.Checkbutton(body, text="Player character", variable=player_value).grid(row=4, column=1, sticky="w", pady=(6, 0))
+        note = ttk.Label(
+            body,
+            text="Birth year and completed development years are calculated from the current Game World Date.",
+            style="Status.TLabel",
+            wraplength=450,
+        )
+        note.grid(row=5, column=0, columnspan=2, sticky="w", pady=(12, 0))
+        body.columnconfigure(1, weight=1)
+
+        def create() -> None:
+            try:
+                age = int(age_value.get())
+            except ValueError:
+                messagebox.showwarning("Quick character", "Enter a whole-number age.", parent=dialog)
+                return
+            payload = {
+                "session_id": self.selected_session_id,
+                "map_id": self.selected_board_map_id,
+                "name": name_value.get().strip(),
+                "age": age,
+                "development_strategy": strategy_value.get(),
+                "player_character": player_value.get(),
+            }
+            if not payload["name"]:
+                messagebox.showwarning("Quick character", "Enter a character name.", parent=dialog)
+                return
+
+            def created(result: dict[str, Any]) -> None:
+                character = result.get("character", {})
+                dialog.destroy()
+                self.set_notice(
+                    f"Created {character.get('name', 'character')} â€” born {character.get('birth_year')}"
+                )
+                self.refresh(silent=True)
+
+            self._background(
+                lambda: self.client.request("POST", "/api/admin/board/quick-character", payload, timeout=60),
+                created,
+            )
+
+        controls = ttk.Frame(body)
+        controls.grid(row=6, column=0, columnspan=2, sticky="e", pady=(18, 0))
+        ttk.Button(controls, text="Cancel", style="Quiet.TButton", command=dialog.destroy).pack(side="right")
+        ttk.Button(controls, text="Create and Add", command=create).pack(side="right", padx=(0, 6))
+        name_entry.focus_set()
 
     def open_board_groups(self) -> None:
         self.show_board_tools_panel("groups")
@@ -2674,6 +2884,13 @@ class GameBoardWindow(tk.Tk):
             selected = actor_id == self.selected_board_actor_id
             is_player = bool(actor.get("is_player_character"))
             name = str(actor.get("name") or ("Character" if is_player else "Unknown"))
+            actor_label_font_size = max(
+                6,
+                min(
+                    48,
+                    round(label_font_size * float(actor.get("nameplate_scale", 1.0) or 1.0)),
+                ),
+            )
             saved_label_offset = actor.get("label_offset") if isinstance(actor.get("label_offset"), dict) else {}
             label_dx = float(saved_label_offset.get("x", 0.0)) * draw_width
             label_dy = float(saved_label_offset.get("y", 0.0)) * draw_height
@@ -2695,7 +2912,7 @@ class GameBoardWindow(tk.Tk):
                 plaque_y = max(18.0, min(height - 18.0, marker_y - math.sin(angle) * 28 + label_dy))
                 label = canvas.create_text(
                     plaque_x, plaque_y, text=name, fill="#000000",
-                    font=("Segoe UI", label_font_size, "bold"),
+                    font=("Segoe UI", actor_label_font_size, "bold"),
                 )
                 label_box = canvas.bbox(label) or (plaque_x - 28, plaque_y - 8, plaque_x + 28, plaque_y + 8)
                 label_bg = canvas.create_rectangle(
@@ -2724,7 +2941,7 @@ class GameBoardWindow(tk.Tk):
                 line = canvas.create_line(x, y, label_x, label_y, fill=self.INK, width=2)
                 label = canvas.create_text(
                     label_x, label_y, text=name, fill="#000000",
-                    font=("Segoe UI", label_font_size, "bold"),
+                    font=("Segoe UI", actor_label_font_size, "bold"),
                 )
                 label_box = canvas.bbox(label) or (label_x - 28, label_y - 8, label_x + 28, label_y + 8)
                 label_bg = canvas.create_rectangle(
@@ -2759,7 +2976,7 @@ class GameBoardWindow(tk.Tk):
                     radius = dot_diameter / 2
                     item = canvas.create_oval(x - radius, y - radius, x + radius, y + radius, fill=color, outline="#d6ad52" if selected else self.INK, width=2)
             elif actor.get("display_mode") == "nameplate":
-                text_item = canvas.create_text(x + label_dx, y + label_dy, text=name, fill=self.INK, font=("Segoe UI", label_font_size, "bold"))
+                text_item = canvas.create_text(x + label_dx, y + label_dy, text=name, fill=self.INK, font=("Segoe UI", actor_label_font_size, "bold"))
                 box = canvas.bbox(text_item) or (x - 25, y - 10, x + 25, y + 10)
                 item = canvas.create_rectangle(box[0] - 6, box[1] - 4, box[2] + 6, box[3] + 4, fill="#d6ad52", outline="#fff3cf" if selected else self.INK, width=2)
                 canvas.tag_raise(text_item)
@@ -2774,7 +2991,7 @@ class GameBoardWindow(tk.Tk):
             if actor.get("display_mode") != "nameplate":
                 label_offset = max(token_diameter, dot_diameter) / 2 + 10
                 label_x, label_y = x + label_dx, y + label_offset + label_dy
-                label = canvas.create_text(label_x, label_y, text=name, fill="#000000", font=("Segoe UI", label_font_size, "bold"))
+                label = canvas.create_text(label_x, label_y, text=name, fill="#000000", font=("Segoe UI", actor_label_font_size, "bold"))
                 label_box = canvas.bbox(label) or (label_x - 20, label_y - 7, label_x + 20, label_y + 7)
                 label_bg = canvas.create_rectangle(
                     label_box[0] - 4, label_box[1] - 2,
@@ -3146,7 +3363,14 @@ class GameBoardWindow(tk.Tk):
         return "break"
 
     def _board_pointer_start(self, event: tk.Event, map_id: str) -> None:
-        if self.board_obscure_mode:
+        canvas = self.board_canvases[map_id]
+        actor_id, _part = self._actor_at(canvas, map_id, event.x, event.y)
+        if actor_id:
+            # Character pieces remain movable even while a map-authoring tool
+            # is active.  The Headmaster must never have to leave a tool just
+            # to reposition an occupant.
+            self._board_drag_start(event, map_id)
+        elif self.board_obscure_mode:
             self._board_obscuration_press(event, map_id)
         else:
             self._board_drag_start(event, map_id)
@@ -3574,6 +3798,15 @@ class GameBoardWindow(tk.Tk):
             ),
             command=self.toggle_selected_name,
         )
+        popup.add_separator()
+        popup.add_command(
+            label="Increase nameplate size",
+            command=lambda: self.adjust_selected_nameplate_size(0.1),
+        )
+        popup.add_command(
+            label="Decrease nameplate size",
+            command=lambda: self.adjust_selected_nameplate_size(-0.1),
+        )
         try:
             popup.tk_popup(root_x, root_y)
         finally:
@@ -3839,6 +4072,16 @@ class GameBoardWindow(tk.Tk):
         actor = self._selected_board_actor()
         if actor:
             self.update_selected_actor(name_revealed=not bool(actor.get("name_revealed")))
+
+    def adjust_selected_nameplate_size(self, change: float) -> None:
+        actor = self._selected_board_actor()
+        if actor is None:
+            return
+        scale = max(
+            0.5,
+            min(3.0, round(float(actor.get("nameplate_scale", 1.0) or 1.0) + change, 2)),
+        )
+        self.update_selected_actor(nameplate_scale=scale)
 
     def toggle_selected_faction(self) -> None:
         actor = self._selected_board_actor()

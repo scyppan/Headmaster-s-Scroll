@@ -535,6 +535,7 @@ class ProtectedAssetApiTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.directory = Path(self.temporary.name)
         world = world_document()
+        world["_database"]["schema_version"] = 36
         world["maps"][0]["players_published"] = True
         source = self.directory / "map.png"
         Image.new("RGB", (320, 180), "purple").save(source)
@@ -771,6 +772,76 @@ class ProtectedAssetApiTests(unittest.TestCase):
         )
         self.assertIsNotNone(attributes)
         self.assertEqual(attributes["character_id"], "pc-1")
+
+    def test_headmaster_can_move_any_character_and_resize_its_nameplate(self):
+        move = self.admin.post(
+            "/api/admin/board/move",
+            headers=self.admin_headers,
+            json={
+                "session_id": self.session_id,
+                "person_id": "npc-1",
+                "map_id": "map-1",
+                "x": 0.34,
+                "y": 0.56,
+            },
+        )
+        self.assertEqual(move.status_code, 200, move.text)
+        resize = self.admin.put(
+            "/api/admin/board/people/npc-1",
+            headers=self.admin_headers,
+            json={"session_id": self.session_id, "nameplate_scale": 1.3},
+        )
+        self.assertEqual(resize.status_code, 200, resize.text)
+        snapshot = self.runtime.service.board_snapshot(self.session_id)
+        actor = next(item for item in snapshot["actors"] if item["actor_id"] == "npc-1")
+        self.assertEqual((actor["x"], actor["y"]), (0.34, 0.56))
+        self.assertEqual(actor["nameplate_scale"], 1.3)
+
+    def test_adding_character_prompts_before_moving_it_between_maps(self):
+        world_session = self.shared.load("world.json")
+        world_session.data["locations"].append({
+            "record_id": "village",
+            "name": "Village",
+            "is_building": False,
+            "has_floors": False,
+            "floors": [],
+            "default_map_id": "map-2",
+        })
+        world_session.data["maps"].append({
+            "record_id": "map-2",
+            "name": "Village Square",
+            "location_id": "village",
+            "floor_id": "",
+            "players_published": False,
+            "asset": None,
+        })
+        self.shared.save(world_session, "mapper")
+
+        request = self.admin.post(
+            "/api/admin/board/place-character",
+            headers=self.admin_headers,
+            json={
+                "session_id": self.session_id,
+                "person_id": "npc-1",
+                "map_id": "map-2",
+            },
+        )
+        self.assertEqual(request.status_code, 200, request.text)
+        self.assertTrue(request.json()["requires_confirmation"])
+        self.assertEqual(request.json()["current_map_name"], "First Floor")
+
+        confirmed = self.admin.post(
+            "/api/admin/board/place-character",
+            headers=self.admin_headers,
+            json={
+                "session_id": self.session_id,
+                "person_id": "npc-1",
+                "map_id": "map-2",
+                "confirm_move": True,
+            },
+        )
+        self.assertEqual(confirmed.status_code, 200, confirmed.text)
+        self.assertEqual(confirmed.json()["placement"]["map_id"], "map-2")
 
     def test_headmaster_transport_uses_selected_warp_and_focuses_linked_player(self):
         world_session = self.shared.load("world.json")

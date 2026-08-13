@@ -1,8 +1,8 @@
 {
   "_database": {
-    "schema_version": 1,
+    "schema_version": 2,
     "database_version": "26.7.22.001",
-    "last_saved": "2026-07-22T06:12:03.601763+00:00"
+    "last_saved": "2026-08-13T03:49:26.050290+00:00"
   },
   "wand_woods": [
     {
@@ -37019,7 +37019,8 @@
       ],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-05-11T01:44:56"
+      "last_updated": "2025-05-11T01:44:56",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1358",
@@ -37138,7 +37139,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-02T02:14:10"
+      "last_updated": "2024-01-02T02:14:10",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1244",
@@ -37199,7 +37201,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-01T21:17:36"
+      "last_updated": "2024-01-01T21:17:36",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1224",
@@ -37211,7 +37214,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:52"
+      "last_updated": "2022-06-29T20:55:52",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1249",
@@ -37223,7 +37227,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:53"
+      "last_updated": "2022-06-29T20:55:53",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_21045",
@@ -37237,7 +37242,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-06T22:42:44"
+      "last_updated": "2024-01-06T22:42:44",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1359",
@@ -37296,7 +37302,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-02T03:21:29"
+      "last_updated": "2024-01-02T03:21:29",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_21150",
@@ -37327,7 +37334,8 @@
       ],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-12T15:42:16"
+      "last_updated": "2024-01-12T15:42:16",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27667",
@@ -37341,7 +37349,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-15T02:17:46"
+      "last_updated": "2025-04-15T02:17:46",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1324",
@@ -37353,7 +37362,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:54"
+      "last_updated": "2022-06-29T20:55:54",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1325",
@@ -37365,7 +37375,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:54"
+      "last_updated": "2022-06-29T20:55:54",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1269",
@@ -37382,7 +37393,8 @@
       ],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-05-11T02:10:33"
+      "last_updated": "2025-05-11T02:10:33",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1264",
@@ -37394,7 +37406,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:53"
+      "last_updated": "2022-06-29T20:55:53",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_21149",
@@ -37445,7 +37458,8 @@
       ],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-12T15:42:14"
+      "last_updated": "2024-01-12T15:42:14",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_4026",
@@ -37457,7 +37471,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-07-22T22:32:57"
+      "last_updated": "2022-07-22T22:32:57",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1281",
@@ -37469,7 +37484,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:53"
+      "last_updated": "2022-06-29T20:55:53",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27353",
@@ -37483,7 +37499,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T16:03:52"
+      "last_updated": "2025-04-14T16:03:52",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28288",
@@ -37497,7 +37514,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-23T14:53:39"
+      "last_updated": "2025-04-23T14:53:39",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1214",
@@ -37509,7 +37527,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:52"
+      "last_updated": "2022-06-29T20:55:52",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1245",
@@ -37521,7 +37540,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:53"
+      "last_updated": "2022-06-29T20:55:53",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_21028",
@@ -37533,7 +37553,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-06T19:50:02"
+      "last_updated": "2024-01-06T19:50:02",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28308",
@@ -37547,7 +37568,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-23T15:01:47"
+      "last_updated": "2025-04-23T15:01:47",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27672",
@@ -37561,7 +37583,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-15T02:19:52"
+      "last_updated": "2025-04-15T02:19:52",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28298",
@@ -37575,7 +37598,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-23T14:57:17"
+      "last_updated": "2025-04-23T14:57:17",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_21047",
@@ -37589,7 +37613,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-06T22:44:29"
+      "last_updated": "2024-01-06T22:44:29",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_19619",
@@ -37644,7 +37669,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-02T03:58:57"
+      "last_updated": "2024-01-02T03:58:57",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_26961",
@@ -37656,7 +37682,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-11T17:37:41"
+      "last_updated": "2025-04-11T17:37:41",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_26945",
@@ -37668,7 +37695,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-11T17:25:47"
+      "last_updated": "2025-04-11T17:25:47",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_31191",
@@ -37682,7 +37710,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2026-01-13T14:22:35"
+      "last_updated": "2026-01-13T14:22:35",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_26943",
@@ -37696,7 +37725,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-11T17:24:46"
+      "last_updated": "2025-04-11T17:24:46",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1353",
@@ -37833,7 +37863,8 @@
         }
       ],
       "dbnotes": "",
-      "last_updated": "2024-01-10T13:38:44"
+      "last_updated": "2024-01-10T13:38:44",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_26947",
@@ -37847,7 +37878,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-11T17:26:46"
+      "last_updated": "2025-04-11T17:26:46",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_26956",
@@ -37861,7 +37893,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-11T17:31:43"
+      "last_updated": "2025-04-11T17:31:43",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1227",
@@ -37873,7 +37906,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:52"
+      "last_updated": "2022-06-29T20:55:52",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1228",
@@ -37900,7 +37934,8 @@
       ],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-05-14T17:51:31"
+      "last_updated": "2025-05-14T17:51:31",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27065",
@@ -37912,7 +37947,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-13T00:05:51"
+      "last_updated": "2025-04-13T00:05:51",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27408",
@@ -37926,7 +37962,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T17:13:10"
+      "last_updated": "2025-04-14T17:13:10",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27783",
@@ -37940,7 +37977,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-15T14:21:19"
+      "last_updated": "2025-04-15T14:21:19",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28750",
@@ -37952,7 +37990,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-26T14:39:15"
+      "last_updated": "2025-04-26T14:39:15",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28803",
@@ -37966,7 +38005,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-26T15:04:36"
+      "last_updated": "2025-04-26T15:04:36",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28799",
@@ -37980,7 +38020,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-26T15:00:43"
+      "last_updated": "2025-04-26T15:00:43",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_6055",
@@ -37992,7 +38033,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-10-04T14:33:46"
+      "last_updated": "2022-10-04T14:33:46",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1246",
@@ -38004,7 +38046,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:53"
+      "last_updated": "2022-06-29T20:55:53",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_5710",
@@ -38016,7 +38059,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-08-05T00:27:41"
+      "last_updated": "2022-08-05T00:27:41",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1229",
@@ -38043,7 +38087,8 @@
       ],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-05-14T17:49:35"
+      "last_updated": "2025-05-14T17:49:35",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1230",
@@ -38055,7 +38100,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:52"
+      "last_updated": "2022-06-29T20:55:52",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27512",
@@ -38069,7 +38115,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T22:23:47"
+      "last_updated": "2025-04-14T22:23:47",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27718",
@@ -38083,7 +38130,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-15T02:46:35"
+      "last_updated": "2025-04-15T02:46:35",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27413",
@@ -38097,7 +38145,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T17:15:21"
+      "last_updated": "2025-04-14T17:15:21",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27410",
@@ -38111,7 +38160,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T17:14:12"
+      "last_updated": "2025-04-14T17:14:12",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_19724",
@@ -38142,7 +38192,8 @@
       ],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-03T13:29:13"
+      "last_updated": "2024-01-03T13:29:13",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_19714",
@@ -38165,7 +38216,8 @@
       ],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-02T18:28:19"
+      "last_updated": "2024-01-02T18:28:19",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1326",
@@ -38177,7 +38229,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:54"
+      "last_updated": "2022-06-29T20:55:54",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28206",
@@ -38191,7 +38244,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-20T21:13:43"
+      "last_updated": "2025-04-20T21:13:43",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1313",
@@ -38203,7 +38257,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:54"
+      "last_updated": "2022-06-29T20:55:54",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28103",
@@ -38217,7 +38272,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-20T19:14:19"
+      "last_updated": "2025-04-20T19:14:19",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27465",
@@ -38231,7 +38287,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T17:41:55"
+      "last_updated": "2025-04-14T17:41:55",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27780",
@@ -38245,7 +38302,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-15T14:20:15"
+      "last_updated": "2025-04-15T14:20:15",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_26900",
@@ -38259,7 +38317,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-11T15:18:56"
+      "last_updated": "2025-04-11T15:18:56",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28190",
@@ -38273,7 +38332,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-20T21:08:49"
+      "last_updated": "2025-04-20T21:08:49",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28395",
@@ -38287,7 +38347,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-23T21:36:44"
+      "last_updated": "2025-04-23T21:36:44",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28207",
@@ -38301,7 +38362,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-20T21:13:58"
+      "last_updated": "2025-04-20T21:13:58",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28383",
@@ -38315,7 +38377,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-23T21:27:35"
+      "last_updated": "2025-04-23T21:27:35",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28753",
@@ -38329,7 +38392,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-26T14:43:01"
+      "last_updated": "2025-04-26T14:43:01",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28801",
@@ -38343,7 +38407,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-26T15:01:46"
+      "last_updated": "2025-04-26T15:01:46",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27224",
@@ -38357,7 +38422,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T14:46:31"
+      "last_updated": "2025-04-14T14:46:31",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1252",
@@ -38369,7 +38435,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:53"
+      "last_updated": "2022-06-29T20:55:53",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_26954",
@@ -38383,7 +38450,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-11T17:30:38"
+      "last_updated": "2025-04-11T17:30:38",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28797",
@@ -38397,7 +38465,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-26T14:58:46"
+      "last_updated": "2025-04-26T14:58:46",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28455",
@@ -38411,7 +38480,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-25T14:10:40"
+      "last_updated": "2025-04-25T14:10:40",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28391",
@@ -38425,7 +38495,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-23T21:31:54"
+      "last_updated": "2025-04-23T21:31:54",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27939",
@@ -38439,7 +38510,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-17T21:20:40"
+      "last_updated": "2025-04-17T21:20:40",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28458",
@@ -38453,7 +38525,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-25T14:14:59"
+      "last_updated": "2025-04-25T14:14:59",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28035",
@@ -38467,7 +38540,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-20T17:35:33"
+      "last_updated": "2025-04-20T17:35:33",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27460",
@@ -38481,7 +38555,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T17:39:53"
+      "last_updated": "2025-04-14T17:39:53",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27847",
@@ -38495,7 +38570,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-16T13:54:13"
+      "last_updated": "2025-04-16T13:54:13",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28301",
@@ -38509,7 +38585,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-23T14:58:03"
+      "last_updated": "2025-04-23T14:58:03",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_31205",
@@ -38523,7 +38600,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2026-01-13T14:29:57"
+      "last_updated": "2026-01-13T14:29:57",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27938",
@@ -38537,7 +38615,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-17T21:20:22"
+      "last_updated": "2025-04-17T21:20:22",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28749",
@@ -38551,7 +38630,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-26T14:41:01"
+      "last_updated": "2025-04-26T14:41:01",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27060",
@@ -38565,7 +38645,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-13T00:01:31"
+      "last_updated": "2025-04-13T00:01:31",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1339",
@@ -38577,7 +38658,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:54"
+      "last_updated": "2022-06-29T20:55:54",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27624",
@@ -38591,7 +38673,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T23:06:22"
+      "last_updated": "2025-04-14T23:06:22",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27873",
@@ -38605,7 +38688,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-17T14:23:21"
+      "last_updated": "2025-04-17T14:23:21",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28026",
@@ -38619,7 +38703,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-20T17:31:46"
+      "last_updated": "2025-04-20T17:31:46",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28021",
@@ -38633,7 +38718,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-20T17:29:59"
+      "last_updated": "2025-04-20T17:29:59",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27280",
@@ -38647,7 +38733,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T15:33:06"
+      "last_updated": "2025-04-14T15:33:06",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27061",
@@ -38661,7 +38748,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-13T00:02:02"
+      "last_updated": "2025-04-13T00:02:02",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1266",
@@ -38678,7 +38766,8 @@
       ],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-13T03:20:31"
+      "last_updated": "2024-01-13T03:20:31",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27131",
@@ -38692,7 +38781,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T14:06:58"
+      "last_updated": "2025-04-14T14:06:58",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27346",
@@ -38706,7 +38796,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T15:59:48"
+      "last_updated": "2025-04-14T15:59:48",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27070",
@@ -38720,7 +38811,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-13T00:09:20"
+      "last_updated": "2025-04-13T00:09:20",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27284",
@@ -38734,7 +38826,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T15:35:41"
+      "last_updated": "2025-04-14T15:35:41",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27459",
@@ -38748,7 +38841,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T17:39:34"
+      "last_updated": "2025-04-14T17:39:34",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27019",
@@ -38762,7 +38856,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-11T19:03:38"
+      "last_updated": "2025-04-11T19:03:38",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28290",
@@ -38776,7 +38871,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-23T14:54:52"
+      "last_updated": "2025-04-23T14:54:52",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_21195",
@@ -38790,7 +38886,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-08T15:02:36"
+      "last_updated": "2024-01-08T15:02:36",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_6731",
@@ -38802,7 +38899,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-12-22T21:16:10"
+      "last_updated": "2022-12-22T21:16:10",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27455",
@@ -38816,7 +38914,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T17:38:19"
+      "last_updated": "2025-04-14T17:38:19",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27352",
@@ -38830,7 +38929,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T16:03:31"
+      "last_updated": "2025-04-14T16:03:31",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27617",
@@ -38844,7 +38944,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T23:02:54"
+      "last_updated": "2025-04-14T23:02:54",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27227",
@@ -38858,7 +38959,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T14:48:04"
+      "last_updated": "2025-04-14T14:48:04",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27729",
@@ -38872,7 +38974,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-15T02:55:20"
+      "last_updated": "2025-04-15T02:55:20",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28202",
@@ -38886,7 +38989,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-20T21:12:17"
+      "last_updated": "2025-04-20T21:12:17",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_21152",
@@ -38917,7 +39021,8 @@
       ],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-12T15:42:18"
+      "last_updated": "2024-01-12T15:42:18",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27411",
@@ -38931,7 +39036,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T17:14:27"
+      "last_updated": "2025-04-14T17:14:27",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27879",
@@ -38945,7 +39051,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-17T14:25:54"
+      "last_updated": "2025-04-17T14:25:54",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27627",
@@ -38959,7 +39066,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T23:07:26"
+      "last_updated": "2025-04-14T23:07:26",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_19666",
@@ -38978,7 +39086,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-02T15:27:57"
+      "last_updated": "2024-01-02T15:27:57",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27937",
@@ -38992,7 +39101,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-17T21:19:59"
+      "last_updated": "2025-04-17T21:19:59",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_19558",
@@ -39015,7 +39125,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-01T22:44:25"
+      "last_updated": "2024-01-01T22:44:25",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28111",
@@ -39029,7 +39140,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-20T19:16:32"
+      "last_updated": "2025-04-20T19:16:32",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28200",
@@ -39043,7 +39155,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-20T21:11:38"
+      "last_updated": "2025-04-20T21:11:38",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27577",
@@ -39057,7 +39170,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T22:49:00"
+      "last_updated": "2025-04-14T22:49:00",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27520",
@@ -39071,7 +39185,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T22:26:33"
+      "last_updated": "2025-04-14T22:26:33",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27618",
@@ -39085,7 +39200,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T23:03:42"
+      "last_updated": "2025-04-14T23:03:42",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28019",
@@ -39099,7 +39215,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-20T17:28:20"
+      "last_updated": "2025-04-20T17:28:20",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28020",
@@ -39113,7 +39230,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-20T17:29:02"
+      "last_updated": "2025-04-20T17:29:02",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27223",
@@ -39127,7 +39245,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T14:46:09"
+      "last_updated": "2025-04-14T14:46:09",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1267",
@@ -39144,7 +39263,8 @@
       ],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-05-11T02:04:07"
+      "last_updated": "2025-05-11T02:04:07",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28115",
@@ -39158,7 +39278,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-20T19:19:10"
+      "last_updated": "2025-04-20T19:19:10",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1097",
@@ -39170,7 +39291,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:50"
+      "last_updated": "2022-06-29T20:55:50",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27229",
@@ -39184,7 +39306,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T14:57:21"
+      "last_updated": "2025-04-14T14:57:21",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28305",
@@ -39198,7 +39321,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-23T15:00:57"
+      "last_updated": "2025-04-23T15:00:57",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1253",
@@ -39210,7 +39334,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-09-28T19:00:12"
+      "last_updated": "2022-09-28T19:00:12",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1250",
@@ -39222,7 +39347,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:53"
+      "last_updated": "2022-06-29T20:55:53",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_6730",
@@ -39234,7 +39360,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-12-22T23:00:28"
+      "last_updated": "2022-12-22T23:00:28",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_19571",
@@ -39257,7 +39384,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-01T22:40:23"
+      "last_updated": "2024-01-01T22:40:23",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_21242",
@@ -39271,7 +39399,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-09T12:20:37"
+      "last_updated": "2024-01-09T12:20:37",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1236",
@@ -39283,7 +39412,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:52"
+      "last_updated": "2022-06-29T20:55:52",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28755",
@@ -39297,7 +39427,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-26T14:44:46"
+      "last_updated": "2025-04-26T14:44:46",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27875",
@@ -39311,7 +39442,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-17T14:24:00"
+      "last_updated": "2025-04-17T14:24:00",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27881",
@@ -39325,7 +39457,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-17T14:26:32"
+      "last_updated": "2025-04-17T14:26:32",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_21155",
@@ -39356,7 +39489,8 @@
       ],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-12T15:42:29"
+      "last_updated": "2024-01-12T15:42:29",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27020",
@@ -39370,7 +39504,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-11T19:04:11"
+      "last_updated": "2025-04-11T19:04:11",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1235",
@@ -39413,7 +39548,8 @@
       ],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-05-14T18:32:15"
+      "last_updated": "2025-05-14T18:32:15",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27671",
@@ -39427,7 +39563,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-15T02:19:26"
+      "last_updated": "2025-04-15T02:19:26",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27848",
@@ -39441,7 +39578,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-16T13:54:38"
+      "last_updated": "2025-04-16T13:54:38",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27071",
@@ -39455,7 +39593,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-13T00:09:44"
+      "last_updated": "2025-04-13T00:09:44",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28205",
@@ -39469,7 +39608,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-20T21:13:27"
+      "last_updated": "2025-04-20T21:13:27",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27279",
@@ -39483,7 +39623,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T15:32:16"
+      "last_updated": "2025-04-14T15:32:16",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27018",
@@ -39497,7 +39638,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-11T19:03:00"
+      "last_updated": "2025-04-11T19:03:00",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1254",
@@ -39509,7 +39651,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:53"
+      "last_updated": "2022-06-29T20:55:53",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27062",
@@ -39523,7 +39666,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-13T00:02:37"
+      "last_updated": "2025-04-13T00:02:37",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_31098",
@@ -39537,7 +39681,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2026-01-10T19:17:52"
+      "last_updated": "2026-01-10T19:17:52",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1255",
@@ -39636,7 +39781,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-01T23:20:59"
+      "last_updated": "2024-01-01T23:20:59",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_23398",
@@ -39663,7 +39809,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-02-04T01:12:10"
+      "last_updated": "2024-02-04T01:12:10",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1268",
@@ -39684,7 +39831,8 @@
       ],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-05-11T02:08:06"
+      "last_updated": "2025-05-11T02:08:06",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27230",
@@ -39698,7 +39846,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T14:57:45"
+      "last_updated": "2025-04-14T14:57:45",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_19597",
@@ -39725,7 +39874,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-02T02:02:29"
+      "last_updated": "2024-01-02T02:02:29",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1256",
@@ -39737,7 +39887,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-05-14T17:48:18"
+      "last_updated": "2025-05-14T17:48:18",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28292",
@@ -39751,7 +39902,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-23T14:55:22"
+      "last_updated": "2025-04-23T14:55:22",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_6059",
@@ -39763,7 +39915,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-10-04T14:36:08"
+      "last_updated": "2022-10-04T14:36:08",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27571",
@@ -39777,7 +39930,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T22:46:47"
+      "last_updated": "2025-04-14T22:46:47",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27580",
@@ -39791,7 +39945,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T22:50:08"
+      "last_updated": "2025-04-14T22:50:08",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_4015",
@@ -39803,7 +39958,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-07-22T22:14:28"
+      "last_updated": "2022-07-22T22:14:28",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27991",
@@ -39817,7 +39973,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-18T23:21:02"
+      "last_updated": "2025-04-18T23:21:02",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_26896",
@@ -39831,7 +39988,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-11T15:23:43"
+      "last_updated": "2025-04-11T15:23:43",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27285",
@@ -39845,7 +40003,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T15:36:01"
+      "last_updated": "2025-04-14T15:36:01",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1340",
@@ -39857,7 +40016,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:54"
+      "last_updated": "2022-06-29T20:55:54",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1341",
@@ -39869,7 +40029,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:54"
+      "last_updated": "2022-06-29T20:55:54",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27666",
@@ -39883,7 +40044,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-15T02:17:17"
+      "last_updated": "2025-04-15T02:17:17",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1342",
@@ -39895,7 +40057,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:54"
+      "last_updated": "2022-06-29T20:55:54",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_26897",
@@ -39909,7 +40072,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-11T15:17:13"
+      "last_updated": "2025-04-11T15:17:13",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28188",
@@ -39923,7 +40087,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-20T21:08:20"
+      "last_updated": "2025-04-20T21:08:20",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_4062",
@@ -39935,7 +40100,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-07-22T22:36:09"
+      "last_updated": "2022-07-22T22:36:09",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_21153",
@@ -39949,7 +40115,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-12T15:42:22"
+      "last_updated": "2024-01-12T15:42:22",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_6391",
@@ -39961,7 +40128,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-10-31T15:21:34"
+      "last_updated": "2022-10-31T15:21:34",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1348",
@@ -39973,7 +40141,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:54"
+      "last_updated": "2022-06-29T20:55:54",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27122",
@@ -39987,7 +40156,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T14:03:14"
+      "last_updated": "2025-04-14T14:03:14",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27882",
@@ -40001,7 +40171,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-17T14:27:05"
+      "last_updated": "2025-04-17T14:27:05",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28804",
@@ -40015,7 +40186,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-26T15:04:58"
+      "last_updated": "2025-04-26T15:04:58",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28748",
@@ -40029,7 +40201,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-26T14:40:32"
+      "last_updated": "2025-04-26T14:40:32",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28798",
@@ -40043,7 +40216,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-26T14:59:19"
+      "last_updated": "2025-04-26T14:59:19",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1382",
@@ -40088,7 +40262,8 @@
       ],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-05-14T18:32:12"
+      "last_updated": "2025-05-14T18:32:12",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27886",
@@ -40102,7 +40277,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-17T14:29:20"
+      "last_updated": "2025-04-17T14:29:20",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27012",
@@ -40116,7 +40292,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-11T18:57:54"
+      "last_updated": "2025-04-11T18:57:54",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1218",
@@ -40128,7 +40305,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:52"
+      "last_updated": "2022-06-29T20:55:52",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_21241",
@@ -40142,7 +40320,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-09T12:20:21"
+      "last_updated": "2024-01-09T12:20:21",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27513",
@@ -40156,7 +40335,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T22:24:08"
+      "last_updated": "2025-04-14T22:24:08",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27616",
@@ -40170,7 +40350,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T23:02:33"
+      "last_updated": "2025-04-14T23:02:33",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27730",
@@ -40184,7 +40365,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-15T02:55:45"
+      "last_updated": "2025-04-15T02:55:45",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27621",
@@ -40198,7 +40380,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T23:05:00"
+      "last_updated": "2025-04-14T23:05:00",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28296",
@@ -40212,7 +40395,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-23T14:56:34"
+      "last_updated": "2025-04-23T14:56:34",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1314",
@@ -40224,7 +40408,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-12-23T15:42:07"
+      "last_updated": "2022-12-23T15:42:07",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28758",
@@ -40238,7 +40423,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-26T14:47:31"
+      "last_updated": "2025-04-26T14:47:31",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27015",
@@ -40252,7 +40438,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-11T19:00:03"
+      "last_updated": "2025-04-11T19:00:03",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28287",
@@ -40266,7 +40453,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-23T14:53:17"
+      "last_updated": "2025-04-23T14:53:17",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28107",
@@ -40280,7 +40468,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-20T19:15:28"
+      "last_updated": "2025-04-20T19:15:28",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28195",
@@ -40294,7 +40483,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-20T21:10:08"
+      "last_updated": "2025-04-20T21:10:08",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1257",
@@ -40381,7 +40571,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-01T23:55:57"
+      "last_updated": "2024-01-01T23:55:57",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27625",
@@ -40395,7 +40586,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T23:06:40"
+      "last_updated": "2025-04-14T23:06:40",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27415",
@@ -40409,7 +40601,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T17:16:07"
+      "last_updated": "2025-04-14T17:16:07",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_19727",
@@ -40432,7 +40625,8 @@
       ],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-03T13:35:03"
+      "last_updated": "2024-01-03T13:35:03",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27126",
@@ -40446,7 +40640,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T14:04:54"
+      "last_updated": "2025-04-14T14:04:54",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27129",
@@ -40460,7 +40655,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T14:06:09"
+      "last_updated": "2025-04-14T14:06:09",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1343",
@@ -40472,7 +40668,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:54"
+      "last_updated": "2022-06-29T20:55:54",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27728",
@@ -40486,7 +40683,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-15T02:55:01"
+      "last_updated": "2025-04-15T02:55:01",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27072",
@@ -40500,7 +40698,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-13T00:10:18"
+      "last_updated": "2025-04-13T00:10:18",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27282",
@@ -40514,7 +40713,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T15:34:06"
+      "last_updated": "2025-04-14T15:34:06",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28293",
@@ -40528,7 +40728,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-23T14:55:42"
+      "last_updated": "2025-04-23T14:55:42",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28459",
@@ -40542,7 +40743,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-25T14:15:16"
+      "last_updated": "2025-04-25T14:15:16",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27934",
@@ -40556,7 +40758,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-17T21:19:09"
+      "last_updated": "2025-04-17T21:19:09",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27844",
@@ -40570,7 +40773,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-16T13:52:08"
+      "last_updated": "2025-04-16T13:52:08",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27669",
@@ -40584,7 +40788,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-15T02:18:32"
+      "last_updated": "2025-04-15T02:18:32",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1315",
@@ -40596,7 +40801,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:54"
+      "last_updated": "2022-06-29T20:55:54",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_21043",
@@ -40610,7 +40816,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-06T22:41:42"
+      "last_updated": "2024-01-06T22:41:42",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27127",
@@ -40624,7 +40831,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T14:25:03"
+      "last_updated": "2025-04-14T14:25:03",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27467",
@@ -40638,7 +40846,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T17:42:42"
+      "last_updated": "2025-04-14T17:42:42",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28297",
@@ -40652,7 +40861,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-23T14:56:59"
+      "last_updated": "2025-04-23T14:56:59",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28112",
@@ -40666,7 +40876,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-20T19:16:47"
+      "last_updated": "2025-04-20T19:16:47",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27132",
@@ -40680,7 +40891,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T14:07:23"
+      "last_updated": "2025-04-14T14:07:23",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27626",
@@ -40694,7 +40906,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T23:07:04"
+      "last_updated": "2025-04-14T23:07:04",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27885",
@@ -40708,7 +40921,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-17T14:28:44"
+      "last_updated": "2025-04-17T14:28:44",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27517",
@@ -40722,7 +40936,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T22:25:38"
+      "last_updated": "2025-04-14T22:25:38",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27721",
@@ -40736,7 +40951,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-15T02:52:05"
+      "last_updated": "2025-04-15T02:52:05",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_21046",
@@ -40750,7 +40966,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-06T22:43:55"
+      "last_updated": "2024-01-06T22:43:55",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27409",
@@ -40764,7 +40981,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T17:13:52"
+      "last_updated": "2025-04-14T17:13:52",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_19719",
@@ -40791,7 +41009,8 @@
       ],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-02T21:37:40"
+      "last_updated": "2024-01-02T21:37:40",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27344",
@@ -40805,7 +41024,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T15:58:05"
+      "last_updated": "2025-04-14T15:58:05",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27993",
@@ -40819,7 +41039,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-18T23:21:58"
+      "last_updated": "2025-04-18T23:21:58",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27407",
@@ -40833,7 +41054,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T17:12:38"
+      "last_updated": "2025-04-14T17:12:38",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_21238",
@@ -40847,7 +41069,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-09T12:18:54"
+      "last_updated": "2024-01-09T12:18:54",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1344",
@@ -40859,7 +41082,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:54"
+      "last_updated": "2022-06-29T20:55:54",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27135",
@@ -40873,7 +41097,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T14:08:31"
+      "last_updated": "2025-04-14T14:08:31",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1345",
@@ -40885,7 +41110,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:54"
+      "last_updated": "2022-06-29T20:55:54",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_21156",
@@ -40904,7 +41130,8 @@
       ],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-12T15:42:31"
+      "last_updated": "2024-01-12T15:42:31",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27664",
@@ -40918,7 +41145,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-15T02:16:27"
+      "last_updated": "2025-04-15T02:16:27",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28796",
@@ -40932,7 +41160,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-26T14:58:07"
+      "last_updated": "2025-04-26T14:58:07",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28751",
@@ -40946,7 +41175,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-26T14:41:43"
+      "last_updated": "2025-04-26T14:41:43",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27573",
@@ -40960,7 +41190,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T22:47:37"
+      "last_updated": "2025-04-14T22:47:37",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28102",
@@ -40974,7 +41205,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-20T19:14:00"
+      "last_updated": "2025-04-20T19:14:00",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1221",
@@ -40986,7 +41218,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:52"
+      "last_updated": "2022-06-29T20:55:52",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_21042",
@@ -41000,7 +41233,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-06T22:39:28"
+      "last_updated": "2024-01-06T22:39:28",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27021",
@@ -41014,7 +41248,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-11T19:04:46"
+      "last_updated": "2025-04-11T19:04:46",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1233",
@@ -41026,7 +41261,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-12-11T22:53:29"
+      "last_updated": "2022-12-11T22:53:29",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1222",
@@ -41038,7 +41274,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:52"
+      "last_updated": "2022-06-29T20:55:52",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_4020",
@@ -41050,7 +41287,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-07-22T22:19:25"
+      "last_updated": "2022-07-22T22:19:25",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27463",
@@ -41064,7 +41302,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T17:41:02"
+      "last_updated": "2025-04-14T17:41:02",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27283",
@@ -41078,7 +41317,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T15:34:51"
+      "last_updated": "2025-04-14T15:34:51",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_26960",
@@ -41092,7 +41332,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-11T17:35:19"
+      "last_updated": "2025-04-11T17:35:19",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28299",
@@ -41106,7 +41347,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-23T14:57:34"
+      "last_updated": "2025-04-23T14:57:34",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28456",
@@ -41120,7 +41362,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-25T14:13:51"
+      "last_updated": "2025-04-25T14:13:51",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1287",
@@ -41137,7 +41380,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-11-23T23:37:30"
+      "last_updated": "2025-11-23T23:37:30",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1346",
@@ -41149,7 +41393,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:54"
+      "last_updated": "2022-06-29T20:55:54",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27017",
@@ -41163,7 +41408,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-11T19:02:32"
+      "last_updated": "2025-04-11T19:02:32",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1317",
@@ -41175,7 +41421,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:54"
+      "last_updated": "2022-06-29T20:55:54",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28100",
@@ -41189,7 +41436,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-20T19:13:25"
+      "last_updated": "2025-04-20T19:13:25",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28453",
@@ -41203,7 +41451,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-25T14:10:02"
+      "last_updated": "2025-04-25T14:10:02",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1272",
@@ -41220,7 +41469,8 @@
       ],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-05-11T02:16:13"
+      "last_updated": "2025-05-11T02:16:13",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28454",
@@ -41234,7 +41484,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-25T14:10:24"
+      "last_updated": "2025-04-25T14:10:24",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27996",
@@ -41248,7 +41499,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-18T23:23:05"
+      "last_updated": "2025-04-18T23:23:05",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27926",
@@ -41262,7 +41514,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-17T21:16:50"
+      "last_updated": "2025-04-17T21:16:50",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28204",
@@ -41276,7 +41529,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-20T21:13:09"
+      "last_updated": "2025-04-20T21:13:09",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_6732",
@@ -41288,7 +41542,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-12-23T15:13:33"
+      "last_updated": "2022-12-23T15:13:33",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_11393",
@@ -41302,7 +41557,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2023-12-26T17:38:22"
+      "last_updated": "2023-12-26T17:38:22",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1361",
@@ -41314,7 +41570,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:55"
+      "last_updated": "2022-06-29T20:55:55",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27226",
@@ -41328,7 +41585,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T14:48:59"
+      "last_updated": "2025-04-14T14:48:59",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27623",
@@ -41342,7 +41600,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T23:05:54"
+      "last_updated": "2025-04-14T23:05:54",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28398",
@@ -41356,7 +41615,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-23T21:37:34"
+      "last_updated": "2025-04-23T21:37:34",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27138",
@@ -41370,7 +41630,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T14:10:37"
+      "last_updated": "2025-04-14T14:10:37",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27349",
@@ -41384,7 +41645,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T16:02:08"
+      "last_updated": "2025-04-14T16:02:08",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27519",
@@ -41398,7 +41660,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T22:26:12"
+      "last_updated": "2025-04-14T22:26:12",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27023",
@@ -41412,7 +41675,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-11T19:06:00"
+      "last_updated": "2025-04-11T19:06:00",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_21059",
@@ -41426,7 +41690,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-06T22:59:36"
+      "last_updated": "2024-01-06T22:59:36",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_26948",
@@ -41440,7 +41705,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-11T17:27:29"
+      "last_updated": "2025-04-11T17:27:29",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1349",
@@ -41452,7 +41718,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:54"
+      "last_updated": "2022-06-29T20:55:54",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1223",
@@ -41464,7 +41731,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:52"
+      "last_updated": "2022-06-29T20:55:52",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28400",
@@ -41478,7 +41746,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-23T21:38:04"
+      "last_updated": "2025-04-23T21:38:04",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1217",
@@ -41490,7 +41759,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:52"
+      "last_updated": "2022-06-29T20:55:52",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27806",
@@ -41504,7 +41774,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-15T14:54:48"
+      "last_updated": "2025-04-15T14:54:48",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27622",
@@ -41518,7 +41789,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T23:05:34"
+      "last_updated": "2025-04-14T23:05:34",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1237",
@@ -41530,7 +41802,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:52"
+      "last_updated": "2022-06-29T20:55:52",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1354",
@@ -41542,7 +41815,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:55"
+      "last_updated": "2022-06-29T20:55:55",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1231",
@@ -41554,7 +41828,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:52"
+      "last_updated": "2022-06-29T20:55:52",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_26955",
@@ -41568,7 +41843,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-11T17:31:05"
+      "last_updated": "2025-04-11T17:31:05",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1360",
@@ -41747,7 +42023,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-02T03:04:32"
+      "last_updated": "2024-01-02T03:04:32",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27665",
@@ -41761,7 +42038,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-15T02:16:53"
+      "last_updated": "2025-04-15T02:16:53",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1238",
@@ -41806,7 +42084,8 @@
       ],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-12T15:42:12"
+      "last_updated": "2024-01-12T15:42:12",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1270",
@@ -41823,7 +42102,8 @@
       ],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-13T03:23:31"
+      "last_updated": "2024-01-13T03:23:31",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_19635",
@@ -41878,7 +42158,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-02T15:09:39"
+      "last_updated": "2024-01-02T15:09:39",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_26959",
@@ -41892,7 +42173,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-11T17:34:53"
+      "last_updated": "2025-04-11T17:34:53",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27059",
@@ -41906,7 +42188,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-13T00:00:57"
+      "last_updated": "2025-04-13T00:00:57",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_26901",
@@ -41920,7 +42203,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-11T15:19:16"
+      "last_updated": "2025-04-11T15:19:16",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_31128",
@@ -41934,7 +42218,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2026-01-13T02:40:56"
+      "last_updated": "2026-01-13T02:40:56",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_6057",
@@ -41946,7 +42231,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-10-04T14:34:56"
+      "last_updated": "2022-10-04T14:34:56",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28303",
@@ -41960,7 +42246,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-23T15:00:25"
+      "last_updated": "2025-04-23T15:00:25",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28295",
@@ -41974,7 +42261,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-23T14:56:21"
+      "last_updated": "2025-04-23T14:56:21",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27281",
@@ -41988,7 +42276,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T15:33:44"
+      "last_updated": "2025-04-14T15:33:44",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1258",
@@ -42000,7 +42289,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:53"
+      "last_updated": "2022-06-29T20:55:53",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1094",
@@ -42012,7 +42302,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:50"
+      "last_updated": "2022-06-29T20:55:50",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_6056",
@@ -42024,7 +42315,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-10-04T14:34:25"
+      "last_updated": "2022-10-04T14:34:25",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27417",
@@ -42038,7 +42330,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T17:17:25"
+      "last_updated": "2025-04-14T17:17:25",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1376",
@@ -42050,7 +42343,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:55"
+      "last_updated": "2022-06-29T20:55:55",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27133",
@@ -42064,7 +42358,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T14:07:47"
+      "last_updated": "2025-04-14T14:07:47",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27927",
@@ -42078,7 +42373,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-17T21:17:11"
+      "last_updated": "2025-04-17T21:17:11",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28396",
@@ -42092,7 +42388,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-23T21:37:02"
+      "last_updated": "2025-04-23T21:37:02",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28108",
@@ -42106,7 +42403,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-20T19:15:42"
+      "last_updated": "2025-04-20T19:15:42",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28387",
@@ -42120,7 +42418,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-23T21:30:27"
+      "last_updated": "2025-04-23T21:30:27",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28393",
@@ -42134,7 +42433,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-23T21:36:09"
+      "last_updated": "2025-04-23T21:36:09",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28386",
@@ -42148,7 +42448,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-23T21:30:06"
+      "last_updated": "2025-04-23T21:30:06",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27719",
@@ -42162,7 +42463,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-15T02:51:04"
+      "last_updated": "2025-04-15T02:51:04",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27013",
@@ -42176,7 +42478,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-11T18:58:38"
+      "last_updated": "2025-04-11T18:58:38",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27275",
@@ -42190,7 +42493,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T15:29:41"
+      "last_updated": "2025-04-14T15:29:41",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27928",
@@ -42204,7 +42508,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-17T21:17:33"
+      "last_updated": "2025-04-17T21:17:33",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27576",
@@ -42218,7 +42523,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T22:48:40"
+      "last_updated": "2025-04-14T22:48:40",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27784",
@@ -42232,7 +42538,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-15T14:36:58"
+      "last_updated": "2025-04-15T14:36:58",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27812",
@@ -42246,7 +42553,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-15T14:58:35"
+      "last_updated": "2025-04-15T14:58:35",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_26949",
@@ -42260,7 +42568,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-11T17:27:57"
+      "last_updated": "2025-04-11T17:27:57",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28027",
@@ -42274,7 +42583,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-20T17:32:08"
+      "last_updated": "2025-04-20T17:32:08",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28024",
@@ -42288,7 +42598,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-20T17:31:06"
+      "last_updated": "2025-04-20T17:31:06",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28034",
@@ -42302,7 +42613,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-20T17:35:04"
+      "last_updated": "2025-04-20T17:35:04",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28196",
@@ -42316,7 +42628,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-20T21:10:27"
+      "last_updated": "2025-04-20T21:10:27",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27063",
@@ -42330,7 +42643,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-13T00:03:59"
+      "last_updated": "2025-04-13T00:03:59",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27125",
@@ -42344,7 +42658,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T14:04:31"
+      "last_updated": "2025-04-14T14:04:31",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27228",
@@ -42358,7 +42673,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T14:56:40"
+      "last_updated": "2025-04-14T14:56:40",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27130",
@@ -42372,7 +42688,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T14:06:33"
+      "last_updated": "2025-04-14T14:06:33",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28199",
@@ -42386,7 +42703,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-20T21:11:14"
+      "last_updated": "2025-04-20T21:11:14",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27511",
@@ -42400,7 +42718,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T22:22:43"
+      "last_updated": "2025-04-14T22:22:43",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27468",
@@ -42414,7 +42733,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T17:43:03"
+      "last_updated": "2025-04-14T17:43:03",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1239",
@@ -42426,7 +42746,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:53"
+      "last_updated": "2022-06-29T20:55:53",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28800",
@@ -42440,7 +42761,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-26T15:01:18"
+      "last_updated": "2025-04-26T15:01:18",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1318",
@@ -42452,7 +42774,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:54"
+      "last_updated": "2022-06-29T20:55:54",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1355",
@@ -42635,7 +42958,8 @@
         }
       ],
       "dbnotes": "",
-      "last_updated": "2024-01-09T14:55:06"
+      "last_updated": "2024-01-09T14:55:06",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1290",
@@ -42647,7 +42971,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:53"
+      "last_updated": "2022-06-29T20:55:53",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1319",
@@ -42659,7 +42984,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:54"
+      "last_updated": "2022-06-29T20:55:54",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1247",
@@ -42686,7 +43012,8 @@
       ],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-05-14T17:49:31"
+      "last_updated": "2025-05-14T17:49:31",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1320",
@@ -42698,7 +43025,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:54"
+      "last_updated": "2022-06-29T20:55:54",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1251",
@@ -42710,7 +43038,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:53"
+      "last_updated": "2022-06-29T20:55:53",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_21057",
@@ -42724,7 +43053,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-06T22:58:41"
+      "last_updated": "2024-01-06T22:58:41",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28754",
@@ -42738,7 +43068,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-26T14:44:01"
+      "last_updated": "2025-04-26T14:44:01",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27990",
@@ -42752,7 +43083,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-18T23:20:45"
+      "last_updated": "2025-04-18T23:20:45",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27461",
@@ -42766,7 +43098,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T17:40:16"
+      "last_updated": "2025-04-14T17:40:16",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27456",
@@ -42780,7 +43113,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T17:38:34"
+      "last_updated": "2025-04-14T17:38:34",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_26957",
@@ -42794,7 +43128,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-11T17:32:38"
+      "last_updated": "2025-04-11T17:32:38",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_31099",
@@ -42808,7 +43143,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2026-01-10T23:47:24"
+      "last_updated": "2026-01-10T23:47:24",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27414",
@@ -42822,7 +43158,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T17:15:44"
+      "last_updated": "2025-04-14T17:15:44",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28302",
@@ -42836,7 +43173,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-23T14:59:59"
+      "last_updated": "2025-04-23T14:59:59",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28289",
@@ -42850,7 +43188,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-23T14:53:53"
+      "last_updated": "2025-04-23T14:53:53",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27418",
@@ -42864,7 +43203,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T17:17:52"
+      "last_updated": "2025-04-14T17:17:52",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27807",
@@ -42878,7 +43218,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-15T14:55:13"
+      "last_updated": "2025-04-15T14:55:13",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_21240",
@@ -42892,7 +43233,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-09T12:19:58"
+      "last_updated": "2024-01-09T12:19:58",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_19661",
@@ -42911,7 +43253,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-02T15:22:05"
+      "last_updated": "2024-01-02T15:22:05",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_26958",
@@ -42925,7 +43268,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-11T17:33:04"
+      "last_updated": "2025-04-11T17:33:04",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_26898",
@@ -42939,7 +43283,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-11T15:17:54"
+      "last_updated": "2025-04-11T15:17:54",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27720",
@@ -42953,7 +43298,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-15T02:51:46"
+      "last_updated": "2025-04-15T02:51:46",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28209",
@@ -42967,7 +43313,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-20T21:14:29"
+      "last_updated": "2025-04-20T21:14:29",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27877",
@@ -42981,7 +43328,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-17T14:25:22"
+      "last_updated": "2025-04-17T14:25:22",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27009",
@@ -42995,7 +43343,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-11T18:56:17"
+      "last_updated": "2025-04-11T18:56:17",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28201",
@@ -43009,7 +43358,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-20T21:11:59"
+      "last_updated": "2025-04-20T21:11:59",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28110",
@@ -43023,7 +43373,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-20T19:16:13"
+      "last_updated": "2025-04-20T19:16:13",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28028",
@@ -43037,7 +43388,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-20T17:32:40"
+      "last_updated": "2025-04-20T17:32:40",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28389",
@@ -43051,7 +43403,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-23T21:31:04"
+      "last_updated": "2025-04-23T21:31:04",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_31190",
@@ -43065,7 +43418,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2026-01-13T14:21:40"
+      "last_updated": "2026-01-13T14:21:40",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_21026",
@@ -43108,7 +43462,8 @@
         }
       ],
       "dbnotes": "",
-      "last_updated": "2024-01-10T13:23:40"
+      "last_updated": "2024-01-10T13:23:40",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27022",
@@ -43122,7 +43477,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-11T19:05:12"
+      "last_updated": "2025-04-11T19:05:12",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27514",
@@ -43136,7 +43492,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T22:24:33"
+      "last_updated": "2025-04-14T22:24:33",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27347",
@@ -43150,7 +43507,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T16:00:23"
+      "last_updated": "2025-04-14T16:00:23",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28197",
@@ -43164,7 +43522,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-20T21:10:42"
+      "last_updated": "2025-04-20T21:10:42",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27579",
@@ -43178,7 +43537,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T22:49:49"
+      "last_updated": "2025-04-14T22:49:49",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27350",
@@ -43192,7 +43552,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T16:02:39"
+      "last_updated": "2025-04-14T16:02:39",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_7660",
@@ -43206,7 +43567,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2023-12-26T17:38:36"
+      "last_updated": "2023-12-26T17:38:36",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28306",
@@ -43220,7 +43582,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-23T15:01:12"
+      "last_updated": "2025-04-23T15:01:12",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1347",
@@ -43232,7 +43595,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:54"
+      "last_updated": "2022-06-29T20:55:54",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27064",
@@ -43246,7 +43610,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-13T00:04:51"
+      "last_updated": "2025-04-13T00:04:51",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1240",
@@ -43258,7 +43623,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:53"
+      "last_updated": "2022-06-29T20:55:53",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28390",
@@ -43272,7 +43638,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-23T21:31:24"
+      "last_updated": "2025-04-23T21:31:24",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1356",
@@ -43286,7 +43653,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2023-12-27T00:26:01"
+      "last_updated": "2023-12-27T00:26:01",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28031",
@@ -43300,7 +43668,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-20T17:33:37"
+      "last_updated": "2025-04-20T17:33:37",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27464",
@@ -43314,7 +43683,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T17:41:37"
+      "last_updated": "2025-04-14T17:41:37",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1208",
@@ -43326,7 +43696,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:52"
+      "last_updated": "2022-06-29T20:55:52",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1210",
@@ -43338,7 +43709,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:52"
+      "last_updated": "2022-06-29T20:55:52",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1209",
@@ -43350,7 +43722,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:52"
+      "last_updated": "2022-06-29T20:55:52",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1308",
@@ -43362,7 +43735,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:54"
+      "last_updated": "2022-06-29T20:55:54",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1350",
@@ -43374,7 +43748,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:54"
+      "last_updated": "2022-06-29T20:55:54",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28304",
@@ -43388,7 +43763,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-23T15:00:41"
+      "last_updated": "2025-04-23T15:00:41",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1207",
@@ -43400,7 +43776,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:52"
+      "last_updated": "2022-06-29T20:55:52",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1351",
@@ -43412,7 +43789,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:54"
+      "last_updated": "2022-06-29T20:55:54",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1211",
@@ -43424,7 +43802,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:52"
+      "last_updated": "2022-06-29T20:55:52",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1352",
@@ -43436,7 +43815,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:54"
+      "last_updated": "2022-06-29T20:55:54",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1271",
@@ -43453,7 +43833,8 @@
       ],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-13T03:26:51"
+      "last_updated": "2024-01-13T03:26:51",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27710",
@@ -43467,7 +43848,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-15T02:32:06"
+      "last_updated": "2025-04-15T02:32:06",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27578",
@@ -43481,7 +43863,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T22:49:24"
+      "last_updated": "2025-04-14T22:49:24",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27876",
@@ -43495,7 +43878,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-17T14:24:57"
+      "last_updated": "2025-04-17T14:24:57",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28462",
@@ -43509,7 +43893,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-25T14:16:07"
+      "last_updated": "2025-04-25T14:16:07",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_29248",
@@ -43523,7 +43908,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-05-18T23:10:50"
+      "last_updated": "2025-05-18T23:10:50",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27066",
@@ -43537,7 +43923,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-13T00:06:43"
+      "last_updated": "2025-04-13T00:06:43",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27723",
@@ -43551,7 +43938,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-15T02:52:39"
+      "last_updated": "2025-04-15T02:52:39",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28029",
@@ -43565,7 +43953,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-20T17:33:01"
+      "last_updated": "2025-04-20T17:33:01",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1098",
@@ -43594,7 +43983,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-01T22:17:09"
+      "last_updated": "2024-01-01T22:17:09",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27731",
@@ -43608,7 +43998,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-15T02:56:06"
+      "last_updated": "2025-04-15T02:56:06",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27814",
@@ -43622,7 +44013,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-15T15:01:49"
+      "last_updated": "2025-04-15T15:01:49",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_6734",
@@ -43645,7 +44037,8 @@
       ],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-02T17:43:36"
+      "last_updated": "2024-01-02T17:43:36",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1234",
@@ -43662,7 +44055,8 @@
       ],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-13T03:33:10"
+      "last_updated": "2024-01-13T03:33:10",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28191",
@@ -43676,7 +44070,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-20T21:09:06"
+      "last_updated": "2025-04-20T21:09:06",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28194",
@@ -43690,7 +44085,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-20T21:09:53"
+      "last_updated": "2025-04-20T21:09:53",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28189",
@@ -43704,7 +44100,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-20T21:08:36"
+      "last_updated": "2025-04-20T21:08:36",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28025",
@@ -43718,7 +44115,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-20T17:31:22"
+      "last_updated": "2025-04-20T17:31:22",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27575",
@@ -43732,7 +44130,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T22:48:19"
+      "last_updated": "2025-04-14T22:48:19",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1248",
@@ -43761,7 +44160,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-01T22:42:34"
+      "last_updated": "2024-01-01T22:42:34",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28399",
@@ -43775,7 +44175,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-23T21:37:49"
+      "last_updated": "2025-04-23T21:37:49",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27668",
@@ -43789,7 +44190,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-15T02:19:07"
+      "last_updated": "2025-04-15T02:19:07",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27726",
@@ -43803,7 +44205,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-15T02:54:11"
+      "last_updated": "2025-04-15T02:54:11",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27846",
@@ -43817,7 +44220,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-16T13:52:57"
+      "last_updated": "2025-04-16T13:52:57",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27134",
@@ -43831,7 +44235,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T14:19:30"
+      "last_updated": "2025-04-14T14:19:30",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27355",
@@ -43845,7 +44250,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T16:04:27"
+      "last_updated": "2025-04-14T16:04:27",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27810",
@@ -43859,7 +44265,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-15T14:58:04"
+      "last_updated": "2025-04-15T14:58:04",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27930",
@@ -43873,7 +44280,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-17T21:18:01"
+      "last_updated": "2025-04-17T21:18:01",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1273",
@@ -43894,7 +44302,8 @@
       ],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-05-11T02:22:38"
+      "last_updated": "2025-05-11T02:22:38",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1213",
@@ -43906,7 +44315,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:52"
+      "last_updated": "2022-06-29T20:55:52",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1381",
@@ -43918,7 +44328,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:55"
+      "last_updated": "2022-06-29T20:55:55",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27994",
@@ -43932,7 +44343,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-18T23:22:20"
+      "last_updated": "2025-04-18T23:22:20",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_6060",
@@ -43953,7 +44365,8 @@
         }
       ],
       "dbnotes": "",
-      "last_updated": "2024-01-09T14:53:12"
+      "last_updated": "2024-01-09T14:53:12",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_24537",
@@ -43976,7 +44389,8 @@
         }
       ],
       "dbnotes": "",
-      "last_updated": "2024-09-30T02:09:11"
+      "last_updated": "2024-09-30T02:09:11",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28114",
@@ -43990,7 +44404,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-20T19:18:30"
+      "last_updated": "2025-04-20T19:18:30",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28109",
@@ -44004,7 +44419,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-20T19:16:00"
+      "last_updated": "2025-04-20T19:16:00",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28032",
@@ -44018,7 +44434,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-20T17:34:07"
+      "last_updated": "2025-04-20T17:34:07",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1377",
@@ -44030,7 +44447,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:55"
+      "last_updated": "2022-06-29T20:55:55",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1241",
@@ -44042,7 +44460,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:53"
+      "last_updated": "2022-06-29T20:55:53",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27727",
@@ -44056,7 +44475,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-15T02:54:36"
+      "last_updated": "2025-04-15T02:54:36",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28375",
@@ -44070,7 +44490,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-23T15:19:56"
+      "last_updated": "2025-04-23T15:19:56",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_21044",
@@ -44084,7 +44505,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-06T22:42:25"
+      "last_updated": "2024-01-06T22:42:25",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1259",
@@ -44111,7 +44533,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-02T01:14:13"
+      "last_updated": "2024-01-02T01:14:13",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1260",
@@ -44123,7 +44546,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:53"
+      "last_updated": "2022-06-29T20:55:53",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_19664",
@@ -44146,7 +44570,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-02T15:26:02"
+      "last_updated": "2024-01-02T15:26:02",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_4060",
@@ -44158,7 +44583,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-07-22T22:36:05"
+      "last_updated": "2022-07-22T22:36:05",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27011",
@@ -44172,7 +44598,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-11T18:57:22"
+      "last_updated": "2025-04-11T18:57:22",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27808",
@@ -44186,7 +44613,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-15T14:55:37"
+      "last_updated": "2025-04-15T14:55:37",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1274",
@@ -44198,7 +44626,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:53"
+      "last_updated": "2022-06-29T20:55:53",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27466",
@@ -44212,7 +44641,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T17:42:18"
+      "last_updated": "2025-04-14T17:42:18",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_21027",
@@ -44226,7 +44656,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-06T19:49:41"
+      "last_updated": "2024-01-06T19:49:41",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27670",
@@ -44240,7 +44671,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-15T02:18:54"
+      "last_updated": "2025-04-15T02:18:54",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27845",
@@ -44254,7 +44686,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-16T13:52:30"
+      "last_updated": "2025-04-16T13:52:30",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27989",
@@ -44268,7 +44701,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-18T23:20:00"
+      "last_updated": "2025-04-18T23:20:00",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28757",
@@ -44282,7 +44716,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-26T14:45:48"
+      "last_updated": "2025-04-26T14:45:48",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1275",
@@ -44327,7 +44762,8 @@
       ],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-05-11T03:11:28"
+      "last_updated": "2025-05-11T03:11:28",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27883",
@@ -44341,7 +44777,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-17T14:27:28"
+      "last_updated": "2025-04-17T14:27:28",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_21880",
@@ -44392,7 +44829,8 @@
         }
       ],
       "dbnotes": "",
-      "last_updated": "2024-01-10T13:38:51"
+      "last_updated": "2024-01-10T13:38:51",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_29080",
@@ -44415,7 +44853,8 @@
       ],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-05-11T03:10:48"
+      "last_updated": "2025-05-11T03:10:48",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_26946",
@@ -44429,7 +44868,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-11T17:26:28"
+      "last_updated": "2025-04-11T17:26:28",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28401",
@@ -44443,7 +44883,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-23T21:38:19"
+      "last_updated": "2025-04-23T21:38:19",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1220",
@@ -44455,7 +44896,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:52"
+      "last_updated": "2022-06-29T20:55:52",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1219",
@@ -44467,7 +44909,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:52"
+      "last_updated": "2022-06-29T20:55:52",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27931",
@@ -44481,7 +44924,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-17T21:18:16"
+      "last_updated": "2025-04-17T21:18:16",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27067",
@@ -44495,7 +44939,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-13T00:07:19"
+      "last_updated": "2025-04-13T00:07:19",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_26944",
@@ -44509,7 +44954,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-11T17:25:21"
+      "last_updated": "2025-04-11T17:25:21",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27136",
@@ -44523,7 +44969,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T14:09:26"
+      "last_updated": "2025-04-14T14:09:26",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27276",
@@ -44537,7 +44984,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T15:30:06"
+      "last_updated": "2025-04-14T15:30:06",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27123",
@@ -44551,7 +44999,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T14:03:41"
+      "last_updated": "2025-04-14T14:03:41",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27016",
@@ -44565,7 +45014,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-11T19:01:57"
+      "last_updated": "2025-04-11T19:01:57",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27874",
@@ -44579,7 +45029,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-17T14:23:34"
+      "last_updated": "2025-04-17T14:23:34",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1232",
@@ -44591,7 +45042,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:52"
+      "last_updated": "2022-06-29T20:55:52",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28307",
@@ -44605,7 +45057,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-23T15:01:34"
+      "last_updated": "2025-04-23T15:01:34",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28451",
@@ -44619,7 +45072,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-25T14:09:23"
+      "last_updated": "2025-04-25T14:09:23",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27809",
@@ -44633,7 +45087,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-15T14:56:38"
+      "last_updated": "2025-04-15T14:56:38",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28033",
@@ -44647,7 +45102,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-20T17:34:24"
+      "last_updated": "2025-04-20T17:34:24",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28203",
@@ -44661,7 +45117,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-20T21:12:52"
+      "last_updated": "2025-04-20T21:12:52",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28105",
@@ -44675,7 +45132,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-20T19:14:54"
+      "last_updated": "2025-04-20T19:14:54",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28198",
@@ -44689,7 +45147,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-20T21:10:58"
+      "last_updated": "2025-04-20T21:10:58",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28397",
@@ -44701,7 +45160,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-23T21:37:19"
+      "last_updated": "2025-04-23T21:37:19",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27462",
@@ -44715,7 +45175,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T17:40:42"
+      "last_updated": "2025-04-14T17:40:42",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27813",
@@ -44729,7 +45190,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-15T14:58:52"
+      "last_updated": "2025-04-15T14:58:52",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27510",
@@ -44743,7 +45205,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T22:12:28"
+      "last_updated": "2025-04-14T22:12:28",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27572",
@@ -44757,7 +45220,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T22:47:07"
+      "last_updated": "2025-04-14T22:47:07",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27137",
@@ -44771,7 +45235,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T14:09:56"
+      "last_updated": "2025-04-14T14:09:56",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27935",
@@ -44785,7 +45250,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-17T21:19:24"
+      "last_updated": "2025-04-17T21:19:24",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27518",
@@ -44799,7 +45265,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T22:25:56"
+      "last_updated": "2025-04-14T22:25:56",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27929",
@@ -44813,7 +45280,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-17T21:17:48"
+      "last_updated": "2025-04-17T21:17:48",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28388",
@@ -44827,7 +45295,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-23T21:30:48"
+      "last_updated": "2025-04-23T21:30:48",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_19675",
@@ -44866,7 +45335,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-02T15:31:54"
+      "last_updated": "2024-01-02T15:31:54",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1298",
@@ -44878,7 +45348,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:54"
+      "last_updated": "2022-06-29T20:55:54",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28452",
@@ -44892,7 +45363,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-25T14:09:46"
+      "last_updated": "2025-04-25T14:09:46",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1261",
@@ -44915,7 +45387,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-02T01:20:47"
+      "last_updated": "2024-01-02T01:20:47",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27933",
@@ -44929,7 +45402,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-17T21:18:51"
+      "last_updated": "2025-04-17T21:18:51",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27287",
@@ -44943,7 +45417,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T15:36:43"
+      "last_updated": "2025-04-14T15:36:43",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27357",
@@ -44957,7 +45432,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T16:05:25"
+      "last_updated": "2025-04-14T16:05:25",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28192",
@@ -44971,7 +45447,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-20T21:09:25"
+      "last_updated": "2025-04-20T21:09:25",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28104",
@@ -44985,7 +45462,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-20T19:14:36"
+      "last_updated": "2025-04-20T19:14:36",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28030",
@@ -44999,7 +45477,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-20T17:33:22"
+      "last_updated": "2025-04-20T17:33:22",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28392",
@@ -45013,7 +45492,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-23T21:35:48"
+      "last_updated": "2025-04-23T21:35:48",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27515",
@@ -45027,7 +45507,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T22:24:57"
+      "last_updated": "2025-04-14T22:24:57",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_26907",
@@ -45041,7 +45522,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-11T15:22:42"
+      "last_updated": "2025-04-11T15:22:42",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28113",
@@ -45055,7 +45537,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-20T19:17:07"
+      "last_updated": "2025-04-20T19:17:07",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1242",
@@ -45067,7 +45550,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:53"
+      "last_updated": "2022-06-29T20:55:53",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27348",
@@ -45081,7 +45565,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T16:01:22"
+      "last_updated": "2025-04-14T16:01:22",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28457",
@@ -45095,7 +45580,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-25T14:14:44"
+      "last_updated": "2025-04-25T14:14:44",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28756",
@@ -45109,7 +45595,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-26T14:45:12"
+      "last_updated": "2025-04-26T14:45:12",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28286",
@@ -45123,7 +45610,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-23T14:42:28"
+      "last_updated": "2025-04-23T14:42:28",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28294",
@@ -45137,7 +45625,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-23T14:56:02"
+      "last_updated": "2025-04-23T14:56:02",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28795",
@@ -45151,7 +45640,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-26T14:57:35"
+      "last_updated": "2025-04-26T14:57:35",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28291",
@@ -45165,7 +45655,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-23T14:55:03"
+      "last_updated": "2025-04-23T14:55:03",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28300",
@@ -45179,7 +45670,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-23T14:57:49"
+      "last_updated": "2025-04-23T14:57:49",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27457",
@@ -45193,7 +45685,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T17:38:55"
+      "last_updated": "2025-04-14T17:38:55",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28208",
@@ -45207,7 +45700,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-20T21:14:12"
+      "last_updated": "2025-04-20T21:14:12",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27995",
@@ -45221,7 +45715,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-18T23:22:38"
+      "last_updated": "2025-04-18T23:22:38",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1300",
@@ -45233,7 +45728,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:54"
+      "last_updated": "2022-06-29T20:55:54",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27274",
@@ -45247,7 +45743,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T15:29:15"
+      "last_updated": "2025-04-14T15:29:15",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27884",
@@ -45261,7 +45758,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-17T14:27:46"
+      "last_updated": "2025-04-17T14:27:46",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27878",
@@ -45275,7 +45773,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-17T14:25:40"
+      "last_updated": "2025-04-17T14:25:40",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1301",
@@ -45386,7 +45885,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-01T21:08:50"
+      "last_updated": "2024-01-01T21:08:50",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1302",
@@ -45461,7 +45961,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-01T21:20:11"
+      "last_updated": "2024-01-01T21:20:11",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1303",
@@ -45516,7 +46017,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-01T21:23:58"
+      "last_updated": "2024-01-01T21:23:58",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1304",
@@ -45551,7 +46053,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-06-22T22:15:46"
+      "last_updated": "2024-06-22T22:15:46",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1305",
@@ -45614,7 +46117,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-01T18:49:23"
+      "last_updated": "2024-01-01T18:49:23",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1306",
@@ -45657,7 +46161,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-01T19:00:27"
+      "last_updated": "2024-01-01T19:00:27",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1307",
@@ -45688,7 +46193,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-01T21:32:29"
+      "last_updated": "2024-01-01T21:32:29",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27458",
@@ -45702,7 +46208,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T17:39:16"
+      "last_updated": "2025-04-14T17:39:16",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27231",
@@ -45716,7 +46223,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T14:58:05"
+      "last_updated": "2025-04-14T14:58:05",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27887",
@@ -45730,7 +46238,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-17T14:29:36"
+      "last_updated": "2025-04-17T14:29:36",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27724",
@@ -45744,7 +46253,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-15T02:53:13"
+      "last_updated": "2025-04-15T02:53:13",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27222",
@@ -45758,7 +46268,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T14:45:41"
+      "last_updated": "2025-04-14T14:45:41",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28101",
@@ -45772,7 +46283,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-20T19:13:42"
+      "last_updated": "2025-04-20T19:13:42",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27225",
@@ -45786,7 +46298,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T14:46:48"
+      "last_updated": "2025-04-14T14:46:48",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_23046",
@@ -45833,7 +46346,8 @@
       ],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-05-11T02:32:46"
+      "last_updated": "2025-05-11T02:32:46",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1322",
@@ -45845,7 +46359,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:54"
+      "last_updated": "2022-06-29T20:55:54",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27620",
@@ -45859,7 +46374,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T23:04:41"
+      "last_updated": "2025-04-14T23:04:41",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28036",
@@ -45873,7 +46389,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-20T17:35:52"
+      "last_updated": "2025-04-20T17:35:52",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_26906",
@@ -45887,7 +46404,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-11T15:22:08"
+      "last_updated": "2025-04-11T15:22:08",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28022",
@@ -45901,7 +46419,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-20T17:30:27"
+      "last_updated": "2025-04-20T17:30:27",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27068",
@@ -45915,7 +46434,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-13T00:07:51"
+      "last_updated": "2025-04-13T00:07:51",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27277",
@@ -45929,7 +46449,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T15:31:22"
+      "last_updated": "2025-04-14T15:31:22",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1212",
@@ -45941,7 +46462,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:52"
+      "last_updated": "2022-06-29T20:55:52",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_19574",
@@ -45960,7 +46482,8 @@
       ],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-01T22:43:42"
+      "last_updated": "2024-01-01T22:43:42",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_19668",
@@ -45979,7 +46502,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-02T15:29:28"
+      "last_updated": "2024-01-02T15:29:28",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28384",
@@ -45993,7 +46517,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-23T21:28:22"
+      "last_updated": "2025-04-23T21:28:22",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_21154",
@@ -46016,7 +46541,8 @@
       ],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-12T15:42:27"
+      "last_updated": "2024-01-12T15:42:27",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_21239",
@@ -46030,7 +46556,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-09T12:19:33"
+      "last_updated": "2024-01-09T12:19:33",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_31100",
@@ -46044,7 +46571,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2026-01-12T14:53:58"
+      "last_updated": "2026-01-12T14:53:58",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1225",
@@ -46058,7 +46586,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-02-19T14:49:15"
+      "last_updated": "2025-02-19T14:49:15",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_26942",
@@ -46072,7 +46601,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-11T17:24:16"
+      "last_updated": "2025-04-11T17:24:16",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_21175",
@@ -46086,7 +46616,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-08T14:38:07"
+      "last_updated": "2024-01-08T14:38:07",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_31198",
@@ -46100,7 +46631,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2026-01-13T14:28:36"
+      "last_updated": "2026-01-13T14:28:36",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_31169",
@@ -46114,7 +46646,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2026-01-13T14:07:45"
+      "last_updated": "2026-01-13T14:07:45",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27619",
@@ -46128,7 +46661,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T23:04:14"
+      "last_updated": "2025-04-14T23:04:14",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1262",
@@ -46140,7 +46674,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:53"
+      "last_updated": "2022-06-29T20:55:53",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_21025",
@@ -46219,7 +46754,8 @@
         }
       ],
       "dbnotes": "",
-      "last_updated": "2024-01-10T13:18:17"
+      "last_updated": "2024-01-10T13:18:17",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28802",
@@ -46233,7 +46769,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-26T15:02:15"
+      "last_updated": "2025-04-26T15:02:15",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1276",
@@ -46250,7 +46787,8 @@
       ],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-05-11T02:23:41"
+      "last_updated": "2025-05-11T02:23:41",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27811",
@@ -46264,7 +46802,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-15T14:58:19"
+      "last_updated": "2025-04-15T14:58:19",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27663",
@@ -46278,7 +46817,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-15T02:16:04"
+      "last_updated": "2025-04-15T02:16:04",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1357",
@@ -46292,7 +46832,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2023-12-27T00:25:45"
+      "last_updated": "2023-12-27T00:25:45",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27708",
@@ -46306,7 +46847,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-15T02:31:17"
+      "last_updated": "2025-04-15T02:31:17",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1277",
@@ -46323,7 +46865,8 @@
       ],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-13T03:27:42"
+      "last_updated": "2024-01-13T03:27:42",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27781",
@@ -46337,7 +46880,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-15T14:20:39"
+      "last_updated": "2025-04-15T14:20:39",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_31170",
@@ -46351,7 +46895,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2026-01-13T14:09:06"
+      "last_updated": "2026-01-13T14:09:06",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_19594",
@@ -46370,7 +46915,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-02T01:48:31"
+      "last_updated": "2024-01-02T01:48:31",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1336",
@@ -46382,7 +46928,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:54"
+      "last_updated": "2022-06-29T20:55:54",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_21058",
@@ -46396,7 +46943,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-06T22:59:02"
+      "last_updated": "2024-01-06T22:59:02",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_19731",
@@ -46423,7 +46971,8 @@
       ],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-03T13:42:23"
+      "last_updated": "2024-01-03T13:42:23",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28752",
@@ -46437,7 +46986,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-26T14:42:33"
+      "last_updated": "2025-04-26T14:42:33",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1375",
@@ -46449,7 +46999,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:55"
+      "last_updated": "2022-06-29T20:55:55",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27416",
@@ -46463,7 +47014,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T17:16:46"
+      "last_updated": "2025-04-14T17:16:46",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27843",
@@ -46477,7 +47029,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-16T13:51:47"
+      "last_updated": "2025-04-16T13:51:47",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1279",
@@ -46489,7 +47042,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:53"
+      "last_updated": "2022-06-29T20:55:53",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27069",
@@ -46503,7 +47057,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-13T00:08:40"
+      "last_updated": "2025-04-13T00:08:40",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28106",
@@ -46517,7 +47072,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-20T19:15:11"
+      "last_updated": "2025-04-20T19:15:11",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_31177",
@@ -46531,7 +47087,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2026-01-13T14:13:06"
+      "last_updated": "2026-01-13T14:13:06",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28023",
@@ -46545,7 +47102,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-20T17:30:48"
+      "last_updated": "2025-04-20T17:30:48",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27345",
@@ -46559,7 +47117,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T15:58:26"
+      "last_updated": "2025-04-14T15:58:26",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1216",
@@ -46571,7 +47130,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:52"
+      "last_updated": "2022-06-29T20:55:52",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_21065",
@@ -46585,7 +47145,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-06T23:00:09"
+      "last_updated": "2024-01-06T23:00:09",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27574",
@@ -46599,7 +47160,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T22:47:54"
+      "last_updated": "2025-04-14T22:47:54",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1226",
@@ -46611,7 +47173,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:52"
+      "last_updated": "2022-06-29T20:55:52",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_19609",
@@ -46654,7 +47217,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-02T03:52:22"
+      "last_updated": "2024-01-02T03:52:22",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1243",
@@ -46666,7 +47230,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:53"
+      "last_updated": "2022-06-29T20:55:53",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28794",
@@ -46680,7 +47245,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-26T14:57:17"
+      "last_updated": "2025-04-26T14:57:17",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28460",
@@ -46694,7 +47260,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-25T14:15:35"
+      "last_updated": "2025-04-25T14:15:35",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27880",
@@ -46708,7 +47275,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-17T14:26:15"
+      "last_updated": "2025-04-17T14:26:15",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1310",
@@ -46720,7 +47288,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:54"
+      "last_updated": "2022-06-29T20:55:54",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27722",
@@ -46734,7 +47303,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-15T02:52:23"
+      "last_updated": "2025-04-15T02:52:23",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_26902",
@@ -46748,7 +47318,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-11T15:19:46"
+      "last_updated": "2025-04-11T15:19:46",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_21151",
@@ -46767,7 +47338,8 @@
       ],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-12T15:42:17"
+      "last_updated": "2024-01-12T15:42:17",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_26905",
@@ -46781,7 +47353,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-11T15:21:25"
+      "last_updated": "2025-04-11T15:21:25",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1280",
@@ -46858,7 +47431,8 @@
       ],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-05-11T02:54:43"
+      "last_updated": "2025-05-11T02:54:43",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_26899",
@@ -46872,7 +47446,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-11T15:18:23"
+      "last_updated": "2025-04-11T15:18:23",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27709",
@@ -46886,7 +47461,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-15T02:31:39"
+      "last_updated": "2025-04-15T02:31:39",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27725",
@@ -46900,7 +47476,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-15T02:53:32"
+      "last_updated": "2025-04-15T02:53:32",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_26904",
@@ -46914,7 +47491,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-11T15:20:58"
+      "last_updated": "2025-04-11T15:20:58",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27278",
@@ -46928,7 +47506,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T15:31:48"
+      "last_updated": "2025-04-14T15:31:48",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_19655",
@@ -47015,7 +47594,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-02T15:16:21"
+      "last_updated": "2024-01-02T15:16:21",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_19659",
@@ -47042,7 +47622,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2024-01-02T15:20:07"
+      "last_updated": "2024-01-02T15:20:07",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27516",
@@ -47056,7 +47637,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T22:25:18"
+      "last_updated": "2025-04-14T22:25:18",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27010",
@@ -47070,7 +47652,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-11T18:56:46"
+      "last_updated": "2025-04-11T18:56:46",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27124",
@@ -47084,7 +47667,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T14:04:08"
+      "last_updated": "2025-04-14T14:04:08",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27286",
@@ -47098,7 +47682,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T15:36:23"
+      "last_updated": "2025-04-14T15:36:23",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28285",
@@ -47112,7 +47697,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-23T14:33:37"
+      "last_updated": "2025-04-23T14:33:37",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28394",
@@ -47126,7 +47712,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-23T21:36:24"
+      "last_updated": "2025-04-23T21:36:24",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27014",
@@ -47140,7 +47727,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-11T18:59:09"
+      "last_updated": "2025-04-11T18:59:09",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1337",
@@ -47152,7 +47740,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:54"
+      "last_updated": "2022-06-29T20:55:54",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28193",
@@ -47166,7 +47755,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-20T21:09:39"
+      "last_updated": "2025-04-20T21:09:39",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27354",
@@ -47180,7 +47770,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T16:04:13"
+      "last_updated": "2025-04-14T16:04:13",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28463",
@@ -47194,7 +47785,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-25T14:16:22"
+      "last_updated": "2025-04-25T14:16:22",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27932",
@@ -47208,7 +47800,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-17T21:18:37"
+      "last_updated": "2025-04-17T21:18:37",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27936",
@@ -47222,7 +47815,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-17T21:19:38"
+      "last_updated": "2025-04-17T21:19:38",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1312",
@@ -47234,7 +47828,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:54"
+      "last_updated": "2022-06-29T20:55:54",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27351",
@@ -47248,7 +47843,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T16:03:10"
+      "last_updated": "2025-04-14T16:03:10",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1323",
@@ -47260,7 +47856,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:54"
+      "last_updated": "2022-06-29T20:55:54",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27782",
@@ -47274,7 +47871,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-15T14:20:58"
+      "last_updated": "2025-04-15T14:20:58",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27356",
@@ -47288,7 +47886,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T16:04:58"
+      "last_updated": "2025-04-14T16:04:58",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27412",
@@ -47302,7 +47901,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T17:14:46"
+      "last_updated": "2025-04-14T17:14:46",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27992",
@@ -47316,7 +47916,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-18T23:21:32"
+      "last_updated": "2025-04-18T23:21:32",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28461",
@@ -47330,7 +47931,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-25T14:15:52"
+      "last_updated": "2025-04-25T14:15:52",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_27128",
@@ -47344,7 +47946,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-14T14:05:45"
+      "last_updated": "2025-04-14T14:05:45",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28309",
@@ -47358,7 +47961,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-23T15:01:58"
+      "last_updated": "2025-04-23T15:01:58",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_1215",
@@ -47370,7 +47974,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2022-06-29T20:55:52"
+      "last_updated": "2022-06-29T20:55:52",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_31110",
@@ -47384,7 +47989,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2026-01-12T14:56:48"
+      "last_updated": "2026-01-12T14:56:48",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_31101",
@@ -47398,7 +48004,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2026-01-12T14:55:19"
+      "last_updated": "2026-01-12T14:55:19",
+      "publication_date": "1900-01-01"
     },
     {
       "record_id": "book_28385",
@@ -47412,7 +48019,8 @@
       "proficiencies": [],
       "potions": [],
       "dbnotes": "",
-      "last_updated": "2025-04-23T21:29:30"
+      "last_updated": "2025-04-23T21:29:30",
+      "publication_date": "1900-01-01"
     }
   ],
   "bookshelves": [],
@@ -73984,8 +74592,8 @@
     }
   ],
   "_headmasters_scroll": {
-    "revision_id": "3fae3850-0f70-5cd2-aaa9-7b1eddbcf832",
-    "last_modified_at": "2026-08-09T02:43:53.048887Z",
-    "last_modified_by": "foundation-migration"
+    "revision_id": "72ac3886-3e8d-4697-8794-95d264611ffa",
+    "last_modified_at": "2026-08-13T03:49:26.090924Z",
+    "last_modified_by": "dbm"
   }
 }

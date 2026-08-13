@@ -1,4 +1,6 @@
 from copy import deepcopy
+import calendar
+import re
 
 
 BOOK_LINK_COLLECTIONS = {
@@ -13,6 +15,7 @@ class BookController:
     text_fields = (
         "name",
         "author",
+        "publication_date",
         "description",
         "dbnotes",
     )
@@ -33,6 +36,7 @@ class BookController:
         complete_values = {
             "name": "",
             "author": "",
+            "publication_date": "1900-01-01",
             "categories": [],
             "description": "",
             "spells": [],
@@ -141,6 +145,14 @@ class BookController:
     def validate_record_values(self, record_values):
         if not record_values.get("name", "").strip():
             raise ValueError("A book must have a name.")
+
+        publication_date = str(record_values.get("publication_date", "") or "").strip()
+        match = re.fullmatch(r"(-?[1-9]\d*)-(\d{2})-(\d{2})", publication_date)
+        if match is None:
+            raise ValueError("Publication date must use YYYY-MM-DD.")
+        year, month, day = (int(value) for value in match.groups())
+        if not 1 <= month <= 12 or not 1 <= day <= calendar.monthrange(year, month)[1]:
+            raise ValueError("Publication date is not a valid calendar date.")
 
         for field_name in self.text_fields:
             if field_name in record_values and not isinstance(

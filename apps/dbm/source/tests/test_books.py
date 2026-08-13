@@ -41,6 +41,7 @@ class BookTests(unittest.TestCase):
             "record_id",
             "name",
             "author",
+            "publication_date",
             "categories",
             "description",
             "spells",
@@ -63,6 +64,9 @@ class BookTests(unittest.TestCase):
         self.assertEqual(len(imported_records_by_id), 608)
         self.assertEqual(len(records), len(records_by_id))
         self.assertTrue(all(set(record) == required_fields for record in records))
+        self.assertTrue(
+            all(record["publication_date"] == "1900-01-01" for record in records)
+        )
         self.assertEqual(
             sum(len(record["spells"]) for record in imported_records),
             288,
@@ -254,6 +258,11 @@ class BookTests(unittest.TestCase):
 
             with self.assertRaisesRegex(ValueError, "must have a name"):
                 controller.create_record({})
+
+            with self.assertRaisesRegex(ValueError, "Publication date"):
+                controller.create_record(
+                    {"name": "Impossible Date", "publication_date": "1900-02-30"}
+                )
 
             with self.assertRaisesRegex(ValueError, "Duplicate book category"):
                 controller.create_record(

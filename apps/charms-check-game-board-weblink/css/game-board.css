@@ -459,15 +459,15 @@
 }
 
 #gameboard .ccgb-roll-pill strong { font-weight: 500; }
-#gameboard .ccgb-roll-pill.is-ability { background: #e1c56e; }
-#gameboard .ccgb-roll-pill.is-skill { background: #c9e2ec; border-color: #7296a4; color: #000; }
-#gameboard .ccgb-roll-pill.is-characteristic { background: #bfe0b3; border-color: #6eaa69; }
-#gameboard .ccgb-roll-pill.is-parental { background: #e8b8bd; border-color: #bc7e83; }
+#gameboard .ccgb-roll-pill.is-ability { background-color: #e1c56e !important; color: #000 !important; }
+#gameboard .ccgb-roll-pill.is-skill { background-color: #c9e2ec !important; border-color: #7296a4 !important; color: #000 !important; }
+#gameboard .ccgb-roll-pill.is-characteristic { background-color: #bfe0b3 !important; border-color: #6eaa69 !important; color: #000 !important; }
+#gameboard .ccgb-roll-pill.is-parental { background-color: #e8b8bd !important; border-color: #bc7e83 !important; color: #000 !important; }
 #gameboard .ccgb-roll-pill.is-trait { background: #e7d49e; border-color: #a9853e; }
-#gameboard .ccgb-roll-pill.is-ability:hover { background: #566c76; color: #fff; }
-#gameboard .ccgb-roll-pill.is-skill:hover { background: #9fc9d9; color: #000; }
-#gameboard .ccgb-roll-pill.is-characteristic:hover { background: #66745d; color: #fff; }
-#gameboard .ccgb-roll-pill.is-parental:hover { background: #705c5c; color: #fff; }
+#gameboard .ccgb-roll-pill.is-ability:hover { background-color: #566c76 !important; color: #fff !important; }
+#gameboard .ccgb-roll-pill.is-skill:hover { background-color: #9fc9d9 !important; color: #000 !important; }
+#gameboard .ccgb-roll-pill.is-characteristic:hover { background-color: #66745d !important; color: #fff !important; }
+#gameboard .ccgb-roll-pill.is-parental:hover { background-color: #705c5c !important; color: #fff !important; }
 #gameboard .ccgb-roll-pill.is-trait:hover { background: #8b743d; color: #fff; }
 
 /* Connected character-sheet panels */
@@ -987,7 +987,7 @@
   border-color: #382719;
   border-radius: var(--map-label-radius, 0.15px);
   color: var(--ccgb-ink);
-  font-size: var(--map-label-font-size, 0.65px);
+  font-size: calc(var(--map-label-font-size, 0.65px) * var(--actor-nameplate-scale, 1));
   font-weight: 800;
   height: auto;
   min-width: var(--map-nameplate-width, 15px);
@@ -1067,7 +1067,7 @@
   border: var(--map-label-border, 0.06px) solid #382719;
   border-radius: var(--map-label-radius, 0.15px);
   color: #000;
-  font-size: var(--map-label-font-size, 0.65px);
+  font-size: calc(var(--map-label-font-size, 0.65px) * var(--actor-nameplate-scale, 1));
   font-weight: 800;
   left: calc(50% + var(--map-position-label-x, 0px));
   line-height: 1.2;
@@ -1089,7 +1089,7 @@
   border-radius: var(--map-label-radius, 0.15px);
   color: #000;
   display: block;
-  font-size: var(--map-label-font-size, 0.65px);
+  font-size: calc(var(--map-label-font-size, 0.65px) * var(--actor-nameplate-scale, 1));
   font-weight: 800;
   left: calc(50% + var(--map-position-label-x, 0px));
   max-width: var(--map-label-max-width, 15px);
@@ -1123,7 +1123,7 @@
   border: var(--map-label-border, 0.06px) solid #707070;
   border-radius: var(--map-label-radius, 0.15px);
   color: #000;
-  font-size: var(--map-label-font-size, 0.65px);
+  font-size: calc(var(--map-label-font-size, 0.65px) * var(--actor-nameplate-scale, 1));
   font-weight: 700;
   left: 50%;
   max-width: var(--map-label-max-width, 15px);

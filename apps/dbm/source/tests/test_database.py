@@ -21,7 +21,7 @@ class JsonDatabaseTests(unittest.TestCase):
         self.assertTrue(database.has_container("accessories"))
 
         metadata = database.get_database_metadata()
-        self.assertEqual(metadata["schema_version"], 1)
+        self.assertEqual(metadata["schema_version"], 2)
         self.assertEqual(metadata["database_version"], "1.0")
 
     def test_food_and_drink_conversion_preserves_every_source_record(self):
@@ -112,6 +112,23 @@ class JsonDatabaseTests(unittest.TestCase):
 
             self.assertIsNone(
                 reloaded_database.read("foods_and_drinks", record_id)
+            )
+
+    def test_schema_two_adds_default_publication_date_to_existing_books(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            database_path = Path(temporary_directory) / "test_database.json"
+            database_path.write_text(
+                '{"_database": {"schema_version": 1}, '
+                '"books": [{"record_id": "book-1", "name": "Old Book"}]}',
+                encoding="utf-8",
+            )
+            database = JsonDatabase(database_path)
+            database.load()
+            self.assertTrue(database.dirty)
+            self.assertEqual(database.get_database_metadata()["schema_version"], 2)
+            self.assertEqual(
+                database.get_collection("books")[0]["publication_date"],
+                "1900-01-01",
             )
 
 

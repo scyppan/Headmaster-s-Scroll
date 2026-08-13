@@ -106,6 +106,24 @@ class BoardTransportBody(BaseModel):
     warp_point_id: str = Field(min_length=1, max_length=100)
 
 
+class BoardPlaceCharacterBody(BaseModel):
+    session_id: str = Field(min_length=1, max_length=100)
+    person_id: str = Field(min_length=1, max_length=100)
+    map_id: str = Field(min_length=1, max_length=100)
+    x: float = Field(default=0.5, ge=0.0, le=1.0)
+    y: float = Field(default=0.5, ge=0.0, le=1.0)
+    confirm_move: bool = False
+
+
+class QuickCharacterBody(BaseModel):
+    session_id: str = Field(min_length=1, max_length=100)
+    map_id: str = Field(min_length=1, max_length=100)
+    name: str = Field(min_length=1, max_length=200)
+    age: int = Field(ge=0, le=1000)
+    development_strategy: str = Field(default="random", min_length=1, max_length=80)
+    player_character: bool = False
+
+
 class BoardPersonBody(BaseModel):
     session_id: str = Field(min_length=1, max_length=100)
     visibility: str | None = Field(default=None, max_length=20)
@@ -114,6 +132,7 @@ class BoardPersonBody(BaseModel):
     faction_revealed: bool | None = None
     faction_organization_id: str | None = Field(default=None, max_length=100)
     label_offset: dict[str, float] | None = None
+    nameplate_scale: float | None = Field(default=None, ge=0.5, le=3.0)
 
 
 class BoardPersonActionBody(BaseModel):
@@ -769,6 +788,37 @@ def create_apps(
             body.map_id,
             result["camera"],
         )
+        return result
+
+    @admin_app.post("/api/admin/board/place-character", dependencies=[Depends(admin_guard)])
+    async def place_board_character(body: BoardPlaceCharacterBody):
+        result = admin_result(
+            service.place_person_on_map,
+            body.session_id,
+            body.person_id,
+            body.map_id,
+            body.x,
+            body.y,
+            confirm_move=body.confirm_move,
+        )
+        if not result.get("requires_confirmation"):
+            await runtime.broadcast_board(body.session_id)
+            await runtime.notify_admins()
+        return result
+
+    @admin_app.post("/api/admin/board/quick-character", dependencies=[Depends(admin_guard)])
+    async def quick_board_character(body: QuickCharacterBody):
+        result = admin_result(
+            service.create_quick_character,
+            body.session_id,
+            body.map_id,
+            body.name,
+            body.age,
+            body.development_strategy,
+            body.player_character,
+        )
+        await runtime.broadcast_board(body.session_id)
+        await runtime.notify_admins()
         return result
 
     @admin_app.post("/api/admin/board/move-preview", dependencies=[Depends(admin_guard)])

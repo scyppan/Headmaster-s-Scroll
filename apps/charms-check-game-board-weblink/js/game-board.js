@@ -1405,7 +1405,8 @@
         plaque.textContent = name;
         plaque.style.backgroundColor = piece.style.getPropertyValue('--actor-group-color') || '#b0b0b0';
         plaque.style.borderColor = piece.classList.contains('is-name-revealed') ? '#382719' : '#707070';
-        plaque.style.fontSize = `${fontSize}px`;
+        const individualScale = Math.max(0.5, Math.min(3, Number(piece.dataset.nameplateScale || 1)));
+        plaque.style.fontSize = `${fontSize * individualScale}px`;
         plaque.style.maxWidth = `${widthLimit}px`;
         locator.append(dot, line, plaque);
         layer.appendChild(locator);
@@ -1640,6 +1641,8 @@
       piece.dataset.actorId = actor.actor_id;
       piece.dataset.actorX = String(Number(actor.x ?? 0.5));
       piece.dataset.actorY = String(Number(actor.y ?? 0.5));
+      piece.dataset.nameplateScale = String(Number(actor.nameplate_scale ?? 1));
+      piece.style.setProperty('--actor-nameplate-scale', String(Number(actor.nameplate_scale ?? 1)));
       piece.style.setProperty('--actor-label-offset-x', `${Number(actor.label_offset?.x || 0) * MAP_NATIVE_WIDTH}px`);
       piece.style.setProperty('--actor-label-offset-y', `${Number(actor.label_offset?.y || 0) * MAP_NATIVE_HEIGHT}px`);
       piece.classList.toggle('is-player-character', Boolean(actor.is_player_character));

@@ -37,11 +37,12 @@ class JsonDatabase:
             ) as database_file:
                 loaded_data = json.load(database_file)
 
+        before_migration = deepcopy(loaded_data)
         migrated_data = migrate_database(loaded_data)
         validate_database(migrated_data)
 
         self.data = migrated_data
-        self.dirty = False
+        self.dirty = migrated_data != before_migration
 
     def ensure_container(self, container_name, storage_type="collection"):
         if container_name in self.data:

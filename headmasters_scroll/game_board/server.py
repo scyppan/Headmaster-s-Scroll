@@ -150,6 +150,7 @@ class BoardGroupBody(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     location_id: str = Field(min_length=1, max_length=100)
     person_ids: list[str] = Field(min_length=2, max_length=100)
+    color: str = Field(default="#b0b0b0", min_length=7, max_length=7)
 
 
 class ControlGrantBody(BaseModel):
@@ -881,6 +882,7 @@ def create_apps(
             body.name,
             body.location_id,
             body.person_ids,
+            body.color,
         )
         for session in service.sessions_view():
             await runtime.broadcast_board(session["id"])

@@ -165,6 +165,30 @@ class BoardFoundationTests(unittest.TestCase):
         self.assertEqual(npc["name"], "Unknown")
         self.assertEqual(npc["faction_color"], "#808080")
 
+    def test_group_color_is_exposed_without_revealing_an_npc_name(self):
+        document = world_document()
+        document["board_groups"] = [{
+            "record_id": "group-1",
+            "name": "Grey Company",
+            "location_id": "castle",
+            "color": "#778899",
+            "members": [
+                {"record_id": "member-1", "actor_type": "person", "actor_id": "pc-1"},
+                {"record_id": "member-2", "actor_type": "person", "actor_id": "npc-1"},
+            ],
+        }]
+        (self.directory / "world.json").write_text(
+            json.dumps(document, indent=2) + "\n", encoding="utf-8"
+        )
+        self.repository.set_map_published("map-1", True)
+        snapshot = self.repository.snapshot(
+            "2000-06-01T12:00", player_character_ids=["pc-1"], for_players=True
+        )
+        npc = next(item for item in snapshot["actors"] if item["actor_id"] == "npc-1")
+        self.assertEqual(npc["name"], "Unknown")
+        self.assertFalse(npc["name_revealed"])
+        self.assertEqual(npc["group_color"], "#778899")
+
     def test_regions_validate_persist_and_enter_player_snapshot_safely(self):
         region = {
             "record_id": "region-gringotts",

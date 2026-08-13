@@ -3566,7 +3566,14 @@ class GameBoardWindow(tk.Tk):
         )
         popup.add_command(label="Display as dot", command=lambda: self.update_selected_actor(display_mode="dot"))
         popup.add_command(label="Display portrait", command=lambda: self.update_selected_actor(display_mode="token"))
-        popup.add_command(label="Toggle identity", command=self.toggle_selected_name)
+        popup.add_command(
+            label=(
+                "Conceal name from players"
+                if bool(actor.get("name_revealed"))
+                else "Share name with players"
+            ),
+            command=self.toggle_selected_name,
+        )
         try:
             popup.tk_popup(root_x, root_y)
         finally:
@@ -3963,6 +3970,25 @@ class GameBoardWindow(tk.Tk):
         ttk.Label(dialog, text="Group name", padding=(10, 10, 10, 2)).pack(anchor="w")
         name = ttk.Entry(dialog)
         name.pack(fill="x", padx=10)
+        color_value = tk.StringVar(value="#b0b0b0")
+        color_row = ttk.Frame(dialog, padding=(10, 6, 10, 2))
+        color_row.pack(fill="x")
+        ttk.Label(color_row, text="Plaque color").pack(side="left")
+        color_button = tk.Button(
+            color_row,
+            textvariable=color_value,
+            background=color_value.get(),
+            width=10,
+        )
+        color_button.pack(side="right")
+
+        def choose_color() -> None:
+            selected = colorchooser.askcolor(color_value.get(), parent=dialog)[1]
+            if selected:
+                color_value.set(selected.lower())
+                color_button.configure(background=selected)
+
+        color_button.configure(command=choose_color)
         values: dict[str, tk.BooleanVar] = {}
         for actor in actors:
             variable = tk.BooleanVar(value=actor.get("actor_id") == self.selected_board_actor_id)
@@ -3979,6 +4005,7 @@ class GameBoardWindow(tk.Tk):
                 "name": name.get().strip() or "Group",
                 "location_id": current_map["location_id"],
                 "person_ids": person_ids,
+                "color": color_value.get(),
             }
             self._background(lambda: self.client.request("POST", "/api/admin/board/groups", payload), lambda _result: self.refresh(silent=True))
             dialog.destroy()

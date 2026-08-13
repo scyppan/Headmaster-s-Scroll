@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "_headmasters_scroll": {
-    "revision_id": "4af0cb6c-c7f7-43fc-9ee7-18120b835ab7",
-    "last_modified_at": "2026-08-13T01:22:38.757557Z",
+    "revision_id": "4201cf7e-c484-46f2-804d-539844d389eb",
+    "last_modified_at": "2026-08-13T01:44:35.799597Z",
     "last_modified_by": "game-board"
   },
   "campaigns": [
@@ -11,7 +11,7 @@
       "created_at": "2026-08-11T08:19:23.069609Z",
       "name": "Test camp",
       "game_world_start_date": "2000-08-27",
-      "last_updated": "2026-08-13T01:22:38.753921Z",
+      "last_updated": "2026-08-13T01:44:35.795758Z",
       "game_state": {
         "initialized": true,
         "current_game_datetime": "2000-08-27T08:00",
@@ -21,7 +21,7 @@
         ],
         "active_map_id": "a5a85bd9-e989-4069-936c-8acda64f0fdd",
         "player_active_map_ids": {
-          "6ca9e551-e305-4c3c-a763-d2ff9a13afff": "a5a85bd9-e989-4069-936c-8acda64f0fdd"
+          "6ca9e551-e305-4c3c-a763-d2ff9a13afff": "4fc2ff78-e528-4ebd-b4db-9b34fc803622"
         },
         "maps": {
           "4fc2ff78-e528-4ebd-b4db-9b34fc803622": {
@@ -119,9 +119,9 @@
             },
             "player_cameras": {
               "6ca9e551-e305-4c3c-a763-d2ff9a13afff": {
-                "zoom": 5.350250105473706,
-                "center_x": 0.3583541145658662,
-                "center_y": 0.5130961582396252
+                "zoom": 1.0,
+                "center_x": 0.5,
+                "center_y": 0.5
               }
             },
             "zoom_profile": {
@@ -207,13 +207,13 @@
             "headmaster_camera": {
               "zoom": 2.6600198804687483,
               "center_x": 0.7741284744977088,
-              "center_y": 0.4202437537688553
+              "center_y": 0.453235918935316
             },
             "player_cameras": {
               "6ca9e551-e305-4c3c-a763-d2ff9a13afff": {
-                "zoom": 3.5178762919199196,
-                "center_x": 0.7900110133279827,
-                "center_y": 0.37923313313994367
+                "zoom": 1.5208749999999998,
+                "center_x": 0.5293183766826868,
+                "center_y": 0.3887964348793825
               }
             },
             "zoom_profile": {
@@ -261,8 +261,8 @@
               "location_id": "38b8b79b-0785-4213-826e-0e65998d3b41",
               "floor_id": "",
               "map_id": "a5a85bd9-e989-4069-936c-8acda64f0fdd",
-              "x": 0.9807714826948193,
-              "y": 0.4329548356968588
+              "x": 0.9775801596908837,
+              "y": 0.43413519173368076
             },
             "visibility": "players",
             "display_mode": "dot",
@@ -270,8 +270,8 @@
             "faction_revealed": false,
             "faction_organization_id": "",
             "label_offset": {
-              "x": 0.0033462448222561655,
-              "y": -0.06337968571451677
+              "x": -0.027773832024726174,
+              "y": -0.005209289236809599
             },
             "wounds": [],
             "battle": null,
@@ -848,7 +848,13 @@
             "character_notes": []
           },
           "594ad00f-0b79-4118-ba66-a875f7ba9811": {
-            "placement": null,
+            "placement": {
+              "location_id": "de9bca8f-8fea-4db4-a040-131af6804693",
+              "floor_id": "",
+              "map_id": "4fc2ff78-e528-4ebd-b4db-9b34fc803622",
+              "x": 0.9834567618710869,
+              "y": 0.3336768169582773
+            },
             "visibility": "players",
             "display_mode": "dot",
             "name_revealed": false,

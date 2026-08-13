@@ -309,12 +309,16 @@ class GameBoardService:
 
             wrapper = self.repository.active()
             sessions_changed = False
+            former_character_links: list[tuple[str, str]] = []
             for session in wrapper.get("sessions", []):
                 player = next(
                     (item for item in session.get("roster", []) if item["contact_id"] == contact_id),
                     None,
                 )
                 if player:
+                    previous_character_id = str(player.get("character_id", "") or "")
+                    if previous_character_id and previous_character_id != str(character_id or ""):
+                        former_character_links.append((str(session.get("id", "")), previous_character_id))
                     display_name = character_name or contact["name"]
                     player.update(
                         account_name=contact["name"],
@@ -331,6 +335,11 @@ class GameBoardService:
                     sessions_changed = True
             if sessions_changed:
                 self.repository.save_active(wrapper)
+            for session_id, former_character_id in former_character_links:
+                if session_id:
+                    self.update_person_board(
+                        session_id, former_character_id, {"name_revealed": True}
+                    )
             result = deepcopy(contact)
             result["display_name"] = character_name or contact["name"]
             return result
@@ -1619,6 +1628,7 @@ class GameBoardService:
         name: str,
         location_id: str,
         person_ids: list[str],
+        color: str = "#b0b0b0",
     ) -> dict[str, Any]:
         with self._lock:
             session = self._board_context(session_id)
@@ -1641,6 +1651,7 @@ class GameBoardService:
                 "record_id": str(uuid4()),
                 "name": str(name or "").strip(),
                 "location_id": str(location_id),
+                "color": str(color or "#b0b0b0").strip().lower(),
                 "members": [
                     {"record_id": str(uuid4()), "actor_type": "person", "actor_id": person_id}
                     for person_id in person_ids

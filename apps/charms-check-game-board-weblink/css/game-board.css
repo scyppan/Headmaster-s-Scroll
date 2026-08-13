@@ -1119,8 +1119,8 @@
 }
 
 #gameboard .ccgb-actor-label {
-  background: #d6ad52;
-  border: var(--map-label-border, 0.06px) solid #382719;
+  background: var(--actor-group-color, #b0b0b0);
+  border: var(--map-label-border, 0.06px) solid #707070;
   border-radius: var(--map-label-radius, 0.15px);
   color: #000;
   font-size: var(--map-label-font-size, 0.65px);
@@ -1137,6 +1137,14 @@
   transform: translate(-50%, 0) translate(var(--actor-label-offset-x, 0px), var(--actor-label-offset-y, 0px));
   white-space: nowrap;
   -webkit-font-smoothing: antialiased;
+}
+
+#gameboard .ccgb-board-actor.is-name-revealed > .ccgb-actor-label {
+  border-color: #382719;
+}
+
+#gameboard .ccgb-board-actor:not(.is-name-revealed) > .ccgb-actor-label {
+  color: #000;
 }
 
 #gameboard button:hover,

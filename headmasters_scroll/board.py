@@ -336,6 +336,10 @@ def normalize_group(value: Any) -> dict[str, Any]:
         result[field] = str(result.get(field, "") or "").strip()
         if not result[field]:
             raise ValueError(f"Every board group requires {field}")
+    color = str(result.get("color", "#b0b0b0") or "#b0b0b0").strip().lower()
+    if not re.fullmatch(r"#[0-9a-f]{6}", color):
+        raise ValueError("A board group color must use #RRGGBB")
+    result["color"] = color
     members = []
     seen: set[tuple[str, str]] = set()
     for member in result.get("members", []) or []:
@@ -736,6 +740,13 @@ class WorldBoardRepository:
             if isinstance(item, dict)
         }
         actors = []
+        person_groups: dict[str, dict[str, Any]] = {}
+        for group in document.get("board_groups", []) or []:
+            if not isinstance(group, dict):
+                continue
+            for member in group.get("members", []) or []:
+                if isinstance(member, dict) and member.get("actor_type", "person") == "person":
+                    person_groups[str(member.get("actor_id", "") or "")] = group
         for person in document.get("people", []):
             if not isinstance(person, dict):
                 continue
@@ -755,6 +766,7 @@ class WorldBoardRepository:
             chosen = chosen if chosen in active_factions else ""
             faction = organizations.get(chosen, {})
             portrait = board.get("portrait")
+            group = person_groups.get(person_id, {})
             display_mode = "token" if is_player else board["display_mode"]
             if display_mode == "token" and not portrait and not is_player:
                 display_mode = "dot"
@@ -776,6 +788,9 @@ class WorldBoardRepository:
                 "faction_id": chosen if (not for_players or board["faction_revealed"]) else "",
                 "faction_name": (str(faction.get("name", "") or "") or "Unknown") if (not for_players or board["faction_revealed"]) else "Unknown",
                 "faction_color": str(faction.get("faction_color", "#808080") or "#808080") if (not for_players or board["faction_revealed"]) else "#808080",
+                "group_id": str(group.get("record_id", "") or ""),
+                "group_name": str(group.get("name", "") or ""),
+                "group_color": str(group.get("color", "#b0b0b0") or "#b0b0b0"),
                 "active_faction_ids": active_factions if not for_players else [],
                 "active_factions": [
                     {

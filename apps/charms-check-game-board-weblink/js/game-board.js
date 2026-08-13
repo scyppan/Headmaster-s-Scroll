@@ -728,6 +728,45 @@
         this.showChatNotice('Rolls are unavailable while disconnected.');
         return;
       }
+      if (['ability', 'skill', 'characteristic', 'parental'].includes(rollType)) {
+        const attributes = this.characterSheet?.attributes || this.board?.character_attributes;
+        if (!attributes) {
+          this.showChatNotice('Your character values are still loading.');
+          return;
+        }
+        const collections = {
+          ability: attributes.attributes || [],
+          skill: attributes.skills || [],
+          characteristic: attributes.characteristics || [],
+          parental: attributes.parental_values || []
+        };
+        const record = collections[rollType].find(item => item.name === targetId);
+        if (!record) {
+          this.showChatNotice(`No value is available for ${targetId}.`);
+          return;
+        }
+        const die = () => {
+          if (window.crypto?.getRandomValues) {
+            const value = new Uint32Array(1);
+            window.crypto.getRandomValues(value);
+            return (value[0] % 10) + 1;
+          }
+          return Math.floor(Math.random() * 10) + 1;
+        };
+        let text;
+        if (rollType === 'characteristic') {
+          const count = Math.max(1, Math.min(5, Number(record.dice) || 1));
+          const dice = Array.from({ length: count }, die);
+          text = `rolled ${targetId}: ${dice.join(', ')} (${dice.reduce((sum, value) => sum + value, 0)} total).`;
+        } else {
+          const roll = die();
+          const bonus = Number(record.value) || 0;
+          const critical = roll === 1 ? ' Critical failure.' : (roll === 10 ? ' Critical success.' : '');
+          text = `rolled ${targetId}: ${roll} + ${bonus} = ${roll + bonus}.${critical}`;
+        }
+        this.send({ v: VERSION, type: 'chat_message', message: text });
+        return;
+      }
       this.send({ v: VERSION, type: 'character_roll_request', roll_type: rollType, target_id: targetId });
     }
 
@@ -1318,8 +1357,9 @@
         const clicks = Math.max(0, Number(state.zoomClicks || 0));
         zoomLevel.textContent = `Zoom ${Math.round(Number(state.scale || 1) * 100)}% (${clicks} click${clicks === 1 ? '' : 's'})`;
       }
-      stage.querySelectorAll('.ccgb-board-actor.is-player-character').forEach(piece => {
-        piece.classList.toggle('is-overview-marker', overviewMode);
+      stage.querySelectorAll('.ccgb-board-actor').forEach(piece => {
+        const tracked = piece.classList.contains('is-player-character') || piece.classList.contains('is-name-revealed');
+        piece.classList.toggle('is-overview-marker', overviewMode && tracked);
       });
       cancelAnimationFrame(this.actorLabelFrame);
       this.actorLabelFrame = requestAnimationFrame(() => {
@@ -1333,7 +1373,7 @@
     positionPlayerViewportLocators(viewport, stage, tier, fontSize, overviewMode) {
       const layer = viewport.querySelector('.ccgb-player-locators');
       if (!layer) return;
-      const pieces = Array.from(stage.querySelectorAll('.ccgb-board-actor.is-player-character'));
+      const pieces = Array.from(stage.querySelectorAll('.ccgb-board-actor.is-player-character, .ccgb-board-actor.is-name-revealed'));
       layer.replaceChildren();
       if (!pieces.length) return;
 
@@ -1363,6 +1403,8 @@
         const plaque = document.createElement('span');
         plaque.className = 'ccgb-player-locator-plaque';
         plaque.textContent = name;
+        plaque.style.backgroundColor = piece.style.getPropertyValue('--actor-group-color') || '#b0b0b0';
+        plaque.style.borderColor = piece.classList.contains('is-name-revealed') ? '#382719' : '#707070';
         plaque.style.fontSize = `${fontSize}px`;
         plaque.style.maxWidth = `${widthLimit}px`;
         locator.append(dot, line, plaque);
@@ -1429,7 +1471,7 @@
     }
 
     positionOffscreenPlayerLocator(viewport, stage, tier, actorNetScale) {
-      const pieces = Array.from(stage.querySelectorAll('.ccgb-board-actor.is-player-character'));
+      const pieces = Array.from(stage.querySelectorAll('.ccgb-board-actor.is-player-character, .ccgb-board-actor.is-name-revealed'));
       if (!pieces.length) return;
       const viewportBounds = viewport.getBoundingClientRect();
       const stageBounds = stage.getBoundingClientRect();
@@ -1472,7 +1514,7 @@
     }
 
     positionOverviewLabels(viewport, stage, tier, actorNetScale) {
-      const pieces = Array.from(stage.querySelectorAll('.ccgb-board-actor.is-player-character.is-overview-marker'));
+      const pieces = Array.from(stage.querySelectorAll('.ccgb-board-actor.is-overview-marker'));
       if (!pieces.length) return;
       const viewportBounds = viewport.getBoundingClientRect();
       const stageBounds = stage.getBoundingClientRect();
@@ -1601,7 +1643,9 @@
       piece.style.setProperty('--actor-label-offset-x', `${Number(actor.label_offset?.x || 0) * MAP_NATIVE_WIDTH}px`);
       piece.style.setProperty('--actor-label-offset-y', `${Number(actor.label_offset?.y || 0) * MAP_NATIVE_HEIGHT}px`);
       piece.classList.toggle('is-player-character', Boolean(actor.is_player_character));
+      piece.classList.toggle('is-name-revealed', Boolean(actor.name_revealed));
       piece.style.setProperty('--actor-color', actor.faction_color || '#808080');
+      piece.style.setProperty('--actor-group-color', actor.group_color || '#b0b0b0');
       piece.title = actor.faction_revealed && actor.faction_name
         ? `${actor.name || 'Unknown'} — ${actor.faction_name}`
         : (actor.name || 'Unknown');
@@ -1633,7 +1677,7 @@
         label.textContent = actor.name || 'Unknown';
         piece.appendChild(label);
       }
-      if (actor.is_player_character) {
+      if (actor.is_player_character || actor.name_revealed) {
         const leader = document.createElement('span');
         leader.className = 'ccgb-position-leader';
         const positionLabel = document.createElement('span');

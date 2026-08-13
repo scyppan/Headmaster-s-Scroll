@@ -4,7 +4,12 @@ import tkinter as tk
 from datetime import date
 from tkinter import messagebox, ttk
 
-from .campaigns import CampaignRepository, format_game_world_date
+from .campaigns import (
+    CampaignRepository,
+    HISTORY_DISCARD,
+    HISTORY_KEEP,
+    format_game_world_date,
+)
 from .game_board.desktop import GameWorldDateField
 from .windowing import apply_window_icon
 
@@ -93,10 +98,38 @@ class CampaignerWindow(tk.Tk):
             text="New Game Board sessions begin at 08:00 on this date.",
             style="Campaigner.TLabel",
         ).grid(row=4, column=0, sticky="w")
+        ttk.Label(form, text="Campaign history", style="Campaigner.TLabel").grid(
+            row=5, column=0, sticky="w", pady=(14, 2)
+        )
+        self.history_policy_value = tk.StringVar(value=HISTORY_KEEP)
+        history = ttk.Frame(form, style="Campaigner.Card.TFrame")
+        history.grid(row=6, column=0, sticky="ew")
+        ttk.Radiobutton(
+            history,
+            text="Keep historical events",
+            value=HISTORY_KEEP,
+            variable=self.history_policy_value,
+        ).pack(anchor="w")
+        ttk.Label(
+            history,
+            text="World events become effective as the campaign clock reaches them.",
+            style="Campaigner.TLabel",
+        ).pack(anchor="w", padx=(22, 0))
+        ttk.Radiobutton(
+            history,
+            text="Discard later historical events",
+            value=HISTORY_DISCARD,
+            variable=self.history_policy_value,
+        ).pack(anchor="w", pady=(6, 0))
+        ttk.Label(
+            history,
+            text="World events after the campaign start are ignored for this branch.",
+            style="Campaigner.TLabel",
+        ).pack(anchor="w", padx=(22, 0))
         self.status = ttk.Label(form, text="", style="Campaigner.TLabel")
-        self.status.grid(row=5, column=0, sticky="w", pady=(18, 0))
+        self.status.grid(row=7, column=0, sticky="w", pady=(18, 0))
         actions = ttk.Frame(form, style="Campaigner.Card.TFrame")
-        actions.grid(row=6, column=0, sticky="ew", pady=(18, 0))
+        actions.grid(row=8, column=0, sticky="ew", pady=(18, 0))
         ttk.Button(actions, text="Delete", command=self.delete_campaign).pack(side="left")
         ttk.Button(actions, text="Save Campaign", command=self.save_campaign).pack(side="right")
 
@@ -134,6 +167,7 @@ class CampaignerWindow(tk.Tk):
         self.selected_campaign_id = campaign["record_id"]
         self.name_value.set(campaign["name"])
         self.start_date.set_iso(campaign["game_world_start_date"])
+        self.history_policy_value.set(campaign.get("history_policy", HISTORY_KEEP))
         self.status.configure(text="Editing campaign metadata")
 
     def new_campaign(self) -> None:
@@ -141,6 +175,7 @@ class CampaignerWindow(tk.Tk):
         self.campaign_list.selection_clear(0, "end")
         self.name_value.set("")
         self.start_date.set_iso(date.today().isoformat())
+        self.history_policy_value.set(HISTORY_KEEP)
         self.status.configure(text="Creating a new campaign")
 
     def save_campaign(self) -> None:
@@ -149,6 +184,7 @@ class CampaignerWindow(tk.Tk):
                 self.name_value.get(),
                 self.start_date.get_iso(),
                 self.selected_campaign_id,
+                self.history_policy_value.get(),
             )
         except Exception as error:
             messagebox.showerror("Campaigner", str(error), parent=self)

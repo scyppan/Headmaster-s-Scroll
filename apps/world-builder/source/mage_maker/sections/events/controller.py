@@ -124,6 +124,7 @@ class EventController:
         people_creator=None,
         mage_groups_provider=None,
         people_summary_provider=None,
+        game_database=None,
     ):
         self.database = database
         self.people_provider = people_provider
@@ -133,6 +134,7 @@ class EventController:
         self.people_creator = people_creator
         self.mage_groups_provider = mage_groups_provider
         self.people_summary_provider = people_summary_provider
+        self.game_database = game_database
         self._event_cache = None
         self._event_cache_revision = None
         self._events_by_record_id = {}
@@ -143,6 +145,42 @@ class EventController:
         self._people_options_cache = None
         self._people_options_by_id_cache = {}
         self._people_options_cache_revision = None
+
+    def character_control_link_options(self, event_type):
+        """Searchable stable-ID choices for teaching and creature events."""
+        event_type = str(event_type or "").strip()
+        collection_map = {
+            "taught_spell": ("spells",),
+            "taught_proficiency": ("proficiencies",),
+            "taught_recipe": ("potions", "preparations", "foods_and_drinks"),
+        }
+        options = []
+        if event_type in collection_map and self.game_database is not None:
+            for collection in collection_map[event_type]:
+                for record in self.game_database.collection(collection):
+                    record_id = str(record.get("record_id", "") or "").strip()
+                    name = str(record.get("name") or record.get("title") or "").strip()
+                    if record_id and name:
+                        options.append({
+                            "value": record_id,
+                            "label": name,
+                            "group": collection.replace("_", " ").title(),
+                            "collection": collection,
+                            "search_text": " ".join(str(record.get(key, "") or "") for key in ("name", "title", "skill", "subtype", "tradition", "description")),
+                        })
+        elif event_type in {"tamed_creature", "bonded_creature", "irked_creature"}:
+            for record in self.database.list_records("named_creatures"):
+                record_id = str(record.get("record_id", "") or "").strip()
+                name = str(record.get("name", "") or "").strip()
+                if record_id and name:
+                    options.append({
+                        "value": record_id,
+                        "label": name,
+                        "group": "Named creatures",
+                        "collection": "named_creatures",
+                        "search_text": " ".join((name, str(record.get("species_name", "") or ""))),
+                    })
+        return sorted(options, key=lambda item: (item["label"].casefold(), item["value"]))
 
     def people_summaries(self):
         if callable(self.people_summary_provider):

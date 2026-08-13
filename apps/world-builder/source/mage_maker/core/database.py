@@ -154,6 +154,7 @@ class JsonDatabase:
             "book_readings",
             "maps",
             "board_groups",
+            "named_creatures",
         ):
             if collection_name not in database_data:
                 database_data[collection_name] = []
@@ -1648,6 +1649,7 @@ class JsonDatabase:
             "items",
             "books",
             "book_readings",
+            "named_creatures",
         ):
             if not isinstance(database_data.get(collection_name), list):
                 raise TypeError(

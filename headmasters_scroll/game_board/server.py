@@ -197,6 +197,7 @@ class PlayerConnection:
     persisted: bool = False
     chat_events: deque[float] = field(default_factory=deque)
     move_events: deque[float] = field(default_factory=deque)
+    roll_events: deque[float] = field(default_factory=deque)
 
     def public(self, service: GameBoardService) -> dict[str, Any]:
         return {
@@ -366,8 +367,11 @@ class GameBoardRuntime:
     async def chat(
         self, sender_id: str, sender_name: str, sender_role: str, text: str,
         session_id: str | None = None,
-    ) -> dict[str, str]:
-        chat = self.service.post_chat(sender_id, sender_name, sender_role, text, session_id)
+        activity: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        chat = self.service.post_chat(
+            sender_id, sender_name, sender_role, text, session_id, activity
+        )
         envelope = {"v": 1, "type": "chat_message", "message": chat}
         await asyncio.gather(
             *(
@@ -409,6 +413,22 @@ class GameBoardRuntime:
             return_exceptions=True,
         )
         await self.notify_admins()
+
+    async def broadcast_character_sheets(self, session_id: str) -> None:
+        await asyncio.gather(
+            *(
+                connection.websocket.send_json({
+                    "v": 1,
+                    "type": "character_sheet_updated",
+                    "character_sheet": self.service.character_sheet_for(
+                        connection.session_id, connection.contact_id
+                    ),
+                })
+                for connection in list(self.connections.values())
+                if connection.session_id == session_id
+            ),
+            return_exceptions=True,
+        )
 
     async def focus_players(
         self,
@@ -539,7 +559,14 @@ def create_apps(
             if runtime.world_changed():
                 sessions = service.sessions_view()
                 await asyncio.gather(
-                    *(runtime.broadcast_board(session["id"]) for session in sessions),
+                    *(
+                        coroutine
+                        for session in sessions
+                        for coroutine in (
+                            runtime.broadcast_board(session["id"]),
+                            runtime.broadcast_character_sheets(session["id"]),
+                        )
+                    ),
                     return_exceptions=True,
                 )
                 if not sessions:
@@ -624,6 +651,9 @@ def create_apps(
                     "character_attributes": service.character_attributes_for(
                         connection.session_id, contact_id
                     ),
+                    "character_sheet": service.character_sheet_for(
+                        connection.session_id, contact_id
+                    ),
                 })
             except Exception:
                 pass
@@ -698,6 +728,7 @@ def create_apps(
             service.set_game_datetime, session_id, body.game_datetime
         )
         await runtime.broadcast_board(session_id)
+        await runtime.broadcast_character_sheets(session_id)
         return result
 
     @admin_app.post("/api/admin/board/move", dependencies=[Depends(admin_guard)])
@@ -776,6 +807,7 @@ def create_apps(
             text=body.text,
             battle_name=body.battle_name,
         )
+        await runtime.broadcast_character_sheets(body.session_id)
         await runtime.notify_admins()
         return result
 
@@ -1131,6 +1163,9 @@ def create_apps(
         connection_key = f"{identity['session_id']}:{identity['contact_id']}"
         runtime.connections[connection_key] = connection
         runtime.asset_credentials[asset_credential_hash] = connection_key
+        character_sheet = service.character_sheet_for(
+            identity["session_id"], identity["contact_id"]
+        )
         await websocket.send_json({
             "v": 1, "type": "connection_accepted", "player": identity["name"],
             "player_id": identity["contact_id"], "session": identity["session_title"],
@@ -1138,7 +1173,13 @@ def create_apps(
             "character_attributes": service.character_attributes_for(
                 identity["session_id"], identity["contact_id"]
             ),
+            "character_sheet": character_sheet,
             "asset_credential": asset_credential,
+        })
+        await websocket.send_json({
+            "v": 1,
+            "type": "character_sheet_snapshot",
+            "character_sheet": character_sheet,
         })
         session = service.session_view(identity["session_id"])
         await websocket.send_json({
@@ -1215,6 +1256,37 @@ def create_apps(
                             connection.session_id,
                         )
                     except (PermissionError, ValueError) as error:
+                        await websocket.send_json({
+                            "v": 1, "type": "server_error", "message": str(error),
+                        })
+                elif message.get("type") == "character_roll_request":
+                    now = time.monotonic()
+                    while connection.roll_events and connection.roll_events[0] <= now - 10:
+                        connection.roll_events.popleft()
+                    if len(connection.roll_events) >= 10:
+                        await websocket.send_json({
+                            "v": 1,
+                            "type": "server_error",
+                            "message": "Please wait a moment before rolling again.",
+                        })
+                        continue
+                    connection.roll_events.append(now)
+                    try:
+                        result = service.roll_character_action(
+                            connection.session_id,
+                            connection.contact_id,
+                            str(message.get("roll_type", ""))[:30],
+                            str(message.get("target_id", ""))[:120],
+                        )
+                        await runtime.chat(
+                            connection.contact_id,
+                            connection.name,
+                            "player",
+                            result["text"],
+                            connection.session_id,
+                            result,
+                        )
+                    except (KeyError, PermissionError, RuntimeError, TypeError, ValueError) as error:
                         await websocket.send_json({
                             "v": 1, "type": "server_error", "message": str(error),
                         })

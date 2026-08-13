@@ -27,6 +27,8 @@ from ..board import (
 )
 from ..campaigns import CampaignRepository, normalize_board_camera, normalize_zoom_profile
 from ..character_attributes import calculate_character_attributes
+from ..character_sheet import build_character_sheet
+from ..character_rolls import perform_character_roll
 from .storage import GameBoardRepository
 
 
@@ -906,13 +908,15 @@ class GameBoardService:
                         rules_database = self.shared_store.load("db.json").data
                     except FileNotFoundError:
                         rules_database = {"schools": []}
-                    snapshot["character_attributes"] = calculate_character_attributes(
-                        viewer_person,
-                        document,
-                        rules_database,
-                        game_datetime,
+                    sheet = build_character_sheet(
+                        viewer_person, document, rules_database, campaign
                     )
+                    snapshot["character_sheet"] = sheet
+                    # Retained for one release so already-published web clients
+                    # can still show Attributes while the CDN version changes.
+                    snapshot["character_attributes"] = sheet["attributes"]
                 else:
+                    snapshot["character_sheet"] = None
                     snapshot["character_attributes"] = None
             campaign_maps = campaign["game_state"].get("maps", {})
             for map_record in snapshot.get("maps", []):
@@ -974,12 +978,67 @@ class GameBoardService:
                 rules_database = self.shared_store.load("db.json").data
             except FileNotFoundError:
                 rules_database = {"schools": []}
-            return calculate_character_attributes(
-                person,
-                document,
-                rules_database,
-                str(campaign["game_state"]["current_game_datetime"]),
+            return build_character_sheet(
+                person, document, rules_database, campaign
+            )["attributes"]
+
+    def character_sheet_for(
+        self,
+        session_id: str,
+        contact_id: str,
+    ) -> dict[str, Any] | None:
+        """Return only one admitted player's authorized, effective sheet."""
+
+        with self._lock:
+            session = self._board_context(session_id)
+            campaign, document = self._campaign_document(session)
+            viewer = next(
+                (
+                    player for player in session.get("roster", [])
+                    if str(player.get("contact_id", "")) == contact_id
+                ),
+                None,
             )
+            character_id = str((viewer or {}).get("character_id", "") or "")
+            person = next(
+                (
+                    item for item in document.get("people", [])
+                    if str(item.get("record_id", "")) == character_id
+                ),
+                None,
+            )
+            if person is None:
+                return None
+            try:
+                database = self.shared_store.load("db.json").data
+            except FileNotFoundError:
+                # Small integration fixtures may exercise board-only behavior
+                # without a rules catalog. Production always has db.json.
+                database = {
+                    "schools": [], "spells": [], "proficiencies": [],
+                    "potions": [], "preparations": [],
+                    "foods_and_drinks": [], "creatures": [], "books": [],
+                }
+            return build_character_sheet(person, document, database, campaign)
+
+    def roll_character_action(
+        self,
+        session_id: str,
+        contact_id: str,
+        roll_type: str,
+        target_id: str,
+    ) -> dict[str, Any]:
+        controlled = self.controlled_character_ids(session_id, contact_id)
+        with self._lock:
+            wrapper, session = self._active(session_id)
+            player = self._player(session, contact_id)
+            character_id = str(player.get("character_id", "") or "")
+            if not character_id or character_id not in controlled:
+                raise PermissionError("This player does not control a linked character")
+        sheet = self.character_sheet_for(session_id, contact_id)
+        if sheet is None:
+            raise PermissionError("No World Builder character is linked to this player")
+        return perform_character_roll(sheet, roll_type, target_id)
 
     def update_person_campaign_action(
         self,
@@ -1043,7 +1102,37 @@ class GameBoardService:
                 else:
                     raise ValueError("Unknown character action")
 
-            self.campaign_repository.update_game_state(campaign["record_id"], update)
+            updated_campaign = self.campaign_repository.update_game_state(
+                campaign["record_id"], update
+            )
+            game_datetime = str(
+                updated_campaign["game_state"]["current_game_datetime"]
+            )
+            event_details = {
+                "person_ids": [person_id],
+                "source": "game-board",
+            }
+            if action == "add_wound":
+                event_details.update({
+                    "wound_id": result["record_id"],
+                    "severity": result["severity"],
+                    "description": result["note"],
+                })
+            elif action in {"enter_battle", "leave_battle"}:
+                event_details["battle"] = deepcopy(result)
+            else:
+                event_details.update({
+                    "note_id": result["record_id"],
+                    "description": result["text"],
+                })
+            event_date, event_time = game_datetime.split("T", 1)
+            self.campaign_repository.add_event(
+                campaign["record_id"],
+                action,
+                event_date,
+                event_time=event_time,
+                details=event_details,
+            )
             return result
 
     def controlled_character_ids(
@@ -1624,6 +1713,25 @@ class GameBoardService:
                     return self.world_board.assets.resolve(asset_id, portrait), str(
                         portrait.get("mime_type", "application/octet-stream")
                     )
+        sheet = snapshot.get("character_sheet")
+        portrait_id = str(
+            ((sheet or {}).get("overview") or {}).get("portrait_asset_id", "")
+            or ""
+        )
+        if portrait_id == asset_id:
+            character_id = str((sheet or {}).get("character_id", "") or "")
+            person = next(
+                (
+                    item for item in world.get("people", [])
+                    if str(item.get("record_id", "")) == character_id
+                ),
+                None,
+            )
+            portrait = ((person or {}).get("board") or {}).get("portrait")
+            if isinstance(portrait, dict) and portrait.get("asset_id") == asset_id:
+                return self.world_board.assets.resolve(asset_id, portrait), str(
+                    portrait.get("mime_type", "application/octet-stream")
+                )
         raise PermissionError("That asset is not available to this session")
 
     def mark_disconnected(
@@ -1662,7 +1770,8 @@ class GameBoardService:
         sender_role: str,
         text: str,
         session_id: str | None = None,
-    ) -> dict[str, str]:
+        activity: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         text = text.strip()
         if not text:
             raise ValueError("Chat messages cannot be empty")
@@ -1685,6 +1794,10 @@ class GameBoardService:
                 "text": text,
                 "sent_at": iso_utc(utc_now()),
             }
+            if activity is not None:
+                # Calculation details contain no hidden records and allow the
+                # UI to show a concise sentence with an expandable audit.
+                message["activity"] = deepcopy(activity)
             chat = session.setdefault("chat", [])
             chat.append(message)
             del chat[:-100]

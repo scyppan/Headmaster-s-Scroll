@@ -896,6 +896,9 @@ class EventEditor(tk.Frame):
         self.job_end_year_value = tk.StringVar()
         self.job_end_month_value = tk.StringVar()
         self.job_end_day_value = tk.StringVar()
+        self.character_control_link_id = ""
+        self.character_control_link_collection = ""
+        self.character_control_link_name = tk.StringVar(value="No linked record")
         self.adjusting_year = False
         self.year_value.trace_add("write", self.update_period_display)
         self.month_value.trace_add("write", self.update_period_display)
@@ -1593,6 +1596,48 @@ class EventEditor(tk.Frame):
             self.background,
         )
         self.eminence_picker.grid_remove()
+        self.character_control_link_panel = tk.Frame(
+            self.association_panel,
+            bg=self.background,
+            highlightbackground=BORDER_SOFT,
+            highlightthickness=1,
+            padx=4,
+            pady=3,
+        )
+        self.character_control_link_panel.grid_columnconfigure(0, weight=1)
+        tk.Label(
+            self.character_control_link_panel,
+            textvariable=self.character_control_link_name,
+            bg=self.background,
+            fg=TEXT_DARK,
+            font=app_font(9, "bold"),
+            anchor="w",
+        ).grid(row=0, column=0, sticky="ew")
+        SoftButton(
+            self.character_control_link_panel,
+            text="Choose...",
+            command=self.open_character_control_link,
+            background=self.background,
+            fill=FIELD_BACKGROUND,
+            hover_fill=LIST_SELECTED,
+            foreground=TEXT_DARK,
+            width=84,
+            height=24,
+            font=app_font(8, "bold"),
+        ).grid(row=0, column=1, padx=(6, 0))
+        SoftButton(
+            self.character_control_link_panel,
+            text="Clear",
+            command=self.clear_character_control_link,
+            background=self.background,
+            fill=FIELD_BACKGROUND,
+            hover_fill=LIST_SELECTED,
+            foreground=TEXT_DARK,
+            width=62,
+            height=24,
+            font=app_font(8, "bold"),
+        ).grid(row=0, column=2, padx=(4, 0))
+        self.character_control_link_panel.grid_remove()
         footer = tk.Frame(self.form, bg=self.background)
         footer.grid(
             row=7,
@@ -1773,6 +1818,7 @@ class EventEditor(tk.Frame):
         self.locked_item_ids = []
         self.selected_item_link_types = {}
         self.selected_item_new_owners = {}
+        self.clear_character_control_link()
         self.update_items_summary()
 
         if hasattr(self, "eminence_picker"):
@@ -1855,6 +1901,7 @@ class EventEditor(tk.Frame):
                 self.job_end_day_value.set("")
         self.description_control.text.configure(state="normal")
         self.description_control.text.delete("1.0", "end")
+        self.clear_character_control_link()
         self.configure_type_options()
         self.event_type_value.set(self.default_type_label())
         self.people_picker.set_values(
@@ -2090,6 +2137,17 @@ class EventEditor(tk.Frame):
         self.time_value.set(
             str(self.event.get("time", "") or "").strip()
         )
+        loaded_type = str(self.event.get("event_type", "") or "")
+        if loaded_type in ("taught_spell", "taught_proficiency", "taught_recipe"):
+            self.character_control_link_id = str(self.event.get("knowledge_record_id", "") or "")
+            self.character_control_link_collection = str(self.event.get("knowledge_collection", "") or "")
+            self.character_control_link_name.set(str(self.event.get("knowledge_name", "") or "Linked taught record"))
+        elif loaded_type in ("tamed_creature", "bonded_creature", "irked_creature"):
+            self.character_control_link_id = str(self.event.get("named_creature_id", "") or "")
+            self.character_control_link_collection = "named_creatures"
+            self.character_control_link_name.set(str(self.event.get("named_creature_name", "") or "Linked named creature"))
+        else:
+            self.clear_character_control_link()
         self.load_job_event_values()
         self.update_job_event_panel()
         self.description_control.text.configure(state="normal")
@@ -3176,12 +3234,80 @@ class EventEditor(tk.Frame):
         ):
             self.apply_organization_founding_title()
 
+    def clear_character_control_link(self):
+        self.character_control_link_id = ""
+        self.character_control_link_collection = ""
+        if hasattr(self, "character_control_link_name"):
+            self.character_control_link_name.set("No linked record")
+
+    def update_character_control_link_panel(self, selected_type=None):
+        if not hasattr(self, "character_control_link_panel"):
+            return
+        selected_type = selected_type or event_type_from_label(
+            self.event_type_value.get(), "other"
+        )
+        supported = selected_type in {
+            "taught_spell", "taught_proficiency", "taught_recipe",
+            "tamed_creature", "bonded_creature", "irked_creature",
+        }
+        if supported:
+            self.character_control_link_panel.grid(
+                row=1, column=0, columnspan=2, sticky="ew", pady=(4, 0)
+            )
+        else:
+            self.character_control_link_panel.grid_remove()
+
+    def open_character_control_link(self):
+        selected_type = event_type_from_label(
+            self.event_type_value.get(), "other"
+        )
+        options_command = getattr(
+            self.controller, "character_control_link_options", None
+        )
+        options = options_command(selected_type) if callable(options_command) else []
+        if not options:
+            self.show_error(
+                "No matching records are available. Create the record first, then return to this event."
+            )
+            return False
+        self._character_control_link_options = {
+            option["value"]: option for option in options
+        }
+        RecordLinkDialog(
+            self,
+            "Choose Linked Record",
+            "Choose the one record linked to this event",
+            "Search by name or details. Core data is linked by stable record ID.",
+            options,
+            [self.character_control_link_id] if self.character_control_link_id else [],
+            self.character_control_link_chosen,
+            "Choose record",
+            group_label="Type",
+            result_limit=200,
+        )
+        return True
+
+    def character_control_link_chosen(self, selected_ids, *_unused):
+        selected_id = str((selected_ids or [""])[0] or "")
+        option = getattr(self, "_character_control_link_options", {}).get(
+            selected_id
+        )
+        if not option:
+            self.clear_character_control_link()
+            return
+        self.character_control_link_id = selected_id
+        self.character_control_link_collection = str(
+            option.get("collection", "") or ""
+        )
+        self.character_control_link_name.set(str(option.get("label", "Linked record")))
+
     def event_type_changed(self, *arguments):
         self.update_job_event_panel()
         selected_type = event_type_from_label(
             self.event_type_value.get(),
             "other",
         )
+        self.update_character_control_link_panel(selected_type)
         previous_type = str(
             getattr(self, "previous_event_type", "") or ""
         ).strip()
@@ -3952,6 +4078,33 @@ class EventEditor(tk.Frame):
                 if event_type in ("started_job", "received_raise")
                 else None
             ),
+            "knowledge_record_id": (
+                self.character_control_link_id
+                if event_type in ("taught_spell", "taught_proficiency", "taught_recipe")
+                else ""
+            ),
+            "knowledge_collection": (
+                self.character_control_link_collection
+                if event_type in ("taught_spell", "taught_proficiency", "taught_recipe")
+                else ""
+            ),
+            "knowledge_name": (
+                self.character_control_link_name.get()
+                if event_type in ("taught_spell", "taught_proficiency", "taught_recipe")
+                and self.character_control_link_id
+                else ""
+            ),
+            "named_creature_id": (
+                self.character_control_link_id
+                if event_type in ("tamed_creature", "bonded_creature", "irked_creature")
+                else ""
+            ),
+            "named_creature_name": (
+                self.character_control_link_name.get()
+                if event_type in ("tamed_creature", "bonded_creature", "irked_creature")
+                and self.character_control_link_id
+                else ""
+            ),
         }
 
     def save(self):
@@ -3985,6 +4138,13 @@ class EventEditor(tk.Frame):
                 "Choose the new owner for every Passed down, Gifted, or "
                 "Taken item link."
             )
+            return False
+
+        if values["event_type"] in (
+            "taught_spell", "taught_proficiency", "taught_recipe",
+            "tamed_creature", "bonded_creature", "irked_creature",
+        ) and not self.character_control_link_id:
+            self.show_error("Choose the record linked to this event.")
             return False
 
         if self.context == "person" and values["item_ids"]:

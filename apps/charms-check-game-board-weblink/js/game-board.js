@@ -20,7 +20,7 @@
     ['attributes', 'Attributes', '◇'],
     ['spells', 'Spells', '✦'],
     ['proficiencies', 'Proficiencies', '✧'],
-    ['potions', 'Potions', '⚗'],
+    ['recipes', 'Recipes', '⚗'],
     ['pets', 'Pets', '♞'],
     ['inventory', 'Inventory', '▣'],
     ['relationships', 'Relationships', '♡'],
@@ -67,6 +67,13 @@
       this.lastMovePreview = 0;
       this.activeSection = 'overview';
       this.chatMessages = [];
+      this.characterSheet = null;
+      this.favoriteStorageKey = `${this.storageKey}-favorites`;
+      try {
+        this.favorites = new Set(JSON.parse(localStorage.getItem(this.favoriteStorageKey) || '[]'));
+      } catch (_error) {
+        this.favorites = new Set();
+      }
       this.cameraPreferenceKey = `${this.storageKey}-allow-headmaster-camera`;
       this.allowHeadmasterCamera = localStorage.getItem(this.cameraPreferenceKey) !== 'false';
       this.restoreViewState();
@@ -401,6 +408,9 @@
         if (Object.prototype.hasOwnProperty.call(message, 'character_attributes')) {
           this.board.character_attributes = message.character_attributes;
         }
+        if (Object.prototype.hasOwnProperty.call(message, 'character_sheet')) {
+          this.characterSheet = message.character_sheet;
+        }
         this.assetCredential = message.asset_credential || '';
         this.element('player').textContent = message.player || 'Player';
         this.element('detail-player').textContent = message.player || 'Player';
@@ -434,15 +444,20 @@
         if (Object.prototype.hasOwnProperty.call(message, 'character_attributes')) {
           this.board.character_attributes = message.character_attributes;
         }
+        if (Object.prototype.hasOwnProperty.call(message, 'character_sheet')) {
+          this.characterSheet = message.character_sheet;
+        }
         this.element('player').textContent = player;
         this.element('detail-player').textContent = player;
         this.element('avatar').textContent = player.trim().charAt(0).toUpperCase() || '?';
       } else if (message.type === 'board_snapshot' && message.board) {
         const previousAttributes = this.board && this.board.character_attributes;
+        const previousSheet = this.characterSheet;
         this.board = message.board;
         if (!Object.prototype.hasOwnProperty.call(this.board, 'character_attributes') && previousAttributes) {
           this.board.character_attributes = previousAttributes;
         }
+        this.characterSheet = this.board.character_sheet || previousSheet || null;
         const campaignId = String(this.board.campaign_id || '');
         const firstCampaignSnapshot = campaignId !== this.hydratedCampaignId;
         if (firstCampaignSnapshot && this.savedViewCampaignId && campaignId !== this.savedViewCampaignId) {
@@ -467,7 +482,11 @@
         this.hydratedCampaignId = campaignId;
         this.saveViewState();
         if (this.activeSection === 'board') this.renderBoardView();
-        else if (this.activeSection === 'attributes') this.openSection('attributes');
+        else this.openSection(this.activeSection);
+      } else if ((message.type === 'character_sheet_snapshot' || message.type === 'character_sheet_updated') && message.character_sheet) {
+        this.characterSheet = message.character_sheet;
+        this.board.character_attributes = message.character_sheet.attributes;
+        if (this.activeSection !== 'board') this.openSection(this.activeSection);
       } else if (message.type === 'board_move_preview') {
         const actor = (this.board.actors || []).find(item => item.actor_id === message.person_id);
         if (actor) {
@@ -555,6 +574,16 @@
         const text = document.createElement('p');
         text.textContent = message.text || '';
         article.append(heading, text);
+        if (message.activity) {
+          const details = document.createElement('details');
+          details.className = 'ccgb-roll-details';
+          const summary = document.createElement('summary');
+          summary.textContent = 'Roll details';
+          const body = document.createElement('p');
+          body.textContent = `Dice: ${(message.activity.dice || []).join(', ') || '-'}  Bonus: ${Number(message.activity.bonus || 0)}  Total: ${Number(message.activity.total || 0)}${message.activity.threshold == null ? '' : `  Threshold: ${message.activity.threshold}`}`;
+          details.append(summary, body);
+          article.appendChild(details);
+        }
         container.appendChild(article);
       });
       container.scrollTop = container.scrollHeight;
@@ -621,6 +650,14 @@
               </label>
               <p>You can still pan and zoom normally. When enabled, Headmaster focus requests will be ignored.</p>
             </div>
+          </details>
+          <details class="ccgb-content-panel" open>
+            <summary>Presentation</summary>
+            <div><p>Favorites stay in this browser. Roll history lasts only for this Game Board session.</p></div>
+          </details>
+          <details class="ccgb-content-panel" open>
+            <summary>Session roll history</summary>
+            <div class="ccgb-history-list">${this.escapeHtml(this.rollHistoryText())}</div>
           </details>`;
         const cameraLock = content.querySelector('[data-ccgb-camera-lock]');
         cameraLock.checked = !this.allowHeadmasterCamera;
@@ -636,25 +673,171 @@
         this.search(this.element('search').value);
         return;
       }
-      content.innerHTML = `
-        <details class="ccgb-content-panel" open>
-          <summary>${item[1]} summary</summary>
-          <div><p>This area is ready for ${item[1].toLowerCase()} information from the shared character data.</p></div>
-        </details>
-        <details class="ccgb-content-panel" open>
-          <summary>Session tools</summary>
-          <div><p>Live tools and Headmaster-directed interactions for this section will appear here.</p></div>
-        </details>
-        <details class="ccgb-content-panel">
-          <summary>Notes</summary>
-          <div><p>Additional character notes can be organized here.</p></div>
-        </details>`;
+      if (item[0] === 'overview') this.renderOverviewPanel(content);
+      else if (['spells', 'proficiencies', 'recipes'].includes(item[0])) this.renderKnowledgePanel(content, item[0]);
+      else if (item[0] === 'pets') this.renderPetsPanel(content);
+      else if (item[0] === 'inventory') this.renderInventoryPanel(content);
+      else if (item[0] === 'relationships') this.renderRelationshipsPanel(content);
+      else if (item[0] === 'wounds') this.renderWoundsPanel(content);
       this.search(this.element('search').value);
+    }
+
+    escapeHtml(value) {
+      return String(value ?? '')
+        .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;').replaceAll("'", '&#039;');
+    }
+
+    sheetUnavailable(content, label) {
+      content.innerHTML = `<section class="ccgb-sheet-empty"><h2>${this.characterId ? `Loading ${this.escapeHtml(label)}...` : `${this.escapeHtml(label)} unavailable`}</h2><p>${this.characterId ? 'Refreshing your private character sheet.' : 'No World Builder character is linked to this player.'}</p></section>`;
+    }
+
+    requestRoll(rollType, targetId) {
+      if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
+        this.showChatNotice('Rolls are unavailable while disconnected.');
+        return;
+      }
+      this.send({ v: VERSION, type: 'character_roll_request', roll_type: rollType, target_id: targetId });
+    }
+
+    bindRollButtons(content) {
+      content.querySelectorAll('[data-roll-type]').forEach(button => button.addEventListener('click', () => {
+        this.requestRoll(button.dataset.rollType, button.dataset.targetId);
+      }));
+    }
+
+    rollHistoryText() {
+      const rolls = this.chatMessages.filter(message => message.activity);
+      return rolls.length ? rolls.map(message => message.text).join('\n') : 'No rolls in this session yet.';
+    }
+
+    renderOverviewPanel(content) {
+      const overview = this.characterSheet && this.characterSheet.overview;
+      if (!overview) return this.sheetUnavailable(content, 'Overview');
+      content.className = 'ccgb-sheet-grid ccgb-overview-grid';
+      content.innerHTML = `
+        <section class="ccgb-sheet-card ccgb-profile-card">
+          <div class="ccgb-profile-portrait" data-sheet-portrait>${this.escapeHtml(overview.name).charAt(0)}</div>
+          <div><h2>${this.escapeHtml(overview.name)}</h2><dl>
+            <div><dt>Born</dt><dd>${this.escapeHtml(overview.birth || 'Not recorded')}</dd></div>
+            <div><dt>School</dt><dd>${this.escapeHtml(overview.school || 'Not recorded')}</dd></div>
+            <div><dt>Canon</dt><dd>${overview.canon ? 'Yes' : 'No'}</dd></div>
+            <div><dt>Eminence</dt><dd>${Number(overview.eminence || 0)}</dd></div>
+            <div><dt>Game date</dt><dd>${this.escapeHtml(overview.game_datetime)}</dd></div>
+            <div><dt>History</dt><dd>${this.characterSheet.history_policy === 'discard' ? 'Campaign branch' : 'Universal history kept'}</dd></div>
+          </dl></div>
+        </section>
+        <section class="ccgb-sheet-card"><h2>Biography</h2><p>${this.escapeHtml(overview.narrative || 'No narrative recorded.')}</p></section>`;
+      if (overview.portrait_asset_id) this.assetUrl(overview.portrait_asset_id).then(url => {
+        const holder = content.querySelector('[data-sheet-portrait]');
+        if (holder && url) holder.innerHTML = `<img src="${url}" alt="Portrait of ${this.escapeHtml(overview.name)}">`;
+      }).catch(() => {});
+    }
+
+    renderKnowledgePanel(content, collection) {
+      const records = this.characterSheet && this.characterSheet[collection];
+      if (!records) return this.sheetUnavailable(content, collection);
+      const singular = { spells: 'spell', proficiencies: 'proficiency', recipes: 'recipe' }[collection];
+      const fieldValues = field => [...new Set(records.map(item => item[field]).filter(Boolean))].sort();
+      const optionList = (field, label) => `<select data-catalog-filter="${field}" aria-label="Filter by ${label}"><option value="">All ${label}</option>${fieldValues(field).map(value => `<option value="${this.escapeHtml(value)}">${this.escapeHtml(value)}</option>`).join('')}</select>`;
+      content.className = 'ccgb-catalog-panel';
+      content.innerHTML = `
+        <div class="ccgb-catalog-tools">
+          <input type="search" data-catalog-search placeholder="Search ${collection}">
+          ${optionList('skill', 'skills')}
+          ${optionList('source', 'sources')}
+          ${collection === 'spells' ? optionList('subtype', 'subtypes') : ''}
+          <label class="ccgb-threshold-filter">Difficulty &le; <input type="number" min="0" data-catalog-threshold placeholder="Any"></label>
+          <label><input type="checkbox" data-favorites-only> Favorites</label>
+        </div>
+        <div class="ccgb-catalog-list">${records.map(record => {
+          const favoriteKey = `${collection}:${record.record_id}`;
+          return `<article class="ccgb-catalog-item" data-search="${this.escapeHtml([record.name, record.skill, record.subtype, record.source, record.description].join(' ').toLowerCase())}" data-skill="${this.escapeHtml(record.skill || '')}" data-source="${this.escapeHtml(record.source || '')}" data-subtype="${this.escapeHtml(record.subtype || '')}" data-threshold="${record.threshold == null ? '' : Number(record.threshold)}" data-favorite="${this.favorites.has(favoriteKey)}">
+            <button class="ccgb-favorite ${this.favorites.has(favoriteKey) ? 'is-favorite' : ''}" data-favorite-key="${this.escapeHtml(favoriteKey)}" title="Favorite">&#9733;</button>
+            <button class="ccgb-record-main" data-roll-type="${singular}" data-target-id="${this.escapeHtml(record.record_id)}" title="Roll ${this.escapeHtml(record.name)}"><strong>${this.escapeHtml(record.name)}</strong><span>${this.escapeHtml(record.skill || record.collection || '')}${record.threshold == null ? '' : ` - ${record.threshold}`}</span></button>
+            <details><summary>Details</summary><p>${this.escapeHtml(record.description || record.raw_effect || record.raw_effects || 'No description recorded.')}</p>${this.renderRecordRequirements(record)}<small>${this.escapeHtml(record.source || '')}</small></details>
+          </article>`;
+        }).join('') || `<p class="ccgb-empty-result">No known ${collection} as of the current campaign date.</p>`}</div>`;
+      const update = () => {
+        const query = content.querySelector('[data-catalog-search]').value.trim().toLowerCase();
+        const filters = [...content.querySelectorAll('[data-catalog-filter]')].map(element => [element.dataset.catalogFilter, element.value]);
+        const thresholdText = content.querySelector('[data-catalog-threshold]').value;
+        const threshold = thresholdText === '' ? null : Number(thresholdText);
+        const favoritesOnly = content.querySelector('[data-favorites-only]').checked;
+        content.querySelectorAll('.ccgb-catalog-item').forEach(item => {
+          const wrongFilter = filters.some(([field, value]) => value && item.dataset[field] !== value);
+          const tooDifficult = threshold !== null && item.dataset.threshold !== '' && Number(item.dataset.threshold) > threshold;
+          item.hidden = Boolean((query && !item.dataset.search.includes(query)) || wrongFilter || tooDifficult || (favoritesOnly && item.dataset.favorite !== 'true'));
+        });
+      };
+      content.querySelectorAll('[data-catalog-search],[data-catalog-filter],[data-catalog-threshold],[data-favorites-only]').forEach(element => element.addEventListener('input', update));
+      content.querySelectorAll('[data-favorite-key]').forEach(button => button.addEventListener('click', () => {
+        const key = button.dataset.favoriteKey;
+        if (this.favorites.has(key)) this.favorites.delete(key); else this.favorites.add(key);
+        localStorage.setItem(this.favoriteStorageKey, JSON.stringify([...this.favorites]));
+        this.renderKnowledgePanel(content, collection);
+      }));
+      this.bindRollButtons(content);
+    }
+
+    renderRecordRequirements(record) {
+      const rows = [];
+      if (record.required_materials?.length) rows.push(`<strong>Materials:</strong> ${this.escapeHtml(record.required_materials.map(item => item.name || item).join(', '))}`);
+      if (record.required_proficiencies?.length) rows.push(`<strong>Proficiencies:</strong> ${this.escapeHtml(record.required_proficiencies.map(item => item.name || item).join(', '))}`);
+      if (record.ingredients?.length) rows.push(`<strong>Ingredients:</strong> ${this.escapeHtml(record.ingredients.map(item => `${item.quantity || ''} ${item.name || item}`.trim()).join(', '))}`);
+      if (record.brew_time) rows.push(`<strong>Time:</strong> ${this.escapeHtml(record.brew_time)}`);
+      if (record.additional_instructions) rows.push(`<strong>Method:</strong> ${this.escapeHtml(record.additional_instructions)}`);
+      return rows.length ? `<p class="ccgb-requirements">${rows.join('<br>')}</p>` : '';
+    }
+
+    renderPetsPanel(content) {
+      const records = this.characterSheet && this.characterSheet.pets;
+      if (!records) return this.sheetUnavailable(content, 'Pets');
+      content.className = 'ccgb-sheet-grid';
+      content.innerHTML = records.map(item => {
+        const species = item.species || {};
+        const statistics = [
+          ['Classification', species.classification], ['Size', species.size],
+          ['Movement', species.movement], ['Wound cap', species.wound_cap],
+          ['Attacks', species.attacks], ['Abilities', species.abilities]
+        ].filter(([, value]) => value !== undefined && value !== null && String(value).trim());
+        return `<article class="ccgb-sheet-card"><h2>${this.escapeHtml(item.name)}</h2>
+          <p class="ccgb-badges">${(item.relationships || []).map(value => `<span class="is-${value}">${this.escapeHtml(value)}</span>`).join('')}</p>
+          <p><strong>${this.escapeHtml(species.name || 'Species not recorded')}</strong></p>
+          ${statistics.length ? `<dl class="ccgb-creature-stats">${statistics.map(([label, value]) => `<div><dt>${this.escapeHtml(label)}</dt><dd>${this.escapeHtml(Array.isArray(value) ? value.map(part => part.name || part).join(', ') : value)}</dd></div>`).join('')}</dl>` : ''}
+          <details><summary>Relationship history</summary>${(item.history || []).map(event => `<p><strong>${this.escapeHtml(event.date)}</strong> ${this.escapeHtml(event.relationship)} ${this.escapeHtml(event.note)}</p>`).join('')}</details>
+        </article>`;
+      }).join('') || '<p class="ccgb-empty-result">No dated creature relationships yet.</p>';
+    }
+
+    renderInventoryPanel(content) {
+      const records = this.characterSheet && this.characterSheet.inventory;
+      if (!records) return this.sheetUnavailable(content, 'Inventory');
+      content.className = 'ccgb-sheet-grid';
+      content.innerHTML = records.map(item => `<article class="ccgb-sheet-card"><h2>${this.escapeHtml(item.name)}</h2><p><strong>${this.escapeHtml(item.category)}</strong> - ${this.escapeHtml(item.method)} ${this.escapeHtml(item.acquired)}</p><p>${this.escapeHtml(item.description)}</p></article>`).join('') || '<p class="ccgb-empty-result">No historically owned items at this date.</p>';
+    }
+
+    renderRelationshipsPanel(content) {
+      const records = this.characterSheet && this.characterSheet.relationships;
+      if (!records) return this.sheetUnavailable(content, 'Relationships');
+      content.className = 'ccgb-sheet-grid';
+      const grouped = records.reduce((result, item) => {
+        (result[item.type || 'Other'] ||= []).push(item);
+        return result;
+      }, {});
+      content.innerHTML = Object.entries(grouped).map(([type, items]) => `<section class="ccgb-sheet-card"><h2>${this.escapeHtml(type)}</h2><div class="ccgb-relationship-history">${items.map(item => `<article><strong>${this.escapeHtml((item.people || []).join(', ') || 'Relationship event')}</strong><span>${this.escapeHtml(item.date)}</span><p>${this.escapeHtml(item.detail || item.event_type)}</p></article>`).join('')}</div></section>`).join('') || '<p class="ccgb-empty-result">No effective relationship events at this date.</p>';
+    }
+
+    renderWoundsPanel(content) {
+      if (!this.characterSheet) return this.sheetUnavailable(content, 'Wounds');
+      const wounds = this.characterSheet.wounds || [];
+      content.className = 'ccgb-sheet-grid';
+      content.innerHTML = `<section class="ccgb-sheet-card"><h2>Battle state</h2><p>${this.characterSheet.battle?.active ? `In battle: ${this.escapeHtml(this.characterSheet.battle.name)}` : 'Not currently in battle.'}</p></section>${wounds.map(item => `<article class="ccgb-sheet-card ccgb-wound is-${this.escapeHtml(item.severity)}"><h2>${this.escapeHtml(item.severity)} wound</h2><p>${this.escapeHtml(item.note || 'No details recorded.')}</p><small>${this.escapeHtml(item.created_at || '')}</small></article>`).join('') || '<p class="ccgb-empty-result">No campaign wounds.</p>'}`;
     }
 
     renderAttributesPanel(content) {
       content.className = 'ccgb-panel-grid ccgb-attributes-panel';
-      const summary = this.board && this.board.character_attributes;
+      const summary = (this.characterSheet && this.characterSheet.attributes) || (this.board && this.board.character_attributes);
       if (!summary) {
         const linked = Boolean(this.characterId);
         content.innerHTML = `
@@ -684,24 +867,24 @@
       };
       const abilityGroups = abilityOrder.map(ability => `
         <div class="ccgb-roll-group">
-          <span class="ccgb-roll-pill is-ability">
+          <button class="ccgb-roll-pill is-ability" data-roll-type="ability" data-target-id="${escapeHtml(ability)}" title="Roll ${escapeHtml(ability)}">
             <span>${escapeHtml(ability)}</span><strong>${Number(abilities.get(ability) || 0)}</strong>
-          </span>
+          </button>
           <div class="ccgb-skill-pills">
             ${(skillsByAbility[ability] || []).map(skill => `
-              <span class="ccgb-roll-pill is-skill">
+              <button class="ccgb-roll-pill is-skill" data-roll-type="skill" data-target-id="${escapeHtml(skill)}" title="Roll ${escapeHtml(skill)}">
                 <span>${escapeHtml(skill)}</span><strong>${Number(skills.get(skill) || 0)}</strong>
-              </span>`).join('')}
+              </button>`).join('')}
           </div>
         </div>`).join('');
       const characteristicPills = (summary.characteristics || []).map(item => `
-        <span class="ccgb-roll-pill is-characteristic">
+        <button class="ccgb-roll-pill is-characteristic" data-roll-type="characteristic" data-target-id="${escapeHtml(item.name)}" title="Roll ${escapeHtml(item.name)}">
           <span>${escapeHtml(item.name)}</span><strong>${Math.max(1, Math.min(5, Number(item.dice) || 1))}d10</strong>
-        </span>`).join('');
+        </button>`).join('');
       const parentalPills = (summary.parental_values || []).map(item => `
-        <span class="ccgb-roll-pill is-parental">
+        <button class="ccgb-roll-pill is-parental" data-roll-type="parental" data-target-id="${escapeHtml(item.name)}" title="Roll ${escapeHtml(item.name)}">
           <span>${escapeHtml(item.name)}</span><strong>${Number(item.value) || 0}</strong>
-        </span>`).join('');
+        </button>`).join('');
       const traitPills = (summary.traits || []).length
         ? summary.traits.map(trait => `<span class="ccgb-roll-pill is-trait">${escapeHtml(trait)}</span>`).join('')
         : '<p class="ccgb-no-rolls">No traits recorded.</p>';
@@ -727,6 +910,7 @@
             </section>
           </div>
         </div>`;
+      this.bindRollButtons(content);
     }
 
     async assetUrl(assetId) {

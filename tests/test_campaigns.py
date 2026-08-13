@@ -32,6 +32,8 @@ class CampaignTests(unittest.TestCase):
 
     def test_campaign_create_update_and_delete_use_shared_storage(self):
         created = self.repository.save_campaign("First Campaign", "-3100-01-09")
+        self.assertEqual(created["history_policy"], "keep")
+        self.assertEqual(created["events"], [])
         self.assertEqual(created["game_world_start_date"], "-3100-01-09")
         updated = self.repository.save_campaign(
             "Renamed Campaign", "1943-09-01", created["record_id"]
@@ -68,6 +70,23 @@ class CampaignTests(unittest.TestCase):
             normalize_board_camera({"zoom": 33, "center_x": 0.5, "center_y": 0.5})
         with self.assertRaises(ValueError):
             normalize_board_camera({"zoom": 2, "center_x": -0.1, "center_y": 0.5})
+
+    def test_campaign_events_are_appended_without_copying_world_history(self):
+        campaign = self.repository.save_campaign(
+            "Branch Campaign", "2000-01-01", history_policy="discard"
+        )
+        event = self.repository.add_event(
+            campaign["record_id"],
+            "add_wound",
+            "2000-02-03",
+            event_time="14:15",
+            details={"person_ids": ["person-1"], "severity": "light"},
+        )
+        stored = self.repository.get(campaign["record_id"])
+        self.assertEqual(stored["history_policy"], "discard")
+        self.assertEqual(stored["events"], [event])
+        self.assertEqual(event["person_ids"], ["person-1"])
+        self.assertNotIn("world_events", stored)
 
 
 if __name__ == "__main__":

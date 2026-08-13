@@ -73,6 +73,7 @@ def normalize_job_event_metadata(event):
     normalized["organization_name"] = str(
         normalized.get("organization_name", "") or ""
     ).strip()
+
     normalized["organization_job_id"] = str(
         normalized.get("organization_job_id", "") or ""
     ).strip()
@@ -129,6 +130,64 @@ def normalize_job_event_metadata(event):
     return normalized
 
 
+def normalize_character_control_event_metadata(event):
+    """Retain and validate typed knowledge and creature links on any event."""
+
+    normalized = deepcopy(event) if isinstance(event, dict) else {}
+    event_type = canonical_event_type(normalized.get("event_type"))
+    teaching_collections = {
+        "taught_spell": ("spells",),
+        "taught_proficiency": ("proficiencies",),
+        "taught_recipe": (
+            "potions",
+            "preparations",
+            "foods_and_drinks",
+        ),
+    }
+    if event_type in teaching_collections:
+        normalized["knowledge_record_id"] = str(
+            normalized.get("knowledge_record_id", "") or ""
+        ).strip()
+        normalized["knowledge_collection"] = str(
+            normalized.get("knowledge_collection", "") or ""
+        ).strip()
+        normalized["knowledge_name"] = " ".join(
+            str(normalized.get("knowledge_name", "") or "").strip().split()
+        )
+        if not normalized["knowledge_record_id"]:
+            raise ValueError("A teaching event needs a linked record.")
+        if (
+            normalized["knowledge_collection"]
+            and normalized["knowledge_collection"]
+            not in teaching_collections[event_type]
+        ):
+            raise ValueError("The taught record uses the wrong collection.")
+    else:
+        normalized.pop("knowledge_record_id", None)
+        normalized.pop("knowledge_collection", None)
+        normalized.pop("knowledge_name", None)
+
+    if event_type in (
+        "tamed_creature",
+        "bonded_creature",
+        "irked_creature",
+    ):
+        normalized["named_creature_id"] = str(
+            normalized.get("named_creature_id", "") or ""
+        ).strip()
+        normalized["named_creature_name"] = " ".join(
+            str(normalized.get("named_creature_name", "") or "").strip().split()
+        )
+        if not normalized["named_creature_id"]:
+            raise ValueError(
+                "A creature-relationship event needs a named creature."
+            )
+    else:
+        normalized.pop("named_creature_id", None)
+        normalized.pop("named_creature_name", None)
+    return normalized
+
+
 def normalize_world_event(event):
     if not isinstance(event, dict):
         raise TypeError("Every event must be an object.")
@@ -141,6 +200,7 @@ def normalize_world_event(event):
         normalized.get("event_type") or "other"
     )
     normalized = normalize_job_event_metadata(normalized)
+    normalized = normalize_character_control_event_metadata(normalized)
     normalized["title"] = " ".join(
         str(normalized.get("title", "") or "").strip().split()
     )

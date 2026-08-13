@@ -7,6 +7,55 @@ from .board import validate_world_board
 from .campaigns import validate_campaigns
 
 
+TEACHING_EVENT_TYPES = {
+    "taught_spell": ("spells",),
+    "taught_proficiency": ("proficiencies",),
+    "taught_recipe": ("potions", "preparations", "foods_and_drinks"),
+}
+CREATURE_RELATIONSHIP_EVENT_TYPES = {
+    "tamed_creature", "bonded_creature", "irked_creature"
+}
+
+
+def _validate_world_character_control_links(data: dict[str, Any]) -> None:
+    named_creatures = data.get("named_creatures", []) or []
+    _validate_record_list(named_creatures, "named_creatures")
+    creature_ids = {str(item["record_id"]) for item in named_creatures}
+    for index, creature in enumerate(named_creatures):
+        species_id = str(
+            creature.get("species_record_id")
+            or creature.get("creature_species_id")
+            or ""
+        ).strip()
+        if not str(creature.get("name", "") or "").strip() or not species_id:
+            raise DataValidationError(
+                f"named_creatures[{index}] requires a name and creature-species record ID"
+            )
+    for index, event in enumerate(data.get("events", []) or []):
+        event_type = str(event.get("event_type", "") or "")
+        if event_type in TEACHING_EVENT_TYPES:
+            record_id = str(
+                event.get("knowledge_record_id")
+                or event.get("target_record_id")
+                or ""
+            ).strip()
+            collection = str(event.get("knowledge_collection", "") or "").strip()
+            if not record_id:
+                raise DataValidationError(
+                    f"events[{index}] {event_type} requires a stable taught-record ID"
+                )
+            if collection and collection not in TEACHING_EVENT_TYPES[event_type]:
+                raise DataValidationError(
+                    f"events[{index}] taught record uses the wrong collection"
+                )
+        if event_type in CREATURE_RELATIONSHIP_EVENT_TYPES:
+            creature_id = str(event.get("named_creature_id", "") or "").strip()
+            if not creature_id or creature_id not in creature_ids:
+                raise DataValidationError(
+                    f"events[{index}] references an unknown named creature"
+                )
+
+
 REQUIRED_COLLECTIONS = {
     "db.json": {"wand_woods", "wand_cores", "wands", "books", "spells"},
     "world.json": {"people", "locations", "organizations", "events"},
@@ -53,6 +102,7 @@ def validate_document(filename: str, data: Any) -> None:
         if filename == "world.json":
             try:
                 validate_world_board(data)
+                _validate_world_character_control_links(data)
             except (TypeError, ValueError) as error:
                 raise DataValidationError(str(error)) from error
     elif filename == "periods.json":

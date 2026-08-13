@@ -15,6 +15,9 @@ GAME_WORLD_DATE = re.compile(
     r"^(?P<year>-?[1-9]\d*)-(?P<month>\d{2})-(?P<day>\d{2})$"
 )
 GAME_WORLD_DATETIME = re.compile(r"^-?[1-9]\d*-\d{2}-\d{2}T\d{2}:\d{2}$")
+HISTORY_KEEP = "keep"
+HISTORY_DISCARD = "discard"
+HISTORY_POLICIES = {HISTORY_KEEP, HISTORY_DISCARD}
 
 LEGACY_GENERATED_ZOOM_TIERS = {
     "0": {"token_size": 0, "nameplate_size": 11},
@@ -302,7 +305,43 @@ def normalize_campaign(value: Any) -> dict[str, Any]:
         ),
         "created_at": str(value.get("created_at", "") or "").strip(),
         "last_updated": str(value.get("last_updated", "") or "").strip(),
+        "history_policy": str(value.get("history_policy", HISTORY_KEEP) or HISTORY_KEEP)
+        .strip()
+        .casefold(),
     })
+    if result["history_policy"] not in HISTORY_POLICIES:
+        raise ValueError("Campaign history policy must keep or discard later world history")
+    raw_events = value.get("events", []) or []
+    if not isinstance(raw_events, list):
+        raise ValueError("Campaign events must be a list")
+    events: list[dict[str, Any]] = []
+    event_ids: set[str] = set()
+    for raw_event in raw_events:
+        if not isinstance(raw_event, dict):
+            raise ValueError("Every campaign event must be an object")
+        event = deepcopy(raw_event)
+        record_id = str(event.get("record_id", "") or "").strip()
+        event_type = str(event.get("event_type", "") or "").strip()
+        event_date = str(event.get("date", "") or "").strip()
+        if not record_id or record_id in event_ids:
+            raise ValueError("Campaign event IDs must be present and unique")
+        if not event_type:
+            raise ValueError("Every campaign event requires a type")
+        # Campaign events use the same historical date representation as the
+        # campaign clock. A time is optional but, when supplied, must be valid.
+        normalize_game_world_date(event_date)
+        event_time = str(event.get("time", "") or "").strip()
+        if event_time and not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", event_time):
+            raise ValueError("Campaign event time must use a 24-hour HH:MM value")
+        event.update({
+            "record_id": record_id,
+            "event_type": event_type,
+            "date": event_date,
+            "time": event_time,
+        })
+        event_ids.add(record_id)
+        events.append(event)
+    result["events"] = events
     result["game_state"] = normalize_campaign_game_state(
         value.get("game_state"), result["game_world_start_date"]
     )
@@ -460,11 +499,51 @@ class CampaignRepository:
             raise RuntimeError("The campaign changed elsewhere; reload before saving")
         return normalize_campaign(campaign)
 
+    def add_event(
+        self,
+        campaign_id: str,
+        event_type: str,
+        event_date: str,
+        *,
+        event_time: str = "",
+        details: dict[str, Any] | None = None,
+        app_id: str = "game-board",
+    ) -> dict[str, Any]:
+        """Append one campaign-only dated event without changing world.json."""
+
+        session = self.store.load("campaign.json")
+        campaign = next(
+            (
+                item for item in session.data["campaigns"]
+                if item.get("record_id") == campaign_id
+            ),
+            None,
+        )
+        if campaign is None:
+            raise KeyError("Unknown campaign")
+        event = deepcopy(details) if isinstance(details, dict) else {}
+        event.update({
+            "record_id": str(uuid4()),
+            "event_type": str(event_type or "").strip(),
+            "date": normalize_game_world_date(event_date),
+            "time": str(event_time or "").strip(),
+        })
+        campaign.setdefault("events", []).append(event)
+        campaign["last_updated"] = utc_now()
+        normalized = normalize_campaign(campaign)
+        campaign.clear()
+        campaign.update(normalized)
+        outcome = self.store.save(session, app_id)
+        if not outcome.saved:
+            raise RuntimeError("The campaign changed elsewhere; reload before saving")
+        return deepcopy(event)
+
     def save_campaign(
         self,
         name: str,
         game_world_start_date: str,
         campaign_id: str | None = None,
+        history_policy: str | None = None,
     ) -> dict[str, Any]:
         session = self.store.load("campaign.json")
         now = utc_now()
@@ -488,6 +567,12 @@ class CampaignRepository:
         campaign.update({
             "name": str(name or "").strip(),
             "game_world_start_date": game_world_start_date,
+            "history_policy": str(
+                history_policy
+                if history_policy is not None
+                else campaign.get("history_policy", HISTORY_KEEP)
+            ).strip().casefold(),
+            "events": deepcopy(campaign.get("events", []) or []),
             "last_updated": now,
         })
         normalized = normalize_campaign(campaign)

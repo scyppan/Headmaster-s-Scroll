@@ -117,6 +117,7 @@ class MageMakerApp(tk.Tk):
             self.people_controller.create_person,
             self.people_controller.list_mage_groups,
             self.people_controller.list_people_summaries,
+            self.game_database,
         )
 
         ownership_changed = (
@@ -232,6 +233,7 @@ class MageMakerApp(tk.Tk):
             ("organizations", "Organizations", 144),
             ("items", "Items", 96),
             ("books", "Books", 96),
+            ("creatures", "Named Creatures", 150),
             ("settings", "Settings", 104),
         ):
             button = SoftButton(
@@ -358,6 +360,16 @@ class MageMakerApp(tk.Tk):
                     self.set_status,
                     self.refresh_cross_page_data,
                     auto_refresh=False,
+                )
+            elif page_name == "creatures":
+                from mage_maker.sections.creatures.page import NamedCreaturesPage
+
+                page = NamedCreaturesPage(
+                    self.content,
+                    self.database,
+                    self.game_database,
+                    self.set_status,
+                    self.refresh_cross_page_data,
                 )
             elif page_name == "settings":
                 from mage_maker.sections.settings.page import SettingsPage

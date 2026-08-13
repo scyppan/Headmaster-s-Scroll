@@ -33,6 +33,19 @@ GAME_DATE = re.compile(
     r"^(?P<year>-?[1-9]\d*)(?:-(?P<month>\d{2})(?:-(?P<day>\d{2}))?)?"
 )
 EVENT_EMINENCE_PREFIX = "event-eminence-"
+TRAIT_SKILL_BONUSES = {
+    "Star gazer": ("Astronomy", 3),
+    "Bookworm": ("History", 3),
+    "Animal lover": ("Creatures", 1),
+    "People person": ("Social", 1),
+    "Clairvoyant": ("Divination", 3),
+    "Navigator": ("Flying", 2),
+    "Observant": ("Perception", 1),
+    "Green thumb": ("Herbology", 3),
+    "Curious": ("Arithmancy", 1),
+    "Inventive": ("Artificing", 1),
+    "Runologist": ("Runes", 2),
+}
 
 
 def _historical_year_shift(year: int, amount: int) -> int:
@@ -251,11 +264,69 @@ def _earned_eminence(
     return counts
 
 
+def _number(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _named_modifier_sources(
+    sources: Iterable[dict[str, Any]], collection: str, name: str
+) -> Counter[str]:
+    """Collect optional equipment/temporary roll modifiers without exposing data.
+
+    World Builder records and campaign state can both contribute to the same
+    private projection.  The normalized ``roll_modifiers`` contract is used by
+    new records, while the two older top-level names remain readable.
+    """
+
+    aliases = {
+        "wand": ("wand", "wandbonus", "wand_bonus"),
+        "accessories": ("accessories", "accessory", "accessory_bonus"),
+        "passive": ("passive", "passive_bonus"),
+        "temporary": ("temporary", "temporary_bonus", "temp_bonus"),
+        "wand_quality": ("wand_quality", "wandquality"),
+        "trait_bonus": ("trait_bonus", "trait"),
+        "background": ("background", "background_bonus"),
+    }
+    result: Counter[str] = Counter()
+    collection_aliases = tuple(dict.fromkeys((
+        collection,
+        "attributes" if collection == "abilities" else collection,
+    )))
+    legacy_key = "attribute_modifiers" if collection == "abilities" else "skill_modifiers"
+    for source in sources:
+        if not isinstance(source, dict):
+            continue
+        candidates: list[Any] = []
+        roll_modifiers = source.get("roll_modifiers")
+        if isinstance(roll_modifiers, dict):
+            for key in collection_aliases:
+                bucket = roll_modifiers.get(key)
+                if isinstance(bucket, dict):
+                    candidates.append(bucket.get(name, bucket.get(name.casefold())))
+        legacy = source.get(legacy_key)
+        if isinstance(legacy, dict):
+            candidates.append(legacy.get(name, legacy.get(name.casefold())))
+        for candidate in candidates:
+            if isinstance(candidate, (int, float, str)):
+                result["temporary"] += _number(candidate)
+                continue
+            if not isinstance(candidate, dict):
+                continue
+            for normalized, keys in aliases.items():
+                value = next((candidate[key] for key in keys if key in candidate), 0)
+                result[normalized] += _number(value)
+    return result
+
+
 def calculate_character_attributes(
     person: dict[str, Any],
     world: dict[str, Any],
     database: dict[str, Any],
     game_datetime: str,
+    campaign_person: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build the private, date-aware player Attributes panel payload."""
 
@@ -358,37 +429,96 @@ def calculate_character_attributes(
     traits = []
     if isinstance(initial, dict):
         traits = [str(item).strip() for item in initial.get("traits", []) or [] if str(item).strip()]
+    trait_skill_bonuses: Counter[str] = Counter()
+    for trait in traits:
+        definition = TRAIT_SKILL_BONUSES.get(trait)
+        if definition:
+            trait_skill_bonuses[definition[0]] += definition[1]
+
+    modifier_sources = (person, campaign_person or {})
+    ability_records = []
+    for ability in ABILITY_NAMES:
+        modifiers = _named_modifier_sources(modifier_sources, "abilities", ability)
+        base = int(ability_values[ability])
+        bonus = sum(modifiers[key] for key in ("wand", "accessories", "passive", "temporary"))
+        ability_records.append({
+            "name": ability,
+            "value": base,
+            "bonus": int(bonus),
+            "total": base + int(bonus),
+            "breakdown": {
+                "base": base,
+                "wand": int(modifiers["wand"]),
+                "accessories": int(modifiers["accessories"]),
+                "passive": int(modifiers["passive"]),
+                "temporary": int(modifiers["temporary"]),
+            },
+        })
+
+    skill_records = []
+    spell_skills = {"Charms", "Dark Arts", "Defense", "Transfiguration"}
+    for skill in SKILL_NAMES:
+        modifiers = _named_modifier_sources(modifier_sources, "skills", skill)
+        buys = int(skill_sources[skill]["initial_buys"] + skill_sources[skill]["developmental_buys"])
+        background = int(modifiers["background"])
+        if skill == "Muggles" and not background:
+            blood_status = str(person.get("blood_status") or person.get("bloodstatus") or "").casefold()
+            if blood_status in {"muggleborn", "muggle-raised halfblood"}:
+                background = 10
+        trait_bonus = int(modifiers["trait_bonus"] or trait_skill_bonuses[skill])
+        base = int(skill_values[skill]) + background + trait_bonus
+        wand_quality = int(modifiers["wand_quality"]) if skill in spell_skills else 0
+        bonus = sum(modifiers[key] for key in ("wand", "accessories", "passive", "temporary")) + wand_quality
+        breakdown = {
+            "background": background,
+            "buys": buys,
+            "core_courses": int(skill_sources[skill]["core_courses"]),
+            "elective_courses": int(skill_sources[skill]["elective_courses"]),
+            "trait_bonus": trait_bonus,
+            "wand": int(modifiers["wand"]),
+            "accessories": int(modifiers["accessories"]),
+            "eminence": int(skill_sources[skill]["eminence"]),
+            "wand_quality": wand_quality,
+            "passive": int(modifiers["passive"]),
+            "temporary": int(modifiers["temporary"]),
+            "base": base,
+            "total": base + int(bonus),
+        }
+        labels = (
+            ("Background", "background"),
+            ("Buys", "buys"),
+            ("Core courses", "core_courses"),
+            ("Elective courses", "elective_courses"),
+            ("Trait bonus", "trait_bonus"),
+            ("Wand", "wand"),
+            ("Accessories", "accessories"),
+            ("Eminence", "eminence"),
+            ("Wand quality", "wand_quality"),
+            ("Passive", "passive"),
+            ("Temporary", "temporary"),
+        )
+        skill_records.append({
+            "name": skill,
+            "value": base,
+            "bonus": int(bonus),
+            "total": base + int(bonus),
+            "breakdown": breakdown,
+            # Every source is intentionally present, including zeroes.  The
+            # legacy Character Controls tooltip used this complete ledger.
+            "sources": [
+                {"label": label, "points": int(breakdown[key])}
+                for label, key in labels
+                if not (key == "background" and skill != "Muggles")
+                and not (key == "wand_quality" and skill not in spell_skills)
+            ],
+        })
 
     return {
         "character_id": str(person.get("record_id", "") or ""),
         "character_name": str(person.get("displayed_name", "") or ""),
         "as_of": game_datetime,
-        "attributes": [
-            {"name": ability, "value": ability_values[ability]}
-            for ability in ABILITY_NAMES
-        ],
-        "skills": [
-            {
-                "name": skill,
-                "value": int(skill_values[skill]),
-                "breakdown": {
-                    **dict(skill_sources[skill]),
-                    "total": int(skill_values[skill]),
-                },
-                "sources": [
-                    {"label": label, "points": int(points)}
-                    for label, points in (
-                        ("Initial buys", skill_sources[skill]["initial_buys"]),
-                        ("Developmental buys", skill_sources[skill]["developmental_buys"]),
-                        ("Core courses", skill_sources[skill]["core_courses"]),
-                        ("Chosen electives", skill_sources[skill]["elective_courses"]),
-                        ("Eminence", skill_sources[skill]["eminence"]),
-                    )
-                    if points
-                ],
-            }
-            for skill in SKILL_NAMES
-        ],
+        "attributes": ability_records,
+        "skills": skill_records,
         "characteristics": characteristic_values,
         "parental_values": parental_values,
         "traits": traits,

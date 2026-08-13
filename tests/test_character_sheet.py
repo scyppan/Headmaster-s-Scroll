@@ -90,6 +90,12 @@ class CharacterSheetTests(unittest.TestCase):
         self.assertEqual(sheet["pets"][0]["species"]["classification"], "Beast")
         self.assertEqual(sheet["relationships"][0]["type"], "Friendship")
 
+    def test_overview_age_is_calculated_at_campaign_date(self):
+        sheet = build_character_sheet(
+            self.person, self.world, self.database, self.campaign("2026-08-13T08:00")
+        )
+        self.assertEqual(sheet["overview"]["age"], 26)
+
     def test_server_roll_uses_sheet_values_and_critical_rules(self):
         sheet = build_character_sheet(self.person, self.world, self.database, self.campaign("2006-01-01T08:00"))
         result = perform_character_roll(sheet, "spell", "spell-1", roller=lambda _a, _b: 10)

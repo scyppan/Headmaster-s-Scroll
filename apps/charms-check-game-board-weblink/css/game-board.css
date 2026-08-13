@@ -527,7 +527,17 @@
 #gameboard .ccgb-wound.is-heavy { border-left: 7px solid #a82f28; }
 #gameboard .ccgb-history-list { white-space: pre-wrap; }
 #gameboard .ccgb-roll-details { border-top: 1px solid #d0b476; font-size: 12px; margin-top: 5px; padding-top: 4px; }
-#gameboard .ccgb-roll-details summary { cursor: pointer; }
+#gameboard .ccgb-roll-details summary {
+  background: #ead18c;
+  border: 1px solid #8f532f;
+  border-radius: 999px;
+  cursor: pointer;
+  display: inline-flex;
+  font-weight: 800;
+  padding: 2px 8px;
+}
+#gameboard .ccgb-roll-details summary:hover,
+#gameboard .ccgb-roll-details summary:focus-visible { background: #d8b85e; }
 #gameboard .ccgb-roll-object { display: grid; gap: 5px; padding-top: 6px; }
 #gameboard .ccgb-roll-dice { display: flex; flex-wrap: wrap; gap: 5px; }
 #gameboard .ccgb-roll-die {

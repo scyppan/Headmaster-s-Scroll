@@ -327,6 +327,26 @@ def _overview_eminence(person: dict[str, Any]) -> int:
     return total
 
 
+def _age_at(person: dict[str, Any], current: tuple[int, int, int]) -> int | None:
+    try:
+        birth = (
+            int(person.get("birth_year")),
+            int(person.get("birth_month") or 1),
+            int(person.get("birth_day") or 1),
+        )
+    except (TypeError, ValueError):
+        return None
+    if birth > current:
+        return None
+    years = current[0] - birth[0]
+    # Historical calendars have no year zero.
+    if birth[0] < 0 < current[0]:
+        years -= 1
+    if (current[1], current[2]) < (birth[1], birth[2]):
+        years -= 1
+    return max(0, years)
+
+
 def _inventory(person_id: str, world: dict[str, Any], current: tuple[int, int, int]) -> list[dict[str, Any]]:
     owned: list[dict[str, Any]] = []
     for item in world.get("items", []) or []:
@@ -358,9 +378,11 @@ def build_character_sheet(
     events = effective_campaign_events(world, campaign)
     effective_world = deepcopy(world)
     effective_world["events"] = events
-    attributes = calculate_character_attributes(person, effective_world, database, game_datetime)
-    knowledge = _knowledge(person_id, world, database, campaign, events)
     campaign_person = (campaign.get("game_state", {}).get("people", {}) or {}).get(person_id, {})
+    attributes = calculate_character_attributes(
+        person, effective_world, database, game_datetime, campaign_person
+    )
+    knowledge = _knowledge(person_id, world, database, campaign, events)
     birth_parts = [person.get("birth_year"), person.get("birth_month"), person.get("birth_day")]
     try:
         birth_display = (
@@ -379,6 +401,7 @@ def build_character_sheet(
             "name": str(person.get("displayed_name") or ""),
             "portrait_asset_id": str(portrait.get("asset_id") or ""),
             "birth": birth_display,
+            "age": _age_at(person, current),
             "school": str(person.get("school") or ""),
             "canon": bool(person.get("canon", False)),
             "narrative": str(person.get("narrative") or person.get("notes") or ""),

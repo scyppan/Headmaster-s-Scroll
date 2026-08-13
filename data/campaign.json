@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "_headmasters_scroll": {
-    "revision_id": "5d3186c3-135b-43d3-9e04-c63a0cc10667",
-    "last_modified_at": "2026-08-13T10:25:18.456006Z",
+    "revision_id": "ffe737b5-c72f-40df-a8e2-1aa0791b774e",
+    "last_modified_at": "2026-08-13T10:34:49.766411Z",
     "last_modified_by": "game-board"
   },
   "campaigns": [
@@ -11,7 +11,7 @@
       "created_at": "2026-08-11T08:19:23.069609Z",
       "name": "Test camp",
       "game_world_start_date": "2000-08-27",
-      "last_updated": "2026-08-13T10:25:18.452284Z",
+      "last_updated": "2026-08-13T10:34:49.761989Z",
       "game_state": {
         "initialized": true,
         "current_game_datetime": "2000-08-27T08:00",
@@ -224,15 +224,15 @@
             "token_scale": 0.0055,
             "start_point": null,
             "headmaster_camera": {
-              "zoom": 13.834483069169817,
-              "center_x": 0.8408346702789764,
-              "center_y": 0.5471599361607694
+              "zoom": 5.200894613889844,
+              "center_x": 0.8431264827684976,
+              "center_y": 0.49873553561257594
             },
             "player_cameras": {
               "6ca9e551-e305-4c3c-a763-d2ff9a13afff": {
-                "zoom": 10.761264004567169,
-                "center_x": 0.6075593541825834,
-                "center_y": 0.5129925488399943
+                "zoom": 3.5178762919199196,
+                "center_x": 0.7746879244181573,
+                "center_y": 0.5558409528695633
               }
             },
             "zoom_profile": {
@@ -948,8 +948,8 @@
             "faction_revealed": true,
             "faction_organization_id": "c4cbf003-ab52-4da7-b341-e2cea0e34062",
             "label_offset": {
-              "x": 8.001944837528197e-05,
-              "y": 0.0010419867917647527
+              "x": -0.00046661019382123836,
+              "y": 0.011251605911420857
             },
             "nameplate_scale": 0.9,
             "wounds": [],

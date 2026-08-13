@@ -558,11 +558,13 @@
     updatePlayerIdentity(fallback = '') {
       const overview = this.characterSheet?.overview;
       const name = overview?.name || fallback || this.element('player').textContent || 'Player';
+      const age = Number(overview?.age);
       const eminence = Number(overview?.eminence);
-      this.element('player').textContent = Number.isFinite(eminence) ? `${name} (${eminence})` : name;
-      const birth = this.element('player-birth');
-      birth.textContent = overview?.birth ? `b. ${overview.birth}` : '';
-      birth.hidden = !birth.textContent;
+      const hasAge = overview?.age !== null && overview?.age !== undefined && Number.isFinite(age);
+      this.element('player').textContent = hasAge ? `${name} (${age})` : name;
+      const detail = this.element('player-birth');
+      detail.textContent = Number.isFinite(eminence) && eminence > 0 ? `Eminence: ${eminence}` : '';
+      detail.hidden = !detail.textContent;
     }
 
     sendChat() {
@@ -624,6 +626,9 @@
           const details = document.createElement('details');
           details.className = 'ccgb-roll-details';
           const summary = document.createElement('summary');
+          summary.className = 'ccgb-roll-result';
+          summary.title = `${message.activity.target_name || 'Roll'}\n${message.activity.formula || ''}\nClick to inspect the dice and every modifier`;
+          summary.textContent = `🎲 ${Number(message.activity.total || 0)}`;
           summary.textContent = `${message.activity.target_name || 'Roll'} · ${Number(message.activity.total || 0)}`;
           const body = document.createElement('div');
           body.className = 'ccgb-roll-object';
@@ -773,45 +778,6 @@
     requestRoll(rollType, targetId) {
       if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
         this.showChatNotice('Rolls are unavailable while disconnected.');
-        return;
-      }
-      if (['ability', 'skill', 'characteristic', 'parental'].includes(rollType)) {
-        const attributes = this.characterSheet?.attributes || this.board?.character_attributes;
-        if (!attributes) {
-          this.showChatNotice('Your character values are still loading.');
-          return;
-        }
-        const collections = {
-          ability: attributes.attributes || [],
-          skill: attributes.skills || [],
-          characteristic: attributes.characteristics || [],
-          parental: attributes.parental_values || []
-        };
-        const record = collections[rollType].find(item => item.name === targetId);
-        if (!record) {
-          this.showChatNotice(`No value is available for ${targetId}.`);
-          return;
-        }
-        const die = () => {
-          if (window.crypto?.getRandomValues) {
-            const value = new Uint32Array(1);
-            window.crypto.getRandomValues(value);
-            return (value[0] % 10) + 1;
-          }
-          return Math.floor(Math.random() * 10) + 1;
-        };
-        let text;
-        if (rollType === 'characteristic') {
-          const count = Math.max(1, Math.min(5, Number(record.dice) || 1));
-          const dice = Array.from({ length: count }, die);
-          text = `rolled ${targetId}: ${dice.join(', ')} (${dice.reduce((sum, value) => sum + value, 0)} total).`;
-        } else {
-          const roll = die();
-          const bonus = Number(record.value) || 0;
-          const critical = roll === 1 ? ' Critical failure.' : (roll === 10 ? ' Critical success.' : '');
-          text = `rolled ${targetId}: ${roll} + ${bonus} = ${roll + bonus}.${critical}`;
-        }
-        this.send({ v: VERSION, type: 'chat_message', message: text });
         return;
       }
       this.send({ v: VERSION, type: 'character_roll_request', roll_type: rollType, target_id: targetId });
@@ -971,19 +937,27 @@
         .replaceAll('>', '&gt;')
         .replaceAll('"', '&quot;')
         .replaceAll("'", '&#039;');
-      const abilities = new Map((summary.attributes || []).map(item => [item.name, item.value]));
+      const abilityRecords = new Map((summary.attributes || []).map(item => [item.name, item]));
       const skillRecords = new Map((summary.skills || []).map(item => [item.name, item]));
-      const skills = new Map((summary.skills || []).map(item => [item.name, item.value]));
+      const statText = record => {
+        const base = Number(record?.value || 0);
+        const bonus = Number(record?.bonus || 0);
+        return `${base}${bonus ? ` (${bonus > 0 ? '+' : ''}${bonus})` : ''}`;
+      };
+      const abilityTitle = ability => {
+        const breakdown = abilityRecords.get(ability)?.breakdown || {};
+        return [
+          `Base: ${Number(breakdown.base || 0)}`,
+          `Wand: ${Number(breakdown.wand || 0)}`,
+          `Accessories: ${Number(breakdown.accessories || 0)}`,
+          `Passive: ${Number(breakdown.passive || 0)}`,
+          `Temporary: ${Number(breakdown.temporary || 0)}`
+        ].join('\n');
+      };
       const skillTitle = skill => {
         const record = skillRecords.get(skill) || {};
         const sources = Array.isArray(record.sources) ? record.sources : [];
-        const lines = [`${skill}: ${Number(record.value || 0)}`];
-        if (sources.length) {
-          sources.forEach(source => lines.push(`${source.label}: ${Number(source.points || 0)}`));
-        } else {
-          lines.push('No points earned yet.');
-        }
-        return lines.join('\n');
+        return sources.map(source => `${source.label}: ${Number(source.points || 0)}`).join('\n');
       };
       const abilityOrder = ['Power', 'Erudition', 'Panache', 'Naturalism'];
       const skillsByAbility = {
@@ -994,13 +968,13 @@
       };
       const abilityGroups = abilityOrder.map(ability => `
         <div class="ccgb-roll-group">
-          <button class="ccgb-roll-pill is-ability" data-roll-type="ability" data-target-id="${escapeHtml(ability)}" title="Roll ${escapeHtml(ability)}">
-            <span>${escapeHtml(ability)}</span><strong>${Number(abilities.get(ability) || 0)}</strong>
+          <button class="ccgb-roll-pill is-ability" data-roll-type="ability" data-target-id="${escapeHtml(ability)}" title="${escapeHtml(abilityTitle(ability))}">
+            <span>${escapeHtml(ability)}</span><strong>${escapeHtml(statText(abilityRecords.get(ability)))}</strong>
           </button>
           <div class="ccgb-skill-pills">
             ${(skillsByAbility[ability] || []).map(skill => `
               <button class="ccgb-roll-pill is-skill" data-roll-type="skill" data-target-id="${escapeHtml(skill)}" title="${escapeHtml(skillTitle(skill))}">
-                <span>${escapeHtml(skill)}</span><strong>${Number(skills.get(skill) || 0)}</strong>
+                <span>${escapeHtml(skill)}</span><strong>${escapeHtml(statText(skillRecords.get(skill)))}</strong>
               </button>`).join('')}
           </div>
         </div>`).join('');

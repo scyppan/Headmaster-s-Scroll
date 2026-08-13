@@ -26,6 +26,10 @@ def _component(label: str, value: int, kind: str = "modifier") -> dict[str, Any]
     return {"label": label, "value": int(value), "kind": kind}
 
 
+def _roll_value(record: dict[str, Any]) -> int:
+    return int(record.get("total", record.get("value", 0)) or 0)
+
+
 def _roll_text(
     character_name: str,
     roll_type: str,
@@ -120,7 +124,7 @@ def perform_character_roll(
         if not target or target.get("name") != target_id:
             raise CharacterRollError("Unknown ability")
         target_name = target_id
-        bonus = int(target.get("value", 0))
+        bonus = _roll_value(target)
         dice = [_die(roller)]
         components = [_component("d10", dice[0], "die"), _component(target_name, bonus)]
     elif roll_type == "skill":
@@ -128,8 +132,8 @@ def perform_character_roll(
         if not target or target.get("name") != target_id:
             raise CharacterRollError("Unknown skill")
         ability_name = ability_for_skill(target_id)
-        skill_value = int(target.get("value", 0))
-        ability_value = int(_by_name(abilities, ability_name).get("value", 0))
+        skill_value = _roll_value(target)
+        ability_value = _roll_value(_by_name(abilities, ability_name))
         bonus = skill_value + ability_value
         target_name = target_id
         dice = [_die(roller)]
@@ -166,8 +170,8 @@ def perform_character_roll(
         target_name = str(target.get("name") or roll_type.title())
         skill_name = str(target.get("skill") or ("Potions" if roll_type == "recipe" else ""))
         ability_name = ability_for_skill(skill_name)
-        skill_value = int(_by_name(skills, skill_name).get("value", 0))
-        ability_value = int(_by_name(abilities, ability_name).get("value", 0))
+        skill_value = _roll_value(_by_name(skills, skill_name))
+        ability_value = _roll_value(_by_name(abilities, ability_name))
         bonus = skill_value + ability_value
         try:
             threshold = int(target.get("threshold"))

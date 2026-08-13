@@ -100,7 +100,7 @@ class CharacterAttributesTests(unittest.TestCase):
         self.assertEqual(after_skills["Charms"], 3)
         self.assertEqual(after_skills["Divination"], 1)
         self.assertEqual(after_skills["Creatures"], 0)  # offered, but not elected
-        self.assertEqual(after_skills["History"], 0)  # skipped year two
+        self.assertEqual(after_skills["History"], 3)  # Bookworm trait; skipped course grants nothing
 
     def test_attributes_eminence_characteristics_and_parental_values(self):
         summary = calculate_character_attributes(
@@ -125,21 +125,45 @@ class CharacterAttributesTests(unittest.TestCase):
         self.assertEqual(summary["traits"], ["Bookworm"])
         defense = next(item for item in summary["skills"] if item["name"] == "Defense")
         self.assertEqual(defense["breakdown"], {
-            "initial_buys": 0,
-            "developmental_buys": 2,
+            "background": 0,
+            "buys": 2,
             "core_courses": 1,
             "elective_courses": 0,
+            "trait_bonus": 0,
+            "wand": 0,
+            "accessories": 0,
             "eminence": 1,
+            "wand_quality": 0,
+            "passive": 0,
+            "temporary": 0,
+            "base": 4,
             "total": 4,
         })
-        self.assertEqual(
-            defense["sources"],
-            [
-                {"label": "Developmental buys", "points": 2},
-                {"label": "Core courses", "points": 1},
-                {"label": "Eminence", "points": 1},
-            ],
+        self.assertEqual([item["label"] for item in defense["sources"]], [
+            "Buys", "Core courses", "Elective courses", "Trait bonus", "Wand",
+            "Accessories", "Eminence", "Wand quality", "Passive", "Temporary",
+        ])
+        self.assertEqual(next(item for item in defense["sources"] if item["label"] == "Elective courses")["points"], 0)
+
+    def test_complete_hover_ledgers_and_parenthetical_modifiers(self):
+        person = dict(self.person)
+        person["roll_modifiers"] = {
+            "abilities": {"Power": {"wand": 2, "accessories": -1, "passive": 1}},
+            "skills": {"Charms": {"wand": 2, "temporary": 3}},
+        }
+        summary = calculate_character_attributes(
+            person, {"people": [person], "events": []}, self.database,
+            "2001-09-01T08:00",
         )
+        power = next(item for item in summary["attributes"] if item["name"] == "Power")
+        charms = next(item for item in summary["skills"] if item["name"] == "Charms")
+        self.assertEqual(power["breakdown"], {
+            "base": 2, "wand": 2, "accessories": -1, "passive": 1, "temporary": 0,
+        })
+        self.assertEqual((power["value"], power["bonus"], power["total"]), (2, 2, 4))
+        self.assertEqual((charms["bonus"], charms["total"]), (5, charms["value"] + 5))
+        self.assertTrue(all("points" in item for item in charms["sources"]))
+        self.assertIn({"label": "Accessories", "points": 0}, charms["sources"])
 
     def test_legacy_initial_skill_buys_supply_corresponding_abilities(self):
         person = dict(self.person)

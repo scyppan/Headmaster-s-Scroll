@@ -21,6 +21,7 @@ from ..board import (
     DEFAULT_MAP_TOKEN_SCALE,
     OFF_LIMITS_MESSAGE,
     WorldBoardRepository,
+    active_faction_ids,
     normalize_group,
     normalize_map,
     normalize_map_point,
@@ -1889,17 +1890,27 @@ class GameBoardService:
             campaign, document = self._campaign_document(session)
             if len(set(person_ids)) < 1:
                 raise ValueError("A board group requires at least one person")
-            existing = {
-                member.get("actor_id")
-                for group in document.get("board_groups", [])
-                for member in group.get("members", [])
-                if member.get("actor_type", "person") == "person"
-            }
             people = {str(item.get("record_id")): item for item in document.get("people", [])}
             for person_id in person_ids:
                 placement = normalize_person_board(people.get(person_id, {}).get("board")).get("placement") if person_id in people else None
-                if person_id not in people or person_id in existing or not placement or placement["location_id"] != location_id:
-                    raise ValueError("Every group member must be an ungrouped person at this location")
+                if person_id not in people or not placement or placement["location_id"] != location_id:
+                    raise ValueError("Every group member must be a person at this location")
+            # Assigning a group is a replacement operation.  Remove the chosen
+            # people from their old groups first instead of rejecting a normal
+            # "change group" action.
+            selected_ids = set(person_ids)
+            for group in document.get("board_groups", []):
+                group["members"] = [
+                    member for member in group.get("members", [])
+                    if not (
+                        member.get("actor_type", "person") == "person"
+                        and member.get("actor_id") in selected_ids
+                    )
+                ]
+            document["board_groups"] = [
+                group for group in document.get("board_groups", [])
+                if len(group.get("members", [])) >= 2
+            ]
             now = iso_utc(utc_now())
             group_data = {
                 "record_id": str(uuid4()),
@@ -1966,17 +1977,18 @@ class GameBoardService:
                 })
             game_datetime = str(campaign["game_state"]["current_game_datetime"])
             event_date, _, event_time = game_datetime.partition("T")
-            world_session.data.setdefault("events", []).append({
-                "record_id": str(uuid4()),
-                "event_type": "joined_faction",
-                "title": f"Joined {normalized_name}",
-                "date": event_date,
-                "time": event_time,
-                "description": "",
-                "person_ids": [person_id],
-                "organization_id": faction_id,
-                "organization_name": normalized_name,
-            })
+            if faction_id not in active_faction_ids(world_session.data, person_id, game_datetime):
+                world_session.data.setdefault("events", []).append({
+                    "record_id": str(uuid4()),
+                    "event_type": "joined_faction",
+                    "title": f"Joined {normalized_name}",
+                    "date": event_date,
+                    "time": event_time,
+                    "description": "",
+                    "person_ids": [person_id],
+                    "organization_id": faction_id,
+                    "organization_name": normalized_name,
+                })
             outcome = self.shared_store.save(world_session, "game-board")
             if not outcome.saved:
                 raise RuntimeError("World Builder data changed; refresh and try again")

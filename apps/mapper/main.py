@@ -205,12 +205,21 @@ class MapperWindow(tk.Tk):
         self.has_floors_value = tk.BooleanVar(value=False)
         self.image_value = tk.StringVar(value="No image")
         ttk.Label(details, textvariable=self.floor_value, style="MapperCard.TLabel", font=("Segoe UI", 9, "bold")).pack(anchor="w")
+        floor_controls = ttk.Frame(details)
+        floor_controls.pack(fill="x", pady=(4, 0))
         ttk.Checkbutton(
-            details,
+            floor_controls,
             text="Has floors",
             variable=self.has_floors_value,
             command=self.has_floors_changed,
-        ).pack(anchor="w", pady=(4, 0))
+        ).pack(side="left")
+        self.manage_floors_button = ttk.Button(
+            floor_controls,
+            text="Floors…",
+            width=8,
+            command=self.manage_floors,
+        )
+        self.manage_floors_button.pack(side="right")
         ttk.Label(details, textvariable=self.image_value, wraplength=250).pack(anchor="w", pady=(4, 2))
         buttons = ttk.Frame(details)
         buttons.pack(fill="x")
@@ -512,12 +521,19 @@ class MapperWindow(tk.Tk):
         self.selected_map_id = ""
         self.pending_image = None
         self.image_value.set("No image")
+        self._clear_map_specific_state()
+
+    def _clear_map_specific_state(self) -> None:
+        """Remove every visual and editing artifact owned by the prior map."""
+
         self.regions = []
         self.warp_points = []
         self._reset_editor()
         self.map_image = None
         self.tk_map_image = None
         self.tk_map_image_size = None
+        self.canvas.delete("all")
+        self.render_region_list()
         self.render_canvas()
 
     def select_catalog_item(self, _event: tk.Event | None = None) -> None:
@@ -556,6 +572,10 @@ class MapperWindow(tk.Tk):
             self.remember_catalog_selection()
 
     def load_map(self, record: dict) -> None:
+        # A map switch is a hard isolation boundary.  Clear the old map before
+        # copying in the new record so stale shapes, warps, selections, history,
+        # or cached image fragments can never bleed into the next location.
+        self._clear_map_specific_state()
         self.selected_map_id = str(record.get("record_id"))
         self.pending_image = None
         location_id = str(record.get("location_id", ""))
@@ -649,9 +669,121 @@ class MapperWindow(tk.Tk):
                 self.map_tree.selection_set(selected)
                 self.map_tree.see(selected)
             self.status_value.set("Floors enabled" if enabled else "Floors disabled")
+            if enabled and not location.get("floors"):
+                self.after_idle(self.manage_floors)
         except Exception as error:
             self.has_floors_value.set(bool(location.get("has_floors", False)))
             messagebox.showerror("Cannot update location", str(error), parent=self)
+
+    def manage_floors(self) -> None:
+        """Create stable floor records that become independently editable maps."""
+
+        location = next(
+            (item for item in self.locations if str(item.get("record_id")) == self.selected_location_id),
+            None,
+        )
+        if location is None:
+            messagebox.showinfo("Floors", "Select a location first.", parent=self)
+            return
+        if not self.has_floors_value.get():
+            self.has_floors_value.set(True)
+
+        current_floors = sorted(
+            deepcopy(location.get("floors", []) or []),
+            key=lambda item: int(item.get("sort_order", 0)),
+        )
+        dialog = tk.Toplevel(self)
+        dialog.title(f"Floors — {location.get('name', 'Location')}")
+        dialog.transient(self)
+        dialog.grab_set()
+        dialog.geometry("430x430")
+        dialog.minsize(360, 320)
+        body = ttk.Frame(dialog, padding=12)
+        body.pack(fill="both", expand=True)
+        heading = ttk.Frame(body)
+        heading.pack(fill="x")
+        ttk.Label(heading, text="Number of floors", font=("Segoe UI", 9, "bold")).pack(side="left")
+        count = tk.IntVar(value=max(1, len(current_floors)))
+        count_field = ttk.Spinbox(heading, from_=1, to=200, textvariable=count, width=7)
+        count_field.pack(side="right")
+        ttk.Label(
+            body,
+            text="Each floor appears beneath this location. Select it there to import, switch to, or edit its map.",
+            wraplength=390,
+        ).pack(fill="x", pady=(7, 8))
+        preview = tk.Listbox(body, height=12, exportselection=False)
+        preview.pack(fill="both", expand=True)
+
+        def render_preview(*_args: Any) -> None:
+            try:
+                requested = max(1, min(200, int(count.get())))
+            except (tk.TclError, ValueError):
+                return
+            preview.delete(0, "end")
+            for index in range(requested):
+                name = str(current_floors[index].get("name") or f"Floor {index + 1}") if index < len(current_floors) else f"Floor {index + 1}"
+                preview.insert("end", name)
+
+        count.trace_add("write", render_preview)
+        render_preview()
+
+        def save() -> None:
+            try:
+                requested = max(1, min(200, int(count.get())))
+            except (tk.TclError, ValueError):
+                messagebox.showerror("Floors", "Enter a number from 1 to 200.", parent=dialog)
+                return
+            removed = current_floors[requested:]
+            if any(str(floor.get("primary_map_id", "") or "") for floor in removed):
+                messagebox.showerror(
+                    "Floors",
+                    "A floor with an attached map cannot be removed. Remove or relocate that map first.",
+                    parent=dialog,
+                )
+                return
+            floors = current_floors[:requested]
+            while len(floors) < requested:
+                index = len(floors)
+                floors.append({
+                    "record_id": str(uuid4()),
+                    "name": f"Floor {index + 1}",
+                    "sort_order": index,
+                    "primary_map_id": "",
+                })
+            for index, floor in enumerate(floors):
+                floor["sort_order"] = index
+                floor.setdefault("primary_map_id", "")
+            try:
+                session = self.repository.load()
+                stored = next(
+                    item for item in session.data["locations"]
+                    if str(item.get("record_id")) == self.selected_location_id
+                )
+                stored["has_floors"] = True
+                stored["floors"] = floors
+                saved = self.repository.save(session, "mapper")
+                self.locations = sorted(
+                    saved.get("locations", []),
+                    key=lambda item: str(item.get("name", "")).casefold(),
+                )
+                self.has_floors_value.set(True)
+                self.render_catalog()
+                location_tree_id = f"location:{self.selected_location_id}"
+                if self.map_tree.exists(location_tree_id):
+                    self.map_tree.item(location_tree_id, open=True)
+                    self.map_tree.selection_set(location_tree_id)
+                    self.map_tree.see(location_tree_id)
+                self.render_completeness()
+                self.status_value.set(f"{requested} floor{'s' if requested != 1 else ''} ready for maps")
+                dialog.destroy()
+            except Exception as error:
+                messagebox.showerror("Cannot save floors", str(error), parent=dialog)
+
+        actions = ttk.Frame(body)
+        actions.pack(fill="x", pady=(8, 0))
+        ttk.Button(actions, text="Cancel", command=dialog.destroy).pack(side="right")
+        ttk.Button(actions, text="Apply", command=save).pack(side="right", padx=(0, 5))
+        count_field.focus_set()
 
     def _choose_location_dialog(self, title: str, selected_id: str, callback) -> None:
         dialog = tk.Toplevel(self)

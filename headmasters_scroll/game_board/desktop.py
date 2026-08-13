@@ -2868,6 +2868,19 @@ class GameBoardWindow(tk.Tk):
         ))
         for key in [key for key in self._board_portraits if key.startswith(f"{map_id}:")]:
             self._board_portraits.pop(key, None)
+
+        def clamp_text_to_canvas(item_id: int, x_value: float, y_value: float) -> tuple[float, float]:
+            """Keep the complete plaque text inside the visible map canvas."""
+
+            bounds = canvas.bbox(item_id)
+            if not bounds:
+                return x_value, y_value
+            dx = max(4.0 - bounds[0], min(0.0, width - 4.0 - bounds[2]))
+            dy = max(4.0 - bounds[1], min(0.0, height - 4.0 - bounds[3]))
+            if dx or dy:
+                canvas.move(item_id, dx, dy)
+            return x_value + dx, y_value + dy
+
         for actor_index, actor in enumerate(self.board_snapshot.get("actors", [])):
             if actor.get("map_id") != map_id:
                 continue
@@ -2900,21 +2913,21 @@ class GameBoardWindow(tk.Tk):
                 marker_x = max(12.0, min(width - 12.0, x))
                 marker_y = max(12.0, min(height - 12.0, y))
                 angle = math.atan2(y - marker_y, x - marker_x)
-                line_end_x = marker_x + math.cos(angle) * 28
-                line_end_y = marker_y + math.sin(angle) * 28
                 radius = dot_diameter / 2
                 item = canvas.create_oval(
                     marker_x - radius, marker_y - radius,
                     marker_x + radius, marker_y + radius,
                     fill=plaque_fill, outline="#fff3cf" if selected else plaque_outline, width=2,
                 )
-                line = canvas.create_line(marker_x, marker_y, line_end_x, line_end_y, fill=self.INK, width=2)
+                line = canvas.create_line(marker_x, marker_y, marker_x, marker_y, fill=self.INK, width=2)
                 plaque_x = max(50.0, min(width - 50.0, marker_x - math.cos(angle) * 54 + label_dx))
                 plaque_y = max(18.0, min(height - 18.0, marker_y - math.sin(angle) * 28 + label_dy))
                 label = canvas.create_text(
                     plaque_x, plaque_y, text=name, fill="#000000",
                     font=("Segoe UI", actor_label_font_size, "bold"),
                 )
+                plaque_x, plaque_y = clamp_text_to_canvas(label, plaque_x, plaque_y)
+                canvas.coords(line, marker_x, marker_y, plaque_x, plaque_y)
                 label_box = canvas.bbox(label) or (plaque_x - 28, plaque_y - 8, plaque_x + 28, plaque_y + 8)
                 label_bg = canvas.create_rectangle(
                     label_box[0] - 5, label_box[1] - 3,
@@ -2944,6 +2957,8 @@ class GameBoardWindow(tk.Tk):
                     label_x, label_y, text=name, fill="#000000",
                     font=("Segoe UI", actor_label_font_size, "bold"),
                 )
+                label_x, label_y = clamp_text_to_canvas(label, label_x, label_y)
+                canvas.coords(line, x, y, label_x, label_y)
                 label_box = canvas.bbox(label) or (label_x - 28, label_y - 8, label_x + 28, label_y + 8)
                 label_bg = canvas.create_rectangle(
                     label_box[0] - 5, label_box[1] - 3,
@@ -2992,6 +3007,17 @@ class GameBoardWindow(tk.Tk):
             label_x, label_y = x + label_dx, y + label_offset + label_dy
             line = canvas.create_line(x, y, label_x, label_y, fill=self.INK, width=2)
             label = canvas.create_text(label_x, label_y, text=name, fill="#000000", font=("Segoe UI", actor_label_font_size, "bold"))
+            label_x, label_y = clamp_text_to_canvas(label, label_x, label_y)
+            if actor.get("display_mode") == "token" and actor.get("portrait_asset_id"):
+                delta_x, delta_y = label_x - x, label_y - y
+                distance = math.hypot(delta_x, delta_y) or 1.0
+                edge = portrait_diameter / 2
+                line_start_x = x + delta_x / distance * edge
+                line_start_y = y + delta_y / distance * edge
+            else:
+                # Dot leaders originate at the centre of the circle.
+                line_start_x, line_start_y = x, y
+            canvas.coords(line, line_start_x, line_start_y, label_x, label_y)
             label_box = canvas.bbox(label) or (label_x - 20, label_y - 7, label_x + 20, label_y + 7)
             label_bg = canvas.create_rectangle(
                 label_box[0] - 4, label_box[1] - 2,
@@ -3809,6 +3835,15 @@ class GameBoardWindow(tk.Tk):
             label="Decrease nameplate size",
             command=lambda: self.adjust_selected_nameplate_size(-0.1),
         )
+        popup.add_separator()
+        popup.add_command(
+            label="Increase token size",
+            command=lambda: self.adjust_current_map_token_scale(1),
+        )
+        popup.add_command(
+            label="Decrease token size",
+            command=lambda: self.adjust_current_map_token_scale(-1),
+        )
         try:
             popup.tk_popup(root_x, root_y)
         finally:
@@ -4054,6 +4089,14 @@ class GameBoardWindow(tk.Tk):
                 highlightthickness=0 if row_index == 0 else 1,
             )
             row.pack(fill="x")
+            row.bind(
+                "<Button-3>",
+                lambda event, value=actor_id: self._open_actor_row_menu(event, value),
+            )
+            row.bind(
+                "<Control-Button-1>",
+                lambda event, value=actor_id: self._open_actor_row_menu(event, value),
+            )
             name_button = tk.Button(
                 row, text=str(actor.get("name") or "Unknown"), anchor="w",
                 background=row.cget("background"), activebackground="#ead8aa",
@@ -4062,13 +4105,24 @@ class GameBoardWindow(tk.Tk):
                 command=lambda value=actor_id: self._select_board_actor(value),
             )
             name_button.pack(side="left", fill="x", expand=True)
+            name_button.bind(
+                "<Button-3>",
+                lambda event, value=actor_id: self._open_actor_row_menu(event, value),
+            )
+            name_button.bind(
+                "<Control-Button-1>",
+                lambda event, value=actor_id: self._open_actor_row_menu(event, value),
+            )
+            faction_help = "Conceal faction" if actor.get("faction_revealed") else "Reveal faction"
+            character_help = "Conceal character" if actor.get("visibility") == "players" else "Reveal character"
+            name_help = "Conceal name" if actor.get("name_revealed") else "Reveal name"
             controls = (
                 ("⚑", lambda value=actor_id: self._actor_row_action(value, self.select_actor_faction), "Choose or create a faction", actor.get("faction_color") if actor.get("faction_id") else "#d8c9a1"),
-                ("F" if actor.get("faction_revealed") else "f", lambda value=actor_id: self._actor_row_action(value, self.toggle_selected_faction), "Reveal or conceal faction", "#4d6b43" if actor.get("faction_revealed") else "#d8c9a1"),
+                ("F" if actor.get("faction_revealed") else "f", lambda value=actor_id: self._actor_row_action(value, self.toggle_selected_faction), faction_help, "#4d6b43" if actor.get("faction_revealed") else "#d8c9a1"),
                 ("G", lambda value=actor_id: self._actor_row_action(value, self.manage_actor_group), "Choose or create a colored group", actor.get("group_color") if actor.get("group_id") else "#d8c9a1"),
-                ("◉" if actor.get("visibility") == "players" else "○", lambda value=actor_id, current=actor.get("visibility"): self._actor_row_update(value, visibility="headmaster" if current == "players" else "players"), "Reveal or conceal character", "#4d6b43" if actor.get("visibility") == "players" else "#d8c9a1"),
+                ("◉" if actor.get("visibility") == "players" else "○", lambda value=actor_id, current=actor.get("visibility"): self._actor_row_update(value, visibility="headmaster" if current == "players" else "players"), character_help, "#4d6b43" if actor.get("visibility") == "players" else "#d8c9a1"),
                 ("▣" if actor.get("display_mode") == "token" else "●", lambda value=actor_id, current=actor.get("display_mode"): self._actor_row_update(value, display_mode="dot" if current == "token" else "token"), "Toggle dot or portrait token", "#4d6b43" if actor.get("display_mode") == "token" else "#d8c9a1"),
-                ("N" if actor.get("name_revealed") else "n", lambda value=actor_id: self._actor_row_action(value, self.toggle_selected_name), "Reveal or conceal name", "#4d6b43" if actor.get("name_revealed") else "#d8c9a1"),
+                ("N" if actor.get("name_revealed") else "n", lambda value=actor_id: self._actor_row_action(value, self.toggle_selected_name), name_help, "#4d6b43" if actor.get("name_revealed") else "#d8c9a1"),
             )
             for text, command, help_text, button_color in controls:
                 button = tk.Button(
@@ -4079,6 +4133,13 @@ class GameBoardWindow(tk.Tk):
                 )
                 button.pack(side="left", padx=(1, 0))
                 self._attach_tooltip(button, help_text)
+
+    def _open_actor_row_menu(self, event: tk.Event, actor_id: str) -> str:
+        self.selected_board_actor_id = actor_id
+        self._render_board_actor_list()
+        self._draw_board_map(self.selected_board_map_id)
+        self._open_piece_controls(event.widget, event.x_root, event.y_root)
+        return "break"
 
     def _select_board_actor(self, actor_id: str) -> None:
         self.selected_board_actor_id = actor_id
@@ -4140,7 +4201,7 @@ class GameBoardWindow(tk.Tk):
         if not actor:
             messagebox.showinfo("Board", "Select a character first.", parent=self)
             return
-        choices = list(actor.get("active_factions", []))
+        choices = list(self.board_snapshot.get("factions", []))
         chooser = tk.Toplevel(self)
         chooser.title("Displayed faction")
         chooser.transient(self)
@@ -4208,12 +4269,29 @@ class GameBoardWindow(tk.Tk):
         actions = ttk.Frame(chooser, padding=(12, 0, 12, 12))
         actions.pack(fill="x")
         ttk.Button(actions, text="Cancel", style="Quiet.TButton", command=chooser.destroy).pack(side="right")
+
+        def use_faction() -> None:
+            faction_id = value.get()
+            faction = next(
+                (item for item in choices if str(item.get("organization_id")) == faction_id),
+                None,
+            )
+            if faction is None:
+                return
+            self._background(
+                lambda: self.client.request("POST", "/api/admin/board/factions", {
+                    "session_id": self.selected_session_id,
+                    "person_id": actor["actor_id"],
+                    "name": str(faction.get("name") or faction_id),
+                    "color": str(faction.get("color") or "#808080"),
+                }),
+                lambda _result: self.refresh(silent=True),
+            )
+            chooser.destroy()
+
         ttk.Button(
             actions, text="Use faction",
-            command=lambda: (
-                self.update_selected_actor(faction_organization_id=value.get()),
-                chooser.destroy(),
-            ) if value.get() else None,
+            command=use_faction,
         ).pack(side="right", padx=(0, 5))
         search.focus_set()
 

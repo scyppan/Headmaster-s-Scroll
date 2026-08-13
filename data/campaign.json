@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "_headmasters_scroll": {
-    "revision_id": "59e04a54-c451-49e2-bb58-e16d9caa150d",
-    "last_modified_at": "2026-08-13T05:24:57.498104Z",
+    "revision_id": "14544c55-0c83-42ba-83cb-caa3b0b74f33",
+    "last_modified_at": "2026-08-13T08:23:32.069146Z",
     "last_modified_by": "game-board"
   },
   "campaigns": [
@@ -11,7 +11,7 @@
       "created_at": "2026-08-11T08:19:23.069609Z",
       "name": "Test camp",
       "game_world_start_date": "2000-08-27",
-      "last_updated": "2026-08-13T05:24:57.494158Z",
+      "last_updated": "2026-08-13T08:23:32.065431Z",
       "game_state": {
         "initialized": true,
         "current_game_datetime": "2000-08-27T08:00",
@@ -113,8 +113,8 @@
             "start_point": null,
             "headmaster_camera": {
               "zoom": 1.1500000000000001,
-              "center_x": 0.0,
-              "center_y": 0.0
+              "center_x": 0.5,
+              "center_y": 0.44683201124610894
             },
             "player_cameras": {
               "6ca9e551-e305-4c3c-a763-d2ff9a13afff": {
@@ -224,17 +224,38 @@
             "token_scale": 0.0055,
             "start_point": null,
             "headmaster_camera": {
-              "zoom": 2.2484902650123577,
-              "center_x": 0.7340169294331815,
-              "center_y": 0.5416166723542586
+              "zoom": 13.834483069169817,
+              "center_x": 0.8408346702789764,
+              "center_y": 0.5471599361607694
             },
             "player_cameras": {
               "6ca9e551-e305-4c3c-a763-d2ff9a13afff": {
                 "zoom": 1.0,
-                "center_x": 0.8711483571069233,
-                "center_y": 0.5492028105149719
+                "center_x": 0.8673352252455426,
+                "center_y": 0.5312356964146564
               }
             },
+            "zoom_profile": {
+              "default_zoom": 1.0,
+              "default_center_x": 0.5,
+              "default_center_y": 0.5,
+              "default_nameplate_size": 10,
+              "tiers": {}
+            }
+          },
+          "e3b02941-1bac-4b0f-a91d-095d27989325": {
+            "players_published": false,
+            "obscurations": [],
+            "obscuration_preview_opacity": 0.35,
+            "obscuration_preview_color": "#ff0000",
+            "token_scale": 0.0055,
+            "start_point": null,
+            "headmaster_camera": {
+              "zoom": 1.0,
+              "center_x": 0.5,
+              "center_y": 0.5
+            },
+            "player_cameras": {},
             "zoom_profile": {
               "default_zoom": 1.0,
               "default_center_x": 0.5,
@@ -345,8 +366,8 @@
             "faction_revealed": false,
             "faction_organization_id": "",
             "label_offset": {
-              "x": 0.010245273829240413,
-              "y": -0.021470345155663904
+              "x": 0.008260225231846802,
+              "y": -0.010547952873266995
             },
             "nameplate_scale": 1.0,
             "wounds": [],
@@ -918,8 +939,8 @@
               "location_id": "38b8b79b-0785-4213-826e-0e65998d3b41",
               "floor_id": "",
               "map_id": "a5a85bd9-e989-4069-936c-8acda64f0fdd",
-              "x": 0.8822509792980003,
-              "y": 0.5340035764572463
+              "x": 0.8674617014647045,
+              "y": 0.5325079465136516
             },
             "visibility": "players",
             "display_mode": "token",
@@ -927,10 +948,10 @@
             "faction_revealed": true,
             "faction_organization_id": "c4cbf003-ab52-4da7-b341-e2cea0e34062",
             "label_offset": {
-              "x": 0.0005819556212619417,
-              "y": 0.008682148728015997
+              "x": 8.001944837528197e-05,
+              "y": 0.0010419867917647527
             },
-            "nameplate_scale": 1.0,
+            "nameplate_scale": 0.9,
             "wounds": [],
             "battle": null,
             "character_notes": []
@@ -940,8 +961,8 @@
               "location_id": "38b8b79b-0785-4213-826e-0e65998d3b41",
               "floor_id": "",
               "map_id": "a5a85bd9-e989-4069-936c-8acda64f0fdd",
-              "x": 0.838045863699315,
-              "y": 0.5232135193636895
+              "x": 0.8243771077060041,
+              "y": 0.5203083533203381
             },
             "visibility": "players",
             "display_mode": "dot",
@@ -952,7 +973,7 @@
               "x": -0.00039404899343232363,
               "y": 0.006645583024372161
             },
-            "nameplate_scale": 1.1,
+            "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
             "character_notes": []

@@ -49,6 +49,36 @@ class MapperGeometryTests(unittest.TestCase):
         self.assertTrue(snapped)
         self.assertEqual((x, y), (20.0, 20.0))
 
+    def test_map_switch_clears_every_artifact_owned_by_the_previous_map(self):
+        class Canvas:
+            def __init__(self):
+                self.deleted = []
+
+            def delete(self, tag):
+                self.deleted.append(tag)
+
+        window = mapper.MapperWindow.__new__(mapper.MapperWindow)
+        window.regions = [{"record_id": "old-region"}]
+        window.warp_points = [{"record_id": "old-warp"}]
+        window.map_image = object()
+        window.tk_map_image = object()
+        window.tk_map_image_size = (1, 2)
+        window.canvas = Canvas()
+        window._reset_editor = lambda: None
+        rendered = []
+        window.render_region_list = lambda: rendered.append("regions")
+        window.render_canvas = lambda: rendered.append("canvas")
+
+        window._clear_map_specific_state()
+
+        self.assertEqual(window.regions, [])
+        self.assertEqual(window.warp_points, [])
+        self.assertIsNone(window.map_image)
+        self.assertIsNone(window.tk_map_image)
+        self.assertIsNone(window.tk_map_image_size)
+        self.assertEqual(window.canvas.deleted, ["all"])
+        self.assertEqual(rendered, ["regions", "canvas"])
+
     def test_completing_polygon_triggers_automatic_save(self):
         window = mapper.MapperWindow.__new__(mapper.MapperWindow)
         window.mode = "draw"

@@ -375,7 +375,6 @@ def build_character_sheet(
         "character_id": person_id,
         "character_name": str(person.get("displayed_name") or ""),
         "as_of": game_datetime,
-        "history_policy": campaign.get("history_policy", "keep"),
         "overview": {
             "name": str(person.get("displayed_name") or ""),
             "portrait_asset_id": str(portrait.get("asset_id") or ""),
@@ -384,7 +383,6 @@ def build_character_sheet(
             "canon": bool(person.get("canon", False)),
             "narrative": str(person.get("narrative") or person.get("notes") or ""),
             "eminence": _overview_eminence(person),
-            "game_datetime": game_datetime,
         },
         "attributes": attributes,
         **knowledge,

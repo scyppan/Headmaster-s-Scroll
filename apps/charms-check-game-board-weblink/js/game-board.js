@@ -808,8 +808,6 @@
             <div><dt>School</dt><dd>${this.escapeHtml(overview.school || 'Not recorded')}</dd></div>
             <div><dt>Canon</dt><dd>${overview.canon ? 'Yes' : 'No'}</dd></div>
             <div><dt>Eminence</dt><dd>${Number(overview.eminence || 0)}</dd></div>
-            <div><dt>Game date</dt><dd>${this.escapeHtml(overview.game_datetime)}</dd></div>
-            <div><dt>History</dt><dd>${this.characterSheet.history_policy === 'discard' ? 'Campaign branch' : 'Universal history kept'}</dd></div>
           </dl></div>
         </section>
         <section class="ccgb-sheet-card"><h2>Biography</h2><p>${this.escapeHtml(overview.narrative || 'No narrative recorded.')}</p></section>`;
@@ -1470,15 +1468,19 @@
         plaque.style.top = `${plaqueY}px`;
         dot.style.left = `${anchorX}px`;
         dot.style.top = `${anchorY}px`;
-        // The dot and its leader are permanent spatial anchors. They remain
-        // visible at every zoom so a plaque can never lose its character.
-        dot.hidden = false;
+        // The label and leader remain visible, but an off-screen character's
+        // clamped edge marker must not masquerade as their real position.
+        dot.hidden = !onScreen;
         const dx = anchorX - plaqueX;
         const dy = anchorY - plaqueY;
         const distance = Math.hypot(dx, dy);
+        const pieceBounds = piece.getBoundingClientRect();
+        const tokenEdge = onScreen && piece.classList.contains('is-token')
+          ? Math.max(0, Math.min(pieceBounds.width, pieceBounds.height) / 2)
+          : 0;
         line.style.left = `${plaqueX}px`;
         line.style.top = `${plaqueY}px`;
-        line.style.width = `${Math.max(4, distance)}px`;
+        line.style.width = `${Math.max(4, distance - tokenEdge)}px`;
         line.style.transform = `rotate(${Math.atan2(dy, dx)}rad)`;
         if (controlled) this.bindLocatorPlaqueDrag(plaque, piece, actorX, actorY, viewport, stage);
       });

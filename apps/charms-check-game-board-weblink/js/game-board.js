@@ -59,6 +59,8 @@
       this.board = { maps: [], actors: [], controlled_character_ids: [] };
       this.activeMapId = '';
       this.assetUrls = new Map();
+      this.assetRequests = new Map();
+      this.assetEpoch = 0;
       this.mapCameraStates = new Map();
       this.mapCameraSaveTimers = new Map();
       this.mapCameraDrag = null;
@@ -488,8 +490,9 @@
         this.element('player').textContent = player;
         this.element('detail-player').textContent = player;
         this.updatePlayerIdentity(player);
-        this.releaseAssets();
-        if (this.activeSection !== 'board') this.openSection(this.activeSection);
+        this.releaseAssets(false);
+        if (this.activeSection === 'board') this.renderBoardView();
+        else this.openSection(this.activeSection);
       } else if (message.type === 'board_snapshot' && message.board) {
         const previousAttributes = this.board && this.board.character_attributes;
         const previousSheet = this.characterSheet;
@@ -917,8 +920,17 @@
     }
 
     renderBookLibrary(content) {
-      const books = this.characterSheet && this.characterSheet.books;
-      if (!books) return this.sheetUnavailable(content, 'Books');
+      const allBooks = this.characterSheet && this.characterSheet.books;
+      if (!allBooks) return this.sheetUnavailable(content, 'Books');
+      const catalogs = {
+        spells: this.characterSheet?.spells || [],
+        proficiencies: this.characterSheet?.proficiencies || [],
+        recipes: this.characterSheet?.recipes || [],
+      };
+      const knownSpellIds = new Set(catalogs.spells.map(record => record.record_id));
+      const books = allBooks.filter(book =>
+        (book.contents?.spells || []).some(recordId => knownSpellIds.has(recordId))
+      );
       const state = this.spellLibraryState;
       const rememberedBook = books.find(book => book.record_id === state.bookId);
       if (rememberedBook) return this.renderBookContents(content, rememberedBook);
@@ -926,13 +938,14 @@
         state.bookId = '';
         this.saveSpellLibraryState();
       }
-      const catalogs = {
-        spells: this.characterSheet?.spells || [],
-        proficiencies: this.characterSheet?.proficiencies || [],
-        recipes: this.characterSheet?.recipes || [],
-      };
+      const permittedIds = Object.fromEntries(Object.keys(catalogs).map(collection => [
+        collection,
+        new Set(books.flatMap(book => book.contents?.[collection] || [])),
+      ]));
       const entries = Object.entries(catalogs).flatMap(([collection, records]) =>
-        records.map(record => ({ collection, record }))
+        records
+          .filter(record => permittedIds[collection].has(record.record_id))
+          .map(record => ({ collection, record }))
       );
       const labels = {
         spells: 'Spells', proficiencies: 'Proficiencies', recipes: 'Recipes',
@@ -1063,9 +1076,7 @@
         results.querySelectorAll('[data-book-cover]').forEach(holder => {
           const assetId = holder.dataset.bookCover;
           if (!assetId) return;
-          this.assetUrl(assetId).then(url => {
-            if (url && holder.isConnected) holder.innerHTML = `<img src="${url}" alt="">`;
-          }).catch(error => { holder.title = error.message; });
+          this.loadPrivateImage(holder, assetId, '');
         });
         this.bindKnowledgeActions(results, catalogs, '[data-library-record]', render);
       };
@@ -1181,17 +1192,55 @@
         const allowed = new Set(book.contents?.[collection] || []);
         records.filter(record => allowed.has(record.record_id)).forEach(record => entries.push({ collection, record }));
       });
+      const state = this.spellLibraryState;
+      const filterOptions = [...new Set(entries.flatMap(({ record }) => [
+        record.skill,
+        record.source,
+        ...(Array.isArray(record.tags) ? record.tags : String(record.tags || '').split(',')),
+      ]).map(value => String(value || '').trim()).filter(Boolean))].sort((left, right) => left.localeCompare(right));
       content.className = 'ccgb-book-reader';
       content.innerHTML = `
         <header class="ccgb-book-reader-header">
-          <button type="button" data-books-home>← Library</button>
           <div class="ccgb-reader-cover" data-reader-cover="${this.escapeHtml(book.cover_asset_id || '')}"><span>${this.escapeHtml(book.title).charAt(0)}</span></div>
-          <div><h2>${this.escapeHtml(book.title)}</h2>${book.author ? `<p>${this.escapeHtml(book.author)}</p>` : ''}${book.description ? `<small>${this.escapeHtml(book.description)}</small>` : ''}</div>
+          <div class="ccgb-book-reader-main">
+            <div class="ccgb-reader-title-row">
+              <button type="button" data-books-home title="Back to spell books">← Books</button>
+              <div><h2>${this.escapeHtml(book.title)}</h2>${book.author ? `<p>${this.escapeHtml(book.author)}</p>` : ''}</div>
+            </div>
+            <div class="ccgb-library-tools">
+              <input type="search" data-book-content-search placeholder="Search this book" autocomplete="off">
+              <button type="button" class="ccgb-library-mini-button" data-library-filter title="Add filters">Filter</button>
+              <button type="button" class="ccgb-library-mini-button" data-library-sort title="Change sorting">Sort</button>
+            </div>
+            <div class="ccgb-library-chips" data-library-chips></div>
+            ${book.description ? `<small class="ccgb-reader-description">${this.escapeHtml(book.description)}</small>` : ''}
+          </div>
         </header>
-        <div class="ccgb-library-tools">
-          <input type="search" data-book-content-search placeholder="Search this book" autocomplete="off">
-        </div>
-        <div class="ccgb-book-contents" data-book-contents></div>`;
+        <div class="ccgb-book-count" data-book-content-count></div>
+        <div class="ccgb-book-contents" data-book-contents></div>
+        <dialog class="ccgb-library-dialog" data-filter-dialog>
+          <form method="dialog">
+            <header><strong>Add filter</strong><button value="cancel" aria-label="Close">×</button></header>
+            <label>Filter by
+              <select data-filter-field>
+                <option value="tag">Tag</option><option value="skill">Skill</option>
+                <option value="type">Type</option><option value="confidence">Confidence</option>
+                <option value="author">Author</option><option value="source">Source</option>
+              </select>
+            </label>
+            <label>Contains
+              <input data-filter-value list="ccgb-book-filter-values" autocomplete="off">
+              <datalist id="ccgb-book-filter-values">${filterOptions.map(value => `<option value="${this.escapeHtml(value)}"></option>`).join('')}</datalist>
+            </label>
+            <div class="ccgb-dialog-actions"><button value="cancel">Cancel</button><button type="button" data-add-filter>Add</button></div>
+          </form>
+        </dialog>
+        <dialog class="ccgb-library-dialog" data-sort-dialog>
+          <form method="dialog">
+            <header><strong>Sort results</strong><button value="cancel" aria-label="Close">×</button></header>
+            ${[['name', 'Name'], ['difficulty', 'Difficulty'], ['source', 'Source'], ['type', 'Type']].map(([value, label]) => `<label class="ccgb-sort-option"><input type="radio" name="book-sort" value="${value}" ${state.sort === value ? 'checked' : ''}> ${label}</label>`).join('')}
+          </form>
+        </dialog>`;
       content.querySelector('[data-books-home]').addEventListener('click', () => {
         this.spellLibraryState.bookId = '';
         this.spellLibraryState.bookQuery = '';
@@ -1199,21 +1248,51 @@
         this.renderBookLibrary(content);
       });
       const cover = content.querySelector('[data-reader-cover]');
-      if (book.cover_asset_id) this.assetUrl(book.cover_asset_id).then(url => {
-        if (url && cover.isConnected) cover.innerHTML = `<img src="${url}" alt="Cover of ${this.escapeHtml(book.title)}">`;
-      }).catch(error => { cover.title = error.message; });
+      if (book.cover_asset_id) this.loadPrivateImage(cover, book.cover_asset_id, `Cover of ${book.title}`);
       const search = content.querySelector('[data-book-content-search]');
       const holder = content.querySelector('[data-book-contents]');
+      const chips = content.querySelector('[data-library-chips]');
       search.value = this.spellLibraryState.bookQuery || '';
+      const textFor = value => String(value || '').toLocaleLowerCase();
+      const recordText = (record, collection) => [
+        record.name, record.description, record.raw_effect, record.raw_effects,
+        record.skill, record.source, collection,
+        ...(Array.isArray(record.tags) ? record.tags : String(record.tags || '').split(',')),
+      ].join(' ').toLocaleLowerCase();
+      const matchesFilter = (entry, filter) => {
+        const wanted = textFor(filter.value);
+        const { collection, record } = entry;
+        if (filter.field === 'author') return textFor(book.author).includes(wanted);
+        if (filter.field === 'type') return textFor(collection).includes(wanted);
+        if (filter.field === 'tag') return (Array.isArray(record.tags) ? record.tags : String(record.tags || '').split(',')).some(value => textFor(value).includes(wanted));
+        if (filter.field === 'confidence') return textFor(this.knowledgeConfidenceBand(record, collection).label).includes(wanted);
+        return textFor(record[filter.field]).includes(wanted);
+      };
+      const compareEntries = (left, right) => {
+        if (state.sort === 'difficulty') return Number(left.record.threshold || 0) - Number(right.record.threshold || 0) || String(left.record.name).localeCompare(String(right.record.name));
+        if (state.sort === 'source') return String(left.record.source || '').localeCompare(String(right.record.source || '')) || String(left.record.name).localeCompare(String(right.record.name));
+        if (state.sort === 'type') return left.collection.localeCompare(right.collection) || String(left.record.name).localeCompare(String(right.record.name));
+        return String(left.record.name).localeCompare(String(right.record.name));
+      };
       const render = () => {
         const query = search.value.trim().toLocaleLowerCase();
-        const visible = entries.filter(({ record }) => [record.name, record.description, record.skill, ...(Array.isArray(record.tags) ? record.tags : [])].join(' ').toLocaleLowerCase().includes(query));
+        const filters = state.filters || [];
+        const visible = entries
+          .filter(entry => (!query || recordText(entry.record, entry.collection).includes(query)) && filters.every(filter => matchesFilter(entry, filter)))
+          .sort(compareEntries);
+        chips.innerHTML = filters.map((filter, index) => `<button type="button" data-remove-filter="${index}" title="Remove ${this.escapeHtml(filter.field)} filter"><span>${this.escapeHtml(filter.field)}: ${this.escapeHtml(filter.value)}</span><b aria-hidden="true">×</b></button>`).join('');
+        chips.querySelectorAll('[data-remove-filter]').forEach(button => button.addEventListener('click', () => {
+          state.filters.splice(Number(button.dataset.removeFilter), 1);
+          this.saveSpellLibraryState();
+          render();
+        }));
         holder.innerHTML = ['spells', 'proficiencies', 'recipes'].map(collection => {
           const records = visible.filter(item => item.collection === collection);
           if (!records.length) return '';
           const label = { spells: 'Spells', proficiencies: 'Proficiencies', recipes: 'Recipes' }[collection];
           return `<section class="ccgb-book-content-section"><h3>${label}</h3><div class="ccgb-knowledge-pill-group">${records.map(({ record }) => this.knowledgeButtonMarkup(collection, record, 'data-book-record')).join('')}</div></section>`;
         }).join('') || '<p class="ccgb-empty-result">No matching contents in this book.</p>';
+        content.querySelector('[data-book-content-count]').textContent = `${visible.length} matching ${visible.length === 1 ? 'entry' : 'entries'} in this book`;
         this.bindKnowledgeActions(holder, catalogs, '[data-book-record]', render);
       };
       search.addEventListener('input', () => {
@@ -1221,6 +1300,26 @@
         this.saveSpellLibraryState();
         render();
       });
+      const filterDialog = content.querySelector('[data-filter-dialog]');
+      const sortDialog = content.querySelector('[data-sort-dialog]');
+      content.querySelector('[data-library-filter]').addEventListener('click', () => filterDialog.showModal());
+      content.querySelector('[data-library-sort]').addEventListener('click', () => sortDialog.showModal());
+      content.querySelector('[data-add-filter]').addEventListener('click', () => {
+        const field = content.querySelector('[data-filter-field]').value;
+        const value = content.querySelector('[data-filter-value]').value.trim();
+        if (!value) return;
+        state.filters.push({ field, value });
+        this.saveSpellLibraryState();
+        content.querySelector('[data-filter-value]').value = '';
+        filterDialog.close();
+        render();
+      });
+      sortDialog.querySelectorAll('[name="book-sort"]').forEach(input => input.addEventListener('change', () => {
+        state.sort = input.value;
+        this.saveSpellLibraryState();
+        sortDialog.close();
+        render();
+      }));
       render();
     }
 
@@ -1632,20 +1731,56 @@
     async assetUrl(assetId) {
       if (!assetId || !this.assetCredential) return '';
       if (this.assetUrls.has(assetId)) return this.assetUrls.get(assetId);
-      const response = await fetch(
-        `${this.apiBase}/v1/assets/${encodeURIComponent(assetId)}`,
-        { headers: { Authorization: `Bearer ${this.assetCredential}` } }
-      );
-      if (!response.ok) throw new Error(`Private board image returned ${response.status}.`);
-      const url = URL.createObjectURL(await response.blob());
-      this.assetUrls.set(assetId, url);
-      return url;
+      if (this.assetRequests.has(assetId)) return this.assetRequests.get(assetId);
+      const credential = this.assetCredential;
+      const epoch = this.assetEpoch;
+      const request = (async () => {
+        const response = await fetch(
+          `${this.apiBase}/v1/assets/${encodeURIComponent(assetId)}`,
+          { headers: { Authorization: `Bearer ${credential}` } }
+        );
+        if (!response.ok) throw new Error(`Private board image returned ${response.status}.`);
+        const url = URL.createObjectURL(await response.blob());
+        if (epoch !== this.assetEpoch || credential !== this.assetCredential) {
+          URL.revokeObjectURL(url);
+          throw new Error('The private image connection changed while loading.');
+        }
+        this.assetUrls.set(assetId, url);
+        return url;
+      })();
+      this.assetRequests.set(assetId, request);
+      try {
+        return await request;
+      } finally {
+        if (this.assetRequests.get(assetId) === request) this.assetRequests.delete(assetId);
+      }
     }
 
-    releaseAssets() {
+    loadPrivateImage(holder, assetId, altText) {
+      if (!holder || !assetId) return;
+      const load = allowRetry => this.assetUrl(assetId).then(url => {
+        if (!url || !holder.isConnected) return;
+        const image = document.createElement('img');
+        image.alt = altText || '';
+        image.addEventListener('error', () => {
+          if (!allowRetry) return;
+          const cached = this.assetUrls.get(assetId);
+          if (cached) URL.revokeObjectURL(cached);
+          this.assetUrls.delete(assetId);
+          load(false);
+        }, { once: true });
+        image.src = url;
+        holder.replaceChildren(image);
+      }).catch(error => { if (holder.isConnected) holder.title = error.message; });
+      load(true);
+    }
+
+    releaseAssets(clearCredential = true) {
+      this.assetEpoch += 1;
       this.assetUrls.forEach(url => URL.revokeObjectURL(url));
       this.assetUrls.clear();
-      this.assetCredential = '';
+      this.assetRequests.clear();
+      if (clearCredential) this.assetCredential = '';
     }
 
     renderBoardView() {

@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "_headmasters_scroll": {
-    "revision_id": "4ab2a8e5-8955-4a26-b22b-5a510100dd09",
-    "last_modified_at": "2026-08-14T10:30:05.207318Z",
+    "revision_id": "6179c91c-a4fb-4995-bb78-9d805b265c8a",
+    "last_modified_at": "2026-08-14T10:41:49.910451Z",
     "last_modified_by": "game-board"
   },
   "campaigns": [
@@ -11,7 +11,7 @@
       "created_at": "2026-08-11T08:19:23.069609Z",
       "name": "Test camp",
       "game_world_start_date": "2000-08-27",
-      "last_updated": "2026-08-14T10:30:05.202777Z",
+      "last_updated": "2026-08-14T10:41:49.905629Z",
       "game_state": {
         "initialized": true,
         "current_game_datetime": "2000-08-27T08:00",

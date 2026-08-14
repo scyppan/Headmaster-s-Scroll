@@ -700,7 +700,7 @@
           article.appendChild(details);
           details.addEventListener('toggle', () => {
             if (!details.open) return;
-            requestAnimationFrame(() => this.ensureChatCardVisible(container, article));
+            this.followExpandedChatCard(container, article);
           });
         }
         container.appendChild(article);
@@ -712,14 +712,27 @@
       const viewport = container.getBoundingClientRect();
       const card = article.getBoundingClientRect();
       if (card.height > viewport.height) {
-        container.scrollTop += card.bottom - viewport.bottom;
+        container.scrollTop += card.bottom - viewport.bottom + 4;
         return;
       }
       if (card.bottom > viewport.bottom) {
-        container.scrollTop += card.bottom - viewport.bottom;
+        container.scrollTop += card.bottom - viewport.bottom + 4;
       } else if (card.top < viewport.top) {
-        container.scrollTop += card.top - viewport.top;
+        container.scrollTop += card.top - viewport.top - 4;
       }
+    }
+
+    followExpandedChatCard(container, article) {
+      const keepVisible = () => this.ensureChatCardVisible(container, article);
+      keepVisible();
+      requestAnimationFrame(() => {
+        keepVisible();
+        requestAnimationFrame(keepVisible);
+      });
+      // WordPress fonts and the narrow chat column can reflow the detail rows
+      // after the <details> toggle has fired. Follow that late layout too.
+      window.setTimeout(keepVisible, 80);
+      window.setTimeout(keepVisible, 220);
     }
 
     showChatNotice(text) {
@@ -917,7 +930,6 @@
         </section>
         <div class="ccgb-knowledge-results"><span data-result-count></span><div class="ccgb-knowledge-pills" data-knowledge-pills></div></div>`;
 
-      let selectedId = records[0]?.record_id || '';
       const normalizedText = value => String(value || '').toLocaleLowerCase();
       const fuzzyScore = (record, query) => {
         if (!query) return 1;
@@ -958,7 +970,7 @@
         holder.innerHTML = grouped.map(([label, items]) => `${label ? `<h3>${this.escapeHtml(label)}</h3>` : ''}<div class="ccgb-knowledge-pill-group">${items.map(({ record }) => {
           const favorite = this.favorites.has(`${collection}:${record.record_id}`);
           const bandClass = collection === 'spells' ? ` is-band-${spellBand(record).toLowerCase().replaceAll(/[^a-z]+/g, '-').replace(/^-|-$/g, '')}` : '';
-          return `<button type="button" class="ccgb-knowledge-pill${bandClass} ${record.record_id === selectedId ? 'is-selected' : ''} ${favorite ? 'is-favorite' : ''}" data-record-id="${this.escapeHtml(record.record_id)}" title="${this.escapeHtml(record.description || record.raw_effect || record.raw_effects || 'No description recorded.')}\n\nClick to roll · Ctrl-click to favorite · Alt-click to share"><span class="ccgb-pill-star" aria-hidden="true">${favorite ? '★' : ''}</span><span>${this.escapeHtml(record.name)}</span></button>`;
+          return `<button type="button" class="ccgb-knowledge-pill${bandClass} ${favorite ? 'is-favorite' : ''}" data-record-id="${this.escapeHtml(record.record_id)}" title="${this.escapeHtml(record.description || record.raw_effect || record.raw_effects || 'No description recorded.')}\n\nClick to roll · Ctrl-click to favorite · Alt-click to share"><span class="ccgb-pill-star" aria-hidden="true">${favorite ? '★' : ''}</span><span>${this.escapeHtml(record.name)}</span></button>`;
         }).join('')}</div>`).join('') || `<p class="ccgb-empty-result">No matching ${collection}.</p>`;
         content.querySelector('[data-result-count]').textContent = `${values.length} known ${values.length === 1 ? singular : collection}`;
         holder.querySelectorAll('[data-record-id]').forEach(button => {
@@ -983,8 +995,6 @@
             this.postChatText(`${record.name}${threshold}\n${record.description || record.raw_effect || record.raw_effects || 'No description recorded.'}`);
             return;
           }
-          selectedId = record.record_id;
-          renderResults();
           this.requestRoll(singular, record.record_id);
           });
         });

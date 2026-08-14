@@ -1,7 +1,9 @@
 import unittest
 
 from headmasters_scroll.character_rolls import perform_character_roll
-from headmasters_scroll.character_sheet import build_character_sheet, effective_campaign_events
+from headmasters_scroll.character_sheet import (
+    build_character_sheet, effective_campaign_events, recipe_requirements,
+)
 
 
 class CharacterSheetTests(unittest.TestCase):
@@ -177,6 +179,40 @@ class CharacterSheetTests(unittest.TestCase):
             sheet, "recipe", "recipe-1", roller=lambda _a, _b: 6
         )
         self.assertEqual(result["action_type"], "recipe")
+
+    def test_recipe_requirements_separate_consumables_from_vessel(self):
+        requirements = recipe_requirements(
+            {
+                "ingredients": [{"name": "Tea leaves", "quantity": 2}],
+                "required_vessel": "Cauldron",
+            },
+            [
+                {"record_id": "leaves", "name": "Tea leaves", "quantity": 3},
+                {"record_id": "vessel", "name": "Copper Cauldron", "quantity": 1},
+            ],
+        )
+        self.assertTrue(requirements["ready"])
+        self.assertEqual(requirements["consumption"], {"leaves": 2})
+        self.assertEqual(
+            requirements["vessel"], {"name": "Cauldron", "available": True}
+        )
+
+    def test_recipe_requirements_report_every_shortfall(self):
+        requirements = recipe_requirements(
+            {
+                "ingredients": [
+                    {"name": "Tea leaves", "quantity": 2},
+                    {"name": "Honey", "quantity": 1},
+                ],
+                "required_vessel": "Cauldron",
+            },
+            [{"record_id": "leaves", "name": "Tea leaves", "quantity": 1}],
+        )
+        self.assertFalse(requirements["ready"])
+        self.assertEqual(
+            requirements["missing"],
+            ["1 Tea leaves", "1 Honey", "vessel: Cauldron"],
+        )
 
     def test_natural_ten_does_not_bypass_an_unreachable_threshold(self):
         sheet = build_character_sheet(

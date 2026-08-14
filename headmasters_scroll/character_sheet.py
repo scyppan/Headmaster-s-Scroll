@@ -251,7 +251,8 @@ def _public_record(record: dict[str, Any], collection: str, source: str) -> dict
     allowed = {
         "record_id", "name", "title", "description", "skill", "subtype",
         "tradition", "threshold", "required_materials", "required_proficiencies",
-        "ingredients", "brew_time", "additional_instructions", "raw_effect",
+        "ingredients", "required_vessel", "vessel", "brew_time",
+        "additional_instructions", "raw_effect",
         "effect_in_potions", "effect_in_other_potions", "raw_effects",
         "effects_in_potions", "history", "rationale", "incantation", "tags",
         "creature_type", "classification", "size", "wound_cap",
@@ -373,7 +374,10 @@ def _knowledge(
         resolved = recipe_catalog.get(record_id)
         if resolved:
             collection, record = resolved
-            result["recipes"].append(_public_record(record, collection or requested_collection, source))
+            public = _public_record(record, collection or requested_collection, source)
+            if not public.get("required_vessel") and not public.get("vessel") and collection == "potions":
+                public["required_vessel"] = "Cauldron"
+            result["recipes"].append(public)
     for collection in result:
         result[collection].sort(key=lambda item: (item["name"].casefold(), item["record_id"]))
     return result
@@ -488,23 +492,133 @@ def _age_at(person: dict[str, Any], current: tuple[int, int, int]) -> int | None
     return max(0, years)
 
 
-def _inventory(person_id: str, world: dict[str, Any], current: tuple[int, int, int]) -> list[dict[str, Any]]:
+def _inventory(
+    person_id: str, world: dict[str, Any], current: tuple[int, int, int],
+    campaign_person: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
     owned: list[dict[str, Any]] = []
+    consumed = (campaign_person or {}).get("consumed_inventory", {}) or {}
     for item in world.get("items", []) or []:
         if not isinstance(item, dict):
             continue
         passages = [entry for entry in item.get("passage_history", []) or [] if isinstance(entry, dict) and _is_effective(entry.get("date"), current)]
         passages.sort(key=lambda entry: (date_key(entry.get("date")) or (-999999, 1, 1), str(entry.get("time", ""))))
         if passages and str(passages[-1].get("person_id", "")) == person_id:
+            record_id = str(item.get("record_id", ""))
+            try:
+                quantity = max(0.0, float(item.get("quantity", 1) or 0))
+                quantity -= max(0.0, float(consumed.get(record_id, 0) or 0))
+            except (TypeError, ValueError):
+                quantity = 1.0
+            if quantity <= 0:
+                continue
             owned.append({
-                "record_id": str(item.get("record_id", "")),
+                "record_id": record_id,
                 "name": str(item.get("name") or "Unnamed item"),
                 "category": str(item.get("category") or "Item"),
+                "quantity": int(quantity) if quantity.is_integer() else quantity,
                 "description": str(item.get("description") or ""),
                 "acquired": str(passages[-1].get("date") or ""),
                 "method": str(passages[-1].get("method") or ""),
             })
     return sorted(owned, key=lambda item: (item["name"].casefold(), item["record_id"]))
+
+
+def recipe_requirements(
+    recipe: dict[str, Any], inventory: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Calculate recipe readiness and an authoritative item-consumption plan."""
+
+    available_items = [item for item in inventory if isinstance(item, dict)]
+    ingredient_rows: list[dict[str, Any]] = []
+    missing: list[str] = []
+    consumption: dict[str, float] = {}
+
+    for raw in recipe.get("ingredients", []) or []:
+        ingredient = raw if isinstance(raw, dict) else {"name": str(raw)}
+        name = str(ingredient.get("name") or ingredient.get("title") or "").strip()
+        item_id = str(
+            ingredient.get("item_id") or ingredient.get("record_id") or ""
+        ).strip()
+        if not name and not item_id:
+            continue
+        try:
+            required = max(0.0, float(ingredient.get("quantity", 1) or 1))
+        except (TypeError, ValueError):
+            required = 1.0
+        candidates = [
+            item for item in available_items
+            if (
+                item_id and str(item.get("record_id", "")) == item_id
+            ) or (
+                not item_id and name
+                and str(item.get("name", "")).strip().casefold() == name.casefold()
+            )
+        ]
+        available = 0.0
+        for item in candidates:
+            try:
+                available += max(0.0, float(item.get("quantity", 1) or 0))
+            except (TypeError, ValueError):
+                available += 1.0
+        shortfall = max(0.0, required - available)
+        display_name = name or next(
+            (str(item.get("name") or "Item") for item in candidates), "Item"
+        )
+        ingredient_rows.append({
+            "name": display_name,
+            "required": int(required) if required.is_integer() else required,
+            "available": int(available) if available.is_integer() else available,
+            "missing": int(shortfall) if shortfall.is_integer() else shortfall,
+        })
+        if shortfall:
+            amount = int(shortfall) if shortfall.is_integer() else shortfall
+            missing.append(f"{amount} {display_name}")
+            continue
+        remaining = required
+        for item in candidates:
+            if remaining <= 0:
+                break
+            try:
+                quantity = max(0.0, float(item.get("quantity", 1) or 0))
+            except (TypeError, ValueError):
+                quantity = 1.0
+            used = min(remaining, quantity)
+            record_id = str(item.get("record_id", "")).strip()
+            if record_id and used:
+                consumption[record_id] = consumption.get(record_id, 0.0) + used
+            remaining -= used
+
+    raw_vessel = recipe.get("required_vessel") or recipe.get("vessel")
+    vessel: dict[str, Any] | None = None
+    if raw_vessel:
+        vessel_value = raw_vessel if isinstance(raw_vessel, dict) else {"name": raw_vessel}
+        vessel_name = str(vessel_value.get("name") or vessel_value.get("title") or "Vessel").strip()
+        vessel_id = str(vessel_value.get("item_id") or vessel_value.get("record_id") or "").strip()
+        vessel_key = vessel_name.casefold()
+        vessel_available = any(
+            (vessel_id and str(item.get("record_id", "")) == vessel_id)
+            or (
+                not vessel_id
+                and vessel_key
+                and vessel_key in str(item.get("name", "")).strip().casefold()
+            )
+            for item in available_items
+        )
+        vessel = {"name": vessel_name, "available": vessel_available}
+        if not vessel_available:
+            missing.append(f"vessel: {vessel_name}")
+
+    return {
+        "ready": not missing,
+        "ingredients": ingredient_rows,
+        "vessel": vessel,
+        "missing": missing,
+        "consumption": {
+            item_id: int(quantity) if quantity.is_integer() else quantity
+            for item_id, quantity in consumption.items()
+        },
+    }
 
 
 def build_character_sheet(
@@ -524,6 +638,9 @@ def build_character_sheet(
         person, effective_world, database, game_datetime, campaign_person
     )
     knowledge = _knowledge(person_id, world, database, campaign, events)
+    inventory = _inventory(person_id, world, current, campaign_person)
+    for recipe in knowledge["recipes"]:
+        recipe["requirements"] = recipe_requirements(recipe, inventory)
     birth_parts = [person.get("birth_year"), person.get("birth_month"), person.get("birth_day")]
     try:
         birth_display = (
@@ -551,7 +668,7 @@ def build_character_sheet(
         "attributes": attributes,
         **knowledge,
         "pets": _creature_relationships(person_id, world, database, events),
-        "inventory": _inventory(person_id, world, current),
+        "inventory": inventory,
         "relationships": _human_relationships(person_id, world, events),
         "wounds": deepcopy(campaign_person.get("wounds", []) or []),
         "battle": deepcopy(campaign_person.get("battle")),

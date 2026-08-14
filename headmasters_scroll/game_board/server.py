@@ -1439,7 +1439,9 @@ def create_apps(
                         await websocket.send_json({
                             "v": 1, "type": "server_error", "message": str(error),
                         })
-                elif message.get("type") == "character_roll_request":
+                elif message.get("type") in {
+                    "character_roll_request", "recipe_attempt_request"
+                }:
                     now = time.monotonic()
                     while connection.roll_events and connection.roll_events[0] <= now - 10:
                         connection.roll_events.popleft()
@@ -1452,12 +1454,19 @@ def create_apps(
                         continue
                     connection.roll_events.append(now)
                     try:
-                        result = service.roll_character_action(
-                            connection.session_id,
-                            connection.contact_id,
-                            str(message.get("roll_type", ""))[:30],
-                            str(message.get("target_id", ""))[:120],
-                        )
+                        if message.get("type") == "recipe_attempt_request":
+                            result = service.attempt_character_recipe(
+                                connection.session_id,
+                                connection.contact_id,
+                                str(message.get("target_id", ""))[:120],
+                            )
+                        else:
+                            result = service.roll_character_action(
+                                connection.session_id,
+                                connection.contact_id,
+                                str(message.get("roll_type", ""))[:30],
+                                str(message.get("target_id", ""))[:120],
+                            )
                         await runtime.chat(
                             connection.contact_id,
                             connection.name,
@@ -1466,6 +1475,10 @@ def create_apps(
                             connection.session_id,
                             result,
                         )
+                        if message.get("type") == "recipe_attempt_request":
+                            await runtime.broadcast_character_sheets(
+                                connection.session_id
+                            )
                     except (KeyError, PermissionError, RuntimeError, TypeError, ValueError) as error:
                         await websocket.send_json({
                             "v": 1, "type": "server_error", "message": str(error),

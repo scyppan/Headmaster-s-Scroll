@@ -1353,6 +1353,10 @@ class GameBoardService:
         roll_type: str,
         target_id: str,
     ) -> dict[str, Any]:
+        if str(roll_type or "").strip().casefold() == "recipe":
+            raise PermissionError(
+                "Recipe attempts require confirmation before ingredients are used"
+            )
         controlled = self.controlled_character_ids(session_id, contact_id)
         with self._lock:
             wrapper, session = self._active(session_id)
@@ -1364,6 +1368,68 @@ class GameBoardService:
         if sheet is None:
             raise PermissionError("No World Builder character is linked to this player")
         return perform_character_roll(sheet, roll_type, target_id)
+
+    def attempt_character_recipe(
+        self,
+        session_id: str,
+        contact_id: str,
+        target_id: str,
+    ) -> dict[str, Any]:
+        """Consume a confirmed recipe's ingredients, then make its roll."""
+
+        controlled = self.controlled_character_ids(session_id, contact_id)
+        with self._lock:
+            _wrapper, session = self._active(session_id)
+            player = self._player(session, contact_id)
+            character_id = str(player.get("character_id", "") or "")
+            if not character_id or character_id not in controlled:
+                raise PermissionError("This player does not control a linked character")
+            campaign_id = str(session.get("campaign_id", "") or "")
+            if not campaign_id:
+                raise PermissionError("This session is not linked to a campaign")
+
+            sheet = self.character_sheet_for(session_id, contact_id)
+            if sheet is None:
+                raise PermissionError("No World Builder character is linked to this player")
+            recipe = next(
+                (
+                    item for item in sheet.get("recipes", []) or []
+                    if isinstance(item, dict)
+                    and str(item.get("record_id", "")) == str(target_id)
+                ),
+                None,
+            )
+            if recipe is None:
+                raise PermissionError("This character does not know that recipe")
+            requirements = recipe.get("requirements", {}) or {}
+            missing = [str(item) for item in requirements.get("missing", []) or []]
+            if not requirements.get("ready", False):
+                raise PermissionError(
+                    "Missing recipe requirements: " + ", ".join(missing)
+                )
+            consumption = requirements.get("consumption", {}) or {}
+            if not isinstance(consumption, dict):
+                raise ValueError("Invalid recipe consumption plan")
+
+            def consume(state: dict[str, Any]) -> None:
+                person_state = state.setdefault("people", {}).setdefault(
+                    character_id, {}
+                )
+                already = person_state.setdefault("consumed_inventory", {})
+                for item_id, raw_quantity in consumption.items():
+                    quantity = float(raw_quantity)
+                    already[item_id] = float(already.get(item_id, 0) or 0) + quantity
+
+            # Consumption is committed before the die is rolled. A failed attempt
+            # therefore uses the same ingredients as a successful one.
+            if consumption:
+                self.campaign_repository.update_game_state(campaign_id, consume)
+            result = perform_character_roll(sheet, "recipe", target_id)
+            result["consumed_ingredients"] = deepcopy(
+                requirements.get("ingredients", []) or []
+            )
+            result["required_vessel"] = deepcopy(requirements.get("vessel"))
+            return result
 
     def update_person_campaign_action(
         self,

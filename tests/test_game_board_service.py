@@ -104,6 +104,53 @@ class GameBoardServiceTests(unittest.TestCase):
                 "session", "teacher", "nearby", "spell", "unknown-spell"
             )
 
+    def test_confirmed_recipe_consumes_ingredients_but_not_the_vessel(self):
+        session = {
+            "id": "session",
+            "campaign_id": self.campaign_id,
+            "roster": [{
+                "contact_id": self.alice["id"], "character_id": "person-1"
+            }],
+        }
+        sheet = {
+            "character_name": "Alice",
+            "attributes": {
+                "attributes": [{"name": "Panache", "value": 1}],
+                "skills": [{"name": "Potions", "value": 2}],
+                "characteristics": [], "parental_values": [],
+            },
+            "inventory": [
+                {"record_id": "leaves", "name": "Tea leaves", "quantity": 2},
+                {"record_id": "cauldron", "name": "Copper Cauldron", "quantity": 1},
+            ],
+            "recipes": [{
+                "record_id": "tea", "name": "Tea", "skill": "Potions",
+                "threshold": 5,
+                "ingredients": [{"name": "Tea leaves", "quantity": 2}],
+                "requirements": {
+                    "ready": True, "missing": [],
+                    "ingredients": [{
+                        "name": "Tea leaves", "required": 2,
+                        "available": 2, "missing": 0,
+                    }],
+                    "vessel": {"name": "Cauldron", "available": True},
+                    "consumption": {"leaves": 2},
+                },
+            }],
+        }
+        self.service.controlled_character_ids = lambda *_args: ["person-1"]
+        self.service._active = lambda *_args: ({}, session)
+        self.service.character_sheet_for = lambda *_args: sheet
+        result = self.service.attempt_character_recipe(
+            "session", self.alice["id"], "tea"
+        )
+        person_state = self.service.campaign_repository.get(
+            self.campaign_id
+        )["game_state"]["people"]["person-1"]
+        self.assertEqual(person_state["consumed_inventory"], {"leaves": 2})
+        self.assertNotIn("cauldron", person_state["consumed_inventory"])
+        self.assertEqual(result["required_vessel"]["name"], "Cauldron")
+
     def test_character_link_becomes_the_player_identity_everywhere(self):
         character = self.service.list_characters()[0]
         linked = self.service.assign_character(self.alice["id"], character["id"])

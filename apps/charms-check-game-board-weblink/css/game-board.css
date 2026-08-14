@@ -527,6 +527,41 @@
   margin-bottom: 8px;
 }
 #gameboard .ccgb-knowledge-pills { align-content: start; display: flex; flex-wrap: wrap; gap: 7px; }
+#gameboard .ccgb-knowledge-pills.ccgb-recipe-columns {
+  align-items: start;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+#gameboard .ccgb-recipe-column {
+  background: rgba(255, 248, 226, 0.55);
+  border: 1px solid #c69a58;
+  min-width: 0;
+  padding: 8px;
+}
+#gameboard .ccgb-recipe-column > header {
+  align-items: center;
+  border-bottom: 1px solid #c69a58;
+  display: flex;
+  justify-content: space-between;
+  margin: -2px 0 7px;
+  padding-bottom: 5px;
+}
+#gameboard .ccgb-recipe-column > header h2 {
+  font: 700 15px Georgia, serif;
+  margin: 0;
+}
+#gameboard .ccgb-recipe-column > header span {
+  background: #d3ad69;
+  border-radius: 999px;
+  font-size: 11px;
+  min-width: 22px;
+  padding: 2px 6px;
+  text-align: center;
+}
+#gameboard .ccgb-recipe-column > h3 { font: 700 13px Georgia, serif; margin: 8px 0 4px; }
+#gameboard .ccgb-recipe-column .ccgb-knowledge-pill-group { margin-bottom: 6px; }
+#gameboard .ccgb-recipe-column.is-missing .ccgb-knowledge-pill { border-style: dashed !important; }
 #gameboard .ccgb-knowledge-pills > h3 {
   flex: 0 0 100%;
   font: 700 13px Georgia, serif;
@@ -1451,6 +1486,7 @@
 }
 
 @media (max-width: 820px) {
+  #gameboard .ccgb-knowledge-pills.ccgb-recipe-columns { grid-template-columns: 1fr; }
   #gameboard { margin: 7px; width: calc(100% - 14px); }
   #gameboard .ccgb-board {
     height: var(--ccgb-board-height, calc(100dvh - 70px));

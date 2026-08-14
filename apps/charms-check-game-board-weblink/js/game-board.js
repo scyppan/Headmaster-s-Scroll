@@ -846,6 +846,14 @@
       this.send({ v: VERSION, type: 'character_roll_request', roll_type: rollType, target_id: targetId });
     }
 
+    requestRecipeAttempt(targetId) {
+      if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
+        this.showChatNotice('Recipe attempts are unavailable while disconnected.');
+        return;
+      }
+      this.send({ v: VERSION, type: 'recipe_attempt_request', target_id: targetId });
+    }
+
     bindRollButtons(content) {
       content.querySelectorAll('[data-roll-type]').forEach(button => button.addEventListener('click', () => {
         this.requestRoll(button.dataset.rollType, button.dataset.targetId);
@@ -896,16 +904,24 @@
         const skill = String(record.skill || (collection === 'recipes' ? 'Potions' : ''));
         return Number(record.threshold) - Number(skillByName[skill] || 0) - Number(valueByName[SKILL_ABILITIES[skill]] || 0);
       };
-      const spellBand = record => {
+      const confidenceBand = record => {
         const needed = requiredRoll(record);
-        if (needed === null) return 'No threshold';
-        if (needed > 10) return "Can't cast";
-        if (needed <= 3) return 'Easy to cast';
-        if (needed <= 6) return 'Medium confidence';
-        if (needed <= 8) return 'Difficult to cast';
-        return 'Very difficult to cast';
+        const performance = collection === 'proficiencies';
+        const preparation = collection === 'recipes';
+        if (needed === null) return { key: 'no-threshold', label: 'No threshold' };
+        if (needed > 10) return { key: 'can-t-cast', label: performance ? "Can't perform" : preparation ? "Can't prepare" : "Can't cast" };
+        if (needed <= 3) return { key: 'easy-to-cast', label: performance ? 'Easy to perform' : preparation ? 'Easy to prepare' : 'Easy to cast' };
+        if (needed <= 6) return { key: 'medium-confidence', label: 'Medium confidence' };
+        if (needed <= 8) return { key: 'difficult-to-cast', label: performance ? 'Difficult to perform' : preparation ? 'Difficult to prepare' : 'Difficult to cast' };
+        return { key: 'very-difficult-to-cast', label: performance ? 'Very difficult to perform' : preparation ? 'Very difficult to prepare' : 'Very difficult to cast' };
       };
-      content.className = `ccgb-knowledge-browser ${collection === 'spells' ? 'is-spellbook' : ''}`;
+      const confidenceLabels = collection === 'proficiencies'
+        ? ['Easy to perform', 'Medium confidence', 'Difficult to perform', 'Very difficult to perform', "Can't perform", 'No threshold']
+        : collection === 'recipes'
+          ? ['Easy to prepare', 'Medium confidence', 'Difficult to prepare', 'Very difficult to prepare', "Can't prepare", 'No threshold']
+          : ['Easy to cast', 'Medium confidence', 'Difficult to cast', 'Very difficult to cast', "Can't cast", 'No threshold'];
+      const usesConfidence = ['spells', 'proficiencies', 'recipes'].includes(collection);
+      content.className = `ccgb-knowledge-browser ${collection === 'spells' ? 'is-spellbook' : ''} ${collection === 'recipes' ? 'is-recipe-book' : ''}`;
       content.innerHTML = `
         <div class="ccgb-catalog-tools">
           <input type="search" data-catalog-search placeholder="Search ${collection}">
@@ -913,7 +929,7 @@
           ${optionList('source', 'sources')}
           ${collection === 'spells' ? optionList('subtype', 'subtypes') : ''}
           <select data-catalog-tag aria-label="Filter by tag"><option value="">All tags</option>${tagValues.map(value => `<option value="${this.escapeHtml(value)}">#${this.escapeHtml(value)}</option>`).join('')}</select>
-          ${collection === 'spells' ? '<select data-catalog-band aria-label="Casting confidence"><option value="">All casting confidence</option><option>Easy to cast</option><option>Medium confidence</option><option>Difficult to cast</option><option>Very difficult to cast</option><option>Can\'t cast</option><option>No threshold</option></select>' : ''}
+          ${usesConfidence ? `<select data-catalog-band aria-label="${collection === 'spells' ? 'Casting' : collection === 'recipes' ? 'Preparation' : 'Performance'} confidence"><option value="">All confidence levels</option>${confidenceLabels.map(value => `<option>${this.escapeHtml(value)}</option>`).join('')}</select>` : ''}
           <label class="ccgb-threshold-filter"><span>Difficulty</span><input type="number" min="0" data-catalog-min placeholder="Min"><span>to</span><input type="number" min="0" data-catalog-max placeholder="Max"></label>
           <select data-catalog-sort aria-label="Sort results"><option value="name">Name A–Z</option><option value="difficulty">Difficulty</option><option value="skill">Skill</option><option value="source">Source</option></select>
           <label><input type="checkbox" data-favorites-only> Favorites</label>
@@ -955,7 +971,7 @@
           const wrongFilter = filters.some(([field, value]) => value && String(record[field] || '') !== value);
           const difficulty = record.threshold == null ? null : Number(record.threshold);
           const recordTags = (Array.isArray(record.tags) ? record.tags : String(record.tags || '').split(',')).map(value => String(value).trim());
-          return score >= 0 && !wrongFilter && (!tag || recordTags.includes(tag)) && (!band || spellBand(record) === band) && (minimum === null || difficulty === null || difficulty >= minimum) && (maximum === null || difficulty === null || difficulty <= maximum) && (!favoritesOnly || this.favorites.has(`${collection}:${record.record_id}`));
+          return score >= 0 && !wrongFilter && (!tag || recordTags.includes(tag)) && (!band || confidenceBand(record).label === band) && (minimum === null || difficulty === null || difficulty >= minimum) && (maximum === null || difficulty === null || difficulty <= maximum) && (!favoritesOnly || this.favorites.has(`${collection}:${record.record_id}`));
         });
         values.sort((left, right) => {
           if (query && right.score !== left.score) return right.score - left.score;
@@ -964,14 +980,30 @@
           return left.record.name.localeCompare(right.record.name);
         });
         const holder = content.querySelector('[data-knowledge-pills]');
-        const grouped = collection === 'spells'
-          ? ['Easy to cast', 'Medium confidence', 'Difficult to cast', 'Very difficult to cast', "Can't cast", 'No threshold'].map(label => [label, values.filter(item => spellBand(item.record) === label)]).filter(([, items]) => items.length)
-          : [['', values]];
-        holder.innerHTML = grouped.map(([label, items]) => `${label ? `<h3>${this.escapeHtml(label)}</h3>` : ''}<div class="ccgb-knowledge-pill-group">${items.map(({ record }) => {
+        const renderGroups = list => {
+          const grouped = usesConfidence
+            ? confidenceLabels.map(label => [label, list.filter(item => confidenceBand(item.record).label === label)]).filter(([, items]) => items.length)
+            : [['', list]];
+          return grouped.map(([label, items]) => `${label ? `<h3>${this.escapeHtml(label)}</h3>` : ''}<div class="ccgb-knowledge-pill-group">${items.map(({ record }) => {
           const favorite = this.favorites.has(`${collection}:${record.record_id}`);
-          const bandClass = collection === 'spells' ? ` is-band-${spellBand(record).toLowerCase().replaceAll(/[^a-z]+/g, '-').replace(/^-|-$/g, '')}` : '';
-          return `<button type="button" class="ccgb-knowledge-pill${bandClass} ${favorite ? 'is-favorite' : ''}" data-record-id="${this.escapeHtml(record.record_id)}" title="${this.escapeHtml(record.description || record.raw_effect || record.raw_effects || 'No description recorded.')}\n\nClick to roll · Ctrl-click to favorite · Alt-click to share"><span class="ccgb-pill-star" aria-hidden="true">${favorite ? '★' : ''}</span><span>${this.escapeHtml(record.name)}</span></button>`;
-        }).join('')}</div>`).join('') || `<p class="ccgb-empty-result">No matching ${collection}.</p>`;
+          const bandClass = usesConfidence ? ` is-band-${confidenceBand(record).key}` : '';
+          const missing = record.requirements?.missing || [];
+          const recipeHelp = collection === 'recipes' && missing.length ? `\n\nMissing: ${missing.join(', ')}\nClick to post missing requirements to chat` : '';
+          const actionHelp = collection === 'recipes' && !missing.length ? 'Click to review and confirm ingredient use' : 'Click to roll';
+          return `<button type="button" class="ccgb-knowledge-pill${bandClass} ${favorite ? 'is-favorite' : ''}" data-record-id="${this.escapeHtml(record.record_id)}" title="${this.escapeHtml(record.description || record.raw_effect || record.raw_effects || 'No description recorded.')}\n\n${this.escapeHtml(actionHelp)}${this.escapeHtml(recipeHelp)} · Ctrl-click to favorite · Alt-click to share"><span class="ccgb-pill-star" aria-hidden="true">${favorite ? '★' : ''}</span><span>${this.escapeHtml(record.name)}</span></button>`;
+          }).join('')}</div>`).join('');
+        };
+        if (collection === 'recipes') {
+          const ready = values.filter(({ record }) => Boolean(record.requirements?.ready));
+          const missing = values.filter(({ record }) => !record.requirements?.ready);
+          holder.classList.add('ccgb-recipe-columns');
+          holder.innerHTML = `
+            <section class="ccgb-recipe-column is-ready"><header><h2>Ready to prepare</h2><span>${ready.length}</span></header>${renderGroups(ready) || '<p class="ccgb-empty-result">No recipes have every requirement.</p>'}</section>
+            <section class="ccgb-recipe-column is-missing"><header><h2>Missing requirements</h2><span>${missing.length}</span></header>${renderGroups(missing) || '<p class="ccgb-empty-result">No recipes are missing requirements.</p>'}</section>`;
+        } else {
+          holder.classList.remove('ccgb-recipe-columns');
+          holder.innerHTML = renderGroups(values) || `<p class="ccgb-empty-result">No matching ${collection}.</p>`;
+        }
         content.querySelector('[data-result-count]').textContent = `${values.length} known ${values.length === 1 ? singular : collection}`;
         holder.querySelectorAll('[data-record-id]').forEach(button => {
           button.addEventListener('contextmenu', event => event.preventDefault());
@@ -993,6 +1025,19 @@
           if (event.altKey) {
             const threshold = record.threshold == null ? '' : ` (${record.threshold})`;
             this.postChatText(`${record.name}${threshold}\n${record.description || record.raw_effect || record.raw_effects || 'No description recorded.'}`);
+            return;
+          }
+          if (collection === 'recipes') {
+            const requirements = record.requirements || {};
+            const missing = requirements.missing || [];
+            if (!requirements.ready) {
+              this.postChatText(`${record.name} — missing: ${missing.join(', ') || 'requirements not recorded'}.`);
+              return;
+            }
+            const ingredients = (requirements.ingredients || []).map(item => `${item.required} ${item.name}`);
+            const vessel = requirements.vessel?.name ? `\nRequired vessel (not consumed): ${requirements.vessel.name}` : '';
+            const confirmed = window.confirm(`Attempt ${record.name}?\n\nThis will use whether the attempt succeeds or fails:\n${ingredients.join('\n') || 'No consumable ingredients'}${vessel}`);
+            if (confirmed) this.requestRecipeAttempt(record.record_id);
             return;
           }
           this.requestRoll(singular, record.record_id);

@@ -260,6 +260,20 @@ def normalize_campaign_game_state(
                 "name": str(battle.get("name", "Battle") or "Battle").strip()[:200],
                 "entered_at": str(battle.get("entered_at", "") or utc_now()),
             }
+        raw_consumed = raw_state.get("consumed_inventory", {}) or {}
+        if not isinstance(raw_consumed, dict):
+            raise ValueError("Campaign consumed inventory must be keyed by item ID")
+        consumed_inventory: dict[str, float | int] = {}
+        for raw_item_id, raw_quantity in raw_consumed.items():
+            item_id = str(raw_item_id or "").strip()
+            try:
+                quantity = float(raw_quantity)
+            except (TypeError, ValueError) as error:
+                raise ValueError("Consumed inventory quantities must be numbers") from error
+            if not item_id or quantity < 0:
+                raise ValueError("Consumed inventory requires item IDs and non-negative quantities")
+            if quantity:
+                consumed_inventory[item_id] = int(quantity) if quantity.is_integer() else quantity
         people[person_id] = {
             "placement": deepcopy(board["placement"]),
             "visibility": board["visibility"],
@@ -272,6 +286,7 @@ def normalize_campaign_game_state(
             "wounds": wounds,
             "battle": normalized_battle,
             "character_notes": notes,
+            "consumed_inventory": consumed_inventory,
         }
 
     groups = []
@@ -438,6 +453,7 @@ class CampaignRepository:
             "wounds": deepcopy(prior.get("wounds", []) or []),
             "battle": deepcopy(prior.get("battle")),
             "character_notes": deepcopy(prior.get("character_notes", []) or []),
+            "consumed_inventory": deepcopy(prior.get("consumed_inventory", {}) or {}),
         }
 
     def ensure_game_state(

@@ -5,6 +5,7 @@ from typing import Any
 from .errors import DataValidationError
 from .board import validate_world_board
 from .campaigns import validate_campaigns
+from .creatures import validate_creature_database
 
 
 TEACHING_EVENT_TYPES = {
@@ -103,6 +104,11 @@ def validate_document(filename: str, data: Any) -> None:
             try:
                 validate_world_board(data)
                 _validate_world_character_control_links(data)
+            except (TypeError, ValueError) as error:
+                raise DataValidationError(str(error)) from error
+        else:
+            try:
+                validate_creature_database(data)
             except (TypeError, ValueError) as error:
                 raise DataValidationError(str(error)) from error
     elif filename == "periods.json":

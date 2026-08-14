@@ -46,6 +46,21 @@ RELATIONSHIP_TYPES = {
     "relationship": "Other",
 }
 RECIPE_COLLECTIONS = ("potions", "preparations", "foods_and_drinks")
+BOOK_COVER_SUBJECTS = {
+    "alchemy", "arithmancy", "artificing", "astronomy", "charms", "creatures",
+    "dark-arts", "defense", "divination", "flying", "herbology",
+    "history", "muggles", "potions", "runes", "transfiguration",
+}
+
+
+def _book_cover_asset_id(book: dict[str, Any]) -> str:
+    """Choose a local subject cover without exposing a filesystem path."""
+
+    for category in book.get("categories", []) or []:
+        slug = re.sub(r"[^a-z0-9]+", "-", str(category).strip().casefold()).strip("-")
+        if slug in BOOK_COVER_SUBJECTS:
+            return f"book-cover:{slug}"
+    return ""
 
 
 def date_key(value: Any, *, latest: bool = False) -> tuple[int, int, int] | None:
@@ -317,6 +332,7 @@ def _knowledge(
     grants: dict[str, dict[str, tuple[str, str]]] = {
         "spell": {}, "proficiency": {}, "recipe": {},
     }
+    read_books: dict[str, dict[str, Any]] = {}
     readings = _effective_book_readings(world, campaign)
     readings.extend(_development_year_readings(
         next((item for item in world.get("people", []) or [] if isinstance(item, dict) and str(item.get("record_id", "")) == person_id), {}),
@@ -330,12 +346,29 @@ def _knowledge(
         book = world_books.get(book_id) or db_books.get(book_id)
         if not book:
             continue
+        public_book = read_books.setdefault(book_id, {
+            "record_id": book_id,
+            "title": str(book.get("title") or book.get("name") or "Book"),
+            "author": str(book.get("author") or ""),
+            "description": str(book.get("description") or ""),
+            "categories": [str(item) for item in book.get("categories", []) or []],
+            "cover_asset_id": _book_cover_asset_id(book),
+            "read_at": str(reading.get("date") or ""),
+            "contents": {"spells": [], "proficiencies": [], "recipes": []},
+        })
         for kind, collection, record_id, source in _book_contents(book):
             if kind in grants and record_id:
                 # The source is the actual book, not the year/course timing
                 # which caused that book to be read.
                 reading_source = str(source or book.get("title") or book.get("name") or "Book")
                 grants[kind].setdefault(record_id, (collection, reading_source))
+                content_key = {
+                    "spell": "spells",
+                    "proficiency": "proficiencies",
+                    "recipe": "recipes",
+                }[kind]
+                if record_id not in public_book["contents"][content_key]:
+                    public_book["contents"][content_key].append(record_id)
 
     for event in events:
         kind = TEACHING_TYPES.get(str(event.get("event_type", "")))
@@ -363,7 +396,13 @@ def _knowledge(
             )
             grants[kind].setdefault(record_id, (collection, teacher))
 
-    result = {"spells": [], "proficiencies": [], "recipes": []}
+    result = {
+        "books": sorted(
+            read_books.values(),
+            key=lambda item: (item["title"].casefold(), item["record_id"]),
+        ),
+        "spells": [], "proficiencies": [], "recipes": [],
+    }
     for record_id, (_, source) in grants["spell"].items():
         if record_id in catalogs["spell"]:
             result["spells"].append(_public_record(catalogs["spell"][record_id], "spells", source))
@@ -378,7 +417,7 @@ def _knowledge(
             if not public.get("required_vessel") and not public.get("vessel") and collection == "potions":
                 public["required_vessel"] = "Cauldron"
             result["recipes"].append(public)
-    for collection in result:
+    for collection in ("spells", "proficiencies", "recipes"):
         result[collection].sort(key=lambda item: (item["name"].casefold(), item["record_id"]))
     return result
 
@@ -521,6 +560,28 @@ def _inventory(
                 "acquired": str(passages[-1].get("date") or ""),
                 "method": str(passages[-1].get("method") or ""),
             })
+    for stack in (campaign_person or {}).get("campaign_inventory", []) or []:
+        if not isinstance(stack, dict):
+            continue
+        try:
+            quantity = max(0, int(stack.get("quantity", 0)))
+        except (TypeError, ValueError):
+            continue
+        if not quantity:
+            continue
+        owned.append({
+            "record_id": str(stack.get("record_id") or ""),
+            "item_id": str(stack.get("item_id") or stack.get("part_id") or ""),
+            "part_id": str(stack.get("part_id") or ""),
+            "name": str(stack.get("name") or "Creature part"),
+            "category": str(stack.get("category") or "Creature Part"),
+            "quantity": quantity,
+            "description": "Harvested during this campaign.",
+            "acquired": str(stack.get("acquired_at") or ""),
+            "method": "Harvested",
+            "source_creature_id": str(stack.get("source_creature_id") or ""),
+            "source_species_id": str(stack.get("source_species_id") or ""),
+        })
     return sorted(owned, key=lambda item: (item["name"].casefold(), item["record_id"]))
 
 
@@ -549,7 +610,11 @@ def recipe_requirements(
         candidates = [
             item for item in available_items
             if (
-                item_id and str(item.get("record_id", "")) == item_id
+                item_id and item_id in {
+                    str(item.get("record_id", "")),
+                    str(item.get("item_id", "")),
+                    str(item.get("part_id", "")),
+                }
             ) or (
                 not item_id and name
                 and str(item.get("name", "")).strip().casefold() == name.casefold()
@@ -597,7 +662,11 @@ def recipe_requirements(
         vessel_id = str(vessel_value.get("item_id") or vessel_value.get("record_id") or "").strip()
         vessel_key = vessel_name.casefold()
         vessel_available = any(
-            (vessel_id and str(item.get("record_id", "")) == vessel_id)
+            (vessel_id and vessel_id in {
+                str(item.get("record_id", "")),
+                str(item.get("item_id", "")),
+                str(item.get("part_id", "")),
+            })
             or (
                 not vessel_id
                 and vessel_key

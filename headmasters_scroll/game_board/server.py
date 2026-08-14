@@ -233,6 +233,37 @@ class BoardCameraBody(BaseModel):
     force_players: bool = False
 
 
+class CreaturePlaceBody(BaseModel):
+    session_id: str = Field(min_length=1, max_length=100)
+    species_id: str = Field(min_length=1, max_length=120)
+    map_id: str = Field(min_length=1, max_length=100)
+    x: float = Field(ge=0.0, le=1.0)
+    y: float = Field(ge=0.0, le=1.0)
+
+
+class CreatureUpdateBody(BaseModel):
+    session_id: str = Field(min_length=1, max_length=100)
+    map_id: str | None = Field(default=None, max_length=100)
+    x: float | None = Field(default=None, ge=0.0, le=1.0)
+    y: float | None = Field(default=None, ge=0.0, le=1.0)
+    label_x: float | None = Field(default=None, ge=-1.0, le=1.0)
+    label_y: float | None = Field(default=None, ge=-1.0, le=1.0)
+    visibility: str | None = Field(default=None, max_length=20)
+
+
+class CreatureActionBody(BaseModel):
+    session_id: str = Field(min_length=1, max_length=100)
+    action: str = Field(min_length=1, max_length=30)
+    severity: str = Field(default="", max_length=20)
+    note: str = Field(default="", max_length=1000)
+    battle_name: str = Field(default="", max_length=200)
+
+
+class CreatureRollBody(BaseModel):
+    session_id: str = Field(min_length=1, max_length=100)
+    action_id: str = Field(min_length=1, max_length=160)
+
+
 @dataclass
 class PlayerConnection:
     websocket: Any
@@ -429,10 +460,26 @@ class GameBoardRuntime:
         chat = self.service.post_chat(
             sender_id, sender_name, sender_role, text, session_id, activity
         )
-        envelope = {"v": 1, "type": "chat_message", "message": chat}
+        creature_activity = isinstance(activity, dict) and activity.get(
+            "activity_type"
+        ) in {"creature_action", "creature_harvest"}
+
+        def viewer_message(connection: Any) -> dict[str, Any]:
+            if not creature_activity:
+                return chat
+            return self.service.chat_message_for_viewer(
+                chat,
+                str(session_id or getattr(connection, "session_id", "")),
+                str(getattr(connection, "contact_id", "")),
+            )
+
         await asyncio.gather(
             *(
-                connection.websocket.send_json(envelope)
+                connection.websocket.send_json({
+                    "v": 1,
+                    "type": "chat_message",
+                    "message": viewer_message(connection),
+                })
                 for connection in list(self.connections.values())
                 if session_id is None or getattr(connection, "session_id", "") == session_id
             ),
@@ -856,6 +903,98 @@ def create_apps(
         )
         await runtime.broadcast_board(body.session_id)
         await runtime.notify_admins()
+        return result
+
+    @admin_app.get("/api/admin/creatures", dependencies=[Depends(admin_guard)])
+    def search_creature_species(
+        q: str = Query(default="", max_length=200),
+        limit: int = Query(default=100, ge=1, le=500),
+    ):
+        return {"creatures": admin_result(service.creature_species, q, limit)}
+
+    @admin_app.post(
+        "/api/admin/board/creatures", dependencies=[Depends(admin_guard)]
+    )
+    async def place_board_creature(body: CreaturePlaceBody):
+        result = admin_result(
+            service.place_campaign_creature,
+            body.session_id, body.species_id, body.map_id, body.x, body.y,
+        )
+        await runtime.broadcast_board(body.session_id)
+        return result
+
+    @admin_app.put(
+        "/api/admin/board/creatures/{creature_id}",
+        dependencies=[Depends(admin_guard)],
+    )
+    async def update_board_creature(creature_id: str, body: CreatureUpdateBody):
+        result = admin_result(
+            service.update_campaign_creature,
+            body.session_id,
+            creature_id,
+            x=body.x, y=body.y, map_id=body.map_id,
+            label_x=body.label_x, label_y=body.label_y,
+            visibility=body.visibility,
+        )
+        await runtime.broadcast_board(body.session_id)
+        return result
+
+    @admin_app.post(
+        "/api/admin/board/creatures/{creature_id}/actions",
+        dependencies=[Depends(admin_guard)],
+    )
+    async def update_board_creature_action(
+        creature_id: str, body: CreatureActionBody
+    ):
+        result = admin_result(
+            service.creature_campaign_action,
+            body.session_id,
+            creature_id,
+            body.action,
+            severity=body.severity,
+            note=body.note,
+            battle_name=body.battle_name,
+        )
+        await runtime.broadcast_board(body.session_id)
+        return {"creature": result}
+
+    @admin_app.put(
+        "/api/admin/board/groups/creatures/{creature_id}",
+        dependencies=[Depends(admin_guard)],
+    )
+    async def set_board_creature_group(
+        creature_id: str, body: GroupMembershipBody
+    ):
+        result = admin_result(
+            service.set_campaign_creature_group,
+            body.session_id,
+            creature_id,
+            body.group_id,
+        )
+        await runtime.broadcast_board(body.session_id)
+        return {"group": result}
+
+    @admin_app.post(
+        "/api/admin/board/creatures/{creature_id}/roll",
+        dependencies=[Depends(admin_guard)],
+    )
+    async def roll_board_creature_action(
+        creature_id: str, body: CreatureRollBody
+    ):
+        result = admin_result(
+            service.roll_campaign_creature_action,
+            body.session_id,
+            creature_id,
+            body.action_id,
+        )
+        await runtime.chat(
+            creature_id,
+            str(result.get("species_name") or "Creature"),
+            "creature",
+            str(result.get("text") or "A creature acts."),
+            body.session_id,
+            result,
+        )
         return result
 
     @admin_app.post("/api/admin/board/move-preview", dependencies=[Depends(admin_guard)])
@@ -1365,7 +1504,12 @@ def create_apps(
         await websocket.send_json({
             "v": 1,
             "type": "chat_history",
-            "messages": list((session or {}).get("chat", []))[-100:],
+            "messages": [
+                service.chat_message_for_viewer(
+                    item, identity["session_id"], identity["contact_id"]
+                )
+                for item in list((session or {}).get("chat", []))[-100:]
+            ],
         })
         await runtime.chat(
             "system",
@@ -1500,6 +1644,38 @@ def create_apps(
                             "message": "Teaching request sent to the Headmaster.",
                         })
                         await runtime.notify_admins()
+                    except (KeyError, PermissionError, RuntimeError, TypeError, ValueError) as error:
+                        await websocket.send_json({
+                            "v": 1, "type": "server_error", "message": str(error),
+                        })
+                elif message.get("type") == "creature_harvest_request":
+                    try:
+                        result = service.harvest_campaign_creature(
+                            connection.session_id,
+                            connection.contact_id,
+                            str(message.get("creature_id", ""))[:100],
+                            str(message.get("part_id", ""))[:160],
+                        )
+                        await runtime.chat(
+                            connection.contact_id,
+                            connection.name,
+                            "player",
+                            result["text"],
+                            connection.session_id,
+                            result,
+                        )
+                        await websocket.send_json({
+                            "v": 1, "type": "creature_harvest_result",
+                            "result": {
+                                "part_id": result["part_id"],
+                                "part_name": result["part_name"],
+                                "quantity_awarded": result["quantity_awarded"],
+                                "outcome": result["outcome"],
+                                "corpse_removed": result["corpse_removed"],
+                            },
+                        })
+                        await runtime.broadcast_board(connection.session_id)
+                        await runtime.broadcast_character_sheets(connection.session_id)
                     except (KeyError, PermissionError, RuntimeError, TypeError, ValueError) as error:
                         await websocket.send_json({
                             "v": 1, "type": "server_error", "message": str(error),

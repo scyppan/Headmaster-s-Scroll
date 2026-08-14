@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "_headmasters_scroll": {
-    "revision_id": "2b7111c4-0e2c-421e-abd3-b96055adc51d",
-    "last_modified_at": "2026-08-14T00:29:06.392798Z",
+    "revision_id": "3cef65c0-f36a-4d11-b343-a87f63ff3e53",
+    "last_modified_at": "2026-08-14T09:57:50.300726Z",
     "last_modified_by": "game-board"
   },
   "campaigns": [
@@ -11,7 +11,7 @@
       "created_at": "2026-08-11T08:19:23.069609Z",
       "name": "Test camp",
       "game_world_start_date": "2000-08-27",
-      "last_updated": "2026-08-14T00:29:06.388728Z",
+      "last_updated": "2026-08-14T09:57:50.296083Z",
       "game_state": {
         "initialized": true,
         "current_game_datetime": "2000-08-27T08:00",
@@ -20,7 +20,8 @@
         ],
         "active_map_id": "a5a85bd9-e989-4069-936c-8acda64f0fdd",
         "player_active_map_ids": {
-          "6ca9e551-e305-4c3c-a763-d2ff9a13afff": "a5a85bd9-e989-4069-936c-8acda64f0fdd"
+          "6ca9e551-e305-4c3c-a763-d2ff9a13afff": "a5a85bd9-e989-4069-936c-8acda64f0fdd",
+          "fcceeb1d-7919-455d-a076-3d45926583af": "a5a85bd9-e989-4069-936c-8acda64f0fdd"
         },
         "maps": {
           "4fc2ff78-e528-4ebd-b4db-9b34fc803622": {
@@ -224,15 +225,20 @@
             "token_scale": 0.0055,
             "start_point": null,
             "headmaster_camera": {
-              "zoom": 1.9552089260977044,
-              "center_x": 0.6941194688481591,
-              "center_y": 0.4827710959297321
+              "zoom": 1.0,
+              "center_x": 0.5,
+              "center_y": 0.5
             },
             "player_cameras": {
               "6ca9e551-e305-4c3c-a763-d2ff9a13afff": {
                 "zoom": 3.5178762919199196,
                 "center_x": 0.8001078329857636,
                 "center_y": 0.42033641032986513
+              },
+              "fcceeb1d-7919-455d-a076-3d45926583af": {
+                "zoom": 1.0,
+                "center_x": 0.7954070292776291,
+                "center_y": 0.5318032204794466
               }
             },
             "zoom_profile": {
@@ -301,7 +307,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "6cea2c79-66b4-4018-88f1-6238ad15ebd7": {
             "placement": null,
@@ -317,15 +325,17 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "6882e7fb-529a-4b3e-8929-a795b91b816d": {
             "placement": {
               "location_id": "38b8b79b-0785-4213-826e-0e65998d3b41",
               "floor_id": "",
               "map_id": "a5a85bd9-e989-4069-936c-8acda64f0fdd",
-              "x": 0.9829293017763163,
-              "y": 0.42868533753913923
+              "x": 0.9574033038099659,
+              "y": 0.40811052664438174
             },
             "visibility": "players",
             "display_mode": "dot",
@@ -333,13 +343,15 @@
             "faction_revealed": false,
             "faction_organization_id": "fe2acabd-333d-4d17-9e48-f19e2e3cbe93",
             "label_offset": {
-              "x": -0.027150518456681046,
-              "y": -0.012915603444066056
+              "x": -0.01808739160773761,
+              "y": -0.03760650037307952
             },
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "ccde7cef-2aff-4be4-974f-c72ffe652c71": {
             "placement": null,
@@ -355,7 +367,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "7bd4ae68-1b41-43d9-8949-a6a9160517f8": {
             "placement": null,
@@ -371,7 +385,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "da621804-0d7d-4af5-8cd1-54e535323c8b": {
             "placement": {
@@ -393,7 +409,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "bf8fda89-3eaa-4603-832d-498431b15447": {
             "placement": null,
@@ -409,7 +427,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "f812561f-6caa-4c1e-a5dc-6764288ed90a": {
             "placement": null,
@@ -425,7 +445,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "a42cd75f-b0d3-4771-8530-c9568102bedf": {
             "placement": null,
@@ -441,7 +463,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "8cf308b5-afae-4323-a4fd-209dd5b63c7c": {
             "placement": null,
@@ -457,7 +481,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "1106d8d9-ff8b-4378-a9f9-9cad3fbdfee9": {
             "placement": null,
@@ -473,7 +499,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "6cd8d366-28a4-4199-9c5c-ff55362851b2": {
             "placement": null,
@@ -489,7 +517,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "fd2e3f62-3530-4fe5-a618-da26accca07f": {
             "placement": null,
@@ -505,7 +535,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "a94e7b2e-2faa-49e3-83ef-cdc136502f54": {
             "placement": null,
@@ -521,7 +553,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "765c03a4-9624-4cd0-9695-419cf59c043a": {
             "placement": null,
@@ -537,7 +571,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "bfc92f8c-9704-4ee5-89c1-4d6cfe9cd392": {
             "placement": null,
@@ -553,7 +589,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "731751aa-a668-4887-840f-c8e5d624c655": {
             "placement": null,
@@ -569,7 +607,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "0164a838-659c-40f7-b201-ff20fef4679d": {
             "placement": null,
@@ -585,7 +625,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "bcfff484-a85f-43e0-96e3-e20796e5396f": {
             "placement": null,
@@ -601,7 +643,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "0ae645e6-63a4-4f69-bf04-3aaf431fad3c": {
             "placement": null,
@@ -617,7 +661,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "2c6d4b9f-3607-4acc-8ca4-2c479fd116c8": {
             "placement": null,
@@ -633,7 +679,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "f66d30d0-6b77-4ec8-b3d9-5e90428b0cc3": {
             "placement": null,
@@ -649,7 +697,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "6d9eaf12-05a9-4366-b787-1ecb3ce7fcc3": {
             "placement": null,
@@ -665,7 +715,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "370ab1c3-6d64-4b89-afc4-90858a032cc4": {
             "placement": null,
@@ -681,7 +733,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "c596f72c-5362-4594-bfc9-1f1ee4cd689e": {
             "placement": null,
@@ -697,7 +751,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "c10787b3-5209-47a1-b904-ff559a92f673": {
             "placement": null,
@@ -713,7 +769,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "8fdc0319-05bd-4483-a496-0520f15cdd7b": {
             "placement": null,
@@ -729,7 +787,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "022e5fe4-3329-44d2-861d-ef019f52866b": {
             "placement": null,
@@ -745,7 +805,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "19c79a0e-0fb7-4c23-9e2d-7dd29d3f5a3e": {
             "placement": null,
@@ -761,7 +823,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "9ceae05f-0da6-4206-98e8-6a008e3c9c06": {
             "placement": null,
@@ -777,7 +841,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "f6ceeb9d-5c55-4086-8759-e123962c2140": {
             "placement": null,
@@ -793,7 +859,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "471a48da-be48-455a-9732-fa5f318e24f1": {
             "placement": null,
@@ -809,7 +877,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "bb2fc265-d4db-4d5a-b125-536f1f097a9a": {
             "placement": null,
@@ -825,7 +895,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "ff853e34-62a4-482d-8871-59c4fb1942fa": {
             "placement": null,
@@ -841,7 +913,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "80d314c6-60a4-4fdb-96cc-8d643d9fb18c": {
             "placement": null,
@@ -857,7 +931,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "62ca5c0d-a14f-4450-9581-f36c9396fbcb": {
             "placement": null,
@@ -873,7 +949,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "92b946e9-eecd-4a82-9391-26f9d26986ce": {
             "placement": null,
@@ -889,7 +967,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "61a91b1f-d41d-4c6c-b8dd-484d12973dc4": {
             "placement": null,
@@ -905,7 +985,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "4156b78e-89f1-4c97-8211-b0e1ae013115": {
             "placement": null,
@@ -921,7 +1003,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "2c1675c1-4f61-491b-a7b7-9b5e1f6010d1": {
             "placement": null,
@@ -937,7 +1021,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "fd83ae13-a59a-46b9-96a6-c8dc92cd8ae0": {
             "placement": null,
@@ -953,7 +1039,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "594ad00f-0b79-4118-ba66-a875f7ba9811": {
             "placement": {
@@ -975,7 +1063,9 @@
             "nameplate_scale": 0.9,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "38a03510-bc09-4620-9f90-6a9ae207d799": {
             "placement": {
@@ -997,7 +1087,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "e040f41f-13dd-418a-953f-ebc2988446b6": {
             "placement": null,
@@ -1013,7 +1105,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "91025900-cbe7-4f88-a881-12f0a6500815": {
             "placement": null,
@@ -1029,7 +1123,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "0134d21e-c638-4707-9909-a673fe05a238": {
             "placement": null,
@@ -1045,7 +1141,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "e1b2ee79-98ed-4304-b14f-b80f2c4046c1": {
             "placement": null,
@@ -1061,7 +1159,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "d39df4b0-eec5-4069-b065-e81c0a62f03c": {
             "placement": null,
@@ -1077,7 +1177,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "176b841b-540b-434e-add7-5120223b7f6f": {
             "placement": null,
@@ -1093,7 +1195,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "123d9889-e0dd-457f-9cbb-8363a6444c29": {
             "placement": null,
@@ -1109,7 +1213,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "17af755b-e7ec-4d6a-bc63-70f51b7ad898": {
             "placement": null,
@@ -1125,7 +1231,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "a711ec2a-e501-4921-a7f6-1e622832034c": {
             "placement": null,
@@ -1141,7 +1249,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "a8fc8d1a-7604-4e69-ac10-c01b354865ac": {
             "placement": null,
@@ -1157,7 +1267,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "015ddb5b-ce96-4b8e-9e13-79117199f292": {
             "placement": null,
@@ -1173,7 +1285,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "8d725029-e682-4691-b9c3-0afb04b2ba74": {
             "placement": null,
@@ -1189,7 +1303,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "c1c24da7-af71-44c1-ae51-052259c25383": {
             "placement": null,
@@ -1205,7 +1321,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "305a05a2-7ec1-403b-b00d-8678bb896fcb": {
             "placement": null,
@@ -1221,7 +1339,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "135c0ffb-6c82-4918-94c5-dde857c2ed5f": {
             "placement": null,
@@ -1237,7 +1357,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "afa0f6ae-5267-481b-9f8d-7891b0e7653c": {
             "placement": null,
@@ -1253,7 +1375,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "0b355b5f-1659-43fa-b7bf-7f3838959c9a": {
             "placement": null,
@@ -1269,7 +1393,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "8f2a492b-7158-4ab7-8c31-a32e5cd25f88": {
             "placement": null,
@@ -1285,7 +1411,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "54cb26f5-233b-40a4-9a29-eb4d70eb7b86": {
             "placement": null,
@@ -1301,7 +1429,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "34b97744-6b58-4b74-a3e7-138b5524919c": {
             "placement": null,
@@ -1317,7 +1447,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "1ed2c18c-fbba-40db-925a-9cd4236416e2": {
             "placement": null,
@@ -1333,7 +1465,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "6852cb5c-e0c3-4146-8820-f976587c8481": {
             "placement": null,
@@ -1349,7 +1483,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "ceabdad2-445f-45f8-ad12-9eec36befb16": {
             "placement": null,
@@ -1365,7 +1501,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "1c2e6c15-b2d9-4981-856b-505f2a462b4f": {
             "placement": null,
@@ -1381,7 +1519,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "3ff72a1f-1263-4e79-ad92-d1b9ed350ee3": {
             "placement": null,
@@ -1397,7 +1537,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "8bbf7198-4379-408a-aef6-c1f6273c2ccb": {
             "placement": null,
@@ -1413,7 +1555,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "175f1474-7db6-4ac1-9ea7-38038a81edf3": {
             "placement": null,
@@ -1429,7 +1573,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "1b45533f-1445-43e9-ac87-40104c33a169": {
             "placement": null,
@@ -1445,7 +1591,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "78ad93b3-82d8-4592-bb78-2b229e5b3857": {
             "placement": null,
@@ -1461,7 +1609,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "4e83492f-582d-4907-af20-6a44fca03bdc": {
             "placement": null,
@@ -1477,7 +1627,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "024dde35-66df-4b86-a098-57a5a5980ffa": {
             "placement": null,
@@ -1493,7 +1645,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "d2f63d30-b1fc-4d75-a342-75c16c9db0b2": {
             "placement": null,
@@ -1509,7 +1663,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "fa1e0297-4fc5-4e77-a992-381306d84881": {
             "placement": null,
@@ -1525,7 +1681,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "c35c9332-dbd4-4680-8d5a-eb9872d9026f": {
             "placement": null,
@@ -1541,7 +1699,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "9eb7c539-cfb4-4661-b3bb-8f4ab75bb69a": {
             "placement": null,
@@ -1557,7 +1717,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "16622042-6bfb-49a3-bedb-6e4f367181d0": {
             "placement": null,
@@ -1573,7 +1735,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "6e99daab-6798-4ce1-b451-060437fc037f": {
             "placement": null,
@@ -1589,7 +1753,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "791b1974-8526-404a-98b5-d3e6c3621ff0": {
             "placement": null,
@@ -1605,7 +1771,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "5332d254-a7aa-4eb0-aed0-4af9e753d541": {
             "placement": null,
@@ -1621,7 +1789,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "3d61c37f-cdb8-4e18-96ab-72d62f79e9d0": {
             "placement": null,
@@ -1637,7 +1807,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "2c201c76-f914-4d0e-bb49-5f7573ad474b": {
             "placement": null,
@@ -1653,7 +1825,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "eefeb5ed-89b5-439e-ab4e-e8bfe1ed8537": {
             "placement": null,
@@ -1669,7 +1843,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "6686563e-1590-4ca4-aff3-e25634b78b5b": {
             "placement": null,
@@ -1685,7 +1861,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "0c685dc2-b174-43f4-986e-ed47de6d2bbf": {
             "placement": null,
@@ -1701,23 +1879,33 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "dd85b9d7-6917-4176-a997-ea8dd3058b7f": {
-            "placement": null,
+            "placement": {
+              "location_id": "38b8b79b-0785-4213-826e-0e65998d3b41",
+              "floor_id": "",
+              "map_id": "a5a85bd9-e989-4069-936c-8acda64f0fdd",
+              "x": 0.8416502501740069,
+              "y": 0.44514687203790204
+            },
             "visibility": "players",
             "display_mode": "dot",
             "name_revealed": false,
             "faction_revealed": false,
             "faction_organization_id": "",
             "label_offset": {
-              "x": 0.0,
-              "y": 0.0
+              "x": 0.004078407082024545,
+              "y": -0.030569681912111905
             },
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "a2b6515b-0e9a-477d-ad92-e8dbab58c6d8": {
             "placement": null,
@@ -1733,7 +1921,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "ef35ad49-54a8-4a34-aca8-a46dd3e55266": {
             "placement": null,
@@ -1749,7 +1939,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "f7478a34-1f5f-4922-beec-cf9acafc689f": {
             "placement": null,
@@ -1765,7 +1957,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "c5931c31-a3ec-4f50-a12c-739c83f39dad": {
             "placement": null,
@@ -1781,7 +1975,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "9778cba2-2b79-4f17-b5ab-091550cc59dd": {
             "placement": null,
@@ -1797,7 +1993,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "76cab833-aa83-4279-8827-eec8a996e825": {
             "placement": null,
@@ -1813,7 +2011,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "7e5d8c0f-2f5e-432d-86f2-674f4d0fadeb": {
             "placement": null,
@@ -1829,7 +2029,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "6314898b-0048-4ccc-a069-ad688a0731af": {
             "placement": null,
@@ -1845,7 +2047,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "8eac296b-8a57-40ca-ac6b-c79cd3911c6e": {
             "placement": null,
@@ -1861,7 +2065,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "61468d57-8dad-444e-a385-1ec9aaa91ea0": {
             "placement": null,
@@ -1877,7 +2083,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "c8f68ed2-7229-4e88-bf1b-cf09708c77e9": {
             "placement": null,
@@ -1893,7 +2101,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "880584a7-7ab2-439b-98ce-69a456409a06": {
             "placement": null,
@@ -1909,7 +2119,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "2cb4346d-23a5-49e6-9819-4dada5fc5592": {
             "placement": null,
@@ -1925,7 +2137,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "13dc5c00-a594-492c-8c9d-b6287faf7d84": {
             "placement": null,
@@ -1941,7 +2155,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "c33f468a-a613-4957-ba2a-a948aaef5322": {
             "placement": null,
@@ -1957,7 +2173,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "da681ceb-a1e4-4537-93cf-2899d90a4c47": {
             "placement": null,
@@ -1973,7 +2191,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "3219ca53-4bf9-4d6a-908a-ea866cbabc65": {
             "placement": null,
@@ -1989,7 +2209,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "b878caf9-c43e-4401-8974-7021bc69a6b5": {
             "placement": null,
@@ -2005,7 +2227,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "f6eb042e-8c9a-4b7f-aa71-c4c11e620985": {
             "placement": null,
@@ -2021,7 +2245,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "81db9059-18de-49c6-9fd8-e11b548f2923": {
             "placement": null,
@@ -2037,7 +2263,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "b8747bd3-d920-40ec-9f17-1c6f82bcca84": {
             "placement": null,
@@ -2053,7 +2281,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "b482b084-c3b4-4401-b41e-5f7b60fdabfe": {
             "placement": null,
@@ -2069,7 +2299,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "07068190-b21c-4298-a605-01b1ef1af6d4": {
             "placement": null,
@@ -2085,7 +2317,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "c1f15bec-2ca2-4ef7-8c0f-3a5b7f07ac48": {
             "placement": null,
@@ -2101,7 +2335,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "56e47a6a-edca-412b-94b5-7a86ac178c30": {
             "placement": null,
@@ -2117,7 +2353,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "7af558cc-d463-42f9-a8f7-2c17c4c06a49": {
             "placement": null,
@@ -2133,7 +2371,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "5c5e0ee0-0342-49a4-825e-e8b287353bc5": {
             "placement": null,
@@ -2149,7 +2389,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "28a2e1be-2372-493c-b405-fd3cbb9164f8": {
             "placement": null,
@@ -2165,7 +2407,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "47987fae-a66f-420d-bb23-5e00a257706c": {
             "placement": null,
@@ -2181,7 +2425,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "0cd4db0f-6bdc-4b96-96cb-67aba11cb87f": {
             "placement": null,
@@ -2197,7 +2443,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "27e9fe68-45b2-43ad-8b9e-650677517f5a": {
             "placement": null,
@@ -2213,7 +2461,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "12a79490-e6be-42f9-99e8-01132d7933a0": {
             "placement": null,
@@ -2229,7 +2479,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "c4ef853e-17ba-486c-9621-3a3664da8803": {
             "placement": null,
@@ -2245,7 +2497,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "2795a527-6daa-408e-8248-b43ef3a5e2dd": {
             "placement": null,
@@ -2261,7 +2515,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "7a2e07ad-13f4-4567-83d9-276410465bf8": {
             "placement": null,
@@ -2277,7 +2533,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "79ad14bb-26fc-4b27-ae65-3196762c680b": {
             "placement": null,
@@ -2293,7 +2551,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "c321bb6c-57ba-4224-b62a-24968d62f36e": {
             "placement": null,
@@ -2309,7 +2569,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "ee2b39ed-706b-462f-9d1a-9bb5a84679b1": {
             "placement": null,
@@ -2325,7 +2587,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "5df6d22c-bf6e-434b-b865-0849bf1f4f66": {
             "placement": null,
@@ -2341,7 +2605,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "0ce7ff22-29a8-405e-863a-394a301380c3": {
             "placement": null,
@@ -2357,7 +2623,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "40e92c23-602e-4f69-b944-86cb78e1088c": {
             "placement": null,
@@ -2373,7 +2641,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "6bfae378-3a03-4d25-a276-1e10596d897b": {
             "placement": null,
@@ -2389,7 +2659,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "833049f6-2ac3-4029-af7d-a55eeaf3c04b": {
             "placement": null,
@@ -2405,7 +2677,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "be1c32f5-173f-4f8d-bbf7-44afed7af7e5": {
             "placement": null,
@@ -2421,7 +2695,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "b06ed514-fff6-4b58-99e2-f35895b030d8": {
             "placement": null,
@@ -2437,7 +2713,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "297c3442-1fc1-45bb-8ec7-b88efa8f10e9": {
             "placement": null,
@@ -2453,7 +2731,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "0f9cad39-6abd-465a-99ec-1f67b8a0768e": {
             "placement": null,
@@ -2469,7 +2749,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "e4e4c105-eb42-440b-8db3-1fe5212375e5": {
             "placement": null,
@@ -2485,7 +2767,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "834260f1-6a1a-40d4-85f6-93a9e9b20ad1": {
             "placement": null,
@@ -2501,7 +2785,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "a7bc9826-202b-47c5-876e-bed43ac5c92d": {
             "placement": null,
@@ -2517,7 +2803,9 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           },
           "19cdecaf-4b65-400b-9b05-75ac1c549f24": {
             "placement": null,
@@ -2533,8 +2821,15 @@
             "nameplate_scale": 1.0,
             "wounds": [],
             "battle": null,
-            "character_notes": []
+            "character_notes": [],
+            "consumed_inventory": {},
+            "campaign_inventory": []
           }
+        },
+        "creatures": {},
+        "creature_counters": {
+          "creature_1716": 1,
+          "creature_1389": 1
         },
         "groups": [
           {

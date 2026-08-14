@@ -143,6 +143,7 @@ def normalize_campaign_game_state(
         normalize_person_board,
         normalize_map_point,
     )
+    from .creatures import normalize_campaign_creature
 
     raw = deepcopy(value) if isinstance(value, dict) else {}
     current = str(
@@ -287,7 +288,37 @@ def normalize_campaign_game_state(
             "battle": normalized_battle,
             "character_notes": notes,
             "consumed_inventory": consumed_inventory,
+            "campaign_inventory": _normalize_campaign_inventory(
+                raw_state.get("campaign_inventory")
+            ),
         }
+
+    creatures: dict[str, dict[str, Any]] = {}
+    raw_creatures = raw.get("creatures", {}) or {}
+    if isinstance(raw_creatures, list):
+        raw_creatures = {
+            str(item.get("record_id", "") or ""): item
+            for item in raw_creatures if isinstance(item, dict)
+        }
+    if not isinstance(raw_creatures, dict):
+        raise ValueError("Campaign creatures must be keyed by instance ID")
+    for raw_instance_id, raw_creature in raw_creatures.items():
+        instance = normalize_campaign_creature(raw_creature)
+        instance_id = str(raw_instance_id or instance["record_id"]).strip()
+        if not instance_id or instance_id != instance["record_id"] or instance_id in creatures:
+            raise ValueError("Campaign creature keys must match unique instance IDs")
+        creatures[instance_id] = instance
+
+    raw_counters = raw.get("creature_counters", {}) or {}
+    if not isinstance(raw_counters, dict):
+        raise ValueError("Campaign creature counters must be keyed by species ID")
+    creature_counters: dict[str, int] = {}
+    for raw_species_id, raw_counter in raw_counters.items():
+        species_id = str(raw_species_id or "").strip()
+        counter = int(raw_counter)
+        if not species_id or counter < 0:
+            raise ValueError("Campaign creature counters require species IDs and non-negative values")
+        creature_counters[species_id] = counter
 
     groups = []
     for item in (raw.get("groups", []) or []):
@@ -298,6 +329,27 @@ def normalize_campaign_game_state(
             groups.append(deepcopy(item))
     if len({item["record_id"] for item in groups}) != len(groups):
         raise ValueError("Campaign board group IDs must be unique")
+    grouped_actors: set[tuple[str, str]] = set()
+    for group in groups:
+        group_location = str(group.get("location_id", "") or "")
+        for member in group.get("members", []) or []:
+            actor_type = str(member.get("actor_type", "person") or "person")
+            actor_id = str(member.get("actor_id", "") or "")
+            key = (actor_type, actor_id)
+            if key in grouped_actors:
+                raise ValueError("A board actor may belong to only one group")
+            grouped_actors.add(key)
+            if actor_type == "person":
+                actor = people.get(actor_id)
+            elif actor_type == "creature":
+                actor = creatures.get(actor_id)
+            else:
+                raise ValueError("Campaign groups support people and creatures")
+            if actor is None:
+                raise ValueError("Campaign groups may only contain existing actors")
+            placement = actor.get("placement") or {}
+            if str(placement.get("location_id", "") or "") != group_location:
+                raise ValueError("Every group member must occupy the group's location")
     return {
         "initialized": bool(raw.get("initialized", False)),
         "current_game_datetime": current,
@@ -306,8 +358,37 @@ def normalize_campaign_game_state(
         "player_active_map_ids": player_active_map_ids,
         "maps": map_states,
         "people": people,
+        "creatures": creatures,
+        "creature_counters": creature_counters,
         "groups": groups,
     }
+
+
+def _normalize_campaign_inventory(value: Any) -> list[dict[str, Any]]:
+    raw_stacks = value if isinstance(value, list) else []
+    stacks: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for raw in raw_stacks:
+        if not isinstance(raw, dict):
+            raise ValueError("Campaign inventory stacks must be objects")
+        stack_id = str(raw.get("record_id", "") or "").strip()
+        item_id = str(raw.get("item_id", "") or raw.get("part_id", "") or "").strip()
+        quantity = int(raw.get("quantity", 0))
+        if not stack_id or stack_id in seen or not item_id or quantity <= 0:
+            raise ValueError("Campaign inventory stacks require unique IDs, item IDs, and positive quantities")
+        seen.add(stack_id)
+        stacks.append({
+            "record_id": stack_id,
+            "item_id": item_id,
+            "part_id": str(raw.get("part_id", "") or item_id),
+            "name": str(raw.get("name", "") or "Creature part")[:200],
+            "category": str(raw.get("category", "Creature Part") or "Creature Part")[:100],
+            "quantity": min(10, quantity),
+            "source_creature_id": str(raw.get("source_creature_id", "") or ""),
+            "source_species_id": str(raw.get("source_species_id", "") or ""),
+            "acquired_at": str(raw.get("acquired_at", "") or utc_now()),
+        })
+    return stacks
 
 
 def normalize_campaign(value: Any) -> dict[str, Any]:
@@ -454,6 +535,9 @@ class CampaignRepository:
             "battle": deepcopy(prior.get("battle")),
             "character_notes": deepcopy(prior.get("character_notes", []) or []),
             "consumed_inventory": deepcopy(prior.get("consumed_inventory", {}) or {}),
+            "campaign_inventory": _normalize_campaign_inventory(
+                prior.get("campaign_inventory")
+            ),
         }
 
     def ensure_game_state(
@@ -516,6 +600,10 @@ class CampaignRepository:
             "player_active_map_ids": {},
             "maps": map_states,
             "people": people,
+            "creatures": deepcopy(normalized["game_state"].get("creatures", {})),
+            "creature_counters": deepcopy(
+                normalized["game_state"].get("creature_counters", {})
+            ),
             "groups": deepcopy(world_document.get("board_groups", []) or []),
         }
         campaign["game_state"] = normalize_campaign_game_state(

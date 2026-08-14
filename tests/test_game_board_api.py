@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
@@ -419,6 +420,26 @@ class GmailAdapterTests(unittest.TestCase):
 
 
 class GameBoardAssetTests(unittest.TestCase):
+    def test_only_read_book_covers_are_authorized(self):
+        service = object.__new__(GameBoardService)
+        service.board_snapshot = lambda _session_id, for_players=False: {
+            "maps": [],
+            "actors": [],
+            "character_sheet": {
+                "books": [{"cover_asset_id": "book-cover:charms"}],
+            },
+        }
+        service.world_board = SimpleNamespace(
+            load=lambda: SimpleNamespace(data={"maps": [], "people": []})
+        )
+        path, media_type = service.resolve_player_asset(
+            "session-1", "book-cover:charms"
+        )
+        self.assertEqual(path.name, "Charms.png")
+        self.assertEqual(media_type, "image/png")
+        with self.assertRaises(PermissionError):
+            service.resolve_player_asset("session-1", "book-cover:potions")
+
     def test_map_search_returns_typo_tolerant_near_matches(self):
         window = object.__new__(GameBoardWindow)
         window.board_snapshot = {
@@ -477,6 +498,11 @@ class GameBoardAssetTests(unittest.TestCase):
         self.assertIn("renderAttributesPanel", client)
         self.assertIn("renderOverviewPanel", client)
         self.assertIn("renderKnowledgePanel", client)
+        self.assertIn("renderBookLibrary", client)
+        self.assertIn("renderBookContents", client)
+        self.assertIn("Search all known spells", client)
+        self.assertIn("ccgb-book-grid", stylesheet)
+        self.assertIn("book-cover:", (root / "headmasters_scroll" / "character_sheet.py").read_text(encoding="utf-8"))
         self.assertIn("character_roll_request", client)
         self.assertIn("ccgb-roll-components", client)
         self.assertIn("component.sources || []", client)
@@ -609,7 +635,13 @@ class GameBoardAssetTests(unittest.TestCase):
         self.assertIn("self._create_board_map_controls(self.board_tools_content)", desktop)
         self.assertIn("self._create_board_groups_controls(self.board_tools_content)", desktop)
         self.assertIn('("groups", "●", "Characters")', desktop)
-        self.assertIn("round(available * 0.35)", desktop)
+        self.assertIn("def _build_headmaster_tools_drawer", desktop)
+        self.assertIn("def collapse_headmaster_tools", desktop)
+        self.assertIn('"groups": 430', desktop)
+        self.assertIn('"creatures": 440', desktop)
+        self.assertNotIn("self.board_tools_host = tk.Frame(self.chat_expanded", desktop)
+        self.assertIn("self.headmaster_tools_drawer.place(", desktop)
+        self.assertNotIn('drawer.pack(side="left"', desktop)
         self.assertNotIn('window.title("Map Tools")', desktop)
         self.assertNotIn('dialog.title("Game Board Occupants")', desktop)
         self.assertNotIn('("groups", "●", "Groups")', desktop)

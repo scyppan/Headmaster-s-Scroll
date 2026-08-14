@@ -13,6 +13,7 @@
   font: 15px/1.45 "Segoe UI", system-ui, sans-serif;
   margin: 7px;
   max-width: none;
+  position: relative;
   transform: none;
   width: calc(100% - 14px);
 }
@@ -494,6 +495,86 @@
 #gameboard .ccgb-profile-card dl div { display: grid; grid-template-columns: 90px 1fr; }
 #gameboard .ccgb-profile-card dt { font-weight: 700; }
 #gameboard .ccgb-profile-card dd { margin: 0; }
+#gameboard .ccgb-book-library,
+#gameboard .ccgb-book-reader { display: grid; gap: 10px; }
+#gameboard .ccgb-library-tools {
+  align-items: center;
+  display: grid;
+  gap: 7px;
+  grid-template-columns: minmax(220px, 1fr) auto;
+}
+#gameboard .ccgb-library-tools input {
+  border: 1px solid #a87b43;
+  min-height: 36px;
+  padding: 6px 9px;
+}
+#gameboard .ccgb-library-tools button,
+#gameboard .ccgb-book-reader-header > button {
+  background: #8a422c;
+  border: 1px solid #66301f;
+  color: #fff8e7;
+  cursor: pointer;
+  min-height: 36px;
+  padding: 6px 12px;
+}
+#gameboard .ccgb-book-count { color: #735031; font-size: 12px; }
+#gameboard .ccgb-book-grid {
+  align-items: start;
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+}
+#gameboard .ccgb-book-card {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: #2f1f13;
+  cursor: pointer;
+  display: grid;
+  gap: 5px;
+  justify-items: center;
+  padding: 5px;
+  text-align: center;
+}
+#gameboard .ccgb-book-card:hover { background: rgba(198, 154, 88, 0.2); }
+#gameboard .ccgb-book-cover,
+#gameboard .ccgb-reader-cover {
+  align-items: center;
+  aspect-ratio: 2 / 3;
+  background: linear-gradient(145deg, #d6b56e, #8a4f2c);
+  border: 1px solid #6b3227;
+  box-shadow: 2px 3px 7px rgba(55, 35, 20, 0.28);
+  color: #fff3cc;
+  display: flex;
+  font: 700 36px Georgia, serif;
+  justify-content: center;
+  overflow: hidden;
+  width: min(100%, 150px);
+}
+#gameboard .ccgb-book-cover img,
+#gameboard .ccgb-reader-cover img { height: 100%; object-fit: cover; width: 100%; }
+#gameboard .ccgb-book-card strong { font: 700 13px Georgia, serif; line-height: 1.2; }
+#gameboard .ccgb-book-card small { color: #735031; font-size: 11px; }
+#gameboard .ccgb-book-reader-header {
+  align-items: start;
+  background: rgba(255, 248, 226, 0.72);
+  border: 1px solid #c69a58;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: auto 78px minmax(0, 1fr);
+  padding: 9px;
+}
+#gameboard .ccgb-reader-cover { font-size: 24px; width: 78px; }
+#gameboard .ccgb-book-reader-header h2 { font: 700 19px Georgia, serif; margin: 2px 0 3px; }
+#gameboard .ccgb-book-reader-header p,
+#gameboard .ccgb-book-reader-header small { color: #735031; display: block; margin: 0 0 3px; }
+#gameboard .ccgb-book-contents { display: grid; gap: 10px; }
+#gameboard .ccgb-book-content-section {
+  background: rgba(255, 248, 226, 0.45);
+  border: 1px solid #c69a58;
+  padding: 9px;
+}
+#gameboard .ccgb-book-content-section h3 { font: 700 15px Georgia, serif; margin: 0 0 7px; }
 #gameboard .ccgb-catalog-panel { display: grid; gap: 9px; }
 #gameboard .ccgb-catalog-tools { display: grid; gap: 7px; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
 #gameboard .ccgb-catalog-tools > input[type="search"] { min-width: 190px; }
@@ -1211,6 +1292,51 @@
 
 #gameboard .ccgb-board-actor.is-player-character { z-index: 12; }
 
+#gameboard .ccgb-board-actor.is-creature {
+  border-radius: 50%;
+  box-shadow: none;
+}
+
+#gameboard .ccgb-board-actor.is-creature.is-dead {
+  filter: grayscale(0.8);
+  opacity: 0.82;
+}
+
+#gameboard .ccgb-board-actor.is-creature.is-dead:hover {
+  cursor: context-menu;
+  outline: var(--map-control-outline, 0.12px) solid #d6ad52;
+}
+
+#gameboard .ccgb-creature-menu {
+  background: #fff4d1;
+  border: 1px solid #704126;
+  box-shadow: 0 4px 15px rgba(44, 27, 17, 0.28);
+  display: grid;
+  gap: 3px;
+  min-width: 210px;
+  padding: 5px;
+  position: absolute;
+  z-index: 1000;
+}
+
+#gameboard .ccgb-creature-menu strong {
+  border-bottom: 1px solid #c9aa71;
+  padding: 4px 6px;
+}
+
+#gameboard .ccgb-creature-menu button {
+  background: transparent;
+  border: 0;
+  color: #382719;
+  cursor: pointer;
+  padding: 6px;
+  text-align: left;
+}
+
+#gameboard .ccgb-creature-menu button:hover {
+  background: #e4c98f;
+}
+
 #gameboard .ccgb-board-actor.is-player-character > .ccgb-actor-label,
 #gameboard .ccgb-board-actor.is-player-character > .ccgb-position-leader,
 #gameboard .ccgb-board-actor.is-player-character > .ccgb-position-label {
@@ -1530,6 +1656,10 @@
   #gameboard .ccgb-attribute-lower-grid { grid-template-columns: 1fr; }
   #gameboard .ccgb-ability-card { min-height: 0; }
   #gameboard .ccgb-catalog-tools { grid-template-columns: 1fr; }
+  #gameboard .ccgb-library-tools { grid-template-columns: 1fr; }
+  #gameboard .ccgb-book-reader-header { grid-template-columns: 68px minmax(0, 1fr); }
+  #gameboard .ccgb-book-reader-header > button { grid-column: 1 / -1; }
+  #gameboard .ccgb-reader-cover { width: 68px; }
   #gameboard .ccgb-profile-card { grid-column: auto; grid-template-columns: 96px 1fr; }
   #gameboard .ccgb-profile-portrait { min-height: 96px; }
 }

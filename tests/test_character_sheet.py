@@ -28,7 +28,7 @@ class CharacterSheetTests(unittest.TestCase):
                 {"record_id": "bond", "event_type": "bonded_creature", "date": "2002-03-01", "person_ids": ["person-1"], "named_creature_id": "named-1"},
                 {"record_id": "irk", "event_type": "irked_creature", "date": "2002-04-01", "person_ids": ["person-1"], "named_creature_id": "named-1"},
             ],
-            "books": [{"record_id": "book-1", "title": "Primer", "contents": [{"content_type": "Proficiency", "collection": "proficiencies", "record_id": "prof-1"}]}],
+            "books": [{"record_id": "book-1", "title": "Primer", "categories": ["Charms"], "contents": [{"content_type": "Proficiency", "collection": "proficiencies", "record_id": "prof-1"}]}],
             "book_readings": [{"record_id": "read-1", "person_id": "person-1", "book_id": "book-1", "date": "2002-01-01"}],
             "named_creatures": [{"record_id": "named-1", "name": "Pip", "species_record_id": "creature-1"}],
             "items": [],
@@ -64,6 +64,9 @@ class CharacterSheetTests(unittest.TestCase):
         sheet = build_character_sheet(self.person, self.world, self.database, self.campaign())
         self.assertEqual([item["record_id"] for item in sheet["proficiencies"]], ["prof-1"])
         self.assertEqual(sheet["proficiencies"][0]["source"], "Primer")
+        self.assertEqual([item["record_id"] for item in sheet["books"]], ["book-1"])
+        self.assertEqual(sheet["books"][0]["cover_asset_id"], "book-cover:charms")
+        self.assertEqual(sheet["books"][0]["contents"]["proficiencies"], ["prof-1"])
         self.assertEqual(sheet["spells"], [])
         later = build_character_sheet(self.person, self.world, self.database, self.campaign("2006-01-01T08:00"))
         self.assertEqual([item["record_id"] for item in later["spells"]], ["spell-1"])

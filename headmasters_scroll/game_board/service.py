@@ -9,6 +9,7 @@ import sys
 import threading
 from copy import deepcopy
 from datetime import date, datetime, time, timedelta, timezone
+from difflib import SequenceMatcher
 from secrets import token_urlsafe
 from typing import Any
 from pathlib import Path
@@ -33,6 +34,12 @@ from ..campaigns import CampaignRepository, normalize_board_camera, normalize_zo
 from ..character_attributes import calculate_character_attributes
 from ..character_sheet import build_character_sheet
 from ..character_rolls import perform_character_roll
+from ..creatures import (
+    generate_creature_instance,
+    normalize_campaign_creature,
+    roll_creature_action,
+    utc_now as creature_utc_now,
+)
 from .storage import GameBoardRepository
 
 
@@ -41,6 +48,25 @@ GAME_DATETIME = re.compile(
     r"^(?P<year>-?[1-9]\d*)-(?P<month>\d{2})-(?P<day>\d{2})T"
     r"(?P<hour>\d{2}):(?P<minute>\d{2})$"
 )
+BOOK_COVER_DIRECTORY = Path(__file__).resolve().parents[2] / "assets" / "book covers"
+BOOK_COVER_FILES = {
+    "alchemy": "Alchemy.png",
+    "arithmancy": "exec-119cccea-4701-43fc-a21b-ca399d09be17.png",
+    "artificing": "Artificing.png",
+    "astronomy": "Astronomy.png",
+    "charms": "Charms.png",
+    "creatures": "Creatures.png",
+    "dark-arts": "Dark Arts.png",
+    "defense": "Defense.png",
+    "divination": "Divination.png",
+    "flying": "Flying.png",
+    "herbology": "Herbology.png",
+    "history": "History.png",
+    "muggles": "Muggles.png",
+    "potions": "Potions.png",
+    "runes": "Runes.png",
+    "transfiguration": "Transfiguration.png",
+}
 
 
 def utc_now() -> datetime:
@@ -499,6 +525,10 @@ class GameBoardService:
                 base.update(deepcopy(override))
             person["board"] = normalize_person_board(base)
         world["board_groups"] = deepcopy(state.get("groups", []))
+        world["campaign_creatures"] = deepcopy(state.get("creatures", {}))
+        world["campaign_creature_counters"] = deepcopy(
+            state.get("creature_counters", {})
+        )
         return campaign, world
 
     def _persist_campaign_document(
@@ -538,12 +568,18 @@ class GameBoardService:
             if isinstance(item, dict) and item.get("record_id")
         }
         groups = deepcopy(document.get("board_groups", []) or [])
+        creatures = deepcopy(document.get("campaign_creatures", {}) or {})
+        creature_counters = deepcopy(
+            document.get("campaign_creature_counters", {}) or {}
+        )
 
         def update(state: dict[str, Any]) -> None:
             state["initialized"] = True
             state["maps"] = map_states
             state["people"] = people
             state["groups"] = groups
+            state["creatures"] = creatures
+            state["creature_counters"] = creature_counters
 
         return self.campaign_repository.update_game_state(campaign_id, update)
 
@@ -1263,7 +1299,553 @@ class GameBoardService:
                     actor["character_notes"] = deepcopy(
                         person_state.get("character_notes", []) or []
                     )
+            self._append_creature_actors(
+                snapshot, campaign, session,
+                for_players=for_players, contact_id=contact_id,
+            )
             return snapshot
+
+    def _append_creature_actors(
+        self,
+        snapshot: dict[str, Any],
+        campaign: dict[str, Any],
+        session: dict[str, Any],
+        *,
+        for_players: bool,
+        contact_id: str | None,
+    ) -> None:
+        """Add campaign-only creatures with viewer-specific identification."""
+
+        visible_maps = {
+            str(item.get("record_id", "") or "")
+            for item in snapshot.get("maps", [])
+        }
+        known_proficiencies: set[str] = set()
+        viewer_character_id = ""
+        if for_players and contact_id:
+            viewer = next(
+                (
+                    item for item in session.get("roster", [])
+                    if str(item.get("contact_id", "")) == str(contact_id)
+                ),
+                None,
+            )
+            viewer_character_id = str((viewer or {}).get("character_id", "") or "")
+            known_proficiencies = {
+                str(item.get("record_id", "") or "")
+                for item in (snapshot.get("character_sheet") or {}).get(
+                    "proficiencies", []
+                )
+                if isinstance(item, dict)
+            }
+        group_by_creature: dict[str, dict[str, Any]] = {}
+        for group in campaign.get("game_state", {}).get("groups", []) or []:
+            for member in group.get("members", []) or []:
+                if str(member.get("actor_type", "")) == "creature":
+                    group_by_creature[str(member.get("actor_id", ""))] = group
+        for raw in (
+            campaign.get("game_state", {}).get("creatures", {}) or {}
+        ).values():
+            creature = normalize_campaign_creature(raw)
+            placement = creature["placement"]
+            if placement["map_id"] not in visible_maps:
+                continue
+            if for_players and creature["visibility"] != "players":
+                continue
+            identified = (
+                not for_players
+                or creature["awareness_proficiency_id"] in known_proficiencies
+            )
+            group = group_by_creature.get(creature["record_id"])
+            group_color = str((group or {}).get("color", "#808080") or "#808080")
+            # A player's styling must not disclose group membership before that
+            # player can identify the species.
+            viewer_color = group_color if identified else "#808080"
+            actor = {
+                "actor_type": "creature",
+                "actor_id": creature["record_id"],
+                "name": creature["species_name"] if identified else "Unknown Creature",
+                "location_id": placement["location_id"],
+                "floor_id": placement["floor_id"],
+                "map_id": placement["map_id"],
+                "x": placement["x"],
+                "y": placement["y"],
+                "label_offset": deepcopy(creature["label_offset"]),
+                "display_mode": "dot",
+                "name_revealed": True,
+                "faction_revealed": False,
+                "faction_name": None,
+                "faction_color": viewer_color,
+                "group_id": str((group or {}).get("record_id", "") or ""),
+                "group_name": str((group or {}).get("name", "") or ""),
+                "group_color": viewer_color,
+                "is_player_character": False,
+                "is_creature": True,
+                "identified": identified,
+                "life_state": creature["life_state"],
+            }
+            if not for_players:
+                actor.update({
+                    "species_record_id": creature["species_record_id"],
+                    "true_name": creature["species_name"],
+                    "internal_label": creature["internal_label"],
+                    "generated": deepcopy(creature["generated"]),
+                    "actions": deepcopy(creature["actions"]),
+                    "wounds": deepcopy(creature["wounds"]),
+                    "battle": deepcopy(creature["battle"]),
+                    "visibility": creature["visibility"],
+                    "harvest_pools": deepcopy(creature["harvest_pools"]),
+                })
+            elif creature["life_state"] == "dead" and viewer_character_id:
+                actor["harvest_actions"] = [
+                    {
+                        "part_id": pool["part_id"],
+                        "name": pool["name"],
+                        "quantity": pool["remaining_quantity"],
+                    }
+                    for pool in creature["harvest_pools"]
+                    if pool["remaining_quantity"] > 0
+                    and not any(
+                        str(attempt.get("character_id", "")) == viewer_character_id
+                        and str(attempt.get("part_id", "")) == pool["part_id"]
+                        for attempt in creature["harvest_attempts"]
+                    )
+                ]
+            snapshot.setdefault("actors", []).append(actor)
+
+    def creature_species(self, query: str = "", limit: int = 100) -> list[dict[str, Any]]:
+        database = self.shared_store.load("db.json").data
+        needle = " ".join(str(query or "").casefold().split())
+        matches: list[dict[str, Any]] = []
+        for species in database.get("creatures", []) or []:
+            if not isinstance(species, dict) or not species.get("record_id"):
+                continue
+            haystack = " ".join(
+                str(species.get(key, "") or "")
+                for key in ("name", "creature_family", "classification", "description")
+            ).casefold()
+            score = 1.0 if needle and needle in haystack else (
+                SequenceMatcher(None, needle, str(species.get("name", "")).casefold()).ratio()
+                if needle else 0.0
+            )
+            if needle and score < 0.34:
+                continue
+            matches.append({
+                "record_id": str(species["record_id"]),
+                "name": str(species.get("name") or "Creature"),
+                "family": str(species.get("creature_family") or ""),
+                "classification": str(species.get("classification") or ""),
+                "description": str(species.get("description") or ""),
+                "attacks": len(species.get("attacks", []) or []),
+                "abilities": len(species.get("abilities", []) or []),
+                "parts": len(species.get("parts", []) or []),
+                "_search_score": score,
+            })
+        matches.sort(key=lambda item: (-float(item["_search_score"]), item["name"].casefold()))
+        result = matches[: max(1, min(500, int(limit)))]
+        for item in result:
+            item.pop("_search_score", None)
+        return result
+
+    def _species_record(self, species_id: str) -> dict[str, Any]:
+        record = next(
+            (
+                item for item in self.shared_store.load("db.json").data.get(
+                    "creatures", []
+                )
+                if str(item.get("record_id", "")) == str(species_id)
+            ),
+            None,
+        )
+        if record is None:
+            raise KeyError("Unknown creature species")
+        return record
+
+    @staticmethod
+    def _nudge_creature_point(
+        x: float, y: float, occupied: list[tuple[float, float]]
+    ) -> tuple[float, float]:
+        x, y = max(0.0, min(1.0, float(x))), max(0.0, min(1.0, float(y)))
+        if all(math.hypot(x - ox, y - oy) >= 0.018 for ox, oy in occupied):
+            return x, y
+        for ring in range(1, 10):
+            radius = 0.012 * ring
+            for step in range(8 * ring):
+                angle = (math.tau * step) / (8 * ring)
+                candidate = (
+                    max(0.0, min(1.0, x + math.cos(angle) * radius)),
+                    max(0.0, min(1.0, y + math.sin(angle) * radius)),
+                )
+                if all(
+                    math.hypot(candidate[0] - ox, candidate[1] - oy) >= 0.018
+                    for ox, oy in occupied
+                ):
+                    return candidate
+        return x, y
+
+    def place_campaign_creature(
+        self, session_id: str, species_id: str, map_id: str, x: float, y: float
+    ) -> dict[str, Any]:
+        with self._lock:
+            session = self._board_context(session_id)
+            campaign, document = self._campaign_document(session)
+            map_record = self._campaign_map(document, map_id)
+            species = self._species_record(species_id)
+            creatures = document.setdefault("campaign_creatures", {})
+            occupied = [
+                (float(item["placement"]["x"]), float(item["placement"]["y"]))
+                for item in creatures.values()
+                if item.get("placement", {}).get("map_id") == map_id
+            ]
+            for person in document.get("people", []) or []:
+                placement = normalize_person_board(person.get("board")).get("placement")
+                if placement and placement.get("map_id") == map_id:
+                    occupied.append((float(placement["x"]), float(placement["y"])))
+            px, py = self._nudge_creature_point(x, y, occupied)
+            counters = document.setdefault("campaign_creature_counters", {})
+            counter = int(counters.get(species_id, 0) or 0) + 1
+            counters[species_id] = counter
+            creature = generate_creature_instance(species, counter, {
+                "location_id": str(map_record.get("location_id", "")),
+                "floor_id": str(map_record.get("floor_id", "") or ""),
+                "map_id": map_id, "x": px, "y": py,
+            })
+            creatures[creature["record_id"]] = creature
+            self._persist_campaign_document(campaign["record_id"], document)
+            return deepcopy(creature)
+
+    def update_campaign_creature(
+        self,
+        session_id: str,
+        creature_id: str,
+        *,
+        x: float | None = None,
+        y: float | None = None,
+        map_id: str | None = None,
+        label_x: float | None = None,
+        label_y: float | None = None,
+        visibility: str | None = None,
+    ) -> dict[str, Any]:
+        with self._lock:
+            session = self._board_context(session_id)
+            campaign, document = self._campaign_document(session)
+            raw = document.setdefault("campaign_creatures", {}).get(creature_id)
+            if raw is None:
+                raise KeyError("Unknown campaign creature")
+            creature = normalize_campaign_creature(raw)
+            if map_id is not None:
+                target = self._campaign_map(document, map_id)
+                previous_location_id = creature["placement"]["location_id"]
+                creature["placement"].update({
+                    "map_id": map_id,
+                    "location_id": str(target.get("location_id", "")),
+                    "floor_id": str(target.get("floor_id", "") or ""),
+                })
+                if creature["placement"]["location_id"] != previous_location_id:
+                    self._remove_actor_from_groups(document, "creature", creature_id)
+            if x is not None:
+                creature["placement"]["x"] = max(0.0, min(1.0, float(x)))
+            if y is not None:
+                creature["placement"]["y"] = max(0.0, min(1.0, float(y)))
+            if label_x is not None:
+                creature["label_offset"]["x"] = max(-1.0, min(1.0, float(label_x)))
+            if label_y is not None:
+                creature["label_offset"]["y"] = max(-1.0, min(1.0, float(label_y)))
+            if visibility is not None:
+                if visibility not in {"headmaster", "players"}:
+                    raise ValueError("Visibility must be headmaster or players")
+                creature["visibility"] = visibility
+            creature["last_updated"] = creature_utc_now()
+            document["campaign_creatures"][creature_id] = normalize_campaign_creature(creature)
+            self._persist_campaign_document(campaign["record_id"], document)
+            return deepcopy(creature)
+
+    @staticmethod
+    def _remove_actor_from_groups(
+        document: dict[str, Any], actor_type: str, actor_id: str
+    ) -> None:
+        groups = []
+        for group in document.get("board_groups", []) or []:
+            members = [
+                member for member in group.get("members", []) or []
+                if not (
+                    str(member.get("actor_type", "")) == actor_type
+                    and str(member.get("actor_id", "")) == actor_id
+                )
+            ]
+            if len(members) >= 2:
+                updated = deepcopy(group)
+                updated["members"] = members
+                groups.append(updated)
+        document["board_groups"] = groups
+
+    def set_campaign_creature_group(
+        self, session_id: str, creature_id: str, group_id: str | None
+    ) -> dict[str, Any] | None:
+        with self._lock:
+            session = self._board_context(session_id)
+            campaign, document = self._campaign_document(session)
+            creature = document.setdefault("campaign_creatures", {}).get(creature_id)
+            if creature is None:
+                raise KeyError("Unknown campaign creature")
+            placement = normalize_campaign_creature(creature)["placement"]
+            target = next(
+                (
+                    item for item in document.get("board_groups", []) or []
+                    if str(item.get("record_id", "")) == str(group_id or "")
+                ),
+                None,
+            ) if group_id else None
+            if group_id and target is None:
+                raise KeyError("Unknown board group")
+            if target and str(target.get("location_id", "")) != placement["location_id"]:
+                raise ValueError("A creature can only join a group at the same location")
+            for group in document.get("board_groups", []) or []:
+                group["members"] = [
+                    member for member in group.get("members", []) or []
+                    if not (
+                        str(member.get("actor_type", "")) == "creature"
+                        and str(member.get("actor_id", "")) == creature_id
+                    )
+                ]
+            if target is not None:
+                target.setdefault("members", []).append({
+                    "record_id": str(uuid4()),
+                    "actor_type": "creature",
+                    "actor_id": creature_id,
+                })
+                target["last_updated"] = iso_utc(utc_now())
+            document["board_groups"] = [
+                group for group in document.get("board_groups", []) or []
+                if len(group.get("members", []) or []) >= 2
+            ]
+            self._persist_campaign_document(campaign["record_id"], document)
+            return deepcopy(target) if target in document["board_groups"] else None
+
+    def creature_campaign_action(
+        self,
+        session_id: str,
+        creature_id: str,
+        action: str,
+        *,
+        severity: str = "",
+        note: str = "",
+        battle_name: str = "",
+    ) -> dict[str, Any] | None:
+        with self._lock:
+            session = self._board_context(session_id)
+            campaign, document = self._campaign_document(session)
+            creatures = document.setdefault("campaign_creatures", {})
+            raw = creatures.get(creature_id)
+            if raw is None:
+                raise KeyError("Unknown campaign creature")
+            creature = normalize_campaign_creature(raw)
+            normalized_action = str(action or "").strip().casefold()
+            if normalized_action == "wound":
+                level = str(severity or "").strip().casefold()
+                if level not in {"light", "medium", "heavy"}:
+                    raise ValueError("Wounds must be light, medium, or heavy")
+                creature["wounds"].append({
+                    "record_id": str(uuid4()), "severity": level,
+                    "note": str(note or "")[:1000], "created_at": creature_utc_now(),
+                })
+                if level == "heavy" and sum(
+                    item["severity"] == "heavy" for item in creature["wounds"]
+                ) >= int(creature["generated"]["heavy_wound_cap"]):
+                    creature["life_state"] = "dead"
+                    creature["died_at"] = creature_utc_now()
+            elif normalized_action == "kill":
+                creature["life_state"] = "dead"
+                creature["death_override"] = True
+                creature["died_at"] = creature_utc_now()
+            elif normalized_action == "revive":
+                creature["life_state"] = "alive"
+                creature["death_override"] = False
+                creature["died_at"] = None
+            elif normalized_action == "enter_battle":
+                creature["battle"] = {
+                    "active": True, "name": str(battle_name or "Battle")[:200],
+                    "entered_at": creature_utc_now(),
+                }
+            elif normalized_action == "leave_battle":
+                creature["battle"] = None
+            elif normalized_action == "reroll":
+                if creature["life_state"] != "alive" or creature["wounds"]:
+                    raise ValueError("Only an alive, unwounded creature can be rerolled")
+                replacement = generate_creature_instance(
+                    self._species_record(creature["species_record_id"]),
+                    creature["counter"], deepcopy(creature["placement"]),
+                )
+                for key in (
+                    "record_id", "internal_label", "label_offset", "visibility",
+                    "battle", "created_at",
+                ):
+                    replacement[key] = deepcopy(creature[key])
+                creature = replacement
+            elif normalized_action == "delete":
+                del creatures[creature_id]
+                self._remove_actor_from_groups(document, "creature", creature_id)
+                self._persist_campaign_document(campaign["record_id"], document)
+                return None
+            else:
+                raise ValueError("Unknown creature action")
+            if creature["life_state"] == "dead" and not creature["harvest_pools"]:
+                del creatures[creature_id]
+                self._remove_actor_from_groups(document, "creature", creature_id)
+                self._persist_campaign_document(campaign["record_id"], document)
+                return None
+            creature["last_updated"] = creature_utc_now()
+            creatures[creature_id] = normalize_campaign_creature(creature)
+            self._persist_campaign_document(campaign["record_id"], document)
+            return deepcopy(creature)
+
+    def roll_campaign_creature_action(
+        self, session_id: str, creature_id: str, action_id: str
+    ) -> dict[str, Any]:
+        with self._lock:
+            session = self._board_context(session_id)
+            campaign, _document = self._campaign_document(session)
+            creature = campaign.get("game_state", {}).get("creatures", {}).get(creature_id)
+            if creature is None:
+                raise KeyError("Unknown campaign creature")
+            result = roll_creature_action(creature, action_id)
+            result["awareness_proficiency_id"] = str(
+                creature.get("awareness_proficiency_id", "")
+            )
+            return result
+
+    def harvest_campaign_creature(
+        self, session_id: str, contact_id: str, creature_id: str, part_id: str
+    ) -> dict[str, Any]:
+        """Atomically attempt one character's one allowed claim on a corpse part."""
+
+        with self._lock:
+            session = self._board_context(session_id)
+            player = self._player(session, contact_id)
+            character_id = str(player.get("character_id", "") or "")
+            if not character_id:
+                raise PermissionError("This player has no linked character")
+            campaign, document = self._campaign_document(session)
+            creatures = document.setdefault("campaign_creatures", {})
+            raw = creatures.get(creature_id)
+            if raw is None:
+                raise KeyError("Unknown campaign creature")
+            creature = normalize_campaign_creature(raw)
+            if creature["life_state"] != "dead" or creature["visibility"] != "players":
+                raise PermissionError("That creature cannot be harvested")
+            person = next(
+                (
+                    item for item in document.get("people", []) or []
+                    if str(item.get("record_id", "")) == character_id
+                ),
+                None,
+            )
+            if person is None:
+                raise PermissionError("The linked character no longer exists")
+            person_placement = normalize_person_board(person.get("board")).get("placement")
+            if not person_placement or person_placement.get("map_id") != creature["placement"]["map_id"]:
+                raise PermissionError("The character and corpse must be on the same map")
+            pool = next(
+                (item for item in creature["harvest_pools"] if item["part_id"] == part_id),
+                None,
+            )
+            if pool is None or int(pool["remaining_quantity"]) <= 0:
+                raise ValueError("That part is no longer available")
+            if any(
+                str(item.get("character_id", "")) == character_id
+                and str(item.get("part_id", "")) == part_id
+                for item in creature["harvest_attempts"]
+            ):
+                raise PermissionError("This character already attempted that part")
+            sheet = build_character_sheet(
+                person, document, self.shared_store.load("db.json").data, campaign
+            )
+            known = {
+                str(item.get("record_id", "")): item
+                for item in sheet.get("proficiencies", []) or []
+                if isinstance(item, dict)
+            }
+            awareness_id = creature["awareness_proficiency_id"]
+            if awareness_id not in known:
+                raise PermissionError("Creature awareness is required to harvest this corpse")
+            proficiency_id = str(pool.get("required_proficiency_id") or awareness_id)
+            if proficiency_id not in known:
+                raise PermissionError("A specialized proficiency is required for that part")
+            roll = perform_character_roll(sheet, "proficiency", proficiency_id)
+            outcome = str(roll.get("outcome", "") or "")
+            attempt = {
+                "character_id": character_id,
+                "part_id": part_id,
+                "attempted_at": creature_utc_now(),
+                "outcome": outcome,
+                "roll": deepcopy(roll),
+            }
+            creature["harvest_attempts"].append(attempt)
+            awarded = 0
+            if outcome in {"success", "critical_success"}:
+                awarded = int(pool["remaining_quantity"])
+                pool["remaining_quantity"] = 0
+                pool["status"] = "claimed"
+                existing_people = campaign["game_state"].get("people", {}) or {}
+                person_state = existing_people.get(character_id, {})
+                inventory = deepcopy(person_state.get("campaign_inventory", []) or [])
+                inventory.append({
+                    "record_id": str(uuid4()),
+                    "item_id": part_id,
+                    "part_id": part_id,
+                    "name": str(pool.get("name") or "Creature part"),
+                    "category": "Creature Part",
+                    "quantity": awarded,
+                    "source_creature_id": creature_id,
+                    "source_species_id": creature["species_record_id"],
+                    "acquired_at": creature_utc_now(),
+                })
+                person["board"] = normalize_person_board(person.get("board"))
+                override = document.setdefault("_campaign_person_inventory", {})
+                override[character_id] = inventory
+            elif outcome == "critical_failure":
+                pool["remaining_quantity"] = 0
+                pool["status"] = "destroyed"
+            creature["last_updated"] = creature_utc_now()
+            removed = all(
+                int(item.get("remaining_quantity", 0)) <= 0
+                for item in creature["harvest_pools"]
+            )
+            if removed:
+                del creatures[creature_id]
+                self._remove_actor_from_groups(document, "creature", creature_id)
+            else:
+                creatures[creature_id] = normalize_campaign_creature(creature)
+
+            campaign_id = campaign["record_id"]
+            inventory_override = document.pop("_campaign_person_inventory", {})
+            self._persist_campaign_document(campaign_id, document)
+            if inventory_override:
+                def save_inventory(state: dict[str, Any]) -> None:
+                    for person_id, stacks in inventory_override.items():
+                        state.setdefault("people", {}).setdefault(
+                            person_id, {}
+                        )["campaign_inventory"] = stacks
+                self.campaign_repository.update_game_state(campaign_id, save_inventory)
+            return {
+                "activity_type": "creature_harvest",
+                "creature_id": creature_id,
+                "species_name": creature["species_name"],
+                "awareness_proficiency_id": creature["awareness_proficiency_id"],
+                "part_id": part_id,
+                "part_name": str(pool.get("name") or "Creature part"),
+                "quantity_awarded": awarded,
+                "outcome": outcome,
+                "roll": roll,
+                "corpse_removed": removed,
+                "text": (
+                    f"{sheet.get('name', 'A character')} harvested {awarded} "
+                    f"{pool.get('name', 'creature part')}."
+                    if awarded else
+                    f"{sheet.get('name', 'A character')} failed to harvest "
+                    f"{pool.get('name', 'creature part')}."
+                ),
+            }
 
     def character_attributes_for(
         self,
@@ -1418,7 +2000,24 @@ class GameBoardService:
                 already = person_state.setdefault("consumed_inventory", {})
                 for item_id, raw_quantity in consumption.items():
                     quantity = float(raw_quantity)
-                    already[item_id] = float(already.get(item_id, 0) or 0) + quantity
+                    stacks = person_state.setdefault("campaign_inventory", [])
+                    stack = next(
+                        (
+                            item for item in stacks
+                            if str(item.get("record_id", "")) == str(item_id)
+                        ),
+                        None,
+                    )
+                    if stack is not None:
+                        remaining = float(stack.get("quantity", 0) or 0) - quantity
+                        if remaining < 0:
+                            raise ValueError("Campaign inventory changed before consumption")
+                        if remaining == 0:
+                            stacks.remove(stack)
+                        else:
+                            stack["quantity"] = int(remaining) if remaining.is_integer() else remaining
+                    else:
+                        already[item_id] = float(already.get(item_id, 0) or 0) + quantity
 
             # Consumption is committed before the die is rolled. A failed attempt
             # therefore uses the same ingredients as a successful one.
@@ -2496,6 +3095,23 @@ class GameBoardService:
         asset_id: str,
     ) -> tuple[Any, str]:
         snapshot = self.board_snapshot(session_id, for_players=True)
+        sheet = snapshot.get("character_sheet")
+        authorized_cover_ids = {
+            str(book.get("cover_asset_id") or "")
+            for book in (sheet or {}).get("books", []) or []
+            if isinstance(book, dict)
+        }
+        if asset_id.startswith("book-cover:"):
+            if asset_id not in authorized_cover_ids:
+                raise PermissionError("That book cover is not available to this session")
+            slug = asset_id.removeprefix("book-cover:")
+            filename = BOOK_COVER_FILES.get(slug)
+            if not filename:
+                raise PermissionError("That book cover is not available")
+            cover = BOOK_COVER_DIRECTORY / filename
+            if not cover.is_file():
+                raise FileNotFoundError(filename)
+            return cover, "image/png"
         authorized_map_ids = {
             str(map_record.get("record_id"))
             for map_record in snapshot.get("maps", [])
@@ -2521,7 +3137,6 @@ class GameBoardService:
                     return self.world_board.assets.resolve(asset_id, portrait), str(
                         portrait.get("mime_type", "application/octet-stream")
                     )
-        sheet = snapshot.get("character_sheet")
         portrait_id = str(
             ((sheet or {}).get("overview") or {}).get("portrait_asset_id", "")
             or ""
@@ -2585,7 +3200,7 @@ class GameBoardService:
             raise ValueError("Chat messages cannot be empty")
         if len(text) > 500:
             raise ValueError("Chat messages are limited to 500 characters")
-        if sender_role not in {"player", "headmaster", "system"}:
+        if sender_role not in {"player", "headmaster", "system", "creature"}:
             raise ValueError("Unknown chat sender")
         with self._lock:
             wrapper, session = self._active(session_id)
@@ -2611,6 +3226,40 @@ class GameBoardService:
             del chat[:-100]
             self.repository.save_active(wrapper)
             return deepcopy(message)
+
+    def chat_message_for_viewer(
+        self, message: dict[str, Any], session_id: str, contact_id: str
+    ) -> dict[str, Any]:
+        """Redact creature identity independently for one admitted player."""
+
+        shown = deepcopy(message)
+        activity = shown.get("activity")
+        if not isinstance(activity, dict) or activity.get("activity_type") not in {
+            "creature_action", "creature_harvest"
+        }:
+            return shown
+        proficiency_id = str(activity.get("awareness_proficiency_id", "") or "")
+        sheet = self.character_sheet_for(session_id, contact_id) or {}
+        known = proficiency_id in {
+            str(item.get("record_id", "") or "")
+            for item in sheet.get("proficiencies", []) or []
+            if isinstance(item, dict)
+        }
+        species_name = str(activity.get("species_name") or "Creature")
+        viewer_name = species_name if known else "Unknown creature"
+        if activity.get("activity_type") == "creature_action":
+            action_name = str(activity.get("name") or "an action")
+            roll = int(activity.get("roll", 0) or 0)
+            shown["text"] = f"{viewer_name} uses {action_name} and rolls {roll}."
+            shown["sender_name"] = viewer_name
+        elif not known:
+            shown["text"] = str(shown.get("text", "")).replace(
+                species_name, "an unknown creature"
+            )
+        activity.pop("species_name", None)
+        activity.pop("awareness_proficiency_id", None)
+        activity.pop("internal_label", None)
+        return shown
 
     def revoke(self, contact_id: str, session_id: str | None = None) -> None:
         with self._lock:

@@ -10,6 +10,7 @@ import threading
 import time
 import tkinter as tk
 import urllib.error
+import urllib.parse
 import urllib.request
 from copy import deepcopy
 from dataclasses import dataclass
@@ -770,7 +771,18 @@ class GameBoardWindow(tk.Tk):
         self.board_map_controls_dock: ttk.Frame | None = None
         self.board_token_controls_dock: ttk.Frame | None = None
         self.board_groups_dock: ttk.Frame | None = None
+        self.board_creatures_dock: ttk.Frame | None = None
+        self.creature_placement: dict[str, Any] | None = None
+        self.board_creature_ids: list[str] = []
         self.board_tools_panels: dict[str, ttk.Frame] = {}
+        self.active_headmaster_tool = "groups"
+        self.headmaster_tools_collapsed = False
+        self.headmaster_tool_widths = {
+            "groups": 430,
+            "creatures": 440,
+            "obfuscation-tools": 330,
+            "token-tools": 390,
+        }
         self.board_reveal_value = tk.BooleanVar(value=False)
         self.board_zoom_status_value = tk.StringVar(value="Zoom 100% · 0 clicks")
         self.board_zoom_override_ids: list[int] = []
@@ -792,6 +804,7 @@ class GameBoardWindow(tk.Tk):
         self._configure_style()
         self._build()
         self.bind("<Configure>", self._window_resized, add="+")
+        self.bind("<Escape>", self._cancel_creature_placement, add="+")
         self.after_idle(self._apply_responsive_chat_layout)
         self.after_idle(lambda: maximize_window(self))
         self.after(100, self._start_server)
@@ -1675,6 +1688,439 @@ class GameBoardWindow(tk.Tk):
         self.board_actor_tree = None
         self.board_transfer_map = None
         self._render_board_actor_list()
+        self._render_board_creature_list()
+
+    def _create_board_creature_controls(self, parent: tk.Misc) -> None:
+        shell = ttk.Frame(parent, style="Card.TFrame", padding=5)
+        self.board_creatures_dock = shell
+        self.board_tools_panels["creatures"] = shell
+        header = ttk.Frame(shell, style="Card.TFrame")
+        header.pack(fill="x")
+        ttk.Label(
+            header, text="CREATURES", style="Card.TLabel",
+            font=("Segoe UI", 8, "bold"),
+        ).pack(side="left")
+        add = ttk.Button(
+            header, text="+", width=3, style="Quiet.TButton",
+            command=self.open_add_creature_dialog,
+        )
+        add.pack(side="right")
+        self._attach_tooltip(add, "Add one or more creatures to the open map")
+        self.board_creature_search_var = tk.StringVar()
+        search = ttk.Entry(shell, textvariable=self.board_creature_search_var)
+        search.pack(fill="x", pady=(4, 3))
+        self._attach_tooltip(search, "Search creatures on this map")
+        self.board_creature_search_var.trace_add(
+            "write", lambda *_args: self._render_board_creature_list()
+        )
+        self.board_creature_list = tk.Listbox(
+            shell, height=6, exportselection=False,
+            background="#fff8e6", foreground=self.INK,
+            selectbackground=self.ACCENT, selectforeground="#fff8e7",
+        )
+        self.board_creature_list.pack(fill="both", expand=True)
+        self.board_creature_list.bind(
+            "<<ListboxSelect>>", self._board_creature_selected
+        )
+        self.board_creature_list.bind(
+            "<Button-3>", self._board_creature_list_menu
+        )
+        self.board_creature_details = tk.Label(
+            shell, text="No creature selected", justify="left", anchor="nw",
+            background=self.LIGHT, foreground=self.INK,
+            font=("Segoe UI", 8), padx=3, pady=3,
+        )
+        self.board_creature_details.pack(fill="x", pady=(3, 2))
+        self.board_creature_actions = tk.Listbox(
+            shell, height=4, exportselection=False,
+            background="#fff8e6", foreground=self.INK,
+            selectbackground=self.ACCENT, selectforeground="#fff8e7",
+        )
+        self.board_creature_actions.pack(fill="x")
+        self.board_creature_actions.bind(
+            "<Double-Button-1>", self.roll_selected_creature_action
+        )
+        buttons = ttk.Frame(shell, style="Card.TFrame")
+        buttons.pack(fill="x", pady=(3, 0))
+        for text, command, help_text in (
+            ("◉", self.toggle_selected_creature_visibility, "Reveal or hide this creature"),
+            ("+W", self.wound_selected_creature, "Assign a wound"),
+            ("☠", self.toggle_selected_creature_life, "Mark dead or revive"),
+            ("⚄", self.roll_selected_creature_action, "Roll the selected attack or ability"),
+        ):
+            button = ttk.Button(
+                buttons, text=text, width=3, style="Quiet.TButton", command=command
+            )
+            button.pack(side="left", fill="x", expand=True, padx=(0, 2))
+            self._attach_tooltip(button, help_text)
+
+    def _current_map_creatures(self) -> list[dict[str, Any]]:
+        query = (
+            self.board_creature_search_var.get().strip().casefold()
+            if hasattr(self, "board_creature_search_var") else ""
+        )
+        values = [
+            actor for actor in self.board_snapshot.get("actors", [])
+            if actor.get("actor_type") == "creature"
+            and actor.get("map_id") == self.selected_board_map_id
+            and (
+                not query
+                or query in str(actor.get("internal_label") or actor.get("name") or "").casefold()
+            )
+        ]
+        return sorted(
+            values,
+            key=lambda item: str(item.get("internal_label") or item.get("name") or "").casefold(),
+        )
+
+    def _render_board_creature_list(self) -> None:
+        listing = getattr(self, "board_creature_list", None)
+        if listing is None or not listing.winfo_exists():
+            return
+        current = self.selected_board_actor_id
+        creatures = self._current_map_creatures()
+        self.board_creature_ids = [str(item.get("actor_id", "")) for item in creatures]
+        listing.delete(0, "end")
+        selected_index = None
+        for index, creature in enumerate(creatures):
+            life = " †" if creature.get("life_state") == "dead" else ""
+            hidden = " (hidden)" if creature.get("visibility") != "players" else ""
+            listing.insert(
+                "end",
+                f"{creature.get('internal_label') or creature.get('name') or 'Creature'}{life}{hidden}",
+            )
+            if str(creature.get("actor_id")) == current:
+                selected_index = index
+        if selected_index is not None:
+            listing.selection_set(selected_index)
+            listing.see(selected_index)
+        self._render_selected_creature_details()
+
+    def _board_creature_selected(self, _event: tk.Event | None = None) -> None:
+        selected = self.board_creature_list.curselection()
+        if not selected:
+            return
+        index = int(selected[0])
+        if index >= len(self.board_creature_ids):
+            return
+        self.selected_board_actor_id = self.board_creature_ids[index]
+        self._render_selected_creature_details()
+        self._draw_board_map(self.selected_board_map_id)
+
+    def _selected_creature(self) -> dict[str, Any] | None:
+        actor = self._selected_board_actor()
+        return actor if actor and actor.get("actor_type") == "creature" else None
+
+    def _render_selected_creature_details(self) -> None:
+        details = getattr(self, "board_creature_details", None)
+        actions = getattr(self, "board_creature_actions", None)
+        if details is None or actions is None:
+            return
+        creature = self._selected_creature()
+        actions.delete(0, "end")
+        if creature is None:
+            details.configure(text="No creature selected")
+            return
+        generated = creature.get("generated", {}) or {}
+        wounds = creature.get("wounds", []) or []
+        details.configure(text=(
+            f"{creature.get('internal_label') or creature.get('name')}  ·  "
+            f"{creature.get('life_state', 'alive').title()}\n"
+            f"Size {generated.get('size', '—')}   Heavy cap {generated.get('heavy_wound_cap', '—')}   "
+            f"Wounds {len(wounds)}"
+        ))
+        for action in creature.get("actions", []) or []:
+            shown_range = action.get("adjusted_range", {}) or {}
+            actions.insert(
+                "end",
+                f"{action.get('name', 'Action')}  [{action.get('aptitude', 'typical')}; "
+                f"{shown_range.get('low', 0)}–{shown_range.get('high', 0)}]",
+            )
+
+    def open_add_creature_dialog(self) -> None:
+        if not self.selected_session_id or not self.selected_board_map_id:
+            messagebox.showinfo(
+                "Add creature", "Open a campaign session and a map first.", parent=self
+            )
+            return
+        dialog = tk.Toplevel(self)
+        dialog.title("Add Creatures")
+        dialog.transient(self)
+        dialog.grab_set()
+        dialog.geometry("620x560")
+        dialog.minsize(460, 380)
+        apply_window_icon(dialog, GAME_BOARD_ICON)
+        body = ttk.Frame(dialog, padding=10)
+        body.pack(fill="both", expand=True)
+        ttk.Label(body, text="Creature catalog", style="Title.TLabel").pack(anchor="w")
+        query = tk.StringVar()
+        search = ttk.Entry(body, textvariable=query)
+        search.pack(fill="x", pady=(5, 5))
+        results = tk.Listbox(
+            body, exportselection=False, background="#fff8e6",
+            foreground=self.INK, selectbackground=self.ACCENT,
+            selectforeground="#fff8e7",
+        )
+        results.pack(fill="both", expand=True)
+        detail = ttk.Label(body, text="Search and select a species.", style="Card.TLabel", wraplength=560)
+        detail.pack(fill="x", pady=(5, 4))
+        quantity_row = ttk.Frame(body)
+        quantity_row.pack(fill="x")
+        ttk.Label(quantity_row, text="Quantity").pack(side="left")
+        quantity = tk.IntVar(value=1)
+        ttk.Spinbox(quantity_row, from_=1, to=50, textvariable=quantity, width=5).pack(side="left", padx=5)
+        records: list[dict[str, Any]] = []
+        selected_id = tk.StringVar()
+        search_after: list[str | None] = [None]
+
+        def show_records(payload: Any) -> None:
+            records[:] = list((payload or {}).get("creatures", []))
+            results.delete(0, "end")
+            for item in records:
+                suffix = f"  [{item.get('classification')}]" if item.get("classification") else ""
+                results.insert("end", f"{item.get('name', 'Creature')}{suffix}")
+
+        def run_search() -> None:
+            search_after[0] = None
+            term = query.get().strip()
+            self._background(
+                lambda: self.client.request(
+                    "GET", f"/api/admin/creatures?q={urllib.parse.quote(term)}&limit=250"
+                ),
+                show_records,
+            )
+
+        def schedule(*_args: Any) -> None:
+            if search_after[0] is not None:
+                dialog.after_cancel(search_after[0])
+            search_after[0] = dialog.after(180, run_search)
+
+        def choose(_event: tk.Event | None = None) -> None:
+            selected = results.curselection()
+            if not selected:
+                selected_id.set("")
+                return
+            item = records[int(selected[0])]
+            selected_id.set(str(item.get("record_id", "")))
+            detail.configure(text=(
+                f"{item.get('name', 'Creature')} · {item.get('family', '')}\n"
+                f"{item.get('attacks', 0)} attacks · {item.get('abilities', 0)} abilities · "
+                f"{item.get('parts', 0)} harvestable parts\n{item.get('description', '')}"
+            ))
+
+        def begin() -> None:
+            if not selected_id.get():
+                messagebox.showwarning("Add creatures", "Choose a creature species first.", parent=dialog)
+                return
+            count = max(1, min(50, int(quantity.get())))
+            selected = next(
+                item for item in records
+                if str(item.get("record_id", "")) == selected_id.get()
+            )
+            self.creature_placement = {
+                "species_id": selected_id.get(),
+                "species_name": str(selected.get("name") or "Creature"),
+                "quantity": count, "placed": 0, "busy": False,
+            }
+            dialog.destroy()
+            self._update_creature_placement_notice()
+            canvas = self.board_canvases.get(self.selected_board_map_id)
+            if canvas is not None:
+                canvas.configure(cursor="crosshair")
+
+        query.trace_add("write", schedule)
+        results.bind("<<ListboxSelect>>", choose)
+        controls = ttk.Frame(body)
+        controls.pack(fill="x", pady=(7, 0))
+        ttk.Button(controls, text="Cancel", style="Quiet.TButton", command=dialog.destroy).pack(side="right")
+        ttk.Button(controls, text="Place on map", command=begin).pack(side="right", padx=(0, 5))
+        run_search()
+        search.focus_set()
+
+    def _update_creature_placement_notice(self) -> None:
+        placement = self.creature_placement
+        if not placement:
+            return
+        next_number = int(placement["placed"]) + 1
+        self.set_notice(
+            f"Place {placement['species_name']} {next_number} of {placement['quantity']} · Esc cancels the remainder"
+        )
+
+    def _cancel_creature_placement(self, _event: tk.Event | None = None) -> str:
+        if not self.creature_placement:
+            return ""
+        remaining = int(self.creature_placement["quantity"]) - int(self.creature_placement["placed"])
+        self.creature_placement = None
+        for canvas in self.board_canvases.values():
+            canvas.configure(cursor="arrow")
+        self.set_notice(f"Creature placement ended · {remaining} unplaced")
+        return "break"
+
+    def _place_next_creature(self, event: tk.Event, map_id: str) -> None:
+        placement = self.creature_placement
+        if not placement or placement.get("busy"):
+            return
+        x, y = self._normalized_board_point(map_id, event.x, event.y)
+        payload = {
+            "session_id": self.selected_session_id,
+            "species_id": placement["species_id"],
+            "map_id": map_id, "x": x, "y": y,
+        }
+        placement["busy"] = True
+
+        def placed(_result: Any) -> None:
+            current = self.creature_placement
+            if current is None:
+                self.refresh(silent=True)
+                return
+            current["busy"] = False
+            current["placed"] = int(current["placed"]) + 1
+            if int(current["placed"]) >= int(current["quantity"]):
+                self.creature_placement = None
+                for canvas in self.board_canvases.values():
+                    canvas.configure(cursor="arrow")
+                self.set_notice("Creature batch placed")
+            else:
+                self._update_creature_placement_notice()
+            self.refresh(silent=True)
+
+        self._background(
+            lambda: self.client.request("POST", "/api/admin/board/creatures", payload),
+            placed,
+        )
+
+    def _board_creature_list_menu(self, event: tk.Event) -> str:
+        index = self.board_creature_list.nearest(event.y)
+        if 0 <= index < len(self.board_creature_ids):
+            self.selected_board_actor_id = self.board_creature_ids[index]
+            self._render_board_creature_list()
+            self._open_piece_controls(event.widget, event.x_root, event.y_root)
+        return "break"
+
+    def _creature_action_request(self, action: str, **values: Any) -> None:
+        creature = self._selected_creature()
+        if creature is None or not self.selected_session_id:
+            return
+        payload = {"session_id": self.selected_session_id, "action": action, **values}
+        self._background(
+            lambda: self.client.request(
+                "POST", f"/api/admin/board/creatures/{creature['actor_id']}/actions", payload
+            ),
+            lambda _result: self.refresh(silent=True),
+        )
+
+    def toggle_selected_creature_visibility(self) -> None:
+        creature = self._selected_creature()
+        if creature is None:
+            return
+        visibility = "headmaster" if creature.get("visibility") == "players" else "players"
+        self._background(
+            lambda: self.client.request(
+                "PUT", f"/api/admin/board/creatures/{creature['actor_id']}",
+                {"session_id": self.selected_session_id, "visibility": visibility},
+            ),
+            lambda _result: self.refresh(silent=True),
+        )
+
+    def manage_creature_group(self) -> None:
+        creature = self._selected_creature()
+        if creature is None:
+            return
+        groups = [
+            item for item in self.board_snapshot.get("groups", []) or []
+            if str(item.get("location_id", "")) == str(creature.get("location_id", ""))
+        ]
+        dialog = tk.Toplevel(self)
+        dialog.title("Creature Group")
+        dialog.transient(self)
+        dialog.grab_set()
+        dialog.geometry("440x390")
+        apply_window_icon(dialog, GAME_BOARD_ICON)
+        body = ttk.Frame(dialog, padding=10)
+        body.pack(fill="both", expand=True)
+        ttk.Label(body, text="Group", style="Title.TLabel").pack(anchor="w")
+        query = tk.StringVar()
+        ttk.Entry(body, textvariable=query).pack(fill="x", pady=(4, 5))
+        listing = tk.Listbox(
+            body, exportselection=False, background="#fff8e6",
+            foreground=self.INK, selectbackground=self.ACCENT,
+            selectforeground="#fff8e7",
+        )
+        listing.pack(fill="both", expand=True)
+        visible: list[dict[str, Any]] = []
+
+        def render(*_args: Any) -> None:
+            term = query.get().strip().casefold()
+            visible[:] = [
+                item for item in groups
+                if not term or term in str(item.get("name", "")).casefold()
+            ]
+            listing.delete(0, "end")
+            listing.insert("end", "No group")
+            for item in visible:
+                listing.insert("end", str(item.get("name") or "Group"))
+
+        def apply_group() -> None:
+            selected = listing.curselection()
+            if not selected:
+                return
+            index = int(selected[0])
+            group_id = None if index == 0 else str(visible[index - 1].get("record_id", ""))
+            dialog.destroy()
+            self._background(
+                lambda: self.client.request(
+                    "PUT", f"/api/admin/board/groups/creatures/{creature['actor_id']}",
+                    {"session_id": self.selected_session_id, "group_id": group_id},
+                ),
+                lambda _result: self.refresh(silent=True),
+            )
+
+        query.trace_add("write", render)
+        listing.bind("<Double-Button-1>", lambda _event: apply_group())
+        controls = ttk.Frame(body)
+        controls.pack(fill="x", pady=(6, 0))
+        ttk.Button(controls, text="Cancel", style="Quiet.TButton", command=dialog.destroy).pack(side="right")
+        ttk.Button(controls, text="Apply", command=apply_group).pack(side="right", padx=(0, 5))
+        render()
+
+    def wound_selected_creature(self) -> None:
+        creature = self._selected_creature()
+        if creature is None:
+            return
+        menu = tk.Menu(self, tearoff=False)
+        for severity in ("light", "medium", "heavy"):
+            menu.add_command(
+                label=severity.title(),
+                command=lambda value=severity: self._creature_action_request(
+                    "wound", severity=value
+                ),
+            )
+        try:
+            menu.tk_popup(self.winfo_pointerx(), self.winfo_pointery())
+        finally:
+            menu.grab_release()
+
+    def toggle_selected_creature_life(self) -> None:
+        creature = self._selected_creature()
+        if creature:
+            self._creature_action_request(
+                "revive" if creature.get("life_state") == "dead" else "kill"
+            )
+
+    def roll_selected_creature_action(self, _event: tk.Event | None = None) -> None:
+        creature = self._selected_creature()
+        selected = self.board_creature_actions.curselection()
+        actions = list((creature or {}).get("actions", []) or [])
+        if creature is None or not selected or int(selected[0]) >= len(actions):
+            return
+        action = actions[int(selected[0])]
+        self._background(
+            lambda: self.client.request(
+                "POST", f"/api/admin/board/creatures/{creature['actor_id']}/roll",
+                {"session_id": self.selected_session_id, "action_id": action["record_id"]},
+            ),
+            lambda _result: self.refresh(silent=True),
+        )
 
     def open_add_character_menu(self) -> None:
         if not self.selected_session_id or not self.selected_board_map_id:
@@ -1889,12 +2335,31 @@ class GameBoardWindow(tk.Tk):
         self.show_board_tools_panel("groups")
 
     def show_board_tools_panel(self, key: str) -> None:
-        if self.chat_collapsed:
-            self.toggle_chat()
+        self.active_headmaster_tool = key
+        labels = {
+            "groups": "Characters",
+            "creatures": "Creatures",
+            "obfuscation-tools": "Obfuscation",
+            "token-tools": "Tokens & Zoom",
+        }
+        if hasattr(self, "headmaster_tool_title"):
+            self.headmaster_tool_title.set(labels.get(key, "Headmaster Tools"))
+        for tool_key, button in self.headmaster_tool_buttons.items():
+            active = tool_key == key
+            button.configure(
+                background=self.EDGE if active else self.ACCENT,
+                foreground=self.INK if active else "#fff8e7",
+            )
+        self._open_headmaster_tools_drawer()
         for panel_key, panel in self.board_tools_panels.items():
             if panel_key == key:
                 if not panel.winfo_manager():
-                    panel.pack(fill="x", pady=(0, 5))
+                    large = key in {"groups", "creatures"}
+                    panel.pack(
+                        fill="both" if large else "x",
+                        expand=large,
+                        pady=(0, 5),
+                    )
                 panel.tkraise()
             elif panel.winfo_manager():
                 panel.pack_forget()
@@ -1911,6 +2376,7 @@ class GameBoardWindow(tk.Tk):
         self.cancel_board_obscuration()
         self._sync_board_presentation_controls()
         self._render_board_actor_list()
+        self._render_board_creature_list()
         self._save_board_workspace()
 
     def _current_board_map(self) -> dict[str, Any] | None:
@@ -2024,6 +2490,7 @@ class GameBoardWindow(tk.Tk):
         for map_id in map_ids:
             self._draw_board_map(map_id)
         self._render_board_actor_list()
+        self._render_board_creature_list()
 
     def _board_tab_click(self, event: tk.Event) -> str | None:
         """Close a map when the × area at the right edge of its tab is clicked."""
@@ -2913,13 +3380,16 @@ class GameBoardWindow(tk.Tk):
             color = str(actor.get("faction_color") or "#808080")
             selected = actor_id == self.selected_board_actor_id
             is_player = bool(actor.get("is_player_character"))
-            name = str(actor.get("name") or ("Character" if is_player else "Unknown"))
+            is_creature = actor.get("actor_type") == "creature"
+            name = str(
+                actor.get("internal_label") if is_creature else actor.get("name")
+            ) or ("Character" if is_player else "Unknown")
             group_id = str(actor.get("group_id", "") or "")
             group_color = str(actor.get("group_color") or "#b0b0b0")
             # Ownership controls the plaque fill; a board group contributes
             # only its border color.  This keeps an unowned, ungrouped NPC
             # unmistakably grey while still making groups easy to scan.
-            plaque_fill = "#d6ad52" if is_player else "#b0b0b0"
+            plaque_fill = "#d6ad52" if is_player else (group_color if is_creature else "#b0b0b0")
             plaque_outline = group_color if group_id else (self.INK if is_player else "#707070")
             actor_label_font_size = max(
                 6,
@@ -3414,6 +3884,9 @@ class GameBoardWindow(tk.Tk):
         return "break"
 
     def _board_pointer_start(self, event: tk.Event, map_id: str) -> None:
+        if self.creature_placement is not None:
+            self._place_next_creature(event, map_id)
+            return
         canvas = self.board_canvases[map_id]
         actor_id, _part = self._actor_at(canvas, map_id, event.x, event.y)
         if actor_id:
@@ -3732,6 +4205,12 @@ class GameBoardWindow(tk.Tk):
         session_id = self.selected_session_id
         if not session_id:
             return
+        actor = next(
+            (item for item in self.board_snapshot.get("actors", []) if item.get("actor_id") == person_id),
+            None,
+        )
+        if actor and actor.get("actor_type") == "creature":
+            return
         self._background(
             lambda: self.client.request("POST", "/api/admin/board/move-preview", {
                 "session_id": session_id, "person_id": person_id, "map_id": map_id, "x": x, "y": y,
@@ -3765,6 +4244,19 @@ class GameBoardWindow(tk.Tk):
             return
         if label_only:
             actor = next((item for item in self.board_snapshot.get("actors", []) if item.get("actor_id") == person_id), {})
+            if actor.get("actor_type") == "creature":
+                self._background(
+                    lambda: self.client.request(
+                        "PUT", f"/api/admin/board/creatures/{person_id}",
+                        {
+                            "session_id": self.selected_session_id,
+                            "label_x": float(actor.get("label_offset", {}).get("x", 0.0)),
+                            "label_y": float(actor.get("label_offset", {}).get("y", 0.0)),
+                        },
+                    ),
+                    lambda _result: self.refresh(silent=True),
+                )
+                return
             self._background(
                 lambda: self.client.request(
                     "PUT",
@@ -3784,6 +4276,22 @@ class GameBoardWindow(tk.Tk):
         if not self.selected_session_id:
             return
         x, y = self._normalized_board_point(map_id, event.x, event.y)
+        actor = next(
+            (item for item in self.board_snapshot.get("actors", []) if item.get("actor_id") == person_id),
+            None,
+        )
+        if actor and actor.get("actor_type") == "creature":
+            self._background(
+                lambda: self.client.request(
+                    "PUT", f"/api/admin/board/creatures/{person_id}",
+                    {
+                        "session_id": self.selected_session_id,
+                        "map_id": map_id, "x": x, "y": y,
+                    },
+                ),
+                lambda _result: self.refresh(silent=True),
+            )
+            return
         payload = {"session_id": self.selected_session_id, "person_id": person_id, "map_id": map_id, "x": x, "y": y}
         self._background(
             lambda: self.client.request("POST", "/api/admin/board/move", payload),
@@ -3823,6 +4331,59 @@ class GameBoardWindow(tk.Tk):
             self._piece_popup.destroy()
         popup = tk.Menu(self, tearoff=False)
         self._piece_popup = popup
+        if actor.get("actor_type") == "creature":
+            popup.add_command(
+                label=str(actor.get("internal_label") or actor.get("name") or "Creature"),
+                state="disabled",
+            )
+            visible = actor.get("visibility") == "players"
+            popup.add_command(
+                label="Hide from players" if visible else "Reveal to players",
+                command=self.toggle_selected_creature_visibility,
+            )
+            popup.add_command(label="Add to group…", command=self.manage_creature_group)
+            popup.add_command(label="Assign wound…", command=self.wound_selected_creature)
+            popup.add_command(
+                label="Revive" if actor.get("life_state") == "dead" else "Mark dead",
+                command=self.toggle_selected_creature_life,
+            )
+            popup.add_separator()
+            popup.add_command(
+                label="Enter battle…",
+                command=lambda: self._creature_action_request(
+                    "enter_battle",
+                    battle_name=(simpledialog.askstring("Battle", "Battle name:", parent=self) or "Battle"),
+                ),
+            )
+            popup.add_command(
+                label="Leave battle", command=lambda: self._creature_action_request("leave_battle")
+            )
+            popup.add_command(
+                label="Reroll stats…",
+                command=lambda: (
+                    self._creature_action_request("reroll")
+                    if messagebox.askyesno(
+                        "Reroll creature",
+                        "Replace all generated stats and action aptitudes?",
+                        parent=self,
+                    ) else None
+                ),
+            )
+            popup.add_separator()
+            popup.add_command(
+                label="Delete accidental spawn…",
+                command=lambda: (
+                    self._creature_action_request("delete")
+                    if messagebox.askyesno(
+                        "Delete creature", "Permanently delete this campaign creature?", parent=self
+                    ) else None
+                ),
+            )
+            try:
+                popup.tk_popup(root_x, root_y)
+            finally:
+                popup.grab_release()
+            return
         popup.add_command(label=str(actor.get("name") or "Unknown occupant"), state="disabled")
         popup.add_command(label="Teach...", command=self.teach_selected_actor)
         popup.add_separator()
@@ -4422,6 +4983,7 @@ class GameBoardWindow(tk.Tk):
         actors = [
             actor for actor in self.board_snapshot.get("actors", [])
             if actor.get("map_id") == self.selected_board_map_id
+            and actor.get("actor_type", "person") == "person"
             and (not query or query in str(actor.get("name") or "Unknown").casefold())
         ]
         actors.sort(key=lambda actor: str(actor.get("name") or "Unknown").casefold())
@@ -5065,6 +5627,7 @@ class GameBoardWindow(tk.Tk):
         self.headmaster_tool_buttons: dict[str, tk.Button] = {}
         tools = (
             ("groups", "●", "Characters"),
+            ("creatures", "◆", "Creatures"),
             ("obfuscation-tools", "▧", "Obfuscation"),
             ("token-tools", "◉", "Tokens & Zoom"),
             ("reveal", "✦", "Reveal"),
@@ -5090,7 +5653,105 @@ class GameBoardWindow(tk.Tk):
             )
             button.pack(fill="x", pady=(0, 1))
             self.headmaster_tool_buttons[key] = button
+        self._build_headmaster_tools_drawer(parent)
         self.select_headmaster_tool("groups", "Characters")
+
+    def _build_headmaster_tools_drawer(self, parent: tk.Misc) -> None:
+        """Build the expandable drawer immediately beside the tool rail."""
+
+        drawer = tk.Frame(
+            parent,
+            width=self.headmaster_tool_widths["groups"],
+            background=self.LIGHT,
+            highlightbackground=self.ACCENT,
+            highlightthickness=1,
+        )
+        self.headmaster_tools_drawer = drawer
+        drawer.pack_propagate(False)
+
+        header = tk.Frame(drawer, background=self.EDGE, height=34)
+        header.pack(fill="x")
+        header.pack_propagate(False)
+        self.headmaster_tool_title = tk.StringVar(value="Characters")
+        tk.Label(
+            header,
+            textvariable=self.headmaster_tool_title,
+            anchor="w",
+            background=self.EDGE,
+            foreground=self.INK,
+            font=("Segoe UI", 9, "bold"),
+            padx=8,
+        ).pack(side="left", fill="both", expand=True)
+        collapse = tk.Button(
+            header,
+            text="‹",
+            width=3,
+            background=self.EDGE,
+            activebackground=self.PAPER,
+            foreground=self.INK,
+            activeforeground=self.INK,
+            relief="flat",
+            borderwidth=0,
+            font=("Segoe UI Symbol", 11, "bold"),
+            cursor="hand2",
+            command=self.collapse_headmaster_tools,
+        )
+        collapse.pack(side="right", fill="y")
+        self._attach_tooltip(collapse, "Collapse the Headmaster tool drawer")
+
+        self.board_tools_host = tk.Frame(drawer, background=self.LIGHT)
+        self.board_tools_host.pack(fill="both", expand=True)
+        self.board_tools_canvas = tk.Canvas(
+            self.board_tools_host,
+            background=self.LIGHT,
+            borderwidth=0,
+            highlightthickness=0,
+        )
+        tools_scroll = ttk.Scrollbar(
+            self.board_tools_host,
+            orient="vertical",
+            command=self.board_tools_canvas.yview,
+        )
+        self.board_tools_canvas.configure(yscrollcommand=tools_scroll.set)
+        self.board_tools_canvas.pack(side="left", fill="both", expand=True)
+        tools_scroll.pack(side="right", fill="y")
+        self.board_tools_content = ttk.Frame(
+            self.board_tools_canvas, style="Card.TFrame"
+        )
+        self._board_tools_window = self.board_tools_canvas.create_window(
+            (0, 0), window=self.board_tools_content, anchor="nw"
+        )
+        self.board_tools_content.bind("<Configure>", self._resize_board_tools_scroll)
+        self.board_tools_canvas.bind("<Configure>", self._resize_board_tools_scroll)
+        self._create_board_map_controls(self.board_tools_content)
+        self._create_board_token_controls(self.board_tools_content)
+        self._create_board_groups_controls(self.board_tools_content)
+        self._create_board_creature_controls(self.board_tools_content)
+
+    def collapse_headmaster_tools(self) -> None:
+        self.headmaster_tools_collapsed = True
+        if self.headmaster_tools_drawer.winfo_manager():
+            self.headmaster_tools_drawer.place_forget()
+
+    def _position_headmaster_tools_drawer(self) -> None:
+        """Overlay the drawer on the board without changing the map layout."""
+
+        sidebar_width = int(self.section_sidebar.cget("width"))
+        rail_width = int(self.headmaster_tool_rail.cget("width"))
+        width = self.headmaster_tool_widths.get(self.active_headmaster_tool, 340)
+        self.headmaster_tools_drawer.configure(width=width)
+        self.headmaster_tools_drawer.place(
+            x=sidebar_width + rail_width + 16,
+            y=0,
+            width=width,
+            relheight=1.0,
+        )
+        self.headmaster_tools_drawer.lift()
+
+    def _open_headmaster_tools_drawer(self) -> None:
+        self.headmaster_tools_collapsed = False
+        drawer = self.headmaster_tools_drawer
+        self._position_headmaster_tools_drawer()
 
     def select_headmaster_tool(self, key: str, label: str) -> None:
         """Select a future quick tool without changing the visible app panel."""
@@ -5101,10 +5762,19 @@ class GameBoardWindow(tk.Tk):
                 background=self.EDGE if active else self.ACCENT,
                 foreground=self.INK if active else "#fff8e7",
             )
+        self.active_headmaster_tool = key
+        self.headmaster_tool_title.set(label)
+        self._open_headmaster_tools_drawer()
         if key == "groups":
             self.open_board_groups()
             if hasattr(self, "notice"):
                 self.set_notice("Group controls opened")
+            return
+        if key == "creatures":
+            self.show_board_tools_panel("creatures")
+            self._render_board_creature_list()
+            if hasattr(self, "notice"):
+                self.set_notice("Creature encounter controls opened")
             return
         if key == "obfuscation-tools":
             self.open_board_map_controls()
@@ -5353,14 +6023,16 @@ class GameBoardWindow(tk.Tk):
                 self.headmaster_tool_rail.pack(
                     side="left", fill="y", padx=(0, 8), before=self.app_host
                 )
-            if hasattr(self, "board_tools_host") and not self.board_tools_host.winfo_manager():
-                self.board_tools_host.pack(fill="x", before=self.chat_card)
-                self._resize_board_tools_host()
+            if not self.headmaster_tools_collapsed:
+                self._open_headmaster_tools_drawer()
         else:
             if self.headmaster_tool_rail.winfo_manager():
                 self.headmaster_tool_rail.pack_forget()
-            if hasattr(self, "board_tools_host") and self.board_tools_host.winfo_manager():
-                self.board_tools_host.pack_forget()
+            if (
+                hasattr(self, "headmaster_tools_drawer")
+                and self.headmaster_tools_drawer.winfo_manager()
+            ):
+                self.headmaster_tools_drawer.place_forget()
         self.app_pages[key].tkraise()
         for page_key, button in self.sidebar_buttons.items():
             active = page_key == key
@@ -5491,34 +6163,6 @@ class GameBoardWindow(tk.Tk):
             relief="flat", borderwidth=0, font=("Segoe UI", 9, "bold"),
             command=self.toggle_chat,
         ).pack(side="right", fill="y")
-        self.board_tools_host = tk.Frame(self.chat_expanded, background=self.LIGHT, height=220)
-        self.board_tools_host.pack(fill="x")
-        self.board_tools_host.pack_propagate(False)
-        self.board_tools_canvas = tk.Canvas(
-            self.board_tools_host,
-            background=self.LIGHT,
-            borderwidth=0,
-            highlightthickness=0,
-        )
-        tools_scroll = ttk.Scrollbar(
-            self.board_tools_host,
-            orient="vertical",
-            command=self.board_tools_canvas.yview,
-        )
-        self.board_tools_canvas.configure(yscrollcommand=tools_scroll.set)
-        self.board_tools_canvas.pack(side="left", fill="both", expand=True)
-        tools_scroll.pack(side="right", fill="y")
-        self.board_tools_content = ttk.Frame(self.board_tools_canvas, style="Card.TFrame")
-        self._board_tools_window = self.board_tools_canvas.create_window(
-            (0, 0), window=self.board_tools_content, anchor="nw"
-        )
-        self.board_tools_content.bind("<Configure>", self._resize_board_tools_scroll)
-        self.board_tools_canvas.bind("<Configure>", self._resize_board_tools_scroll)
-        self.chat_expanded.bind("<Configure>", self._resize_board_tools_host, add="+")
-        self._create_board_map_controls(self.board_tools_content)
-        self._create_board_token_controls(self.board_tools_content)
-        self._create_board_groups_controls(self.board_tools_content)
-        self.board_groups_dock.pack(fill="x", pady=(0, 5))
         self._build_chat(self.chat_expanded)
         self.chat_rail = tk.Button(
             self.chat_shell,
@@ -5536,17 +6180,7 @@ class GameBoardWindow(tk.Tk):
     def _resize_board_tools_host(self, _event: tk.Event | None = None) -> None:
         if not hasattr(self, "board_tools_host") or not self.board_tools_host.winfo_exists():
             return
-        available = max(1, self.chat_expanded.winfo_height())
-        groups_visible = bool(
-            self.board_groups_dock is not None
-            and self.board_groups_dock.winfo_exists()
-            and self.board_groups_dock.winfo_manager()
-        )
-        maximum = max(1, round(available * 0.35))
-        if groups_visible:
-            maximum = max(maximum, round(available * 0.50))
-        requested = max(1, self.board_tools_content.winfo_reqheight())
-        self.board_tools_host.configure(height=min(requested, maximum))
+        self._resize_board_tools_scroll()
 
     def _resize_board_tools_scroll(self, _event: tk.Event | None = None) -> None:
         if not hasattr(self, "board_tools_canvas") or not self.board_tools_canvas.winfo_exists():
@@ -5554,9 +6188,12 @@ class GameBoardWindow(tk.Tk):
         self.board_tools_canvas.itemconfigure(
             self._board_tools_window,
             width=max(1, self.board_tools_canvas.winfo_width()),
+            height=max(
+                self.board_tools_content.winfo_reqheight(),
+                self.board_tools_canvas.winfo_height(),
+            ),
         )
         self.board_tools_canvas.configure(scrollregion=self.board_tools_canvas.bbox("all"))
-        self._resize_board_tools_host()
 
     def toggle_chat(self) -> None:
         self.chat_collapsed = not self.chat_collapsed

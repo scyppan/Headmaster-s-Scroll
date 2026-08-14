@@ -513,6 +513,13 @@
         if (this.activeSection !== 'board') this.openSection(this.activeSection);
       } else if (message.type === 'request_submitted') {
         this.showChatNotice(message.message || 'Request sent to the Headmaster.');
+      } else if (message.type === 'creature_harvest_result' && message.result) {
+        const result = message.result;
+        this.showChatNotice(
+          Number(result.quantity_awarded || 0) > 0
+            ? `Harvested ${result.quantity_awarded} ${result.part_name || 'creature part'}.`
+            : `The harvest attempt for ${result.part_name || 'that part'} failed.`
+        );
       } else if (message.type === 'board_move_preview') {
         const actor = (this.board.actors || []).find(item => item.actor_id === message.person_id);
         if (actor) {
@@ -887,7 +894,148 @@
     }
 
     renderKnowledgePanel(content, collection) {
+      if (collection === 'spells') return this.renderBookLibrary(content);
       return this.renderKnowledgeCatalog(content, collection);
+    }
+
+    renderBookLibrary(content) {
+      const books = this.characterSheet && this.characterSheet.books;
+      if (!books) return this.sheetUnavailable(content, 'Books');
+      content.className = 'ccgb-book-library';
+      content.innerHTML = `
+        <div class="ccgb-library-tools">
+          <input type="search" data-book-search placeholder="Search books" autocomplete="off">
+          <button type="button" data-all-spells>Search all known spells</button>
+        </div>
+        <div class="ccgb-book-count" data-book-count></div>
+        <div class="ccgb-book-grid" data-book-grid></div>`;
+      const search = content.querySelector('[data-book-search]');
+      const grid = content.querySelector('[data-book-grid]');
+      const render = () => {
+        const query = search.value.trim().toLocaleLowerCase();
+        const visible = books.filter(book => [
+          book.title, book.author, ...(book.categories || []), book.description,
+        ].join(' ').toLocaleLowerCase().includes(query));
+        content.querySelector('[data-book-count]').textContent = `${visible.length} ${visible.length === 1 ? 'book' : 'books'} read`;
+        grid.innerHTML = visible.map(book => `
+          <button type="button" class="ccgb-book-card" data-book-id="${this.escapeHtml(book.record_id)}">
+            <span class="ccgb-book-cover" data-book-cover="${this.escapeHtml(book.cover_asset_id || '')}"><span>${this.escapeHtml(book.title).charAt(0)}</span></span>
+            <strong>${this.escapeHtml(book.title)}</strong>
+            ${book.author ? `<small>${this.escapeHtml(book.author)}</small>` : ''}
+          </button>`).join('') || '<p class="ccgb-empty-result">No matching books.</p>';
+        grid.querySelectorAll('[data-book-id]').forEach(button => button.addEventListener('click', () => {
+          const book = books.find(item => item.record_id === button.dataset.bookId);
+          if (book) this.renderBookContents(content, book);
+        }));
+        grid.querySelectorAll('[data-book-cover]').forEach(holder => {
+          const assetId = holder.dataset.bookCover;
+          if (!assetId) return;
+          this.assetUrl(assetId).then(url => {
+            if (url && holder.isConnected) holder.innerHTML = `<img src="${url}" alt="">`;
+          }).catch(() => {});
+        });
+      };
+      search.addEventListener('input', render);
+      content.querySelector('[data-all-spells]').addEventListener('click', () => this.renderKnowledgeCatalog(content, 'spells'));
+      render();
+    }
+
+    knowledgeConfidenceBand(record, collection) {
+      if (record.threshold == null || record.threshold === '') return { key: 'no-threshold', label: 'No threshold' };
+      const abilities = (this.characterSheet?.attributes?.attributes || []).reduce((values, item) => { values[item.name] = Number(item.value || 0); return values; }, {});
+      const skills = (this.characterSheet?.attributes?.skills || []).reduce((values, item) => { values[item.name] = Number(item.value || 0); return values; }, {});
+      const skill = String(record.skill || (collection === 'recipes' ? 'Potions' : ''));
+      const needed = Number(record.threshold) - Number(skills[skill] || 0) - Number(abilities[SKILL_ABILITIES[skill]] || 0);
+      const performance = collection === 'proficiencies';
+      const preparation = collection === 'recipes';
+      if (needed > 10) return { key: 'can-t-cast', label: performance ? "Can't perform" : preparation ? "Can't prepare" : "Can't cast" };
+      if (needed <= 3) return { key: 'easy-to-cast', label: performance ? 'Easy to perform' : preparation ? 'Easy to prepare' : 'Easy to cast' };
+      if (needed <= 6) return { key: 'medium-confidence', label: 'Medium confidence' };
+      if (needed <= 8) return { key: 'difficult-to-cast', label: performance ? 'Difficult to perform' : preparation ? 'Difficult to prepare' : 'Difficult to cast' };
+      return { key: 'very-difficult-to-cast', label: performance ? 'Very difficult to perform' : preparation ? 'Very difficult to prepare' : 'Very difficult to cast' };
+    }
+
+    renderBookContents(content, book) {
+      const catalogs = {
+        spells: this.characterSheet?.spells || [],
+        proficiencies: this.characterSheet?.proficiencies || [],
+        recipes: this.characterSheet?.recipes || [],
+      };
+      const entries = [];
+      Object.entries(catalogs).forEach(([collection, records]) => {
+        const allowed = new Set(book.contents?.[collection] || []);
+        records.filter(record => allowed.has(record.record_id)).forEach(record => entries.push({ collection, record }));
+      });
+      content.className = 'ccgb-book-reader';
+      content.innerHTML = `
+        <header class="ccgb-book-reader-header">
+          <button type="button" data-books-home>← Books</button>
+          <div class="ccgb-reader-cover" data-reader-cover="${this.escapeHtml(book.cover_asset_id || '')}"><span>${this.escapeHtml(book.title).charAt(0)}</span></div>
+          <div><h2>${this.escapeHtml(book.title)}</h2>${book.author ? `<p>${this.escapeHtml(book.author)}</p>` : ''}${book.description ? `<small>${this.escapeHtml(book.description)}</small>` : ''}</div>
+        </header>
+        <div class="ccgb-library-tools">
+          <input type="search" data-book-content-search placeholder="Search this book" autocomplete="off">
+          <button type="button" data-all-spells>Search all known spells</button>
+        </div>
+        <div class="ccgb-book-contents" data-book-contents></div>`;
+      content.querySelector('[data-books-home]').addEventListener('click', () => this.renderBookLibrary(content));
+      content.querySelector('[data-all-spells]').addEventListener('click', () => this.renderKnowledgeCatalog(content, 'spells'));
+      const cover = content.querySelector('[data-reader-cover]');
+      if (book.cover_asset_id) this.assetUrl(book.cover_asset_id).then(url => {
+        if (url && cover.isConnected) cover.innerHTML = `<img src="${url}" alt="Cover of ${this.escapeHtml(book.title)}">`;
+      }).catch(() => {});
+      const search = content.querySelector('[data-book-content-search]');
+      const holder = content.querySelector('[data-book-contents]');
+      const render = () => {
+        const query = search.value.trim().toLocaleLowerCase();
+        const visible = entries.filter(({ record }) => [record.name, record.description, record.skill, ...(Array.isArray(record.tags) ? record.tags : [])].join(' ').toLocaleLowerCase().includes(query));
+        holder.innerHTML = ['spells', 'proficiencies', 'recipes'].map(collection => {
+          const records = visible.filter(item => item.collection === collection);
+          if (!records.length) return '';
+          const label = { spells: 'Spells', proficiencies: 'Proficiencies', recipes: 'Recipes' }[collection];
+          return `<section class="ccgb-book-content-section"><h3>${label}</h3><div class="ccgb-knowledge-pill-group">${records.map(({ record }) => {
+            const favorite = this.favorites.has(`${collection}:${record.record_id}`);
+            const band = this.knowledgeConfidenceBand(record, collection);
+            return `<button type="button" class="ccgb-knowledge-pill is-band-${band.key} ${favorite ? 'is-favorite' : ''}" data-book-record="${this.escapeHtml(record.record_id)}" data-book-collection="${collection}" title="${this.escapeHtml(record.description || record.raw_effect || record.raw_effects || 'No description recorded.')}\n\nClick to ${collection === 'spells' ? 'cast' : collection === 'proficiencies' ? 'perform' : 'prepare'} · Ctrl-click to favorite · Alt-click to share"><span class="ccgb-pill-star" aria-hidden="true">${favorite ? '★' : ''}</span><span>${this.escapeHtml(record.name)}</span></button>`;
+          }).join('')}</div></section>`;
+        }).join('') || '<p class="ccgb-empty-result">No matching contents in this book.</p>';
+        holder.querySelectorAll('[data-book-record]').forEach(button => {
+          button.addEventListener('mousedown', event => { if ((event.ctrlKey || event.metaKey) && event.button === 0) event.preventDefault(); });
+          button.addEventListener('click', event => {
+            event.preventDefault();
+            const collection = button.dataset.bookCollection;
+            const record = catalogs[collection].find(item => item.record_id === button.dataset.bookRecord);
+            if (!record) return;
+            if (event.ctrlKey || event.metaKey) {
+              const key = `${collection}:${record.record_id}`;
+              if (this.favorites.has(key)) this.favorites.delete(key); else this.favorites.add(key);
+              localStorage.setItem(this.favoriteStorageKey, JSON.stringify([...this.favorites]));
+              render();
+              return;
+            }
+            if (event.altKey) {
+              const threshold = record.threshold == null ? '' : ` (${record.threshold})`;
+              this.postChatText(`${record.name}${threshold}\n${record.description || record.raw_effect || record.raw_effects || 'No description recorded.'}`);
+              return;
+            }
+            if (collection === 'recipes') {
+              const requirements = record.requirements || {};
+              const missing = requirements.missing || [];
+              if (!requirements.ready) {
+                this.postChatText(`${record.name} — missing: ${missing.join(', ') || 'requirements not recorded'}.`);
+                return;
+              }
+              const ingredients = (requirements.ingredients || []).map(item => `${item.required} ${item.name}`);
+              const vessel = requirements.vessel?.name ? `\nRequired vessel (not consumed): ${requirements.vessel.name}` : '';
+              if (window.confirm(`Attempt ${record.name}?\n\nThis will use whether the attempt succeeds or fails:\n${ingredients.join('\n') || 'No consumable ingredients'}${vessel}`)) this.requestRecipeAttempt(record.record_id);
+              return;
+            }
+            this.requestRoll(collection === 'spells' ? 'spell' : 'proficiency', record.record_id);
+          });
+        });
+      };
+      search.addEventListener('input', render);
+      render();
     }
 
     renderKnowledgeCatalog(content, collection) {
@@ -924,6 +1072,7 @@
       content.className = `ccgb-knowledge-browser ${collection === 'spells' ? 'is-spellbook' : ''} ${collection === 'recipes' ? 'is-recipe-book' : ''}`;
       content.innerHTML = `
         <div class="ccgb-catalog-tools">
+          ${collection === 'spells' ? '<button type="button" data-books-home>← Books</button>' : ''}
           <input type="search" data-catalog-search placeholder="Search ${collection}">
           ${optionList('skill', 'skills')}
           ${optionList('source', 'sources')}
@@ -1045,6 +1194,7 @@
         });
       };
       content.querySelectorAll('[data-catalog-search],[data-catalog-filter],[data-catalog-tag],[data-catalog-band],[data-catalog-min],[data-catalog-max],[data-catalog-sort],[data-favorites-only]').forEach(element => element.addEventListener('input', renderResults));
+      content.querySelector('[data-books-home]')?.addEventListener('click', () => this.renderBookLibrary(content));
       this.bindTeachingPanel(content, collection, singular, records);
       renderResults();
     }
@@ -2060,6 +2210,8 @@
       piece.style.setProperty('--actor-label-offset-x', `${Number(actor.label_offset?.x || 0) * MAP_NATIVE_WIDTH}px`);
       piece.style.setProperty('--actor-label-offset-y', `${Number(actor.label_offset?.y || 0) * MAP_NATIVE_HEIGHT}px`);
       piece.classList.toggle('is-player-character', Boolean(actor.is_player_character));
+      piece.classList.toggle('is-creature', actor.actor_type === 'creature');
+      piece.classList.toggle('is-dead', actor.life_state === 'dead');
       piece.classList.toggle('is-name-revealed', Boolean(actor.name_revealed));
       piece.style.setProperty('--actor-color', actor.faction_color || '#808080');
       piece.style.setProperty('--actor-group-color', actor.group_color || '#b0b0b0');
@@ -2104,7 +2256,46 @@
       if (controlled) {
         piece.addEventListener('pointerdown', event => this.beginBoardDrag(event, actor, stage, piece));
       }
+      if (actor.actor_type === 'creature' && actor.life_state === 'dead' && (actor.harvest_actions || []).length) {
+        piece.addEventListener('contextmenu', event => this.openCreatureHarvestMenu(event, actor));
+      }
       stage.appendChild(piece);
+    }
+
+    openCreatureHarvestMenu(event, actor) {
+      event.preventDefault();
+      event.stopPropagation();
+      this.root.querySelectorAll('.ccgb-creature-menu').forEach(item => item.remove());
+      const menu = document.createElement('div');
+      menu.className = 'ccgb-creature-menu';
+      menu.setAttribute('role', 'menu');
+      const title = document.createElement('strong');
+      title.textContent = actor.name || 'Creature';
+      menu.appendChild(title);
+      (actor.harvest_actions || []).forEach(part => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = `Harvest ${part.name} (${part.quantity})`;
+        button.addEventListener('click', () => {
+          this.send({
+            v: VERSION,
+            type: 'creature_harvest_request',
+            creature_id: actor.actor_id,
+            part_id: part.part_id
+          });
+          menu.remove();
+        });
+        menu.appendChild(button);
+      });
+      this.root.appendChild(menu);
+      const rootBounds = this.root.getBoundingClientRect();
+      menu.style.left = `${Math.max(4, Math.min(rootBounds.width - 230, event.clientX - rootBounds.left))}px`;
+      menu.style.top = `${Math.max(4, Math.min(rootBounds.height - menu.offsetHeight - 4, event.clientY - rootBounds.top))}px`;
+      const close = closeEvent => {
+        if (!menu.contains(closeEvent.target)) menu.remove();
+        document.removeEventListener('pointerdown', close, true);
+      };
+      setTimeout(() => document.addEventListener('pointerdown', close, true), 0);
     }
 
     beginBoardDrag(event, actor, stage, piece) {

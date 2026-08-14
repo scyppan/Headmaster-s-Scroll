@@ -171,10 +171,7 @@
                 <button type="button" data-ccgb="acknowledge">Acknowledge</button>
               </div>
               <div class="ccgb-section-heading">
-                <div>
-                  <p class="ccgb-eyebrow">Character profile</p>
-                  <h1 data-ccgb="section-title">Overview</h1>
-                </div>
+                <h1 data-ccgb="section-title">Overview</h1>
                 <div class="ccgb-connection-markers">
                   <span class="ccgb-zoom-level" data-ccgb="zoom-level">Zoom 100% (0 clicks)</span>
                   <span class="ccgb-connected-mark">Connected</span>
@@ -1200,7 +1197,7 @@
       ]).map(value => String(value || '').trim()).filter(Boolean))].sort((left, right) => left.localeCompare(right));
       content.className = 'ccgb-book-reader';
       content.innerHTML = `
-        <header class="ccgb-book-reader-header">
+        <div class="ccgb-book-reader-header" role="group" aria-label="Open book controls">
           <div class="ccgb-reader-cover" data-reader-cover="${this.escapeHtml(book.cover_asset_id || '')}"><span>${this.escapeHtml(book.title).charAt(0)}</span></div>
           <div class="ccgb-book-reader-main">
             <div class="ccgb-reader-title-row">
@@ -1215,7 +1212,7 @@
             <div class="ccgb-library-chips" data-library-chips></div>
             ${book.description ? `<small class="ccgb-reader-description">${this.escapeHtml(book.description)}</small>` : ''}
           </div>
-        </header>
+        </div>
         <div class="ccgb-book-count" data-book-content-count></div>
         <div class="ccgb-book-contents" data-book-contents></div>
         <dialog class="ccgb-library-dialog" data-filter-dialog>

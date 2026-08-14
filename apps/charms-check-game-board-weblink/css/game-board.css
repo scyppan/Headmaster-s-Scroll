@@ -313,12 +313,13 @@
 }
 
 #gameboard .ccgb-section-heading {
-  align-items: end;
-  border-bottom: 2px solid var(--ccgb-red);
+  align-items: center;
+  border-bottom: 1px solid var(--ccgb-red);
   display: flex;
   justify-content: space-between;
-  margin-bottom: 22px;
-  padding-bottom: 14px;
+  margin-bottom: 10px;
+  min-height: 32px;
+  padding: 2px 0 6px;
 }
 
 #gameboard .ccgb-eyebrow {
@@ -336,7 +337,7 @@
   margin: 0;
 }
 
-#gameboard .ccgb-section-heading h1 { font-size: clamp(27px, 3vw, 39px); }
+#gameboard .ccgb-section-heading h1 { font-size: clamp(20px, 1.8vw, 26px); line-height: 1.1; }
 
 #gameboard.ccgb-board-active .ccgb-main {
   overflow: hidden;

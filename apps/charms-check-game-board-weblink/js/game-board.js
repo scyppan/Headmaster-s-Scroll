@@ -78,6 +78,11 @@
       this.characterSheet = null;
       this.favoriteStorageKey = `${this.storageKey}-favorites`;
       this.spellLibraryStorageKey = `${this.storageKey}-spell-library`;
+      this.knowledgeLibraryStorageKeys = {
+        spells: this.spellLibraryStorageKey,
+        proficiencies: `${this.storageKey}-proficiency-library`,
+        recipes: `${this.storageKey}-recipe-library`,
+      };
       this.chatFontStorageKey = `${this.storageKey}-chat-font-size`;
       this.chatFontSize = Math.max(
         11,
@@ -88,23 +93,25 @@
       } catch (_error) {
         this.favorites = new Set();
       }
-      this.spellLibraryState = {
-        query: '', filters: [], sort: 'name', bookId: '', bookQuery: '',
-      };
-      try {
-        const savedLibrary = JSON.parse(
-          localStorage.getItem(this.spellLibraryStorageKey) || '{}'
-        );
-        if (savedLibrary && typeof savedLibrary === 'object') {
-          this.spellLibraryState = {
-            ...this.spellLibraryState,
-            ...savedLibrary,
-            filters: Array.isArray(savedLibrary.filters)
-              ? savedLibrary.filters.filter(item => item && item.field && item.value)
-              : [],
-          };
+      this.knowledgeLibraryStates = {};
+      Object.entries(this.knowledgeLibraryStorageKeys).forEach(([collection, storageKey]) => {
+        const initial = { query: '', filters: [], sort: 'name', bookId: '', bookQuery: '' };
+        try {
+          const savedLibrary = JSON.parse(localStorage.getItem(storageKey) || '{}');
+          this.knowledgeLibraryStates[collection] = savedLibrary && typeof savedLibrary === 'object'
+            ? {
+                ...initial,
+                ...savedLibrary,
+                filters: Array.isArray(savedLibrary.filters)
+                  ? savedLibrary.filters.filter(item => item && item.field && item.value)
+                  : [],
+              }
+            : initial;
+        } catch (_error) {
+          this.knowledgeLibraryStates[collection] = initial;
         }
-      } catch (_error) {}
+      });
+      this.spellLibraryState = this.knowledgeLibraryStates.spells;
       this.cameraPreferenceKey = `${this.storageKey}-allow-headmaster-camera`;
       this.allowHeadmasterCamera = localStorage.getItem(this.cameraPreferenceKey) !== 'false';
       this.restoreViewState();
@@ -912,11 +919,10 @@
     }
 
     renderKnowledgePanel(content, collection) {
-      if (collection === 'spells') return this.renderBookLibrary(content);
-      return this.renderKnowledgeCatalog(content, collection);
+      return this.renderBookLibrary(content, collection);
     }
 
-    renderBookLibrary(content) {
+    renderBookLibrary(content, primaryCollection = 'spells') {
       const allBooks = this.characterSheet && this.characterSheet.books;
       if (!allBooks) return this.sheetUnavailable(content, 'Books');
       const catalogs = {
@@ -924,16 +930,16 @@
         proficiencies: this.characterSheet?.proficiencies || [],
         recipes: this.characterSheet?.recipes || [],
       };
-      const knownSpellIds = new Set(catalogs.spells.map(record => record.record_id));
+      const knownPrimaryIds = new Set((catalogs[primaryCollection] || []).map(record => record.record_id));
       const books = allBooks.filter(book =>
-        (book.contents?.spells || []).some(recordId => knownSpellIds.has(recordId))
+        (book.contents?.[primaryCollection] || []).some(recordId => knownPrimaryIds.has(recordId))
       );
-      const state = this.spellLibraryState;
+      const state = this.knowledgeLibraryStates[primaryCollection];
       const rememberedBook = books.find(book => book.record_id === state.bookId);
-      if (rememberedBook) return this.renderBookContents(content, rememberedBook);
+      if (rememberedBook) return this.renderBookContents(content, rememberedBook, primaryCollection);
       if (state.bookId) {
         state.bookId = '';
-        this.saveSpellLibraryState();
+        this.saveKnowledgeLibraryState(primaryCollection);
       }
       const permittedIds = Object.fromEntries(Object.keys(catalogs).map(collection => [
         collection,
@@ -941,7 +947,7 @@
       ]));
       const entries = Object.entries(catalogs).flatMap(([collection, records]) =>
         records
-          .filter(record => permittedIds[collection].has(record.record_id))
+          .filter(record => collection === primaryCollection || permittedIds[collection].has(record.record_id))
           .map(record => ({ collection, record }))
       );
       const labels = {
@@ -1045,7 +1051,7 @@
         chips.innerHTML = filters.map((filter, index) => `<button type="button" data-remove-filter="${index}" title="Remove ${this.escapeHtml(filter.field)} filter"><span>${this.escapeHtml(filter.field)}: ${this.escapeHtml(filter.value)}</span><b aria-hidden="true">×</b></button>`).join('');
         chips.querySelectorAll('[data-remove-filter]').forEach(button => button.addEventListener('click', () => {
           state.filters.splice(Number(button.dataset.removeFilter), 1);
-          this.saveSpellLibraryState();
+          this.saveKnowledgeLibraryState(primaryCollection);
           render();
         }));
         const showKnowledge = Boolean(query || filters.length);
@@ -1066,9 +1072,9 @@
         results.querySelectorAll('[data-book-id]').forEach(button => button.addEventListener('click', () => {
           state.bookId = button.dataset.bookId;
           state.bookQuery = '';
-          this.saveSpellLibraryState();
+          this.saveKnowledgeLibraryState(primaryCollection);
           const book = books.find(item => item.record_id === state.bookId);
-          if (book) this.renderBookContents(content, book);
+          if (book) this.renderBookContents(content, book, primaryCollection);
         }));
         results.querySelectorAll('[data-book-cover]').forEach(holder => {
           const assetId = holder.dataset.bookCover;
@@ -1079,7 +1085,7 @@
       };
       search.addEventListener('input', () => {
         state.query = search.value;
-        this.saveSpellLibraryState();
+        this.saveKnowledgeLibraryState(primaryCollection);
         render();
       });
       const filterDialog = content.querySelector('[data-filter-dialog]');
@@ -1091,14 +1097,14 @@
         const value = content.querySelector('[data-filter-value]').value.trim();
         if (!value) return;
         state.filters.push({ field, value });
-        this.saveSpellLibraryState();
+        this.saveKnowledgeLibraryState(primaryCollection);
         content.querySelector('[data-filter-value]').value = '';
         filterDialog.close();
         render();
       });
       sortDialog.querySelectorAll('[name="library-sort"]').forEach(input => input.addEventListener('change', () => {
         state.sort = input.value;
-        this.saveSpellLibraryState();
+        this.saveKnowledgeLibraryState(primaryCollection);
         sortDialog.close();
         render();
       }));
@@ -1106,9 +1112,13 @@
     }
 
     saveSpellLibraryState() {
+      this.saveKnowledgeLibraryState('spells');
+    }
+
+    saveKnowledgeLibraryState(collection) {
       localStorage.setItem(
-        this.spellLibraryStorageKey,
-        JSON.stringify(this.spellLibraryState)
+        this.knowledgeLibraryStorageKeys[collection],
+        JSON.stringify(this.knowledgeLibraryStates[collection])
       );
     }
 
@@ -1178,7 +1188,7 @@
       return { key: 'very-difficult-to-cast', label: performance ? 'Very difficult to perform' : preparation ? 'Very difficult to prepare' : 'Very difficult to cast' };
     }
 
-    renderBookContents(content, book) {
+    renderBookContents(content, book, primaryCollection = 'spells') {
       const catalogs = {
         spells: this.characterSheet?.spells || [],
         proficiencies: this.characterSheet?.proficiencies || [],
@@ -1189,7 +1199,7 @@
         const allowed = new Set(book.contents?.[collection] || []);
         records.filter(record => allowed.has(record.record_id)).forEach(record => entries.push({ collection, record }));
       });
-      const state = this.spellLibraryState;
+      const state = this.knowledgeLibraryStates[primaryCollection];
       const filterOptions = [...new Set(entries.flatMap(({ record }) => [
         record.skill,
         record.source,
@@ -1239,17 +1249,17 @@
           </form>
         </dialog>`;
       content.querySelector('[data-books-home]').addEventListener('click', () => {
-        this.spellLibraryState.bookId = '';
-        this.spellLibraryState.bookQuery = '';
-        this.saveSpellLibraryState();
-        this.renderBookLibrary(content);
+        state.bookId = '';
+        state.bookQuery = '';
+        this.saveKnowledgeLibraryState(primaryCollection);
+        this.renderBookLibrary(content, primaryCollection);
       });
       const cover = content.querySelector('[data-reader-cover]');
       if (book.cover_asset_id) this.loadPrivateImage(cover, book.cover_asset_id, `Cover of ${book.title}`);
       const search = content.querySelector('[data-book-content-search]');
       const holder = content.querySelector('[data-book-contents]');
       const chips = content.querySelector('[data-library-chips]');
-      search.value = this.spellLibraryState.bookQuery || '';
+      search.value = state.bookQuery || '';
       const textFor = value => String(value || '').toLocaleLowerCase();
       const recordText = (record, collection) => [
         record.name, record.description, record.raw_effect, record.raw_effects,
@@ -1280,7 +1290,7 @@
         chips.innerHTML = filters.map((filter, index) => `<button type="button" data-remove-filter="${index}" title="Remove ${this.escapeHtml(filter.field)} filter"><span>${this.escapeHtml(filter.field)}: ${this.escapeHtml(filter.value)}</span><b aria-hidden="true">×</b></button>`).join('');
         chips.querySelectorAll('[data-remove-filter]').forEach(button => button.addEventListener('click', () => {
           state.filters.splice(Number(button.dataset.removeFilter), 1);
-          this.saveSpellLibraryState();
+          this.saveKnowledgeLibraryState(primaryCollection);
           render();
         }));
         holder.innerHTML = ['spells', 'proficiencies', 'recipes'].map(collection => {
@@ -1293,8 +1303,8 @@
         this.bindKnowledgeActions(holder, catalogs, '[data-book-record]', render);
       };
       search.addEventListener('input', () => {
-        this.spellLibraryState.bookQuery = search.value;
-        this.saveSpellLibraryState();
+        state.bookQuery = search.value;
+        this.saveKnowledgeLibraryState(primaryCollection);
         render();
       });
       const filterDialog = content.querySelector('[data-filter-dialog]');
@@ -1306,14 +1316,14 @@
         const value = content.querySelector('[data-filter-value]').value.trim();
         if (!value) return;
         state.filters.push({ field, value });
-        this.saveSpellLibraryState();
+        this.saveKnowledgeLibraryState(primaryCollection);
         content.querySelector('[data-filter-value]').value = '';
         filterDialog.close();
         render();
       });
       sortDialog.querySelectorAll('[name="book-sort"]').forEach(input => input.addEventListener('change', () => {
         state.sort = input.value;
-        this.saveSpellLibraryState();
+        this.saveKnowledgeLibraryState(primaryCollection);
         sortDialog.close();
         render();
       }));

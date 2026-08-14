@@ -75,6 +75,7 @@
       this.chatMessages = [];
       this.characterSheet = null;
       this.favoriteStorageKey = `${this.storageKey}-favorites`;
+      this.spellLibraryStorageKey = `${this.storageKey}-spell-library`;
       this.chatFontStorageKey = `${this.storageKey}-chat-font-size`;
       this.chatFontSize = Math.max(
         11,
@@ -85,6 +86,23 @@
       } catch (_error) {
         this.favorites = new Set();
       }
+      this.spellLibraryState = {
+        query: '', filters: [], sort: 'name', bookId: '', bookQuery: '',
+      };
+      try {
+        const savedLibrary = JSON.parse(
+          localStorage.getItem(this.spellLibraryStorageKey) || '{}'
+        );
+        if (savedLibrary && typeof savedLibrary === 'object') {
+          this.spellLibraryState = {
+            ...this.spellLibraryState,
+            ...savedLibrary,
+            filters: Array.isArray(savedLibrary.filters)
+              ? savedLibrary.filters.filter(item => item && item.field && item.value)
+              : [],
+          };
+        }
+      } catch (_error) {}
       this.cameraPreferenceKey = `${this.storageKey}-allow-headmaster-camera`;
       this.allowHeadmasterCamera = localStorage.getItem(this.cameraPreferenceKey) !== 'false';
       this.restoreViewState();
@@ -901,43 +919,240 @@
     renderBookLibrary(content) {
       const books = this.characterSheet && this.characterSheet.books;
       if (!books) return this.sheetUnavailable(content, 'Books');
+      const state = this.spellLibraryState;
+      const rememberedBook = books.find(book => book.record_id === state.bookId);
+      if (rememberedBook) return this.renderBookContents(content, rememberedBook);
+      if (state.bookId) {
+        state.bookId = '';
+        this.saveSpellLibraryState();
+      }
+      const catalogs = {
+        spells: this.characterSheet?.spells || [],
+        proficiencies: this.characterSheet?.proficiencies || [],
+        recipes: this.characterSheet?.recipes || [],
+      };
+      const entries = Object.entries(catalogs).flatMap(([collection, records]) =>
+        records.map(record => ({ collection, record }))
+      );
+      const labels = {
+        spells: 'Spells', proficiencies: 'Proficiencies', recipes: 'Recipes',
+      };
+      const filterOptions = [
+        ...new Set(entries.flatMap(({ record }) => [
+          record.skill,
+          record.source,
+          ...(Array.isArray(record.tags) ? record.tags : String(record.tags || '').split(',')),
+        ]).map(value => String(value || '').trim()).filter(Boolean)),
+      ].sort((left, right) => left.localeCompare(right));
       content.className = 'ccgb-book-library';
       content.innerHTML = `
         <div class="ccgb-library-tools">
-          <input type="search" data-book-search placeholder="Search books" autocomplete="off">
-          <button type="button" data-all-spells>Search all known spells</button>
+          <input type="search" data-book-search placeholder="Search books, authors, spells, proficiencies, recipes…" autocomplete="off">
+          <button type="button" class="ccgb-library-mini-button" data-library-filter title="Add filters">Filter</button>
+          <button type="button" class="ccgb-library-mini-button" data-library-sort title="Change sorting">Sort</button>
         </div>
+        <div class="ccgb-library-chips" data-library-chips></div>
         <div class="ccgb-book-count" data-book-count></div>
-        <div class="ccgb-book-grid" data-book-grid></div>`;
+        <div class="ccgb-library-results" data-library-results></div>
+        <dialog class="ccgb-library-dialog" data-filter-dialog>
+          <form method="dialog">
+            <header><strong>Add filter</strong><button value="cancel" aria-label="Close">×</button></header>
+            <label>Filter by
+              <select data-filter-field>
+                <option value="tag">Tag</option><option value="skill">Skill</option>
+                <option value="type">Type</option><option value="confidence">Confidence</option>
+                <option value="author">Author</option><option value="source">Source</option>
+              </select>
+            </label>
+            <label>Contains
+              <input data-filter-value list="ccgb-library-filter-values" autocomplete="off">
+              <datalist id="ccgb-library-filter-values">${filterOptions.map(value => `<option value="${this.escapeHtml(value)}"></option>`).join('')}</datalist>
+            </label>
+            <div class="ccgb-dialog-actions"><button value="cancel">Cancel</button><button type="button" data-add-filter>Add</button></div>
+          </form>
+        </dialog>
+        <dialog class="ccgb-library-dialog" data-sort-dialog>
+          <form method="dialog">
+            <header><strong>Sort results</strong><button value="cancel" aria-label="Close">×</button></header>
+            ${[['name', 'Name'], ['difficulty', 'Difficulty'], ['source', 'Source'], ['type', 'Type']].map(([value, label]) => `<label class="ccgb-sort-option"><input type="radio" name="library-sort" value="${value}" ${state.sort === value ? 'checked' : ''}> ${label}</label>`).join('')}
+          </form>
+        </dialog>`;
       const search = content.querySelector('[data-book-search]');
-      const grid = content.querySelector('[data-book-grid]');
+      const results = content.querySelector('[data-library-results]');
+      const chips = content.querySelector('[data-library-chips]');
+      search.value = state.query || '';
+
+      const textFor = value => String(value || '').toLocaleLowerCase();
+      const recordText = (record, collection) => [
+        record.name, record.description, record.raw_effect, record.raw_effects,
+        record.skill, record.source, collection,
+        ...(Array.isArray(record.tags) ? record.tags : String(record.tags || '').split(',')),
+      ].join(' ').toLocaleLowerCase();
+      const bookRecords = book => {
+        const found = [];
+        Object.entries(catalogs).forEach(([collection, records]) => {
+          const allowed = new Set(book.contents?.[collection] || []);
+          records.filter(record => allowed.has(record.record_id)).forEach(record => {
+            found.push({ collection, record });
+          });
+        });
+        return found;
+      };
+      const matchesFilter = (entry, filter) => {
+        const wanted = textFor(filter.value);
+        const { collection, record } = entry;
+        if (filter.field === 'type') return textFor(collection).includes(wanted);
+        if (filter.field === 'tag') return (Array.isArray(record.tags) ? record.tags : String(record.tags || '').split(',')).some(value => textFor(value).includes(wanted));
+        if (filter.field === 'confidence') return textFor(this.knowledgeConfidenceBand(record, collection).label).includes(wanted);
+        return textFor(record[filter.field]).includes(wanted);
+      };
+      const compareEntries = (left, right) => {
+        if (state.sort === 'difficulty') return Number(left.record.threshold || 0) - Number(right.record.threshold || 0) || String(left.record.name).localeCompare(String(right.record.name));
+        if (state.sort === 'source') return String(left.record.source || '').localeCompare(String(right.record.source || '')) || String(left.record.name).localeCompare(String(right.record.name));
+        if (state.sort === 'type') return left.collection.localeCompare(right.collection) || String(left.record.name).localeCompare(String(right.record.name));
+        return String(left.record.name).localeCompare(String(right.record.name));
+      };
       const render = () => {
-        const query = search.value.trim().toLocaleLowerCase();
-        const visible = books.filter(book => [
-          book.title, book.author, ...(book.categories || []), book.description,
-        ].join(' ').toLocaleLowerCase().includes(query));
-        content.querySelector('[data-book-count]').textContent = `${visible.length} ${visible.length === 1 ? 'book' : 'books'} read`;
-        grid.innerHTML = visible.map(book => `
+        const query = textFor(state.query).trim();
+        const filters = state.filters || [];
+        const knowledge = entries
+          .filter(entry => (!query || recordText(entry.record, entry.collection).includes(query)) && filters.every(filter => matchesFilter(entry, filter)))
+          .sort(compareEntries);
+        const visibleBooks = books.filter(book => {
+          const direct = [book.title, book.author, book.description, ...(book.categories || [])].join(' ').toLocaleLowerCase();
+          const contents = bookRecords(book);
+          const queryMatch = !query || direct.includes(query) || contents.some(entry => recordText(entry.record, entry.collection).includes(query));
+          const filterMatch = filters.every(filter => (
+            filter.field === 'author'
+              ? textFor(book.author).includes(textFor(filter.value))
+              : contents.some(entry => matchesFilter(entry, filter))
+          ));
+          return queryMatch && filterMatch;
+        }).sort((left, right) => {
+          if (state.sort === 'source') return String(left.author || '').localeCompare(String(right.author || '')) || String(left.title).localeCompare(String(right.title));
+          return String(left.title).localeCompare(String(right.title));
+        });
+        chips.innerHTML = filters.map((filter, index) => `<button type="button" data-remove-filter="${index}" title="Remove ${this.escapeHtml(filter.field)} filter"><span>${this.escapeHtml(filter.field)}: ${this.escapeHtml(filter.value)}</span><b aria-hidden="true">×</b></button>`).join('');
+        chips.querySelectorAll('[data-remove-filter]').forEach(button => button.addEventListener('click', () => {
+          state.filters.splice(Number(button.dataset.removeFilter), 1);
+          this.saveSpellLibraryState();
+          render();
+        }));
+        const showKnowledge = Boolean(query || filters.length);
+        const bookMarkup = visibleBooks.length ? `<section class="ccgb-library-result-section"><h3>Books</h3><div class="ccgb-book-grid">${visibleBooks.map(book => `
           <button type="button" class="ccgb-book-card" data-book-id="${this.escapeHtml(book.record_id)}">
             <span class="ccgb-book-cover" data-book-cover="${this.escapeHtml(book.cover_asset_id || '')}"><span>${this.escapeHtml(book.title).charAt(0)}</span></span>
             <strong>${this.escapeHtml(book.title)}</strong>
             ${book.author ? `<small>${this.escapeHtml(book.author)}</small>` : ''}
-          </button>`).join('') || '<p class="ccgb-empty-result">No matching books.</p>';
-        grid.querySelectorAll('[data-book-id]').forEach(button => button.addEventListener('click', () => {
-          const book = books.find(item => item.record_id === button.dataset.bookId);
+          </button>`).join('')}</div></section>` : '';
+        const knowledgeMarkup = showKnowledge ? Object.keys(catalogs).map(collection => {
+          const records = knowledge.filter(item => item.collection === collection);
+          return records.length ? `<section class="ccgb-library-result-section"><h3>${labels[collection]}</h3><div class="ccgb-knowledge-pill-group">${records.map(({ record }) => this.knowledgeButtonMarkup(collection, record, 'data-library-record')).join('')}</div></section>` : '';
+        }).join('') : '';
+        results.innerHTML = bookMarkup + knowledgeMarkup || '<p class="ccgb-empty-result">No matching books or known abilities.</p>';
+        content.querySelector('[data-book-count]').textContent = showKnowledge
+          ? `${visibleBooks.length} books · ${knowledge.length} matching entries`
+          : `${visibleBooks.length} ${visibleBooks.length === 1 ? 'book' : 'books'} read`;
+        results.querySelectorAll('[data-book-id]').forEach(button => button.addEventListener('click', () => {
+          state.bookId = button.dataset.bookId;
+          state.bookQuery = '';
+          this.saveSpellLibraryState();
+          const book = books.find(item => item.record_id === state.bookId);
           if (book) this.renderBookContents(content, book);
         }));
-        grid.querySelectorAll('[data-book-cover]').forEach(holder => {
+        results.querySelectorAll('[data-book-cover]').forEach(holder => {
           const assetId = holder.dataset.bookCover;
           if (!assetId) return;
           this.assetUrl(assetId).then(url => {
             if (url && holder.isConnected) holder.innerHTML = `<img src="${url}" alt="">`;
-          }).catch(() => {});
+          }).catch(error => { holder.title = error.message; });
         });
+        this.bindKnowledgeActions(results, catalogs, '[data-library-record]', render);
       };
-      search.addEventListener('input', render);
-      content.querySelector('[data-all-spells]').addEventListener('click', () => this.renderKnowledgeCatalog(content, 'spells'));
+      search.addEventListener('input', () => {
+        state.query = search.value;
+        this.saveSpellLibraryState();
+        render();
+      });
+      const filterDialog = content.querySelector('[data-filter-dialog]');
+      const sortDialog = content.querySelector('[data-sort-dialog]');
+      content.querySelector('[data-library-filter]').addEventListener('click', () => filterDialog.showModal());
+      content.querySelector('[data-library-sort]').addEventListener('click', () => sortDialog.showModal());
+      content.querySelector('[data-add-filter]').addEventListener('click', () => {
+        const field = content.querySelector('[data-filter-field]').value;
+        const value = content.querySelector('[data-filter-value]').value.trim();
+        if (!value) return;
+        state.filters.push({ field, value });
+        this.saveSpellLibraryState();
+        content.querySelector('[data-filter-value]').value = '';
+        filterDialog.close();
+        render();
+      });
+      sortDialog.querySelectorAll('[name="library-sort"]').forEach(input => input.addEventListener('change', () => {
+        state.sort = input.value;
+        this.saveSpellLibraryState();
+        sortDialog.close();
+        render();
+      }));
       render();
+    }
+
+    saveSpellLibraryState() {
+      localStorage.setItem(
+        this.spellLibraryStorageKey,
+        JSON.stringify(this.spellLibraryState)
+      );
+    }
+
+    knowledgeButtonMarkup(collection, record, dataAttribute) {
+      const favorite = this.favorites.has(`${collection}:${record.record_id}`);
+      const band = this.knowledgeConfidenceBand(record, collection);
+      const action = collection === 'spells' ? 'cast' : collection === 'proficiencies' ? 'perform' : 'prepare';
+      const description = record.description || record.raw_effect || record.raw_effects || 'No description recorded.';
+      return `<button type="button" class="ccgb-knowledge-pill is-band-${band.key} ${favorite ? 'is-favorite' : ''}" ${dataAttribute}="${this.escapeHtml(record.record_id)}" data-knowledge-collection="${collection}" title="${this.escapeHtml(description)}\n\nClick to ${action} · Ctrl-click to favorite · Alt-click to share"><span class="ccgb-pill-star" aria-hidden="true">${favorite ? '★' : ''}</span><span>${this.escapeHtml(record.name)}</span></button>`;
+    }
+
+    bindKnowledgeActions(holder, catalogs, selector, rerender) {
+      holder.querySelectorAll(selector).forEach(button => {
+        button.addEventListener('mousedown', event => {
+          if ((event.ctrlKey || event.metaKey) && event.button === 0) event.preventDefault();
+        });
+        button.addEventListener('click', event => {
+          event.preventDefault();
+          const collection = button.dataset.knowledgeCollection;
+          const recordId = button.dataset.libraryRecord || button.dataset.bookRecord || '';
+          const record = (catalogs[collection] || []).find(item => item.record_id === recordId);
+          if (record) this.activateKnowledgeRecord(event, collection, record, rerender);
+        });
+      });
+    }
+
+    activateKnowledgeRecord(event, collection, record, rerender) {
+      if (event.ctrlKey || event.metaKey) {
+        const key = `${collection}:${record.record_id}`;
+        if (this.favorites.has(key)) this.favorites.delete(key); else this.favorites.add(key);
+        localStorage.setItem(this.favoriteStorageKey, JSON.stringify([...this.favorites]));
+        rerender();
+        return;
+      }
+      if (event.altKey) {
+        const threshold = record.threshold == null ? '' : ` (${record.threshold})`;
+        this.postChatText(`${record.name}${threshold}\n${record.description || record.raw_effect || record.raw_effects || 'No description recorded.'}`);
+        return;
+      }
+      if (collection === 'recipes') {
+        const requirements = record.requirements || {};
+        const missing = requirements.missing || [];
+        if (!requirements.ready) {
+          this.postChatText(`${record.name} — missing: ${missing.join(', ') || 'requirements not recorded'}.`);
+          return;
+        }
+        const ingredients = (requirements.ingredients || []).map(item => `${item.required} ${item.name}`);
+        const vessel = requirements.vessel?.name ? `\nRequired vessel (not consumed): ${requirements.vessel.name}` : '';
+        if (window.confirm(`Attempt ${record.name}?\n\nThis will use whether the attempt succeeds or fails:\n${ingredients.join('\n') || 'No consumable ingredients'}${vessel}`)) this.requestRecipeAttempt(record.record_id);
+        return;
+      }
+      this.requestRoll(collection === 'spells' ? 'spell' : 'proficiency', record.record_id);
     }
 
     knowledgeConfidenceBand(record, collection) {
@@ -969,23 +1184,27 @@
       content.className = 'ccgb-book-reader';
       content.innerHTML = `
         <header class="ccgb-book-reader-header">
-          <button type="button" data-books-home>← Books</button>
+          <button type="button" data-books-home>← Library</button>
           <div class="ccgb-reader-cover" data-reader-cover="${this.escapeHtml(book.cover_asset_id || '')}"><span>${this.escapeHtml(book.title).charAt(0)}</span></div>
           <div><h2>${this.escapeHtml(book.title)}</h2>${book.author ? `<p>${this.escapeHtml(book.author)}</p>` : ''}${book.description ? `<small>${this.escapeHtml(book.description)}</small>` : ''}</div>
         </header>
         <div class="ccgb-library-tools">
           <input type="search" data-book-content-search placeholder="Search this book" autocomplete="off">
-          <button type="button" data-all-spells>Search all known spells</button>
         </div>
         <div class="ccgb-book-contents" data-book-contents></div>`;
-      content.querySelector('[data-books-home]').addEventListener('click', () => this.renderBookLibrary(content));
-      content.querySelector('[data-all-spells]').addEventListener('click', () => this.renderKnowledgeCatalog(content, 'spells'));
+      content.querySelector('[data-books-home]').addEventListener('click', () => {
+        this.spellLibraryState.bookId = '';
+        this.spellLibraryState.bookQuery = '';
+        this.saveSpellLibraryState();
+        this.renderBookLibrary(content);
+      });
       const cover = content.querySelector('[data-reader-cover]');
       if (book.cover_asset_id) this.assetUrl(book.cover_asset_id).then(url => {
         if (url && cover.isConnected) cover.innerHTML = `<img src="${url}" alt="Cover of ${this.escapeHtml(book.title)}">`;
-      }).catch(() => {});
+      }).catch(error => { cover.title = error.message; });
       const search = content.querySelector('[data-book-content-search]');
       const holder = content.querySelector('[data-book-contents]');
+      search.value = this.spellLibraryState.bookQuery || '';
       const render = () => {
         const query = search.value.trim().toLocaleLowerCase();
         const visible = entries.filter(({ record }) => [record.name, record.description, record.skill, ...(Array.isArray(record.tags) ? record.tags : [])].join(' ').toLocaleLowerCase().includes(query));
@@ -993,48 +1212,15 @@
           const records = visible.filter(item => item.collection === collection);
           if (!records.length) return '';
           const label = { spells: 'Spells', proficiencies: 'Proficiencies', recipes: 'Recipes' }[collection];
-          return `<section class="ccgb-book-content-section"><h3>${label}</h3><div class="ccgb-knowledge-pill-group">${records.map(({ record }) => {
-            const favorite = this.favorites.has(`${collection}:${record.record_id}`);
-            const band = this.knowledgeConfidenceBand(record, collection);
-            return `<button type="button" class="ccgb-knowledge-pill is-band-${band.key} ${favorite ? 'is-favorite' : ''}" data-book-record="${this.escapeHtml(record.record_id)}" data-book-collection="${collection}" title="${this.escapeHtml(record.description || record.raw_effect || record.raw_effects || 'No description recorded.')}\n\nClick to ${collection === 'spells' ? 'cast' : collection === 'proficiencies' ? 'perform' : 'prepare'} · Ctrl-click to favorite · Alt-click to share"><span class="ccgb-pill-star" aria-hidden="true">${favorite ? '★' : ''}</span><span>${this.escapeHtml(record.name)}</span></button>`;
-          }).join('')}</div></section>`;
+          return `<section class="ccgb-book-content-section"><h3>${label}</h3><div class="ccgb-knowledge-pill-group">${records.map(({ record }) => this.knowledgeButtonMarkup(collection, record, 'data-book-record')).join('')}</div></section>`;
         }).join('') || '<p class="ccgb-empty-result">No matching contents in this book.</p>';
-        holder.querySelectorAll('[data-book-record]').forEach(button => {
-          button.addEventListener('mousedown', event => { if ((event.ctrlKey || event.metaKey) && event.button === 0) event.preventDefault(); });
-          button.addEventListener('click', event => {
-            event.preventDefault();
-            const collection = button.dataset.bookCollection;
-            const record = catalogs[collection].find(item => item.record_id === button.dataset.bookRecord);
-            if (!record) return;
-            if (event.ctrlKey || event.metaKey) {
-              const key = `${collection}:${record.record_id}`;
-              if (this.favorites.has(key)) this.favorites.delete(key); else this.favorites.add(key);
-              localStorage.setItem(this.favoriteStorageKey, JSON.stringify([...this.favorites]));
-              render();
-              return;
-            }
-            if (event.altKey) {
-              const threshold = record.threshold == null ? '' : ` (${record.threshold})`;
-              this.postChatText(`${record.name}${threshold}\n${record.description || record.raw_effect || record.raw_effects || 'No description recorded.'}`);
-              return;
-            }
-            if (collection === 'recipes') {
-              const requirements = record.requirements || {};
-              const missing = requirements.missing || [];
-              if (!requirements.ready) {
-                this.postChatText(`${record.name} — missing: ${missing.join(', ') || 'requirements not recorded'}.`);
-                return;
-              }
-              const ingredients = (requirements.ingredients || []).map(item => `${item.required} ${item.name}`);
-              const vessel = requirements.vessel?.name ? `\nRequired vessel (not consumed): ${requirements.vessel.name}` : '';
-              if (window.confirm(`Attempt ${record.name}?\n\nThis will use whether the attempt succeeds or fails:\n${ingredients.join('\n') || 'No consumable ingredients'}${vessel}`)) this.requestRecipeAttempt(record.record_id);
-              return;
-            }
-            this.requestRoll(collection === 'spells' ? 'spell' : 'proficiency', record.record_id);
-          });
-        });
+        this.bindKnowledgeActions(holder, catalogs, '[data-book-record]', render);
       };
-      search.addEventListener('input', render);
+      search.addEventListener('input', () => {
+        this.spellLibraryState.bookQuery = search.value;
+        this.saveSpellLibraryState();
+        render();
+      });
       render();
     }
 

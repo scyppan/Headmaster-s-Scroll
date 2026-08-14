@@ -201,6 +201,25 @@ class GameBoardApiTests(unittest.TestCase):
         remaining = self.admin.get("/api/admin/state", headers=self.admin_headers).json()
         self.assertEqual([item["id"] for item in remaining["sessions"]], [session_id])
 
+    def test_delete_route_removes_archived_session(self):
+        state = self.admin.get("/api/admin/state", headers=self.admin_headers).json()
+        session_id = state["sessions"][0]["id"]
+        ended = self.admin.post(
+            f"/api/admin/sessions/{session_id}/end", headers=self.admin_headers
+        )
+        self.assertEqual(ended.status_code, 200, ended.text)
+
+        deleted = self.admin.delete(
+            f"/api/admin/sessions/{session_id}", headers=self.admin_headers
+        )
+
+        self.assertEqual(deleted.status_code, 200, deleted.text)
+        refreshed = self.admin.get("/api/admin/state", headers=self.admin_headers).json()
+        self.assertNotIn(
+            session_id,
+            [item["id"] for item in refreshed.get("archived_sessions", [])],
+        )
+
     def test_origin_is_required(self):
         response = self.player.post("/v1/admissions", json={"invite_token": self.invite})
         self.assertEqual(response.status_code, 403)
@@ -440,6 +459,32 @@ class GameBoardAssetTests(unittest.TestCase):
         with self.assertRaises(PermissionError):
             service.resolve_player_asset("session-1", "book-cover:potions")
 
+    def test_book_cover_authorization_uses_the_connected_players_sheet(self):
+        service = object.__new__(GameBoardService)
+        captured = {}
+
+        def snapshot(_session_id, *, for_players=False, contact_id=None):
+            captured.update(for_players=for_players, contact_id=contact_id)
+            return {
+                "maps": [],
+                "actors": [],
+                "character_sheet": {
+                    "books": [{"cover_asset_id": "book-cover:charms"}],
+                },
+            }
+
+        service.board_snapshot = snapshot
+        service.world_board = SimpleNamespace(
+            load=lambda: SimpleNamespace(data={"maps": [], "people": []})
+        )
+
+        path, _media_type = service.resolve_player_asset(
+            "session-1", "book-cover:charms", "contact-1"
+        )
+
+        self.assertEqual(path.name, "Charms.png")
+        self.assertEqual(captured, {"for_players": True, "contact_id": "contact-1"})
+
     def test_map_search_returns_typo_tolerant_near_matches(self):
         window = object.__new__(GameBoardWindow)
         window.board_snapshot = {
@@ -462,6 +507,18 @@ class GameBoardAssetTests(unittest.TestCase):
             [item["record_id"] for item in window.fuzzy_board_maps("Hogshre")],
             ["map-hogshire"],
         )
+
+    def test_desktop_can_select_an_archived_session_for_deletion(self):
+        window = object.__new__(GameBoardWindow)
+        window.selected_session_id = "expired-session"
+        window.state_data = {
+            "sessions": [],
+            "archived_sessions": [
+                {"id": "expired-session", "title": "Expired game", "archived": True}
+            ],
+        }
+
+        self.assertEqual(window._selected_session()["id"], "expired-session")
 
     def test_separate_weblink_loads_versioned_assets_and_waits_for_approval(self):
         root = Path(__file__).resolve().parents[1]
@@ -500,7 +557,10 @@ class GameBoardAssetTests(unittest.TestCase):
         self.assertIn("renderKnowledgePanel", client)
         self.assertIn("renderBookLibrary", client)
         self.assertIn("renderBookContents", client)
-        self.assertIn("Search all known spells", client)
+        self.assertIn("Search books, authors, spells, proficiencies, recipes", client)
+        self.assertIn("data-library-filter", client)
+        self.assertIn("data-remove-filter", client)
+        self.assertIn("spellLibraryStorageKey", client)
         self.assertIn("ccgb-book-grid", stylesheet)
         self.assertIn("book-cover:", (root / "headmasters_scroll" / "character_sheet.py").read_text(encoding="utf-8"))
         self.assertIn("character_roll_request", client)

@@ -397,6 +397,20 @@ class GameBoardServiceTests(unittest.TestCase):
         self.assertEqual(summary["event_date"], "1943-09-02")
         self.assertEqual([session["id"] for session in self.service.sessions_view()], [first["id"]])
 
+    def test_delete_session_removes_an_expired_archived_session(self):
+        session = self.create_session()
+        summary = self.service.end_session("expired", session["id"])
+        self.assertEqual(
+            [item["id"] for item in self.service.archived_sessions_view()],
+            [session["id"]],
+        )
+
+        deleted = self.service.delete_session(session["id"])
+
+        self.assertEqual(deleted["id"], summary["id"])
+        self.assertEqual(self.service.archived_sessions_view(), [])
+        self.assertEqual(self.repository.summaries()["sessions"], [])
+
     def test_legacy_single_session_file_migrates_without_data_loss(self):
         session = self.create_session()
         self.repository.save_active({"schema_version": 1, "session": session})

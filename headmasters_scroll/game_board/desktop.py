@@ -6246,18 +6246,18 @@ class GameBoardWindow(tk.Tk):
             highlightthickness=0,
         )
         vertical = ttk.Scrollbar(container, orient="vertical", command=canvas.yview)
-        horizontal = ttk.Scrollbar(container, orient="horizontal", command=canvas.xview)
-        canvas.configure(yscrollcommand=vertical.set, xscrollcommand=horizontal.set)
+        canvas.configure(yscrollcommand=vertical.set)
         canvas.grid(row=0, column=0, sticky="nsew")
         vertical.grid(row=0, column=1, sticky="ns")
-        horizontal.grid(row=1, column=0, sticky="ew")
         content = ttk.Frame(canvas)
         window = canvas.create_window((0, 0), window=content, anchor="nw")
 
         def update_region(_event: tk.Event | None = None) -> None:
             canvas.update_idletasks()
-            requested = max(content.winfo_reqwidth(), canvas.winfo_width())
-            canvas.itemconfigure(window, width=requested)
+            # Keep every Control Room page inside the visible application
+            # width. Its weighted grids can then contract instead of creating
+            # a hidden wide page that clips right-edge actions such as Send.
+            canvas.itemconfigure(window, width=max(1, canvas.winfo_width()))
             canvas.configure(scrollregion=canvas.bbox("all"))
 
         def wheel(event: tk.Event) -> str:
@@ -6534,6 +6534,7 @@ class GameBoardWindow(tk.Tk):
         self.sending_invitations = False
 
         sessions_card = self._card(self.session_tab, "Sessions")
+        self.sessions_card = sessions_card
         sessions_card.grid(row=0, column=0, sticky="nsew", padx=(0, 8), pady=8)
         self.sessions_tree = ttk.Treeview(
             sessions_card,
@@ -6560,6 +6561,7 @@ class GameBoardWindow(tk.Tk):
         self.sessions_tree.bind("<<TreeviewSelect>>", self._session_selected)
 
         session_buttons = ttk.Frame(self.session_tab, style="Card.TFrame")
+        self.session_buttons = session_buttons
         session_buttons.grid(row=1, column=0, sticky="ew", padx=(0, 8), pady=(0, 8))
         ttk.Button(session_buttons, text="Create", command=self.create_session).pack(side="left")
         ttk.Button(
@@ -6574,6 +6576,7 @@ class GameBoardWindow(tk.Tk):
         ).pack(side="right")
 
         invitations_card = self._card(self.session_tab, "Invitations")
+        self.invitations_card = invitations_card
         invitations_card.grid(row=0, column=1, sticky="nsew", padx=(8, 0), pady=8)
         self.session_summary = ttk.Label(
             invitations_card, text="Select a session", style="Card.TLabel"
@@ -6587,11 +6590,11 @@ class GameBoardWindow(tk.Tk):
             height=12,
         )
         for column, heading, width, anchor in (
-            ("checked", "✓", 34, "center"),
-            ("name", "Player", 122, "w"),
-            ("email", "Email", 162, "w"),
-            ("sent", "Last invitation", 136, "w"),
-            ("logged_in", "Logged in", 72, "center"),
+            ("checked", "✓", 30, "center"),
+            ("name", "Player", 105, "w"),
+            ("email", "Email", 140, "w"),
+            ("sent", "Last invitation", 115, "w"),
+            ("logged_in", "Logged in", 58, "center"),
         ):
             self.invites_tree.heading(column, text=heading)
             self.invites_tree.column(
@@ -6599,7 +6602,7 @@ class GameBoardWindow(tk.Tk):
                 width=width,
                 minwidth=34 if column == "checked" else 60,
                 anchor=anchor,
-                stretch=False,
+                stretch=column in {"name", "email", "sent"},
             )
         invitation_scroll = ttk.Scrollbar(
             invitations_card, orient="vertical", command=self.invites_tree.yview
@@ -6612,6 +6615,7 @@ class GameBoardWindow(tk.Tk):
         self.invites_tree.bind("<Return>", self._toggle_focused_invitation)
 
         invite_controls = ttk.Frame(self.session_tab, style="Card.TFrame")
+        self.invite_controls = invite_controls
         invite_controls.grid(row=1, column=1, sticky="ew", padx=(8, 0), pady=(0, 8))
         self.invite_selection_label = ttk.Label(
             invite_controls, text="0 selected", style="Card.TLabel"
@@ -6647,6 +6651,54 @@ class GameBoardWindow(tk.Tk):
         self.send_all_button.pack(side="right", padx=5)
         self._attach_tooltip(self.send_selected_button, "Email the checked players")
         self._attach_tooltip(self.send_all_button, "Email every player in this session")
+        self.session_tab.bind("<Configure>", self._apply_responsive_session_layout, add="+")
+
+    def _apply_responsive_session_layout(self, event: tk.Event | None = None) -> None:
+        """Stack both panes before their tables or action rows can clip."""
+
+        if not all(
+            hasattr(self, name)
+            for name in (
+                "sessions_card", "session_buttons", "invitations_card", "invite_controls"
+            )
+        ):
+            return
+        width = int(getattr(event, "width", 0) or self.session_tab.winfo_width())
+        compact = width < 980
+        if compact:
+            self.session_tab.columnconfigure(0, weight=1)
+            self.session_tab.columnconfigure(1, weight=0)
+            self.session_tab.rowconfigure(0, weight=1)
+            self.session_tab.rowconfigure(2, weight=1)
+            self.sessions_card.grid_configure(
+                row=0, column=0, sticky="nsew", padx=0, pady=(8, 4)
+            )
+            self.session_buttons.grid_configure(
+                row=1, column=0, sticky="ew", padx=0, pady=(0, 6)
+            )
+            self.invitations_card.grid_configure(
+                row=2, column=0, sticky="nsew", padx=0, pady=(6, 4)
+            )
+            self.invite_controls.grid_configure(
+                row=3, column=0, sticky="ew", padx=0, pady=(0, 8)
+            )
+        else:
+            self.session_tab.columnconfigure(0, weight=1)
+            self.session_tab.columnconfigure(1, weight=2)
+            self.session_tab.rowconfigure(0, weight=1)
+            self.session_tab.rowconfigure(2, weight=0)
+            self.sessions_card.grid_configure(
+                row=0, column=0, sticky="nsew", padx=(0, 8), pady=8
+            )
+            self.session_buttons.grid_configure(
+                row=1, column=0, sticky="ew", padx=(0, 8), pady=(0, 8)
+            )
+            self.invitations_card.grid_configure(
+                row=0, column=1, sticky="nsew", padx=(8, 0), pady=8
+            )
+            self.invite_controls.grid_configure(
+                row=1, column=1, sticky="ew", padx=(8, 0), pady=(0, 8)
+            )
 
     def _build_settings(self) -> None:
         card = self._grid_card(self.settings_tab, "Connection & Gmail Setup", 3)
@@ -7095,7 +7147,10 @@ class GameBoardWindow(tk.Tk):
     def _selected_session(self) -> dict[str, Any] | None:
         return next(
             (
-                session for session in self.state_data.get("sessions", [])
+                session for session in (
+                    list(self.state_data.get("sessions") or [])
+                    + list(self.state_data.get("archived_sessions") or [])
+                )
                 if session.get("id") == self.selected_session_id
             ),
             None,

@@ -1446,6 +1446,7 @@ def create_apps(
             path, media_type = service.resolve_player_asset(
                 connection.session_id,
                 asset_id,
+                connection.contact_id,
             )
             return FileResponse(
                 path,

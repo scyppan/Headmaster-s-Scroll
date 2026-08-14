@@ -971,11 +971,41 @@ class GameBoardService:
     def delete_session(self, session_id: str) -> dict[str, Any]:
         with self._lock:
             wrapper = self.repository.active()
-            session = self._session(wrapper, session_id)
-            wrapper["sessions"] = [item for item in wrapper["sessions"] if item["id"] != session_id]
+            session = next(
+                (
+                    item for item in wrapper.get("sessions", [])
+                    if item.get("id") == session_id
+                ),
+                None,
+            )
+            if session is not None:
+                wrapper["sessions"] = [
+                    item for item in wrapper["sessions"]
+                    if item.get("id") != session_id
+                ]
+                self._drop_tickets_for_session(session_id)
+                self.repository.save_active(wrapper)
+                return self._public_session(session)
+
+            # Ended and expired sessions live in session-summaries.json. They
+            # remain visible in the Control Room and must be deletable there.
+            summaries = self.repository.summaries()
+            archived = next(
+                (
+                    item for item in summaries.get("sessions", [])
+                    if item.get("id") == session_id
+                ),
+                None,
+            )
+            if archived is None:
+                raise KeyError("Unknown session")
+            summaries["sessions"] = [
+                item for item in summaries["sessions"]
+                if item.get("id") != session_id
+            ]
             self._drop_tickets_for_session(session_id)
-            self.repository.save_active(wrapper)
-            return self._public_session(session)
+            self.repository.save_summaries(summaries)
+            return self._public_session(archived)
 
     def remove_player(self, session_id: str, contact_id: str) -> dict[str, Any]:
         with self._lock:
@@ -3093,8 +3123,17 @@ class GameBoardService:
         self,
         session_id: str,
         asset_id: str,
+        contact_id: str | None = None,
     ) -> tuple[Any, str]:
-        snapshot = self.board_snapshot(session_id, for_players=True)
+        snapshot = (
+            self.board_snapshot(
+                session_id,
+                for_players=True,
+                contact_id=contact_id,
+            )
+            if contact_id
+            else self.board_snapshot(session_id, for_players=True)
+        )
         sheet = snapshot.get("character_sheet")
         authorized_cover_ids = {
             str(book.get("cover_asset_id") or "")

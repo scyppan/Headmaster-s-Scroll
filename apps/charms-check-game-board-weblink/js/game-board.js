@@ -698,10 +698,28 @@
           body.append(components);
           details.append(summary, body);
           article.appendChild(details);
+          details.addEventListener('toggle', () => {
+            if (!details.open) return;
+            requestAnimationFrame(() => this.ensureChatCardVisible(container, article));
+          });
         }
         container.appendChild(article);
       });
       container.scrollTop = container.scrollHeight;
+    }
+
+    ensureChatCardVisible(container, article) {
+      const viewport = container.getBoundingClientRect();
+      const card = article.getBoundingClientRect();
+      if (card.height > viewport.height) {
+        container.scrollTop += card.bottom - viewport.bottom;
+        return;
+      }
+      if (card.bottom > viewport.bottom) {
+        container.scrollTop += card.bottom - viewport.bottom;
+      } else if (card.top < viewport.top) {
+        container.scrollTop += card.top - viewport.top;
+      }
     }
 
     showChatNotice(text) {
@@ -999,16 +1017,31 @@
       const subjectSearch = panel.querySelector('[data-teach-subject-search]');
       const subjectSkill = panel.querySelector('[data-teach-skill]');
       const subjectSort = panel.querySelector('[data-teach-sort]');
-      const renderPupils = () => renderChoices(panel.querySelector('[data-teach-pupils]'), pupils, pupilSearch.value.trim().toLowerCase(), pupilId, value => { pupilId = value; renderPupils(); updateSelection(); });
+      const renderPupils = () => renderChoices(panel.querySelector('[data-teach-pupils]'), pupils, pupilSearch.value.trim().toLowerCase(), pupilId, value => {
+        pupilId = value === pupilId ? '' : value;
+        subjectId = '';
+        renderPupils();
+        renderSubjects();
+        updateSelection();
+      });
       const renderSubjects = () => {
+        const holder = panel.querySelector('[data-teach-subjects]');
+        if (!pupilId) {
+          subjectId = '';
+          holder.replaceChildren();
+          updateSelection();
+          return;
+        }
         const query = subjectSearch.value.trim().toLowerCase();
         const skill = subjectSkill.value;
-        const values = records.filter(item => !skill || String(item.skill || '') === skill).sort((left, right) => {
+        const pupil = pupils.find(item => item.record_id === pupilId);
+        const alreadyKnown = new Set(pupil?.known?.[kind] || []);
+        const values = records.filter(item => !alreadyKnown.has(item.record_id) && (!skill || String(item.skill || '') === skill)).sort((left, right) => {
           if (subjectSort.value === 'difficulty') return Number(left.threshold ?? 1e9) - Number(right.threshold ?? 1e9) || left.name.localeCompare(right.name);
           if (subjectSort.value === 'skill') return String(left.skill || '').localeCompare(String(right.skill || '')) || left.name.localeCompare(right.name);
           return left.name.localeCompare(right.name);
         });
-        renderChoices(panel.querySelector('[data-teach-subjects]'), values, query, subjectId, value => { subjectId = value; renderSubjects(); updateSelection(); });
+        renderChoices(holder, values, query, subjectId, value => { subjectId = value; renderSubjects(); updateSelection(); });
       };
       content.querySelector('[data-teach-open]').addEventListener('click', () => {
         panel.hidden = false;

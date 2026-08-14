@@ -261,6 +261,22 @@ class GameBoardService:
                 and str(item.get("actor_id", "")) != teacher_person_id
             ), key=lambda item: (item["name"].casefold(), item["record_id"]))
             sheet = self._sheet_for_person(session_id, teacher_person_id)
+            for pupil in pupils:
+                pupil_sheet = self._sheet_for_person(
+                    session_id, str(pupil["record_id"])
+                )
+                pupil["known"] = {
+                    kind: sorted({
+                        str(item.get("record_id", ""))
+                        for item in pupil_sheet.get(collection, []) or []
+                        if isinstance(item, dict) and item.get("record_id")
+                    })
+                    for kind, collection in (
+                        ("spell", "spells"),
+                        ("proficiency", "proficiencies"),
+                        ("recipe", "recipes"),
+                    )
+                }
             return {
                 "teacher": {
                     "record_id": teacher_person_id,
@@ -286,6 +302,12 @@ class GameBoardService:
             for item in options.get(kind, [])
         ):
             raise PermissionError("That character does not know this subject")
+        pupil = next(
+            item for item in options["pupils"]
+            if item["record_id"] == pupil_person_id
+        )
+        if knowledge_record_id in set((pupil.get("known") or {}).get(kind, [])):
+            raise PermissionError("That pupil already knows this subject")
         return options
 
     @staticmethod

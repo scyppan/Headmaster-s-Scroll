@@ -90,6 +90,11 @@ class GameBoardServiceTests(unittest.TestCase):
         self.assertEqual(
             [item["record_id"] for item in options["spell"]], ["known-spell"]
         )
+        self.assertEqual(options["pupils"][0]["known"]["spell"], ["known-spell"])
+        with self.assertRaisesRegex(PermissionError, "already knows"):
+            self.service._validate_teaching_action(
+                "session", "teacher", "nearby", "spell", "known-spell"
+            )
         with self.assertRaises(PermissionError):
             self.service._validate_teaching_action(
                 "session", "teacher", "elsewhere", "spell", "known-spell"

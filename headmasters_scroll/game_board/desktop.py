@@ -4066,7 +4066,18 @@ class GameBoardWindow(tk.Tk):
         visible_subjects: dict[str, dict[str, Any]] = {}
 
         def records() -> list[dict[str, Any]]:
-            return list(options.get(kind.get(), []) or [])
+            selected = pupil_tree.selection()
+            if not selected:
+                return []
+            pupil = next(
+                (item for item in pupils if item.get("record_id") == selected[0]),
+                {},
+            )
+            already_known = set((pupil.get("known") or {}).get(kind.get(), []))
+            return [
+                item for item in options.get(kind.get(), []) or []
+                if str(item.get("record_id") or "") not in already_known
+            ]
 
         def render_subjects(*_args: Any) -> None:
             term = query.get().strip().casefold()
@@ -4130,6 +4141,17 @@ class GameBoardWindow(tk.Tk):
         skill_box.bind("<<ComboboxSelected>>", render_subjects)
         source_box.bind("<<ComboboxSelected>>", render_subjects)
         sort_box.bind("<<ComboboxSelected>>", render_subjects)
+        def pupil_changed(_event: tk.Event | None = None) -> None:
+            subject_tree.selection_remove(subject_tree.selection())
+            reset_filters()
+
+        def clear_pupil_on_blank(event: tk.Event) -> None:
+            if not pupil_tree.identify_row(event.y):
+                pupil_tree.selection_remove(pupil_tree.selection())
+                pupil_changed()
+
+        pupil_tree.bind("<<TreeviewSelect>>", pupil_changed)
+        pupil_tree.bind("<Button-1>", clear_pupil_on_blank, add="+")
         reset_filters()
 
         def teach() -> None:
@@ -5779,7 +5801,10 @@ class GameBoardWindow(tk.Tk):
         self.chat_entry.bind("<Return>", lambda _event: self.send_chat())
         ttk.Button(composer, text="Send", command=self.send_chat).pack(side="right", padx=(10, 0))
         self._rendered_chat_ids: tuple[str, ...] = ()
-        self._chat_roll_ranges: list[tuple[str, str, dict[str, Any]]] = []
+        self._chat_roll_ranges: list[tuple[str, str, str, str]] = []
+        self._expanded_chat_roll_ids: set[str] = set()
+        self._last_chat_messages: list[dict[str, Any]] = []
+        self._chat_focus_roll_id = ""
 
     def _configure_chat_fonts(self) -> None:
         if not hasattr(self, "chat_log"):
@@ -5812,6 +5837,24 @@ class GameBoardWindow(tk.Tk):
             font=("Segoe UI", max(8, self.chat_font_size - 1), "bold"),
             relief="raised", borderwidth=1,
             lmargin1=8, lmargin2=8, rmargin=8, spacing1=3, spacing3=5,
+        )
+        self.chat_log.tag_configure(
+            "roll_detail", background="#f8edcf", foreground=self.INK,
+            font=("Segoe UI", max(8, self.chat_font_size - 1)),
+            lmargin1=18, lmargin2=18, rmargin=8, spacing1=1, spacing3=1,
+            tabs=(190,),
+        )
+        self.chat_log.tag_configure(
+            "roll_source", background="#f8edcf", foreground="#735031",
+            font=("Segoe UI", max(8, self.chat_font_size - 2)),
+            lmargin1=32, lmargin2=32, rmargin=8, spacing1=0, spacing3=0,
+            tabs=(190,),
+        )
+        self.chat_log.tag_configure(
+            "roll_total", background="#ead18e", foreground=self.INK,
+            font=("Segoe UI", max(8, self.chat_font_size - 1), "bold"),
+            lmargin1=18, lmargin2=18, rmargin=8, spacing1=3, spacing3=5,
+            tabs=(190,),
         )
         self.chat_log.tag_configure(
             "critical_failure", background="#6f1717", foreground="#ffe2e2",
@@ -7086,11 +7129,13 @@ class GameBoardWindow(tk.Tk):
         message_ids = tuple(str(item.get("id", "")) for item in messages)
         if message_ids == self._rendered_chat_ids:
             return
+        self._last_chat_messages = deepcopy(messages)
         self._rendered_chat_ids = message_ids
         self.chat_log.configure(state="normal")
         self.chat_log.delete("1.0", "end")
         self._chat_roll_ranges = []
-        for message in messages:
+        for message_number, message in enumerate(messages):
+            message_id = str(message.get("id") or f"message-{message_number}")
             start = self.chat_log.index("end-1c")
             stamp = str(message.get("sent_at", ""))[11:16] or "--:--"
             role = message.get("sender_role") if message.get("sender_role") in {"headmaster", "system"} else "player"
@@ -7110,14 +7155,15 @@ class GameBoardWindow(tk.Tk):
             )
             if isinstance(activity, dict):
                 summary_start = self.chat_log.index("end-1c")
+                expanded = message_id in self._expanded_chat_roll_ids
                 self.chat_log.insert(
                     "end",
-                    f"  {activity.get('target_name') or 'Roll'} · {activity.get('total', 0)}  ▾  \n",
+                    f"  {activity.get('target_name') or 'Roll'} · {activity.get('total', 0)}  {'▴' if expanded else '▾'}  \n",
                     ("roll_summary", outcome_tag) if outcome_tag else ("roll_summary",),
                 )
                 summary_end = self.chat_log.index("end-1c")
                 self._chat_roll_ranges.append(
-                    (summary_start, summary_end, deepcopy(activity))
+                    (summary_start, summary_end, summary_end, message_id)
                 )
                 self.chat_log.tag_add("roll", summary_start, summary_end)
                 self.chat_log.tag_configure("roll", underline=False)
@@ -7129,91 +7175,72 @@ class GameBoardWindow(tk.Tk):
                     "roll", "<Leave>",
                     lambda _event: self.chat_log.configure(cursor="xterm"),
                 )
+                if expanded:
+                    self._insert_inline_roll_details(activity, outcome_tag)
+                detail_end = self.chat_log.index("end-1c")
+                self._chat_roll_ranges[-1] = (
+                    summary_start, summary_end, detail_end, message_id
+                )
             end = self.chat_log.index("end-1c")
             self.chat_log.insert("end", "\n")
         self.chat_log.configure(state="disabled")
-        self.chat_log.see("end")
+        focus_range = next(
+            ((start, detail_end) for start, _summary_end, detail_end, roll_id
+             in self._chat_roll_ranges
+             if roll_id == self._chat_focus_roll_id),
+            None,
+        )
+        if focus_range:
+            focus_start, focus_end = focus_range
+            self.chat_log.see(focus_start)
+            self.chat_log.see(focus_end)
+        else:
+            self.chat_log.see("end")
+        self._chat_focus_roll_id = ""
 
-    def _inspect_chat_roll(self, event: tk.Event) -> str | None:
-        index = self.chat_log.index(f"@{event.x},{event.y}")
-        for start, end, activity in self._chat_roll_ranges:
-            if self.chat_log.compare(index, ">=", start) and self.chat_log.compare(index, "<", end):
-                self._show_roll_details(activity)
-                return "break"
-        return None
-
-    def _show_roll_details(self, activity: dict[str, Any]) -> None:
-        dialog = tk.Toplevel(self)
-        dialog.title(str(activity.get("target_name") or "Roll details"))
-        dialog.transient(self)
-        dialog.geometry("420x480")
-        dialog.minsize(340, 320)
-        apply_window_icon(dialog, GAME_BOARD_ICON)
-        shell = ttk.Frame(dialog, padding=12, style="Card.TFrame")
-        shell.pack(fill="both", expand=True)
-        ttk.Label(
-            shell, text=str(activity.get("target_name") or "Roll"),
-            style="Section.TLabel",
-        ).pack(anchor="w")
-        outcome = str(activity.get("outcome") or "rolled").replace("_", " ").title()
-        ttk.Label(
-            shell,
-            text=f"{outcome}  ·  Total {activity.get('total', 0)}",
-            style="Card.TLabel",
-        ).pack(anchor="w", pady=(1, 8))
-        table = ttk.Frame(shell, style="Card.TFrame")
-        table.pack(fill="both", expand=True)
-        row = 0
+    def _insert_inline_roll_details(
+        self, activity: dict[str, Any], outcome_tag: str | None
+    ) -> None:
+        detail_tags = ("roll_detail", outcome_tag) if outcome_tag else ("roll_detail",)
+        source_tags = ("roll_source", outcome_tag) if outcome_tag else ("roll_source",)
+        total_tags = ("roll_total", outcome_tag) if outcome_tag else ("roll_total",)
         for component in activity.get("components", []) or []:
             if not isinstance(component, dict):
                 continue
-            ttk.Label(
-                table, text=str(component.get("label") or "Value"),
-                style="Card.TLabel",
-            ).grid(row=row, column=0, sticky="w", padx=(4, 12), pady=2)
-            ttk.Label(
-                table, text=str(component.get("value", 0)),
-                style="CardTitle.TLabel",
-            ).grid(row=row, column=1, sticky="e", padx=4, pady=2)
-            row += 1
+            self.chat_log.insert(
+                "end",
+                f"  {component.get('label') or 'Value'}\t{component.get('value', 0)}\n",
+                detail_tags,
+            )
             for source in component.get("sources", []) or []:
                 if not isinstance(source, dict):
                     continue
-                ttk.Label(
-                    table, text=f"↳ {source.get('label') or 'Source'}",
-                    style="Status.TLabel",
-                ).grid(row=row, column=0, sticky="w", padx=(16, 12), pady=1)
-                ttk.Label(
-                    table, text=str(source.get("value", 0)),
-                    style="Status.TLabel",
-                ).grid(row=row, column=1, sticky="e", padx=4, pady=1)
-                row += 1
+                self.chat_log.insert(
+                    "end",
+                    f"  ↳ {source.get('label') or 'Source'}\t{source.get('value', 0)}\n",
+                    source_tags,
+                )
         if activity.get("threshold") is not None:
-            ttk.Separator(table).grid(
-                row=row, column=0, columnspan=2, sticky="ew", pady=5
+            self.chat_log.insert(
+                "end", f"  Threshold\t{activity['threshold']}\n", detail_tags
             )
-            row += 1
-            ttk.Label(table, text="Threshold", style="Card.TLabel").grid(
-                row=row, column=0, sticky="w", padx=4, pady=2
-            )
-            ttk.Label(
-                table, text=str(activity["threshold"]), style="CardTitle.TLabel"
-            ).grid(row=row, column=1, sticky="e", padx=4, pady=2)
-            row += 1
-        ttk.Separator(table).grid(
-            row=row, column=0, columnspan=2, sticky="ew", pady=5
+        self.chat_log.insert(
+            "end", f"  TOTAL\t{activity.get('total', 0)}\n", total_tags
         )
-        row += 1
-        ttk.Label(table, text="TOTAL", style="CardTitle.TLabel").grid(
-            row=row, column=0, sticky="w", padx=4, pady=2
-        )
-        ttk.Label(
-            table, text=str(activity.get("total", 0)), style="CardTitle.TLabel"
-        ).grid(row=row, column=1, sticky="e", padx=4, pady=2)
-        table.columnconfigure(0, weight=1)
-        ttk.Button(dialog, text="Close", command=dialog.destroy).pack(
-            side="bottom", pady=(0, 10), ipadx=12
-        )
+
+    def _inspect_chat_roll(self, event: tk.Event) -> str | None:
+        index = self.chat_log.index(f"@{event.x},{event.y}")
+        for start, end, _detail_end, roll_id in self._chat_roll_ranges:
+            if self.chat_log.compare(index, ">=", start) and self.chat_log.compare(index, "<", end):
+                if roll_id in self._expanded_chat_roll_ids:
+                    self._expanded_chat_roll_ids.remove(roll_id)
+                else:
+                    self._expanded_chat_roll_ids.add(roll_id)
+                self._chat_focus_roll_id = roll_id
+                self._rendered_chat_ids = ()
+                self._render_chat(self._last_chat_messages)
+                return "break"
+        return None
 
     def send_chat(self) -> None:
         message = self.chat_entry.get().strip()

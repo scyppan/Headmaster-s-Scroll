@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "_headmasters_scroll": {
-    "revision_id": "78392296-2bfb-48c4-aa48-75700b2e1616",
-    "last_modified_at": "2026-08-13T23:48:01.325878Z",
+    "revision_id": "2e3ac5b8-6b54-463a-a654-23262a30dd81",
+    "last_modified_at": "2026-08-14T00:08:44.468272Z",
     "last_modified_by": "game-board"
   },
   "campaigns": [
@@ -11,7 +11,7 @@
       "created_at": "2026-08-11T08:19:23.069609Z",
       "name": "Test camp",
       "game_world_start_date": "2000-08-27",
-      "last_updated": "2026-08-13T23:48:01.322142Z",
+      "last_updated": "2026-08-14T00:08:44.464455Z",
       "game_state": {
         "initialized": true,
         "current_game_datetime": "2000-08-27T08:00",
@@ -224,9 +224,9 @@
             "token_scale": 0.0055,
             "start_point": null,
             "headmaster_camera": {
-              "zoom": 5.200894613889844,
-              "center_x": 0.843126482768498,
-              "center_y": 0.49873553561257583
+              "zoom": 1.9552089260977044,
+              "center_x": 0.6941194688481591,
+              "center_y": 0.4827710959297321
             },
             "player_cameras": {
               "6ca9e551-e305-4c3c-a763-d2ff9a13afff": {
@@ -378,8 +378,8 @@
               "location_id": "38b8b79b-0785-4213-826e-0e65998d3b41",
               "floor_id": "",
               "map_id": "a5a85bd9-e989-4069-936c-8acda64f0fdd",
-              "x": 0.8727221751213594,
-              "y": 0.5114559493974926
+              "x": 0.8778795665848989,
+              "y": 0.5016086045449333
             },
             "visibility": "players",
             "display_mode": "dot",
@@ -960,8 +960,8 @@
               "location_id": "38b8b79b-0785-4213-826e-0e65998d3b41",
               "floor_id": "",
               "map_id": "a5a85bd9-e989-4069-936c-8acda64f0fdd",
-              "x": 0.8691912956307987,
-              "y": 0.5290132620535738
+              "x": 0.8846938967449774,
+              "y": 0.5310023097759751
             },
             "visibility": "players",
             "display_mode": "token",
@@ -2563,7 +2563,31 @@
             "last_updated": "2026-08-13T05:22:28.877682Z"
           }
         ]
-      }
+      },
+      "events": [
+        {
+          "person_id": "da621804-0d7d-4af5-8cd1-54e535323c8b",
+          "person_ids": [
+            "da621804-0d7d-4af5-8cd1-54e535323c8b"
+          ],
+          "pupil_person_id": "da621804-0d7d-4af5-8cd1-54e535323c8b",
+          "pupil_name": "Harry Potter",
+          "teacher_person_id": "594ad00f-0b79-4118-ba66-a875f7ba9811",
+          "teacher_name": "Hermione Granger",
+          "knowledge_record_id": "spell_19087",
+          "knowledge_collection": "spells",
+          "knowledge_name": "Depulso",
+          "knowledge_kind": "spell",
+          "description": "Hermione Granger taught Depulso",
+          "source": "game-board",
+          "record_id": "f6426fe1-595e-4458-8050-6e57cb7279e5",
+          "event_type": "taught_spell",
+          "date": "2000-08-27",
+          "time": "08:00"
+        }
+      ],
+      "history_policy": "keep",
+      "requests": []
     },
     {
       "record_id": "3551edc0-df7c-4ad7-8c41-c997c0c1d3d2",

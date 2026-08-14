@@ -551,34 +551,34 @@
 }
 #gameboard .ccgb-knowledge-pill.is-favorite .ccgb-pill-star { min-width: 12px; }
 #gameboard .ccgb-knowledge-pill.is-band-easy-to-cast {
-  background: #d9efd2;
-  border-color: #3f6c37;
-  color: #173c13;
+  background: #cfeec5 !important;
+  border-color: #3f6c37 !important;
+  color: #173c13 !important;
 }
 #gameboard .ccgb-knowledge-pill.is-band-medium-confidence {
-  background: #f5e9a9;
-  border-color: #9c771b;
-  color: #604700;
+  background: #f6e6a0 !important;
+  border-color: #9c771b !important;
+  color: #604700 !important;
 }
 #gameboard .ccgb-knowledge-pill.is-band-difficult-to-cast {
-  background: #efc2c7;
-  border-color: #8b2831;
-  color: #4c0c12;
+  background: #efb9c0 !important;
+  border-color: #8b2831 !important;
+  color: #4c0c12 !important;
 }
 #gameboard .ccgb-knowledge-pill.is-band-very-difficult-to-cast {
-  background: #741e25;
-  border-color: #451015;
-  color: #ffe1e4;
+  background: #741e25 !important;
+  border-color: #451015 !important;
+  color: #ffe1e4 !important;
 }
 #gameboard .ccgb-knowledge-pill.is-band-can-t-cast {
-  background: #c9c9c9;
-  border-color: #686868;
-  color: #242424;
+  background: #c9c9c9 !important;
+  border-color: #686868 !important;
+  color: #242424 !important;
 }
 #gameboard .ccgb-knowledge-pill.is-band-no-threshold {
-  background: #ddd8ca;
-  border-color: #777267;
-  color: #292720;
+  background: #ddd8ca !important;
+  border-color: #777267 !important;
+  color: #292720 !important;
 }
 #gameboard .ccgb-knowledge-pill.is-selected {
   box-shadow: 0 0 0 2px #5e4434;

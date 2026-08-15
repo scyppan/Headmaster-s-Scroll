@@ -103,6 +103,9 @@ class RequestResolutionBody(BaseModel):
     knowledge_kind: str = Field(default="", max_length=30)
     knowledge_record_id: str = Field(default="", max_length=120)
     knowledge_collection: str = Field(default="", max_length=80)
+    actor_person_id: str = Field(default="", max_length=100)
+    interaction_action: str = Field(default="", max_length=20)
+    creature_name: str = Field(default="", max_length=200)
 
 
 class EventDateBody(BaseModel):
@@ -262,6 +265,13 @@ class CreatureActionBody(BaseModel):
 class CreatureRollBody(BaseModel):
     session_id: str = Field(min_length=1, max_length=100)
     action_id: str = Field(min_length=1, max_length=160)
+
+
+class CreatureInteractionBody(BaseModel):
+    session_id: str = Field(min_length=1, max_length=100)
+    actor_person_id: str = Field(min_length=1, max_length=100)
+    action: str = Field(min_length=1, max_length=20)
+    creature_name: str = Field(default="", max_length=200)
 
 
 @dataclass
@@ -997,6 +1007,28 @@ def create_apps(
         )
         return result
 
+    @admin_app.post(
+        "/api/admin/board/creatures/{creature_id}/interact",
+        dependencies=[Depends(admin_guard)],
+    )
+    async def interact_with_board_creature(
+        creature_id: str, body: CreatureInteractionBody,
+    ):
+        result = admin_result(
+            service.headmaster_creature_interaction,
+            body.session_id, body.actor_person_id, creature_id,
+            body.action, body.creature_name,
+        )
+        await runtime.chat(
+            "headmaster", "Headmaster", "headmaster",
+            str(result.get("text") or "A creature interaction was resolved."),
+            body.session_id, result,
+        )
+        await runtime.broadcast_character_sheets(body.session_id)
+        await runtime.broadcast_board(body.session_id)
+        await runtime.notify_admins()
+        return result
+
     @admin_app.post("/api/admin/board/move-preview", dependencies=[Depends(admin_guard)])
     async def preview_board_person(body: BoardMoveBody):
         await runtime.broadcast_move_preview(
@@ -1360,6 +1392,9 @@ def create_apps(
             knowledge_kind=body.knowledge_kind,
             knowledge_record_id=body.knowledge_record_id,
             knowledge_collection=body.knowledge_collection,
+            actor_person_id=body.actor_person_id,
+            interaction_action=body.interaction_action,
+            creature_name=body.creature_name,
         )
         session_id = next((
             item.get("id") for item in service.sessions_view()
@@ -1367,6 +1402,7 @@ def create_apps(
         ), "")
         if session_id and body.decision == "approved":
             await runtime.broadcast_character_sheets(str(session_id))
+            await runtime.broadcast_board(str(session_id))
         await runtime.notify_admins()
         return result
 
@@ -1649,6 +1685,66 @@ def create_apps(
                         await websocket.send_json({
                             "v": 1, "type": "server_error", "message": str(error),
                         })
+                elif message.get("type") == "equipment_change_request":
+                    try:
+                        result = service.update_character_equipment(
+                            connection.session_id, connection.contact_id,
+                            str(message.get("slot", ""))[:30],
+                            str(message.get("item_id", ""))[:160],
+                        )
+                        if result.get("status") == "pending":
+                            await websocket.send_json({
+                                "v": 1, "type": "request_submitted",
+                                "request_id": result["request"]["record_id"],
+                                "message": "Equipment change sent to the Headmaster.",
+                            })
+                            await runtime.notify_admins()
+                        else:
+                            await runtime.broadcast_character_sheets(connection.session_id)
+                    except (KeyError, PermissionError, RuntimeError, TypeError, ValueError) as error:
+                        await websocket.send_json({"v": 1, "type": "server_error", "message": str(error)})
+                elif message.get("type") == "inventory_item_action":
+                    try:
+                        result = service.use_inventory_item(
+                            connection.session_id, connection.contact_id,
+                            str(message.get("item_id", ""))[:160],
+                            str(message.get("action_id", ""))[:160],
+                        )
+                        await runtime.chat(
+                            connection.contact_id, connection.name, "player",
+                            str(result.get("text") or "An item was used."),
+                            connection.session_id, result,
+                        )
+                        await runtime.broadcast_character_sheets(connection.session_id)
+                    except (KeyError, PermissionError, RuntimeError, TypeError, ValueError) as error:
+                        await websocket.send_json({"v": 1, "type": "server_error", "message": str(error)})
+                elif message.get("type") == "catalog_tag_add":
+                    try:
+                        service.add_shared_catalog_tag(
+                            connection.session_id, connection.contact_id,
+                            str(message.get("collection", ""))[:80],
+                            str(message.get("target_record_id", ""))[:160],
+                            str(message.get("name", ""))[:100],
+                        )
+                        await runtime.broadcast_character_sheets(connection.session_id)
+                    except (KeyError, PermissionError, RuntimeError, TypeError, ValueError) as error:
+                        await websocket.send_json({"v": 1, "type": "server_error", "message": str(error)})
+                elif message.get("type") == "creature_interaction_request":
+                    try:
+                        result = service.submit_creature_interaction_request(
+                            connection.session_id, connection.contact_id,
+                            str(message.get("creature_id", ""))[:120],
+                            str(message.get("action", ""))[:20],
+                            str(message.get("creature_name", ""))[:200],
+                        )
+                        await websocket.send_json({
+                            "v": 1, "type": "request_submitted",
+                            "request_id": result["record_id"],
+                            "message": "Creature interaction sent to the Headmaster.",
+                        })
+                        await runtime.notify_admins()
+                    except (KeyError, PermissionError, RuntimeError, TypeError, ValueError) as error:
+                        await websocket.send_json({"v": 1, "type": "server_error", "message": str(error)})
                 elif message.get("type") == "creature_harvest_request":
                     try:
                         result = service.harvest_campaign_creature(

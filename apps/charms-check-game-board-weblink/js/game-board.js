@@ -83,6 +83,7 @@
         proficiencies: `${this.storageKey}-proficiency-library`,
         recipes: `${this.storageKey}-recipe-library`,
       };
+      this.knowledgeStateScope = '';
       this.chatFontStorageKey = `${this.storageKey}-chat-font-size`;
       this.chatFontSize = Math.max(
         11,
@@ -95,7 +96,7 @@
       }
       this.knowledgeLibraryStates = {};
       Object.entries(this.knowledgeLibraryStorageKeys).forEach(([collection, storageKey]) => {
-        const initial = { query: '', filters: [], sort: 'name', bookId: '', bookQuery: '' };
+        const initial = { query: '', filters: [], filterModes: {}, sort: 'name', bookId: '', bookQuery: '' };
         try {
           const savedLibrary = JSON.parse(localStorage.getItem(storageKey) || '{}');
           this.knowledgeLibraryStates[collection] = savedLibrary && typeof savedLibrary === 'object'
@@ -513,6 +514,7 @@
           this.activeMapId = '';
         }
         this.currentCampaignId = campaignId;
+        this.restoreKnowledgeLibraryStates();
         (this.board.maps || []).forEach(map => {
           if (!this.mapCameraStates.has(map.record_id) && map.camera) {
             this.mapCameraStates.set(map.record_id, this.normalizedCamera(map.camera));
@@ -533,6 +535,7 @@
         else this.openSection(this.activeSection);
       } else if ((message.type === 'character_sheet_snapshot' || message.type === 'character_sheet_updated') && message.character_sheet) {
         this.characterSheet = message.character_sheet;
+        this.restoreKnowledgeLibraryStates();
         this.board.character_attributes = message.character_sheet.attributes;
         this.updatePlayerIdentity();
         if (this.activeSection !== 'board') this.openSection(this.activeSection);
@@ -976,13 +979,17 @@
             <label>Filter by
               <select data-filter-field>
                 <option value="tag">Tag</option><option value="skill">Skill</option>
-                <option value="type">Type</option><option value="confidence">Confidence</option>
-                <option value="author">Author</option><option value="source">Source</option>
+                ${primaryCollection === 'spells' ? '<option value="subtype">Subtype</option>' : ''}<option value="confidence">Confidence</option>
+                <option value="author">Author</option><option value="category">Book category</option>
+                <option value="source">Source book or teacher</option><option value="favorites">Favorites</option>
               </select>
             </label>
             <label>Contains
               <input data-filter-value list="ccgb-library-filter-values" autocomplete="off">
               <datalist id="ccgb-library-filter-values">${filterOptions.map(value => `<option value="${this.escapeHtml(value)}"></option>`).join('')}</datalist>
+            </label>
+            <label>When several values use this field
+              <select data-filter-match><option value="all">Match all</option><option value="any">Match any</option></select>
             </label>
             <div class="ccgb-dialog-actions"><button value="cancel">Cancel</button><button type="button" data-add-filter>Add</button></div>
           </form>
@@ -990,7 +997,7 @@
         <dialog class="ccgb-library-dialog" data-sort-dialog>
           <form method="dialog">
             <header><strong>Sort results</strong><button value="cancel" aria-label="Close">×</button></header>
-            ${[['name', 'Name'], ['difficulty', 'Difficulty'], ['source', 'Source'], ['type', 'Type']].map(([value, label]) => `<label class="ccgb-sort-option"><input type="radio" name="library-sort" value="${value}" ${state.sort === value ? 'checked' : ''}> ${label}</label>`).join('')}
+            ${[['name', 'Name'], ['difficulty', 'Difficulty'], ['source', 'Source']].map(([value, label]) => `<label class="ccgb-sort-option"><input type="radio" name="library-sort" value="${value}" ${state.sort === value ? 'checked' : ''}> ${label}</label>`).join('')}
           </form>
         </dialog>`;
       const search = content.querySelector('[data-book-search]');
@@ -1017,31 +1024,52 @@
       const matchesFilter = (entry, filter) => {
         const wanted = textFor(filter.value);
         const { collection, record } = entry;
-        if (filter.field === 'type') return textFor(collection).includes(wanted);
         if (filter.field === 'tag') return (Array.isArray(record.tags) ? record.tags : String(record.tags || '').split(',')).some(value => textFor(value).includes(wanted));
+        if (filter.field === 'favorites') return this.favorites.has(`${collection}:${record.record_id}`);
         if (filter.field === 'confidence') return textFor(this.knowledgeConfidenceBand(record, collection).label).includes(wanted);
         return textFor(record[filter.field]).includes(wanted);
+      };
+      const matchesFilters = entry => {
+        const grouped = (state.filters || []).reduce((result, filter) => {
+          (result[filter.field] ||= []).push(filter);
+          return result;
+        }, {});
+        return Object.entries(grouped).every(([field, filters]) => (
+          state.filterModes?.[field] === 'any'
+            ? filters.some(filter => matchesFilter(entry, filter))
+            : filters.every(filter => matchesFilter(entry, filter))
+        ));
       };
       const compareEntries = (left, right) => {
         if (state.sort === 'difficulty') return Number(left.record.threshold || 0) - Number(right.record.threshold || 0) || String(left.record.name).localeCompare(String(right.record.name));
         if (state.sort === 'source') return String(left.record.source || '').localeCompare(String(right.record.source || '')) || String(left.record.name).localeCompare(String(right.record.name));
-        if (state.sort === 'type') return left.collection.localeCompare(right.collection) || String(left.record.name).localeCompare(String(right.record.name));
         return String(left.record.name).localeCompare(String(right.record.name));
       };
       const render = () => {
         const query = textFor(state.query).trim();
         const filters = state.filters || [];
         const knowledge = entries
-          .filter(entry => (!query || recordText(entry.record, entry.collection).includes(query)) && filters.every(filter => matchesFilter(entry, filter)))
+          .filter(entry => (!query || recordText(entry.record, entry.collection).includes(query)) && matchesFilters(entry))
           .sort(compareEntries);
         const visibleBooks = books.filter(book => {
           const direct = [book.title, book.author, book.description, ...(book.categories || [])].join(' ').toLocaleLowerCase();
           const contents = bookRecords(book);
           const queryMatch = !query || direct.includes(query) || contents.some(entry => recordText(entry.record, entry.collection).includes(query));
-          const filterMatch = filters.every(filter => (
+          const groupedFilters = filters.reduce((result, filter) => {
+            (result[filter.field] ||= []).push(filter);
+            return result;
+          }, {});
+          const bookMatchesFilter = filter => (
             filter.field === 'author'
               ? textFor(book.author).includes(textFor(filter.value))
-              : contents.some(entry => matchesFilter(entry, filter))
+              : filter.field === 'category'
+                ? (book.categories || []).some(value => textFor(value).includes(textFor(filter.value)))
+                : contents.some(entry => matchesFilter(entry, filter))
+          );
+          const filterMatch = Object.entries(groupedFilters).every(([field, fieldFilters]) => (
+            state.filterModes?.[field] === 'any'
+              ? fieldFilters.some(bookMatchesFilter)
+              : fieldFilters.every(bookMatchesFilter)
           ));
           return queryMatch && filterMatch;
         }).sort((left, right) => {
@@ -1097,6 +1125,8 @@
         const value = content.querySelector('[data-filter-value]').value.trim();
         if (!value) return;
         state.filters.push({ field, value });
+        state.filterModes ||= {};
+        state.filterModes[field] = content.querySelector('[data-filter-match]').value;
         this.saveKnowledgeLibraryState(primaryCollection);
         content.querySelector('[data-filter-value]').value = '';
         filterDialog.close();
@@ -1117,9 +1147,33 @@
 
     saveKnowledgeLibraryState(collection) {
       localStorage.setItem(
-        this.knowledgeLibraryStorageKeys[collection],
+        this.knowledgeStateStorageKey(collection),
         JSON.stringify(this.knowledgeLibraryStates[collection])
       );
+    }
+
+    knowledgeStateStorageKey(collection) {
+      const campaign = this.currentCampaignId || 'unassigned-campaign';
+      const character = this.characterId || this.playerId || 'unassigned-player';
+      return `${this.knowledgeLibraryStorageKeys[collection]}-${campaign}-${character}`;
+    }
+
+    restoreKnowledgeLibraryStates() {
+      const scope = `${this.currentCampaignId || ''}:${this.characterId || this.playerId || ''}`;
+      if (!scope || scope === this.knowledgeStateScope) return;
+      this.knowledgeStateScope = scope;
+      Object.keys(this.knowledgeLibraryStorageKeys).forEach(collection => {
+        const initial = { query: '', filters: [], filterModes: {}, sort: 'name', bookId: '', bookQuery: '' };
+        try {
+          const saved = JSON.parse(localStorage.getItem(this.knowledgeStateStorageKey(collection)) || '{}');
+          this.knowledgeLibraryStates[collection] = saved && typeof saved === 'object'
+            ? { ...initial, ...saved, filters: Array.isArray(saved.filters) ? saved.filters.filter(item => item?.field && item?.value) : [] }
+            : initial;
+        } catch (_error) {
+          this.knowledgeLibraryStates[collection] = initial;
+        }
+      });
+      this.spellLibraryState = this.knowledgeLibraryStates.spells;
     }
 
     knowledgeButtonMarkup(collection, record, dataAttribute) {
@@ -1127,11 +1181,26 @@
       const band = this.knowledgeConfidenceBand(record, collection);
       const action = collection === 'spells' ? 'cast' : collection === 'proficiencies' ? 'perform' : 'prepare';
       const description = record.description || record.raw_effect || record.raw_effects || 'No description recorded.';
-      return `<button type="button" class="ccgb-knowledge-pill is-band-${band.key} ${favorite ? 'is-favorite' : ''}" ${dataAttribute}="${this.escapeHtml(record.record_id)}" data-knowledge-collection="${collection}" title="${this.escapeHtml(description)}\n\nClick to ${action} · Ctrl-click to favorite · Alt-click to share"><span class="ccgb-pill-star" aria-hidden="true">${favorite ? '★' : ''}</span><span>${this.escapeHtml(record.name)}</span></button>`;
+      return `<button type="button" class="ccgb-knowledge-pill is-band-${band.key} ${favorite ? 'is-favorite' : ''}" ${dataAttribute}="${this.escapeHtml(record.record_id)}" data-knowledge-collection="${collection}" title="${this.escapeHtml(description)}\n\nClick to ${action} · Ctrl-click to favorite · Alt-click to share · Right-click to add a campaign tag"><span class="ccgb-pill-star" aria-hidden="true">${favorite ? '★' : ''}</span><span>${this.escapeHtml(record.name)}</span></button>`;
     }
 
     bindKnowledgeActions(holder, catalogs, selector, rerender) {
       holder.querySelectorAll(selector).forEach(button => {
+        button.addEventListener('contextmenu', event => {
+          event.preventDefault();
+          const collection = button.dataset.knowledgeCollection;
+          const recordId = button.dataset.libraryRecord || button.dataset.bookRecord || '';
+          const record = (catalogs[collection] || []).find(item => item.record_id === recordId);
+          if (!record) return;
+          const name = window.prompt(`Add a campaign-shared tag to ${record.name}:`, '');
+          if (!name?.trim()) return;
+          this.send({
+            v: VERSION, type: 'catalog_tag_add',
+            collection: record.collection || collection,
+            target_record_id: record.record_id,
+            name: name.trim(),
+          });
+        });
         button.addEventListener('mousedown', event => {
           if ((event.ctrlKey || event.metaKey) && event.button === 0) event.preventDefault();
         });
@@ -1162,7 +1231,8 @@
         const requirements = record.requirements || {};
         const missing = requirements.missing || [];
         if (!requirements.ready) {
-          this.postChatText(`${record.name} — missing: ${missing.join(', ') || 'requirements not recorded'}.`);
+          const who = this.characterSheet?.character_name || 'This character';
+          this.postChatText(`${who} doesn't have the required ingredients to attempt this recipe.\nMissing: ${missing.join(', ') || 'requirements not recorded'}.`);
           return;
         }
         const ingredients = (requirements.ingredients || []).map(item => `${item.required} ${item.name}`);
@@ -1231,13 +1301,17 @@
             <label>Filter by
               <select data-filter-field>
                 <option value="tag">Tag</option><option value="skill">Skill</option>
-                <option value="type">Type</option><option value="confidence">Confidence</option>
-                <option value="author">Author</option><option value="source">Source</option>
+                ${primaryCollection === 'spells' ? '<option value="subtype">Subtype</option>' : ''}<option value="confidence">Confidence</option>
+                <option value="author">Author</option><option value="category">Book category</option>
+                <option value="source">Source book or teacher</option><option value="favorites">Favorites</option>
               </select>
             </label>
             <label>Contains
               <input data-filter-value list="ccgb-book-filter-values" autocomplete="off">
               <datalist id="ccgb-book-filter-values">${filterOptions.map(value => `<option value="${this.escapeHtml(value)}"></option>`).join('')}</datalist>
+            </label>
+            <label>When several values use this field
+              <select data-filter-match><option value="all">Match all</option><option value="any">Match any</option></select>
             </label>
             <div class="ccgb-dialog-actions"><button value="cancel">Cancel</button><button type="button" data-add-filter>Add</button></div>
           </form>
@@ -1245,7 +1319,7 @@
         <dialog class="ccgb-library-dialog" data-sort-dialog>
           <form method="dialog">
             <header><strong>Sort results</strong><button value="cancel" aria-label="Close">×</button></header>
-            ${[['name', 'Name'], ['difficulty', 'Difficulty'], ['source', 'Source'], ['type', 'Type']].map(([value, label]) => `<label class="ccgb-sort-option"><input type="radio" name="book-sort" value="${value}" ${state.sort === value ? 'checked' : ''}> ${label}</label>`).join('')}
+            ${[['name', 'Name'], ['difficulty', 'Difficulty'], ['source', 'Source']].map(([value, label]) => `<label class="ccgb-sort-option"><input type="radio" name="book-sort" value="${value}" ${state.sort === value ? 'checked' : ''}> ${label}</label>`).join('')}
           </form>
         </dialog>`;
       content.querySelector('[data-books-home]').addEventListener('click', () => {
@@ -1270,22 +1344,33 @@
         const wanted = textFor(filter.value);
         const { collection, record } = entry;
         if (filter.field === 'author') return textFor(book.author).includes(wanted);
-        if (filter.field === 'type') return textFor(collection).includes(wanted);
+        if (filter.field === 'category') return (book.categories || []).some(value => textFor(value).includes(wanted));
         if (filter.field === 'tag') return (Array.isArray(record.tags) ? record.tags : String(record.tags || '').split(',')).some(value => textFor(value).includes(wanted));
+        if (filter.field === 'favorites') return this.favorites.has(`${collection}:${record.record_id}`);
         if (filter.field === 'confidence') return textFor(this.knowledgeConfidenceBand(record, collection).label).includes(wanted);
         return textFor(record[filter.field]).includes(wanted);
+      };
+      const matchesFilters = entry => {
+        const grouped = (state.filters || []).reduce((result, filter) => {
+          (result[filter.field] ||= []).push(filter);
+          return result;
+        }, {});
+        return Object.entries(grouped).every(([field, filters]) => (
+          state.filterModes?.[field] === 'any'
+            ? filters.some(filter => matchesFilter(entry, filter))
+            : filters.every(filter => matchesFilter(entry, filter))
+        ));
       };
       const compareEntries = (left, right) => {
         if (state.sort === 'difficulty') return Number(left.record.threshold || 0) - Number(right.record.threshold || 0) || String(left.record.name).localeCompare(String(right.record.name));
         if (state.sort === 'source') return String(left.record.source || '').localeCompare(String(right.record.source || '')) || String(left.record.name).localeCompare(String(right.record.name));
-        if (state.sort === 'type') return left.collection.localeCompare(right.collection) || String(left.record.name).localeCompare(String(right.record.name));
         return String(left.record.name).localeCompare(String(right.record.name));
       };
       const render = () => {
         const query = search.value.trim().toLocaleLowerCase();
         const filters = state.filters || [];
         const visible = entries
-          .filter(entry => (!query || recordText(entry.record, entry.collection).includes(query)) && filters.every(filter => matchesFilter(entry, filter)))
+          .filter(entry => (!query || recordText(entry.record, entry.collection).includes(query)) && matchesFilters(entry))
           .sort(compareEntries);
         chips.innerHTML = filters.map((filter, index) => `<button type="button" data-remove-filter="${index}" title="Remove ${this.escapeHtml(filter.field)} filter"><span>${this.escapeHtml(filter.field)}: ${this.escapeHtml(filter.value)}</span><b aria-hidden="true">×</b></button>`).join('');
         chips.querySelectorAll('[data-remove-filter]').forEach(button => button.addEventListener('click', () => {
@@ -1293,12 +1378,22 @@
           this.saveKnowledgeLibraryState(primaryCollection);
           render();
         }));
-        holder.innerHTML = ['spells', 'proficiencies', 'recipes'].map(collection => {
-          const records = visible.filter(item => item.collection === collection);
+        const sectionMarkup = (collection, records) => {
           if (!records.length) return '';
           const label = { spells: 'Spells', proficiencies: 'Proficiencies', recipes: 'Recipes' }[collection];
           return `<section class="ccgb-book-content-section"><h3>${label}</h3><div class="ccgb-knowledge-pill-group">${records.map(({ record }) => this.knowledgeButtonMarkup(collection, record, 'data-book-record')).join('')}</div></section>`;
-        }).join('') || '<p class="ccgb-empty-result">No matching contents in this book.</p>';
+        };
+        const nonRecipes = ['spells', 'proficiencies'].map(collection => (
+          sectionMarkup(collection, visible.filter(item => item.collection === collection))
+        )).join('');
+        const recipes = visible.filter(item => item.collection === 'recipes');
+        const readyRecipes = recipes.filter(({ record }) => Boolean(record.requirements?.ready));
+        const missingRecipes = recipes.filter(({ record }) => !record.requirements?.ready);
+        const recipeMarkup = recipes.length ? `<div class="ccgb-recipe-columns">
+          <section class="ccgb-recipe-column is-ready"><header><h2>Ready to prepare</h2><span>${readyRecipes.length}</span></header>${sectionMarkup('recipes', readyRecipes) || '<p class="ccgb-empty-result">No recipes have every requirement.</p>'}</section>
+          <section class="ccgb-recipe-column is-missing"><header><h2>Missing requirements</h2><span>${missingRecipes.length}</span></header>${sectionMarkup('recipes', missingRecipes) || '<p class="ccgb-empty-result">No recipes are missing requirements.</p>'}</section>
+        </div>` : '';
+        holder.innerHTML = nonRecipes + recipeMarkup || '<p class="ccgb-empty-result">No matching contents in this book.</p>';
         content.querySelector('[data-book-content-count]').textContent = `${visible.length} matching ${visible.length === 1 ? 'entry' : 'entries'} in this book`;
         this.bindKnowledgeActions(holder, catalogs, '[data-book-record]', render);
       };
@@ -1316,6 +1411,8 @@
         const value = content.querySelector('[data-filter-value]').value.trim();
         if (!value) return;
         state.filters.push({ field, value });
+        state.filterModes ||= {};
+        state.filterModes[field] = content.querySelector('[data-filter-match]').value;
         this.saveKnowledgeLibraryState(primaryCollection);
         content.querySelector('[data-filter-value]').value = '';
         filterDialog.close();
@@ -1447,7 +1544,19 @@
         }
         content.querySelector('[data-result-count]').textContent = `${values.length} known ${values.length === 1 ? singular : collection}`;
         holder.querySelectorAll('[data-record-id]').forEach(button => {
-          button.addEventListener('contextmenu', event => event.preventDefault());
+          button.addEventListener('contextmenu', event => {
+            event.preventDefault();
+            const record = records.find(item => item.record_id === button.dataset.recordId);
+            if (!record) return;
+            const name = window.prompt(`Add a campaign-shared tag to ${record.name}:`, '');
+            if (!name?.trim()) return;
+            this.send({
+              v: VERSION, type: 'catalog_tag_add',
+              collection: record.collection || collection,
+              target_record_id: record.record_id,
+              name: name.trim(),
+            });
+          });
           button.addEventListener('mousedown', event => {
             if ((event.ctrlKey || event.metaKey) && event.button === 0) event.preventDefault();
           });
@@ -1472,7 +1581,8 @@
             const requirements = record.requirements || {};
             const missing = requirements.missing || [];
             if (!requirements.ready) {
-              this.postChatText(`${record.name} — missing: ${missing.join(', ') || 'requirements not recorded'}.`);
+              const who = this.characterSheet?.character_name || 'This character';
+              this.postChatText(`${who} doesn't have the required ingredients to attempt this recipe.\nMissing: ${missing.join(', ') || 'requirements not recorded'}.`);
               return;
             }
             const ingredients = (requirements.ingredients || []).map(item => `${item.required} ${item.name}`);
@@ -1575,28 +1685,71 @@
     renderPetsPanel(content) {
       const records = this.characterSheet && this.characterSheet.pets;
       if (!records) return this.sheetUnavailable(content, 'Pets');
-      content.className = 'ccgb-sheet-grid';
-      content.innerHTML = records.map(item => {
+      content.className = 'ccgb-pet-groups';
+      const groups = records.reduce((result, item) => {
+        const label = item.relationship_group || ((item.relationships || []).includes('tamed') ? 'Tamed Pets' : (item.relationships || []).includes('bonded') ? 'Bonded Allies' : 'Creature Relationships');
+        (result[label] ||= []).push(item);
+        return result;
+      }, {});
+      content.innerHTML = Object.entries(groups).map(([groupName, groupRecords]) => `<section class="ccgb-pet-section"><h2>${this.escapeHtml(groupName)}</h2><div class="ccgb-sheet-grid">${groupRecords.map(item => {
         const species = item.species || {};
         const statistics = [
           ['Classification', species.classification], ['Size', species.size],
           ['Movement', species.movement], ['Wound cap', species.wound_cap],
           ['Attacks', species.attacks], ['Abilities', species.abilities]
         ].filter(([, value]) => value !== undefined && value !== null && String(value).trim());
-        return `<article class="ccgb-sheet-card"><h2>${this.escapeHtml(item.name)}</h2>
+        return `<article class="ccgb-sheet-card"><h3>${this.escapeHtml(item.name)}</h3>
           <p class="ccgb-badges">${(item.relationships || []).map(value => `<span class="is-${value}">${this.escapeHtml(value)}</span>`).join('')}</p>
           <p><strong>${this.escapeHtml(species.name || 'Species not recorded')}</strong></p>
           ${statistics.length ? `<dl class="ccgb-creature-stats">${statistics.map(([label, value]) => `<div><dt>${this.escapeHtml(label)}</dt><dd>${this.escapeHtml(Array.isArray(value) ? value.map(part => part.name || part).join(', ') : value)}</dd></div>`).join('')}</dl>` : ''}
           <details><summary>Relationship history</summary>${(item.history || []).map(event => `<p><strong>${this.escapeHtml(event.date)}</strong> ${this.escapeHtml(event.relationship)} ${this.escapeHtml(event.note)}</p>`).join('')}</details>
         </article>`;
-      }).join('') || '<p class="ccgb-empty-result">No dated creature relationships yet.</p>';
+      }).join('')}</div></section>`).join('') || '<p class="ccgb-empty-result">No dated creature relationships yet.</p>';
     }
 
     renderInventoryPanel(content) {
       const records = this.characterSheet && this.characterSheet.inventory;
       if (!records) return this.sheetUnavailable(content, 'Inventory');
-      content.className = 'ccgb-sheet-grid';
-      content.innerHTML = records.map(item => `<article class="ccgb-sheet-card"><h2>${this.escapeHtml(item.name)}</h2><p><strong>${this.escapeHtml(item.category)}</strong> - ${this.escapeHtml(item.method)} ${this.escapeHtml(item.acquired)}</p><p>${this.escapeHtml(item.description)}</p></article>`).join('') || '<p class="ccgb-empty-result">No historically owned items at this date.</p>';
+      content.className = 'ccgb-inventory-panel';
+      const equipment = this.characterSheet?.equipment || {};
+      const categoryFor = item => {
+        if (item.equipped) return 'Equipped';
+        const category = String(item.category || item.definition_collection || '').toLowerCase();
+        if (category.includes('creature') || category.includes('plant')) return 'Creatures & Plants';
+        if (category.includes('part') || category.includes('preparation')) return 'Parts & Preparations';
+        if (category.includes('food') || category.includes('drink')) return 'Food & Drink';
+        if (category.includes('potion')) return 'Potions';
+        if (category.includes('book')) return 'Books';
+        return 'General Items';
+      };
+      const ordered = ['Equipped', 'General Items', 'Creatures & Plants', 'Parts & Preparations', 'Food & Drink', 'Potions', 'Books'];
+      content.innerHTML = `<div class="ccgb-inventory-tools"><input type="search" data-inventory-search placeholder="Search inventory" autocomplete="off"></div><div data-inventory-groups></div>`;
+      const holder = content.querySelector('[data-inventory-groups]');
+      const render = () => {
+        const query = content.querySelector('[data-inventory-search]').value.trim().toLowerCase();
+        const visible = records.filter(item => !query || [item.name, item.category, item.description].join(' ').toLowerCase().includes(query));
+        holder.innerHTML = ordered.map(groupName => {
+          const items = visible.filter(item => categoryFor(item) === groupName);
+          if (!items.length) return '';
+          return `<section class="ccgb-inventory-group"><h2>${groupName}<span>${items.length}</span></h2><div class="ccgb-inventory-list">${items.map(item => {
+            const slots = item.equipment_slot_type === 'focus' ? ['focus'] : item.equipment_slot_type === 'accessory' ? ['accessory_1', 'accessory_2'] : [];
+            const equippedSlot = slots.find(slot => equipment[slot] === item.record_id) || '';
+            const controls = equippedSlot
+              ? `<button data-equip-slot="${equippedSlot}" data-equip-item="" title="Unequip ${this.escapeHtml(item.name)}">−</button>`
+              : slots.map((slot, index) => `<button data-equip-slot="${slot}" data-equip-item="${this.escapeHtml(item.record_id)}" title="Equip in ${slot === 'focus' ? 'wand or focus' : `accessory slot ${index + 1}`}">${slot === 'focus' ? 'Equip' : `A${index + 1}`}</button>`).join('');
+            const itemActions = (item.actions || []).filter(action => action?.record_id && ['roll', 'message', 'consume'].includes(String(action.action_type || '').toLowerCase())).map(action => `<button data-item-action="${this.escapeHtml(action.record_id)}" data-item-id="${this.escapeHtml(item.record_id)}" title="${this.escapeHtml(action.description || action.name || 'Use item')}">${this.escapeHtml(action.name || 'Use')}</button>`).join('');
+            return `<article class="ccgb-inventory-row"><div><strong>${this.escapeHtml(item.name)}</strong><span>${this.escapeHtml(item.category)} · ×${this.escapeHtml(item.quantity ?? 1)}</span><small>${this.escapeHtml(item.description || '')}</small></div><div class="ccgb-inventory-actions">${controls}${itemActions}</div></article>`;
+          }).join('')}</div></section>`;
+        }).join('') || '<p class="ccgb-empty-result">No matching inventory.</p>';
+        holder.querySelectorAll('[data-equip-slot]').forEach(button => button.addEventListener('click', () => {
+          this.send({ v: VERSION, type: 'equipment_change_request', slot: button.dataset.equipSlot, item_id: button.dataset.equipItem });
+        }));
+        holder.querySelectorAll('[data-item-action]').forEach(button => button.addEventListener('click', () => {
+          this.send({ v: VERSION, type: 'inventory_item_action', item_id: button.dataset.itemId, action_id: button.dataset.itemAction });
+        }));
+      };
+      content.querySelector('[data-inventory-search]').addEventListener('input', render);
+      render();
     }
 
     renderRelationshipsPanel(content) {
@@ -2584,13 +2737,13 @@
       if (controlled) {
         piece.addEventListener('pointerdown', event => this.beginBoardDrag(event, actor, stage, piece));
       }
-      if (actor.actor_type === 'creature' && actor.life_state === 'dead' && (actor.harvest_actions || []).length) {
-        piece.addEventListener('contextmenu', event => this.openCreatureHarvestMenu(event, actor));
+      if (actor.actor_type === 'creature' && ((actor.harvest_actions || []).length || (actor.interaction_actions || []).length)) {
+        piece.addEventListener('contextmenu', event => this.openCreatureMenu(event, actor));
       }
       stage.appendChild(piece);
     }
 
-    openCreatureHarvestMenu(event, actor) {
+    openCreatureMenu(event, actor) {
       event.preventDefault();
       event.stopPropagation();
       this.root.querySelectorAll('.ccgb-creature-menu').forEach(item => item.remove());
@@ -2600,6 +2753,23 @@
       const title = document.createElement('strong');
       title.textContent = actor.name || 'Creature';
       menu.appendChild(title);
+      (actor.interaction_actions || []).forEach(action => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = action.charAt(0).toUpperCase() + action.slice(1);
+        button.addEventListener('click', () => {
+          const creatureName = action === 'tame'
+            ? (window.prompt('What name will you give this creature if the attempt succeeds?', '') || '').trim()
+            : '';
+          if (action === 'tame' && !creatureName) return;
+          this.send({
+            v: VERSION, type: 'creature_interaction_request',
+            creature_id: actor.actor_id, action, creature_name: creatureName,
+          });
+          menu.remove();
+        });
+        menu.appendChild(button);
+      });
       (actor.harvest_actions || []).forEach(part => {
         const button = document.createElement('button');
         button.type = 'button';

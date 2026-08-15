@@ -424,6 +424,156 @@ class GameBoardService:
                 campaign["record_id"], "teaching", details
             )
 
+    def _creature_interaction_context(
+        self, session_id: str, actor_person_id: str, creature_id: str, action: str,
+    ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any]]:
+        action = str(action or "").strip().casefold()
+        if action not in {"capture", "lure", "tame", "bond"}:
+            raise ValueError("Choose Capture, Lure, Tame, or Bond")
+        session = self._board_context(session_id)
+        campaign, world = self._campaign_document(session)
+        actor = next(
+            (item for item in world.get("people", []) if str(item.get("record_id", "")) == actor_person_id),
+            None,
+        )
+        creature = (campaign.get("game_state", {}).get("creatures", {}) or {}).get(creature_id)
+        if actor is None or creature is None:
+            raise KeyError("Unknown character or creature")
+        if str(creature.get("life_state", "alive")) != "alive":
+            raise ValueError("Only a living creature can be approached")
+        actor_placement = (campaign.get("game_state", {}).get("people", {}).get(actor_person_id, {}) or {}).get("placement") or {}
+        creature_placement = creature.get("placement") or {}
+        if not actor_placement.get("map_id") or actor_placement.get("map_id") != creature_placement.get("map_id"):
+            raise ValueError("The character and creature must be on the same map")
+        database = self.shared_store.load("db.json").data
+        species = next(
+            (item for item in database.get("creatures", []) if str(item.get("record_id", "")) == str(creature.get("species_record_id", ""))),
+            None,
+        )
+        if species is None:
+            raise KeyError("The creature species is no longer in the database")
+        rule = (species.get("interaction_rules") or {}).get(action) or {}
+        if not rule.get("enabled", False):
+            raise ValueError(f"This creature cannot currently be {action}d")
+        sheet = build_character_sheet(actor, world, database, campaign)
+        required_id = str(rule.get("required_proficiency_id", "") or "")
+        known_ids = {str(item.get("record_id", "")) for item in sheet.get("proficiencies", []) or []}
+        if required_id and required_id not in known_ids:
+            raise PermissionError("This character lacks the required creature proficiency")
+        return campaign, actor, creature, species, {**rule, "sheet": sheet}
+
+    def submit_creature_interaction_request(
+        self, session_id: str, contact_id: str, creature_id: str, action: str,
+        creature_name: str = "",
+    ) -> dict[str, Any]:
+        with self._lock:
+            _wrapper, session = self._active(session_id)
+            player = self._player(session, contact_id)
+            actor_id = str(player.get("character_id", "") or "")
+            if not actor_id:
+                raise PermissionError("A linked character is required")
+            campaign, actor, creature, _species, _rule = self._creature_interaction_context(
+                session_id, actor_id, creature_id, action
+            )
+            action_name = str(action).strip().casefold()
+            actor_name = str(actor.get("displayed_name", "") or "Character")
+            details = {
+                "session_id": session_id,
+                "contact_id": contact_id,
+                "actor_person_id": actor_id,
+                "actor_name": actor_name,
+                "creature_id": creature_id,
+                "species_name": str(creature.get("species_name", "") or "Creature"),
+                "interaction_action": action_name,
+                "creature_name": str(creature_name or "").strip()[:200],
+                "request_summary": f"{actor_name} wants to {action_name} {creature.get('species_name', 'a creature')}",
+            }
+            return self.campaign_repository.add_request(
+                campaign["record_id"], "creature_interaction", details
+            )
+
+    @staticmethod
+    def _apply_creature_interaction(
+        target: dict[str, Any], action: str, actor_id: str,
+        current: str, creature_name: str = "",
+    ) -> None:
+        target["relationship_state"] = {
+            "capture": "captured", "lure": "lured",
+            "tame": "tamed", "bond": "bonded",
+        }[action]
+        target["related_character_id"] = actor_id
+        target.setdefault("relationship_history", []).append({
+            "record_id": str(uuid4()), "action": action,
+            "character_id": actor_id, "at": current,
+        })
+        if action == "tame":
+            target["name"] = str(
+                creature_name or target.get("species_name") or "Creature"
+            )[:200]
+            target["needs_name"] = not bool(creature_name)
+        elif action == "capture":
+            size = int((target.get("generated") or {}).get("size", 1) or 1)
+            if size <= 2:
+                target["carried_by_character_id"] = actor_id
+                target["visibility"] = "headmaster"
+            else:
+                target["restrained"] = True
+
+    def headmaster_creature_interaction(
+        self, session_id: str, actor_person_id: str, creature_id: str,
+        action: str, creature_name: str = "",
+    ) -> dict[str, Any]:
+        """Roll and commit a Headmaster-directed creature interaction."""
+
+        with self._lock:
+            campaign, actor, creature, _species, rule = self._creature_interaction_context(
+                session_id, actor_person_id, creature_id, action
+            )
+            normalized_action = str(action).strip().casefold()
+            roll = perform_character_roll(
+                rule["sheet"], "skill", str(rule.get("skill") or "Creatures")
+            )
+            threshold = int(rule.get("threshold", 12) or 12)
+            success = roll.get("critical") == "success" or (
+                roll.get("critical") != "failure"
+                and int(roll.get("total", 0)) >= threshold
+            )
+            current = str(campaign["game_state"]["current_game_datetime"])
+            event_date, event_time = current.split("T", 1)
+
+            def update(value: dict[str, Any]) -> None:
+                if success:
+                    target = value.setdefault("game_state", {}).setdefault(
+                        "creatures", {}
+                    ).get(creature_id)
+                    if target is None:
+                        raise KeyError("The creature is no longer in this campaign")
+                    self._apply_creature_interaction(
+                        target, normalized_action, actor_person_id, current, creature_name
+                    )
+                value.setdefault("events", []).append({
+                    "record_id": str(uuid4()),
+                    "event_type": f"creature_{normalized_action}_attempt",
+                    "date": event_date, "time": event_time,
+                    "person_ids": [actor_person_id], "creature_id": creature_id,
+                    "interaction_action": normalized_action, "success": success,
+                    "threshold": threshold, "roll": deepcopy(roll),
+                })
+
+            self.campaign_repository.update_campaign(campaign["record_id"], update)
+            return {
+                "activity_type": "creature_interaction", "creature_id": creature_id,
+                "species_name": str(creature.get("species_name") or "Creature"),
+                "actor_name": str(actor.get("displayed_name") or "Character"),
+                "interaction_action": normalized_action, "threshold": threshold,
+                "success": success, "roll": roll,
+                "text": (
+                    f"{actor.get('displayed_name', 'A character')} attempts to "
+                    f"{normalized_action} {creature.get('species_name', 'a creature')} "
+                    f"and {'succeeds' if success else 'fails'}."
+                ),
+            }
+
     def pending_campaign_requests(self) -> list[dict[str, Any]]:
         sessions = self.sessions_view()
         session_by_campaign = {
@@ -448,6 +598,8 @@ class GameBoardService:
         self, campaign_id: str, request_id: str, decision: str,
         *, pupil_person_id: str = "", knowledge_kind: str = "",
         knowledge_record_id: str = "", knowledge_collection: str = "",
+        actor_person_id: str = "", interaction_action: str = "",
+        creature_name: str = "",
     ) -> dict[str, Any]:
         with self._lock:
             campaign = self.campaign_repository.get(campaign_id)
@@ -456,6 +608,70 @@ class GameBoardService:
                 raise KeyError("Unknown campaign request")
             if decision == "rejected":
                 return self.campaign_repository.resolve_request(campaign_id, request_id, "rejected")
+            if request.get("request_type") == "equipment_change":
+                person_id = str(request.get("person_id") or "")
+                slot = str(request.get("slot") or "")
+                item_id = str(request.get("item_id") or "")
+                if slot not in {"focus", "accessory_1", "accessory_2"}:
+                    raise ValueError("The requested equipment slot is invalid")
+                current = str(campaign["game_state"]["current_game_datetime"])
+                event_date, event_time = current.split("T", 1)
+                def equip(state: dict[str, Any]) -> None:
+                    equipment = state.setdefault("people", {}).setdefault(person_id, {}).setdefault("equipment", {})
+                    equipment[slot] = item_id
+                    for other_slot, equipped_id in list(equipment.items()):
+                        if other_slot != slot and item_id and equipped_id == item_id:
+                            equipment[other_slot] = ""
+                return self.campaign_repository.resolve_request(
+                    campaign_id, request_id, "approved",
+                    event_type="equipment_changed", event_date=event_date,
+                    event_time=event_time,
+                    event_details={"person_ids": [person_id], "slot": slot, "item_id": item_id},
+                    state_updater=equip,
+                )
+            if request.get("request_type") == "creature_interaction":
+                session_id = str(request.get("session_id") or "")
+                actor_id = actor_person_id or str(request.get("actor_person_id") or "")
+                creature_id = str(request.get("creature_id") or "")
+                action = interaction_action or str(request.get("interaction_action") or "")
+                checked_campaign, actor, creature, _species, rule = self._creature_interaction_context(
+                    session_id, actor_id, creature_id, action
+                )
+                if checked_campaign["record_id"] != campaign_id:
+                    raise ValueError("The request session belongs to another campaign")
+                roll = perform_character_roll(rule["sheet"], "skill", str(rule.get("skill") or "Creatures"))
+                threshold = int(rule.get("threshold", 12) or 12)
+                success = roll.get("critical") == "success" or (
+                    roll.get("critical") != "failure" and int(roll.get("total", 0)) >= threshold
+                )
+                current = str(campaign["game_state"]["current_game_datetime"])
+                event_date, event_time = current.split("T", 1)
+
+                def update_state(state: dict[str, Any]) -> None:
+                    target = state.setdefault("creatures", {}).get(creature_id)
+                    if target is None:
+                        raise KeyError("The creature is no longer in this campaign")
+                    if not success:
+                        return
+                    self._apply_creature_interaction(
+                        target, action, actor_id, current,
+                        creature_name or str(request.get("creature_name") or ""),
+                    )
+
+                details = {
+                    "person_ids": [actor_id], "creature_id": creature_id,
+                    "interaction_action": action, "success": success,
+                    "threshold": threshold, "roll": deepcopy(roll),
+                }
+                resolved = self.campaign_repository.resolve_request(
+                    campaign_id, request_id, "approved",
+                    event_type=f"creature_{action}_attempt", event_date=event_date,
+                    event_time=event_time, event_details=details,
+                    state_updater=update_state,
+                )
+                resolved["roll"] = roll
+                resolved["success"] = success
+                return resolved
             if request.get("request_type") != "teaching":
                 raise ValueError("This request type does not yet have an approval action")
             session_id = str(request.get("session_id") or "")
@@ -1369,6 +1585,24 @@ class GameBoardService:
                 if isinstance(item, dict)
             }
         group_by_creature: dict[str, dict[str, Any]] = {}
+        try:
+            creature_definitions = (
+                self.shared_store.load("db.json").data.get("creatures", []) or []
+            )
+        except FileNotFoundError:
+            # Minimal board fixtures and legacy local installations can exist
+            # before the canonical catalog has been copied into place.  Their
+            # person/map state remains usable; there are simply no campaign
+            # creature definitions to project yet.
+            creature_definitions = []
+        species_by_id = {
+            str(item.get("record_id", "")): item
+            for item in creature_definitions
+            if isinstance(item, dict)
+        }
+        viewer_placement = (
+            campaign.get("game_state", {}).get("people", {}).get(viewer_character_id, {}) or {}
+        ).get("placement") or {}
         for group in campaign.get("game_state", {}).get("groups", []) or []:
             for member in group.get("members", []) or []:
                 if str(member.get("actor_type", "")) == "creature":
@@ -1377,6 +1611,8 @@ class GameBoardService:
             campaign.get("game_state", {}).get("creatures", {}) or {}
         ).values():
             creature = normalize_campaign_creature(raw)
+            if creature.get("carried_by_character_id"):
+                continue
             placement = creature["placement"]
             if placement["map_id"] not in visible_maps:
                 continue
@@ -1425,6 +1661,11 @@ class GameBoardService:
                     "battle": deepcopy(creature["battle"]),
                     "visibility": creature["visibility"],
                     "harvest_pools": deepcopy(creature["harvest_pools"]),
+                    "interaction_rules": deepcopy(
+                        (species_by_id.get(creature["species_record_id"], {}) or {}).get(
+                            "interaction_rules", {}
+                        )
+                    ),
                 })
             elif creature["life_state"] == "dead" and viewer_character_id:
                 actor["harvest_actions"] = [
@@ -1439,6 +1680,16 @@ class GameBoardService:
                         str(attempt.get("character_id", "")) == viewer_character_id
                         and str(attempt.get("part_id", "")) == pool["part_id"]
                         for attempt in creature["harvest_attempts"]
+                    )
+                ]
+            elif for_players and creature["life_state"] == "alive" and viewer_character_id and viewer_placement.get("map_id") == placement["map_id"]:
+                rules = (species_by_id.get(creature["species_record_id"], {}).get("interaction_rules") or {})
+                actor["interaction_actions"] = [
+                    action for action in ("capture", "lure", "tame", "bond")
+                    if (rules.get(action) or {}).get("enabled", False)
+                    and (
+                        not str((rules.get(action) or {}).get("required_proficiency_id", "") or "")
+                        or str((rules.get(action) or {}).get("required_proficiency_id")) in known_proficiencies
                     )
                 ]
             snapshot.setdefault("actors", []).append(actor)
@@ -2060,6 +2311,167 @@ class GameBoardService:
             result["required_vessel"] = deepcopy(requirements.get("vessel"))
             return result
 
+    def update_character_equipment(
+        self, session_id: str, contact_id: str, slot: str, item_id: str,
+    ) -> dict[str, Any]:
+        slot = str(slot or "").strip()
+        if slot not in {"focus", "accessory_1", "accessory_2"}:
+            raise ValueError("Unknown equipment slot")
+        with self._lock:
+            _wrapper, session = self._active(session_id)
+            player = self._player(session, contact_id)
+            character_id = str(player.get("character_id", "") or "")
+            campaign_id = str(session.get("campaign_id", "") or "")
+            if not character_id or not campaign_id:
+                raise PermissionError("A linked character and campaign are required")
+            sheet = self.character_sheet_for(session_id, contact_id)
+            inventory = sheet.get("inventory", []) if sheet else []
+            item = next((entry for entry in inventory if str(entry.get("record_id", "")) == item_id), None) if item_id else None
+            if item_id and item is None:
+                raise PermissionError("That item is not in this character's inventory")
+            expected = "focus" if slot == "focus" else "accessory"
+            if item is not None and str(item.get("equipment_slot_type", "")) != expected:
+                raise ValueError(f"That item cannot occupy the {slot.replace('_', ' ')} slot")
+            campaign = self.campaign_repository.get(campaign_id)
+            person_state = (campaign.get("game_state", {}).get("people", {}) or {}).get(character_id, {})
+            if person_state.get("battle"):
+                details = {
+                    "session_id": session_id, "contact_id": contact_id,
+                    "person_id": character_id, "slot": slot, "item_id": item_id,
+                    "item_name": str((item or {}).get("name", "Unequip")),
+                    "request_summary": f"{sheet.get('character_name', 'Character')} wants to change {slot.replace('_', ' ')} during battle",
+                }
+                request = self.campaign_repository.add_request(campaign_id, "equipment_change", details)
+                return {"status": "pending", "request": request}
+
+            def update(state: dict[str, Any]) -> None:
+                equipment = state.setdefault("people", {}).setdefault(character_id, {}).setdefault("equipment", {})
+                equipment[slot] = item_id
+                if item_id:
+                    for other_slot, equipped_id in list(equipment.items()):
+                        if other_slot != slot and equipped_id == item_id:
+                            equipment[other_slot] = ""
+
+            self.campaign_repository.update_game_state(campaign_id, update)
+            return {"status": "equipped", "slot": slot, "item_id": item_id}
+
+    def use_inventory_item(
+        self, session_id: str, contact_id: str, item_id: str, action_id: str,
+    ) -> dict[str, Any]:
+        """Perform one explicitly configured item action; there is no generic use."""
+
+        with self._lock:
+            _wrapper, session = self._active(session_id)
+            player = self._player(session, contact_id)
+            character_id = str(player.get("character_id", "") or "")
+            campaign_id = str(session.get("campaign_id", "") or "")
+            if not character_id or not campaign_id:
+                raise PermissionError("A linked character and campaign are required")
+            sheet = self.character_sheet_for(session_id, contact_id)
+            item = next(
+                (entry for entry in (sheet or {}).get("inventory", []) if str(entry.get("record_id", "")) == item_id),
+                None,
+            )
+            if item is None:
+                raise PermissionError("That item is not in this character's inventory")
+            actions = [entry for entry in item.get("actions", []) or [] if isinstance(entry, dict)]
+            action = next(
+                (entry for entry in actions if str(entry.get("record_id") or entry.get("action_id") or "") == action_id),
+                None,
+            )
+            if action is None:
+                raise PermissionError("That item has no such structured action")
+            action_type = str(action.get("action_type", "") or "").casefold()
+            if action_type not in {"roll", "message", "consume"}:
+                raise ValueError("That item action is not supported")
+            result: dict[str, Any] = {
+                "activity_type": "item_action", "item_id": item_id,
+                "item_name": str(item.get("name") or "Item"),
+                "action_id": action_id, "action_name": str(action.get("name") or "Use"),
+            }
+            if action_type == "roll":
+                roll_type = str(action.get("roll_type") or "skill")
+                target_id = str(action.get("target_id") or action.get("target") or "")
+                if not target_id:
+                    raise ValueError("This item roll is missing its target")
+                result["roll"] = perform_character_roll(sheet, roll_type, target_id)
+                result["text"] = str(result["roll"].get("text") or "An item action was rolled.")
+            else:
+                result["text"] = str(
+                    action.get("message")
+                    or f"{sheet.get('character_name', 'A character')} uses {item.get('name', 'an item')}."
+                )[:4000]
+            consume_quantity = int(action.get("consume_quantity", 1 if action_type == "consume" else 0) or 0)
+            if consume_quantity > 0:
+                def consume(state: dict[str, Any]) -> None:
+                    person = state.setdefault("people", {}).setdefault(character_id, {})
+                    stack = next(
+                        (entry for entry in person.setdefault("campaign_inventory", []) if str(entry.get("record_id")) == item_id),
+                        None,
+                    )
+                    if stack is not None:
+                        remaining = int(stack.get("quantity", 0) or 0) - consume_quantity
+                        if remaining < 0:
+                            raise ValueError("There is not enough of that item")
+                        if remaining:
+                            stack["quantity"] = remaining
+                        else:
+                            person["campaign_inventory"].remove(stack)
+                    else:
+                        consumed = person.setdefault("consumed_inventory", {})
+                        consumed[item_id] = int(consumed.get(item_id, 0) or 0) + consume_quantity
+                self.campaign_repository.update_game_state(campaign_id, consume)
+                result["consumed_quantity"] = consume_quantity
+            return result
+
+    def add_shared_catalog_tag(
+        self, session_id: str, contact_id: str, collection: str,
+        target_record_id: str, name: str,
+    ) -> dict[str, Any]:
+        allowed = {"spells", "proficiencies", "potions", "preparations", "foods_and_drinks"}
+        collection = str(collection or "").strip()
+        target_record_id = str(target_record_id or "").strip()
+        shown_name = re.sub(r"\s+", " ", str(name or "").strip())[:100]
+        if collection not in allowed or not target_record_id or not shown_name:
+            raise ValueError("Choose a valid catalog record and tag name")
+        with self._lock:
+            _wrapper, session = self._active(session_id)
+            self._player(session, contact_id)
+            campaign_id = str(session.get("campaign_id", "") or "")
+            database = self.shared_store.load("db.json").data
+            if not any(str(item.get("record_id", "")) == target_record_id for item in database.get(collection, []) or []):
+                raise KeyError("Unknown catalog record")
+            result: dict[str, Any] = {}
+
+            def update(campaign: dict[str, Any]) -> None:
+                nonlocal result
+                normalized_name = shown_name.casefold()
+                tag = next((item for item in campaign.setdefault("shared_tags", []) if item.get("normalized_name") == normalized_name), None)
+                if tag is None:
+                    tag = {
+                        "record_id": str(uuid4()), "name": shown_name,
+                        "normalized_name": normalized_name,
+                        "created_by_player_id": contact_id,
+                        "created_at": iso_utc(utc_now()),
+                    }
+                    campaign["shared_tags"].append(tag)
+                exists = any(
+                    item.get("collection") == collection
+                    and item.get("target_record_id") == target_record_id
+                    and item.get("tag_id") == tag["record_id"]
+                    for item in campaign.setdefault("tag_assignments", [])
+                )
+                if not exists:
+                    campaign["tag_assignments"].append({
+                        "record_id": str(uuid4()), "collection": collection,
+                        "target_record_id": target_record_id, "tag_id": tag["record_id"],
+                        "created_by_player_id": contact_id, "created_at": iso_utc(utc_now()),
+                    })
+                result = deepcopy(tag)
+
+            self.campaign_repository.update_campaign(campaign_id, update)
+            return result
+
     def update_person_campaign_action(
         self,
         session_id: str,
@@ -2209,6 +2621,23 @@ class GameBoardService:
                 "y": max(0.0, min(1.0, float(y))),
             }
             person["board"] = board
+            followers = [
+                item for item in (document.get("campaign_creatures", {}) or {}).values()
+                if isinstance(item, dict)
+                and str(item.get("related_character_id", "")) == person_id
+                and str(item.get("relationship_state", "")) == "lured"
+                and str(item.get("life_state", "alive")) == "alive"
+            ]
+            for index, follower in enumerate(followers):
+                angle = (index % 8) * (math.pi / 4.0)
+                radius = 0.012 + (index // 8) * 0.008
+                follower["placement"] = {
+                    "location_id": board["placement"]["location_id"],
+                    "floor_id": board["placement"]["floor_id"],
+                    "map_id": map_id,
+                    "x": max(0.005, min(0.995, board["placement"]["x"] + math.cos(angle) * radius)),
+                    "y": max(0.005, min(0.995, board["placement"]["y"] + math.sin(angle) * radius)),
+                }
             self.world_board._remove_from_incompatible_groups(
                 document, person_id, board["placement"]["location_id"]
             )

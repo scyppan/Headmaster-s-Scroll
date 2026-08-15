@@ -19,6 +19,7 @@ HISTORY_KEEP = "keep"
 HISTORY_DISCARD = "discard"
 HISTORY_POLICIES = {HISTORY_KEEP, HISTORY_DISCARD}
 REQUEST_STATUSES = {"pending", "approved", "rejected"}
+EQUIPMENT_SLOTS = ("focus", "accessory_1", "accessory_2")
 
 LEGACY_GENERATED_ZOOM_TIERS = {
     "0": {"token_size": 0, "nameplate_size": 11},
@@ -291,6 +292,7 @@ def normalize_campaign_game_state(
             "campaign_inventory": _normalize_campaign_inventory(
                 raw_state.get("campaign_inventory")
             ),
+            "equipment": _normalize_equipment(raw_state.get("equipment")),
         }
 
     creatures: dict[str, dict[str, Any]] = {}
@@ -387,8 +389,71 @@ def _normalize_campaign_inventory(value: Any) -> list[dict[str, Any]]:
             "source_creature_id": str(raw.get("source_creature_id", "") or ""),
             "source_species_id": str(raw.get("source_species_id", "") or ""),
             "acquired_at": str(raw.get("acquired_at", "") or utc_now()),
+            "definition_collection": str(raw.get("definition_collection", "") or "")[:100],
+            "definition_record_id": str(raw.get("definition_record_id", "") or item_id),
+            "description": str(raw.get("description", "") or "")[:4000],
         })
     return stacks
+
+
+def _normalize_equipment(value: Any) -> dict[str, str]:
+    raw = value if isinstance(value, dict) else {}
+    return {
+        slot: str(raw.get(slot, "") or "").strip()
+        for slot in EQUIPMENT_SLOTS
+    }
+
+
+def _normalize_shared_tags(value: Any) -> list[dict[str, Any]]:
+    raw_tags = value if isinstance(value, list) else []
+    result: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+    seen_names: set[str] = set()
+    for raw in raw_tags:
+        if not isinstance(raw, dict):
+            raise ValueError("Campaign shared tags must be objects")
+        record_id = str(raw.get("record_id", "") or "").strip()
+        name = str(raw.get("name", "") or "").strip()[:100]
+        normalized_name = re.sub(r"\s+", " ", name.casefold()).strip()
+        if not record_id or not name or record_id in seen_ids or normalized_name in seen_names:
+            raise ValueError("Campaign shared tags require unique IDs and names")
+        seen_ids.add(record_id)
+        seen_names.add(normalized_name)
+        result.append({
+            "record_id": record_id,
+            "name": name,
+            "normalized_name": normalized_name,
+            "created_by_player_id": str(raw.get("created_by_player_id", "") or ""),
+            "created_at": str(raw.get("created_at", "") or utc_now()),
+        })
+    return result
+
+
+def _normalize_tag_assignments(value: Any, tag_ids: set[str]) -> list[dict[str, Any]]:
+    raw_items = value if isinstance(value, list) else []
+    result: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str]] = set()
+    for raw in raw_items:
+        if not isinstance(raw, dict):
+            raise ValueError("Campaign tag assignments must be objects")
+        collection = str(raw.get("collection", "") or "").strip()
+        target_id = str(raw.get("target_record_id", "") or "").strip()
+        tag_id = str(raw.get("tag_id", "") or "").strip()
+        key = (collection, target_id, tag_id)
+        if collection not in {"spells", "proficiencies", "potions", "preparations", "foods_and_drinks"}:
+            raise ValueError("Campaign tags may only target knowledge or recipes")
+        if not target_id or tag_id not in tag_ids or key in seen:
+            raise ValueError("Campaign tag assignments require unique valid targets and tags")
+        seen.add(key)
+        result.append({
+            "record_id": str(raw.get("record_id", "") or uuid4()),
+            "collection": collection,
+            "target_record_id": target_id,
+            "tag_id": tag_id,
+            "created_by_player_id": str(raw.get("created_by_player_id", "") or ""),
+            "created_at": str(raw.get("created_at", "") or utc_now()),
+        })
+    return result
 
 
 def normalize_campaign(value: Any) -> dict[str, Any]:
@@ -473,6 +538,11 @@ def normalize_campaign(value: Any) -> dict[str, Any]:
         request_ids.add(request_id)
         requests.append(request)
     result["requests"] = requests
+    result["shared_tags"] = _normalize_shared_tags(value.get("shared_tags"))
+    result["tag_assignments"] = _normalize_tag_assignments(
+        value.get("tag_assignments"),
+        {item["record_id"] for item in result["shared_tags"]},
+    )
     result["game_state"] = normalize_campaign_game_state(
         value.get("game_state"), result["game_world_start_date"]
     )
@@ -538,6 +608,7 @@ class CampaignRepository:
             "campaign_inventory": _normalize_campaign_inventory(
                 prior.get("campaign_inventory")
             ),
+            "equipment": _normalize_equipment(prior.get("equipment")),
         }
 
     def ensure_game_state(
@@ -639,6 +710,32 @@ class CampaignRepository:
             raise RuntimeError("The campaign changed elsewhere; reload before saving")
         return normalize_campaign(campaign)
 
+    def update_campaign(
+        self,
+        campaign_id: str,
+        updater: Callable[[dict[str, Any]], None],
+        *,
+        app_id: str = "game-board",
+    ) -> dict[str, Any]:
+        """Atomically update campaign-level metadata such as shared tags."""
+
+        session = self.store.load("campaign.json")
+        campaign = next(
+            (item for item in session.data["campaigns"] if item.get("record_id") == campaign_id),
+            None,
+        )
+        if campaign is None:
+            raise KeyError("Unknown campaign")
+        normalized = normalize_campaign(campaign)
+        updater(normalized)
+        normalized["last_updated"] = utc_now()
+        campaign.clear()
+        campaign.update(normalize_campaign(normalized))
+        outcome = self.store.save(session, app_id)
+        if not outcome.saved:
+            raise RuntimeError("The campaign changed elsewhere; reload before saving")
+        return normalize_campaign(campaign)
+
     def add_event(
         self,
         campaign_id: str,
@@ -717,6 +814,7 @@ class CampaignRepository:
         event_date: str = "",
         event_time: str = "",
         event_details: dict[str, Any] | None = None,
+        state_updater: Callable[[dict[str, Any]], None] | None = None,
         app_id: str = "game-board",
     ) -> dict[str, Any]:
         """Resolve a request and append its approved event in one atomic save."""
@@ -747,6 +845,10 @@ class CampaignRepository:
             })
             request["event_id"] = event["record_id"]
             campaign.setdefault("events", []).append(event)
+            if state_updater is not None:
+                state = deepcopy(normalize_campaign(campaign)["game_state"])
+                state_updater(state)
+                campaign["game_state"] = state
         campaign["last_updated"] = utc_now()
         normalized = normalize_campaign(campaign)
         campaign.clear()

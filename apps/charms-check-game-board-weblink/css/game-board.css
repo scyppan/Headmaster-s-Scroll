@@ -1631,6 +1631,49 @@
 #gameboard .ccgb-teach-columns > div { display: grid; gap: 5px; }
 #gameboard .ccgb-teach-columns label { font-weight: 700; }
 #gameboard .ccgb-teach-filter-row { display: grid; gap: 5px; grid-template-columns: minmax(130px, 1fr) 120px 100px; }
+
+#gameboard .ccgb-recipe-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+#gameboard .ccgb-recipe-column {
+  min-width: 0;
+  border: 1px solid #c79b58;
+  background: rgba(255, 248, 225, 0.55);
+  padding: 8px;
+}
+#gameboard .ccgb-recipe-column > header,
+#gameboard .ccgb-inventory-group > h2 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 7px;
+}
+#gameboard .ccgb-recipe-column.is-missing { background: rgba(194, 122, 122, 0.1); }
+
+#gameboard .ccgb-inventory-panel,
+#gameboard .ccgb-pet-groups { display: grid; gap: 10px; }
+#gameboard .ccgb-inventory-tools { position: sticky; top: 0; z-index: 2; background: #f7e9bd; padding-bottom: 6px; }
+#gameboard .ccgb-inventory-tools input { box-sizing: border-box; width: 100%; }
+#gameboard .ccgb-inventory-group,
+#gameboard .ccgb-pet-section { border: 1px solid #c79b58; padding: 8px; background: rgba(255, 248, 225, 0.45); }
+#gameboard .ccgb-inventory-group > h2 span { font-size: 0.75em; font-weight: normal; }
+#gameboard .ccgb-inventory-list { display: grid; gap: 4px; }
+#gameboard .ccgb-inventory-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; border-bottom: 1px solid rgba(139, 70, 39, 0.25); padding: 5px 2px; }
+#gameboard .ccgb-inventory-row:last-child { border-bottom: 0; }
+#gameboard .ccgb-inventory-row strong,
+#gameboard .ccgb-inventory-row span,
+#gameboard .ccgb-inventory-row small { display: block; }
+#gameboard .ccgb-inventory-row small { opacity: 0.75; }
+#gameboard .ccgb-inventory-actions { display: flex; gap: 3px; }
+#gameboard .ccgb-inventory-actions button { min-width: 30px; padding: 4px 7px; cursor: pointer; }
+
+@media (max-width: 800px) {
+  #gameboard .ccgb-recipe-columns { grid-template-columns: 1fr; }
+}
 #gameboard .ccgb-teach-panel input,
 #gameboard .ccgb-teach-panel select { border: 1px solid #a9683d; min-height: 34px; padding: 5px 7px; }
 

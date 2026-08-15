@@ -12,6 +12,7 @@ from uuid import NAMESPACE_URL, uuid4, uuid5
 APTITUDES = ("inept", "unskilled", "typical", "skilled", "exceptional")
 LIFE_STATES = {"alive", "dead"}
 VISIBILITIES = {"headmaster", "players"}
+INTERACTION_ACTIONS = {"capture", "lure", "tame", "bond"}
 CLASSIFICATION_THRESHOLDS = {
     "X": 7,
     "XX": 12,
@@ -170,6 +171,20 @@ def validate_creature_database(document: dict[str, Any]) -> None:
         awareness_id = str(species.get("awareness_proficiency_id", "") or "")
         if not awareness_id or awareness_id not in proficiencies:
             raise ValueError(f"{species.get('name', 'Creature')} requires a valid awareness proficiency")
+        interaction_rules = species.get("interaction_rules")
+        # Legacy databases remain readable so the idempotent catalog migration
+        # can add the full rule set through the shared-data save path.
+        if interaction_rules is not None and set(interaction_rules) != INTERACTION_ACTIONS:
+            raise ValueError(f"{species.get('name', 'Creature')} requires all interaction rules")
+        for action, raw_rule in (interaction_rules or {}).items():
+            if not isinstance(raw_rule, dict):
+                raise ValueError("Creature interaction rules must be objects")
+            threshold = int(raw_rule.get("threshold", 0))
+            required_id = str(raw_rule.get("required_proficiency_id", "") or "")
+            if not 1 <= threshold <= 100 or not str(raw_rule.get("skill", "") or "").strip():
+                raise ValueError("Creature interaction rules require a skill and threshold")
+            if required_id and required_id not in proficiencies:
+                raise ValueError("Creature interactions reference an unknown proficiency")
         for collection in ("attacks", "abilities", "parts"):
             local_ids: set[str] = set()
             for item in species.get(collection, []) or []:
@@ -426,6 +441,17 @@ def normalize_campaign_creature(value: Any) -> dict[str, Any]:
         seen_attempts.add(key)
         attempts.append(deepcopy(raw))
     result["harvest_attempts"] = attempts
+    result["name"] = str(result.get("name", "") or "")[:200]
+    result["relationship_state"] = str(result.get("relationship_state", "") or "").casefold()
+    if result["relationship_state"] not in {"", "lured", "bonded", "tamed", "captured"}:
+        raise ValueError("Campaign creature relationship state is invalid")
+    result["related_character_id"] = str(result.get("related_character_id", "") or "")
+    result["carried_by_character_id"] = str(result.get("carried_by_character_id", "") or "")
+    result["restrained"] = bool(result.get("restrained", False))
+    result["relationship_history"] = [
+        deepcopy(item) for item in result.get("relationship_history", []) or []
+        if isinstance(item, dict)
+    ]
     result["created_at"] = str(result.get("created_at") or utc_now())
     result["last_updated"] = str(result.get("last_updated") or result["created_at"])
     return result

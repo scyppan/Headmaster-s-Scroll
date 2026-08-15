@@ -2,7 +2,8 @@ import unittest
 
 from headmasters_scroll.character_rolls import perform_character_roll
 from headmasters_scroll.character_sheet import (
-    build_character_sheet, effective_campaign_events, recipe_requirements,
+    _book_cover_asset_id, build_character_sheet, effective_campaign_events,
+    recipe_requirements,
 )
 
 
@@ -50,6 +51,16 @@ class CharacterSheetTests(unittest.TestCase):
             "events": [],
             "game_state": {"current_game_datetime": current, "people": {}},
         }
+
+    def test_categoryless_book_uses_explicit_subject_in_title_for_cover(self):
+        self.assertEqual(
+            _book_cover_asset_id({
+                "record_id": "book_1238",
+                "name": "Introduction to Astronomy",
+                "categories": [],
+            }),
+            "book-cover:astronomy",
+        )
 
     def test_keep_and_discard_branch_world_history(self):
         kept = effective_campaign_events(self.world, self.campaign("2006-01-01T08:00", "keep"))
@@ -216,6 +227,42 @@ class CharacterSheetTests(unittest.TestCase):
             requirements["missing"],
             ["1 Tea leaves", "1 Honey", "vessel: Cauldron"],
         )
+
+    def test_owned_passive_and_equipped_items_feed_roll_ledgers(self):
+        self.world["items"] = [
+            {
+                "record_id": "charm-instance", "name": "Lucky Coin",
+                "definition_record_id": "coin-definition", "quantity": 1,
+                "passage_history": [{"date": "2001-01-01", "person_id": "person-1"}],
+            },
+            {
+                "record_id": "ring-instance", "name": "Charm Ring",
+                "definition_record_id": "ring-definition", "quantity": 1,
+                "passage_history": [{"date": "2001-01-01", "person_id": "person-1"}],
+            },
+        ]
+        self.database.update({
+            "wands": [], "holdable_items": [], "general_items": [{
+                "record_id": "coin-definition", "name": "Lucky Coin",
+                "activation_mode": "passive",
+                "bonuses": [{"type": "Skill", "target": "Charms", "amount": 2}],
+            }],
+            "accessories": [{
+                "record_id": "ring-definition", "name": "Charm Ring",
+                "activation_mode": "equipped", "equipment_slot_type": "accessory",
+                "bonuses": [{"type": "Skill", "target": "Charms", "amount": 3}],
+            }],
+            "plants": [],
+        })
+        campaign = self.campaign()
+        campaign["game_state"]["people"] = {
+            "person-1": {"equipment": {"focus": "", "accessory_1": "ring-instance", "accessory_2": ""}}
+        }
+        sheet = build_character_sheet(self.person, self.world, self.database, campaign)
+        charms = next(item for item in sheet["attributes"]["skills"] if item["name"] == "Charms")
+        self.assertEqual(charms["breakdown"]["passive"], 2)
+        self.assertEqual(charms["breakdown"]["accessories"], 3)
+        self.assertTrue(next(item for item in sheet["inventory"] if item["record_id"] == "ring-instance")["equipped"])
 
     def test_natural_ten_does_not_bypass_an_unreachable_threshold(self):
         sheet = build_character_sheet(

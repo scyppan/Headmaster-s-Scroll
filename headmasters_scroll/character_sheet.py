@@ -60,6 +60,17 @@ def _book_cover_asset_id(book: dict[str, Any]) -> str:
         slug = re.sub(r"[^a-z0-9]+", "-", str(category).strip().casefold()).strip("-")
         if slug in BOOK_COVER_SUBJECTS:
             return f"book-cover:{slug}"
+    # Some legacy book records have no category even though their title names a
+    # supported subject explicitly.  Use whole slug terms only so incidental
+    # words do not assign an unrelated cover.
+    title_slug = re.sub(
+        r"[^a-z0-9]+",
+        "-",
+        str(book.get("title") or book.get("name") or "").strip().casefold(),
+    ).strip("-")
+    for subject in sorted(BOOK_COVER_SUBJECTS, key=len, reverse=True):
+        if re.search(rf"(?:^|-){re.escape(subject)}(?:-|$)", title_slug):
+            return f"book-cover:{subject}"
     return ""
 
 
@@ -534,7 +545,58 @@ def _age_at(person: dict[str, Any], current: tuple[int, int, int]) -> int | None
 def _inventory(
     person_id: str, world: dict[str, Any], current: tuple[int, int, int],
     campaign_person: dict[str, Any] | None = None,
+    database: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
+    database = database or {}
+    definition_collections = (
+        "wands", "holdable_items", "accessories", "general_items", "plants",
+        "potions", "preparations", "foods_and_drinks", "books",
+    )
+    by_id = {
+        str(record.get("record_id", "")): (collection, record)
+        for collection in definition_collections
+        for record in database.get(collection, []) or [] if isinstance(record, dict)
+    }
+    by_name: dict[str, tuple[str, dict[str, Any]]] = {}
+    for _definition_id, value in by_id.items():
+        name = str(value[1].get("name", "") or "").strip().casefold()
+        if name and name not in by_name:
+            by_name[name] = value
+    equipment = (campaign_person or {}).get("equipment", {}) or {}
+    equipped_ids = {str(value) for value in equipment.values() if value}
+
+    def enrich(entry: dict[str, Any], source: dict[str, Any]) -> dict[str, Any]:
+        definition_id = str(
+            source.get("definition_record_id") or source.get("item_id") or ""
+        ).strip()
+        resolved = by_id.get(definition_id)
+        if resolved is None:
+            resolved = by_name.get(str(source.get("name", "") or "").strip().casefold())
+        collection, definition = resolved if resolved else (
+            str(source.get("definition_collection", "") or ""), {}
+        )
+        definition_id = str(definition.get("record_id", "") or definition_id)
+        explicit = str(definition.get("activation_mode", "") or "").strip().casefold()
+        if not explicit:
+            explicit = "equipped" if collection in {"wands", "holdable_items", "accessories"} else "passive"
+        slot_type = ""
+        if collection in {"wands", "holdable_items"}:
+            slot_type = "focus"
+        elif collection == "accessories":
+            slot_type = "accessory"
+        entry.update({
+            "definition_collection": collection,
+            "definition_record_id": definition_id,
+            "activation_mode": explicit,
+            "equipment_slot_type": slot_type,
+            "equipped": entry["record_id"] in equipped_ids,
+            "bonuses": deepcopy(definition.get("bonuses", []) or source.get("bonuses", []) or []),
+            "actions": deepcopy(definition.get("actions", []) or source.get("actions", []) or []),
+        })
+        if not entry.get("description"):
+            entry["description"] = str(definition.get("description", "") or "")
+        return entry
+
     owned: list[dict[str, Any]] = []
     consumed = (campaign_person or {}).get("consumed_inventory", {}) or {}
     for item in world.get("items", []) or []:
@@ -551,7 +613,7 @@ def _inventory(
                 quantity = 1.0
             if quantity <= 0:
                 continue
-            owned.append({
+            owned.append(enrich({
                 "record_id": record_id,
                 "name": str(item.get("name") or "Unnamed item"),
                 "category": str(item.get("category") or "Item"),
@@ -559,7 +621,7 @@ def _inventory(
                 "description": str(item.get("description") or ""),
                 "acquired": str(passages[-1].get("date") or ""),
                 "method": str(passages[-1].get("method") or ""),
-            })
+            }, item))
     for stack in (campaign_person or {}).get("campaign_inventory", []) or []:
         if not isinstance(stack, dict):
             continue
@@ -569,7 +631,7 @@ def _inventory(
             continue
         if not quantity:
             continue
-        owned.append({
+        owned.append(enrich({
             "record_id": str(stack.get("record_id") or ""),
             "item_id": str(stack.get("item_id") or stack.get("part_id") or ""),
             "part_id": str(stack.get("part_id") or ""),
@@ -581,8 +643,42 @@ def _inventory(
             "method": "Harvested",
             "source_creature_id": str(stack.get("source_creature_id") or ""),
             "source_species_id": str(stack.get("source_species_id") or ""),
-        })
+        }, stack))
     return sorted(owned, key=lambda item: (item["name"].casefold(), item["record_id"]))
+
+
+def _inventory_roll_modifiers(inventory: list[dict[str, Any]]) -> dict[str, Any]:
+    modifiers: dict[str, dict[str, dict[str, int]]] = {
+        "abilities": {}, "skills": {}, "characteristics": {},
+    }
+    for item in inventory:
+        mode = str(item.get("activation_mode", "passive") or "passive").casefold()
+        active = mode == "passive" or (mode == "equipped" and item.get("equipped"))
+        if not active:
+            continue
+        source_name = "accessories" if item.get("equipment_slot_type") == "accessory" else (
+            "wand" if item.get("equipment_slot_type") == "focus" else "passive"
+        )
+        for bonus in item.get("bonuses", []) or []:
+            if not isinstance(bonus, dict):
+                continue
+            target = str(bonus.get("target", "") or "").strip()
+            kind = str(bonus.get("type", "") or "").strip().casefold()
+            if target == "Social Skills":
+                target = "Social"
+            collection = {
+                "ability": "abilities", "attribute": "abilities",
+                "skill": "skills", "characteristic": "characteristics",
+            }.get(kind)
+            if not collection or not target:
+                continue
+            try:
+                amount = int(bonus.get("amount", 0) or 0)
+            except (TypeError, ValueError):
+                continue
+            bucket = modifiers[collection].setdefault(target, {})
+            bucket[source_name] = int(bucket.get(source_name, 0)) + amount
+    return modifiers
 
 
 def recipe_requirements(
@@ -703,11 +799,81 @@ def build_character_sheet(
     effective_world = deepcopy(world)
     effective_world["events"] = events
     campaign_person = (campaign.get("game_state", {}).get("people", {}) or {}).get(person_id, {})
-    attributes = calculate_character_attributes(
-        person, effective_world, database, game_datetime, campaign_person
-    )
     knowledge = _knowledge(person_id, world, database, campaign, events)
-    inventory = _inventory(person_id, world, current, campaign_person)
+    shared_tag_names = {
+        str(item.get("record_id", "")): str(item.get("name", "") or "")
+        for item in campaign.get("shared_tags", []) or [] if isinstance(item, dict)
+    }
+    assignments: dict[tuple[str, str], list[str]] = {}
+    for item in campaign.get("tag_assignments", []) or []:
+        if not isinstance(item, dict):
+            continue
+        tag_name = shared_tag_names.get(str(item.get("tag_id", "")))
+        if tag_name:
+            assignments.setdefault((str(item.get("collection", "")), str(item.get("target_record_id", ""))), []).append(tag_name)
+    for public_collection, records in (("spells", knowledge["spells"]), ("proficiencies", knowledge["proficiencies"]), ("recipes", knowledge["recipes"])):
+        for record in records:
+            source_collection = str(record.get("collection", "") or public_collection)
+            merged = [str(value) for value in record.get("tags", []) or []]
+            for value in assignments.get((source_collection, str(record.get("record_id", ""))), []):
+                if value not in merged:
+                    merged.append(value)
+            record["tags"] = merged
+    inventory = _inventory(person_id, world, current, campaign_person, database)
+    campaign_creatures = (campaign.get("game_state", {}).get("creatures", {}) or {}).values()
+    species_index = _record_index(database, "creatures")
+    campaign_pets: list[dict[str, Any]] = []
+    for raw_creature in campaign_creatures:
+        if not isinstance(raw_creature, dict):
+            continue
+        related = str(raw_creature.get("related_character_id", "") or "") == person_id
+        carried = str(raw_creature.get("carried_by_character_id", "") or "") == person_id
+        if not related and not carried:
+            continue
+        species = species_index.get(str(raw_creature.get("species_record_id", "") or ""), {})
+        relationship = str(raw_creature.get("relationship_state", "") or ("captured" if carried else ""))
+        campaign_pets.append({
+            "record_id": str(raw_creature.get("record_id", "") or ""),
+            "name": str(raw_creature.get("name", "") or raw_creature.get("species_name", "Creature")),
+            "relationships": [relationship] if relationship else [],
+            "relationship_group": {
+                "tamed": "Tamed Pets", "bonded": "Bonded Allies",
+                "lured": "Lured Creatures", "captured": "Captured Creatures",
+            }.get(relationship, "Creature Relationships"),
+            "species": {
+                "record_id": str(species.get("record_id", "") or ""),
+                "name": str(species.get("name", "") or raw_creature.get("species_name", "Creature")),
+                "classification": str(species.get("classification", "") or ""),
+                "size": deepcopy((raw_creature.get("generated") or {}).get("size")),
+                "movement": deepcopy((raw_creature.get("generated") or {}).get("movement", {})),
+                "wound_cap": deepcopy((raw_creature.get("generated") or {}).get("heavy_wound_cap")),
+                "attacks": deepcopy(raw_creature.get("actions", [])),
+            },
+            "history": deepcopy(raw_creature.get("relationship_history", []) or []),
+            "campaign_created": True,
+        })
+        if carried:
+            inventory.append({
+                "record_id": f"carried-creature:{raw_creature.get('record_id', '')}",
+                "name": str(raw_creature.get("name", "") or raw_creature.get("species_name", "Creature")),
+                "category": "Creatures & Plants", "quantity": 1,
+                "description": "A living captured creature.", "acquired": "",
+                "method": "Captured", "activation_mode": "passive",
+                "equipment_slot_type": "", "equipped": False,
+                "bonuses": [], "actions": [],
+            })
+    effective_campaign_person = deepcopy(campaign_person)
+    inventory_modifiers = _inventory_roll_modifiers(inventory)
+    existing_modifiers = effective_campaign_person.setdefault("roll_modifiers", {})
+    for collection, records in inventory_modifiers.items():
+        target_collection = existing_modifiers.setdefault(collection, {})
+        for name, values in records.items():
+            target = target_collection.setdefault(name, {})
+            for source, amount in values.items():
+                target[source] = int(target.get(source, 0) or 0) + amount
+    attributes = calculate_character_attributes(
+        person, effective_world, database, game_datetime, effective_campaign_person
+    )
     for recipe in knowledge["recipes"]:
         recipe["requirements"] = recipe_requirements(recipe, inventory)
     birth_parts = [person.get("birth_year"), person.get("birth_month"), person.get("birth_day")]
@@ -736,8 +902,13 @@ def build_character_sheet(
         },
         "attributes": attributes,
         **knowledge,
-        "pets": _creature_relationships(person_id, world, database, events),
-        "inventory": inventory,
+        "pets": [*_creature_relationships(person_id, world, database, events), *campaign_pets],
+        "inventory": sorted(inventory, key=lambda item: (str(item.get("name", "")).casefold(), str(item.get("record_id", "")))),
+        "equipment": deepcopy((campaign_person or {}).get("equipment", {}) or {}),
+        "shared_tags": [
+            deepcopy(item) for item in campaign.get("shared_tags", []) or []
+            if isinstance(item, dict)
+        ],
         "relationships": _human_relationships(person_id, world, events),
         "wounds": deepcopy(campaign_person.get("wounds", []) or []),
         "battle": deepcopy(campaign_person.get("battle")),

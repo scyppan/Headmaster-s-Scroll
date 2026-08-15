@@ -2122,6 +2122,74 @@ class GameBoardWindow(tk.Tk):
             lambda _result: self.refresh(silent=True),
         )
 
+    def interact_with_selected_creature(self) -> None:
+        creature = self._selected_creature()
+        if creature is None or not self.selected_session_id:
+            return
+        actors = [
+            {"record_id": str(item.get("actor_id", "")), "name": str(item.get("name", "Character"))}
+            for item in self.board_snapshot.get("actors", []) or []
+            if item.get("actor_type") != "creature"
+            and item.get("map_id") == creature.get("map_id")
+        ]
+        if not actors:
+            messagebox.showinfo("Creature interaction", "No characters are currently on this map.", parent=self)
+            return
+        dialog = tk.Toplevel(self)
+        dialog.title(f"Interact with {creature.get('internal_label') or creature.get('name') or 'Creature'}")
+        dialog.transient(self)
+        dialog.grab_set()
+        dialog.geometry("620x520")
+        apply_window_icon(dialog, GAME_BOARD_ICON)
+        shell = ttk.Frame(dialog, padding=10)
+        shell.pack(fill="both", expand=True)
+        actor_id = tk.StringVar()
+        action = tk.StringVar(value="capture")
+        creature_name = tk.StringVar()
+        ttk.Label(shell, text="Acting character", style="CardTitle.TLabel").pack(anchor="w")
+        self._searchable_record_panel(shell, actors, actor_id, height=8).pack(fill="both", expand=True, pady=(0, 8))
+        action_row = ttk.Frame(shell)
+        action_row.pack(fill="x")
+        rules = creature.get("interaction_rules", {}) or {}
+        for value, label in (("capture", "Capture"), ("lure", "Lure"), ("tame", "Tame"), ("bond", "Bond")):
+            enabled = bool((rules.get(value) or {}).get("enabled", value == "capture"))
+            ttk.Radiobutton(
+                action_row, text=label, variable=action, value=value,
+                state="normal" if enabled else "disabled",
+            ).pack(side="left", padx=(0, 10))
+        name_row = ttk.Frame(shell)
+        name_row.pack(fill="x", pady=8)
+        ttk.Label(name_row, text="Name if tamed").pack(side="left")
+        ttk.Entry(name_row, textvariable=creature_name).pack(side="left", fill="x", expand=True, padx=(8, 0))
+        ttk.Label(
+            shell,
+            text="Capture requires no creature proficiency. Lure, Tame, and Bond require the acting character's species proficiency.",
+            style="Status.TLabel", wraplength=570,
+        ).pack(fill="x")
+        buttons = ttk.Frame(shell)
+        buttons.pack(fill="x", pady=(10, 0))
+        ttk.Button(buttons, text="Cancel", style="Quiet.TButton", command=dialog.destroy).pack(side="right")
+
+        def roll() -> None:
+            if not actor_id.get():
+                messagebox.showinfo("Creature interaction", "Choose an acting character.", parent=dialog)
+                return
+            payload = {
+                "session_id": self.selected_session_id,
+                "actor_person_id": actor_id.get(),
+                "action": action.get(),
+                "creature_name": creature_name.get().strip(),
+            }
+            dialog.destroy()
+            self._background(
+                lambda: self.client.request(
+                    "POST", f"/api/admin/board/creatures/{creature['actor_id']}/interact", payload
+                ),
+                lambda _result: self.refresh(silent=True),
+            )
+
+        ttk.Button(buttons, text="Roll", command=roll).pack(side="right", padx=(0, 6))
+
     def open_add_character_menu(self) -> None:
         if not self.selected_session_id or not self.selected_board_map_id:
             messagebox.showinfo(
@@ -4342,6 +4410,11 @@ class GameBoardWindow(tk.Tk):
                 command=self.toggle_selected_creature_visibility,
             )
             popup.add_command(label="Add to group…", command=self.manage_creature_group)
+            if actor.get("life_state") == "alive":
+                popup.add_command(
+                    label="Capture, lure, tame, or bond…",
+                    command=self.interact_with_selected_creature,
+                )
             popup.add_command(label="Assign wound…", command=self.wound_selected_creature)
             popup.add_command(
                 label="Revive" if actor.get("life_state") == "dead" else "Mark dead",
@@ -6077,8 +6150,11 @@ class GameBoardWindow(tk.Tk):
 
     def edit_selected_request(self) -> None:
         request = self._selected_campaign_request()
+        if request is not None and request.get("request_type") == "creature_interaction":
+            self._edit_creature_interaction_request(request)
+            return
         if request is None or request.get("request_type") != "teaching":
-            messagebox.showinfo("Requests", "Select a teaching request to edit.", parent=self)
+            messagebox.showinfo("Requests", "Select a teaching or creature request to edit.", parent=self)
             return
         # The edit dialog intentionally uses search lists, never a select box.
         dialog = tk.Toplevel(self)
@@ -6121,6 +6197,57 @@ class GameBoardWindow(tk.Tk):
             self.resolve_selected_request("approved", {"pupil_person_id": pupil.get(), "knowledge_kind": kind.get(), "knowledge_record_id": subject.get(), "knowledge_collection": record.get("collection", "")})
             dialog.destroy()
         ttk.Button(actions, text="Approve changes", command=approve).pack(side="right", padx=(0, 6))
+
+    def _edit_creature_interaction_request(self, request: dict[str, Any]) -> None:
+        creature_id = str(request.get("creature_id") or "")
+        creature = next(
+            (item for item in self.board_snapshot.get("actors", []) or [] if str(item.get("actor_id")) == creature_id),
+            None,
+        )
+        if creature is None:
+            messagebox.showinfo("Requests", "That creature is no longer on the active board.", parent=self)
+            return
+        actors = [
+            {"record_id": str(item.get("actor_id", "")), "name": str(item.get("name", "Character"))}
+            for item in self.board_snapshot.get("actors", []) or []
+            if item.get("actor_type") != "creature" and item.get("map_id") == creature.get("map_id")
+        ]
+        dialog = tk.Toplevel(self)
+        dialog.title("Edit Creature Request")
+        dialog.transient(self)
+        dialog.grab_set()
+        dialog.geometry("620x500")
+        apply_window_icon(dialog, GAME_BOARD_ICON)
+        body = ttk.Frame(dialog, padding=10)
+        body.pack(fill="both", expand=True)
+        actor_id = tk.StringVar(value=str(request.get("actor_person_id") or ""))
+        action = tk.StringVar(value=str(request.get("interaction_action") or "capture"))
+        creature_name = tk.StringVar(value=str(request.get("creature_name") or ""))
+        ttk.Label(body, text="Acting character", style="CardTitle.TLabel").pack(anchor="w")
+        self._searchable_record_panel(body, actors, actor_id, height=8).pack(fill="both", expand=True, pady=(0, 8))
+        actions = ttk.Frame(body)
+        actions.pack(fill="x")
+        for value, label in (("capture", "Capture"), ("lure", "Lure"), ("tame", "Tame"), ("bond", "Bond")):
+            ttk.Radiobutton(actions, text=label, variable=action, value=value).pack(side="left", padx=(0, 10))
+        name_row = ttk.Frame(body)
+        name_row.pack(fill="x", pady=8)
+        ttk.Label(name_row, text="Name if tamed").pack(side="left")
+        ttk.Entry(name_row, textvariable=creature_name).pack(side="left", fill="x", expand=True, padx=(8, 0))
+        buttons = ttk.Frame(body)
+        buttons.pack(fill="x")
+        ttk.Button(buttons, text="Cancel", style="Quiet.TButton", command=dialog.destroy).pack(side="right")
+
+        def approve() -> None:
+            if not actor_id.get():
+                messagebox.showinfo("Requests", "Choose an acting character.", parent=dialog)
+                return
+            self.resolve_selected_request("approved", {
+                "actor_person_id": actor_id.get(), "interaction_action": action.get(),
+                "creature_name": creature_name.get().strip(),
+            })
+            dialog.destroy()
+
+        ttk.Button(buttons, text="Approve & Roll", command=approve).pack(side="right", padx=(0, 6))
 
     def show_control_page(self, key: str) -> None:
         self.show_app_page("control-panel")

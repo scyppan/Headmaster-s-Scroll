@@ -6,6 +6,7 @@ from .errors import DataValidationError
 from .board import validate_world_board
 from .campaigns import validate_campaigns
 from .creatures import validate_creature_database
+from .catalog import validate_catalog
 
 
 TEACHING_EVENT_TYPES = {
@@ -109,6 +110,8 @@ def validate_document(filename: str, data: Any) -> None:
         else:
             try:
                 validate_creature_database(data)
+                if "tag_catalog" in data:
+                    validate_catalog(data)
             except (TypeError, ValueError) as error:
                 raise DataValidationError(str(error)) from error
     elif filename == "periods.json":

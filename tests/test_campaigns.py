@@ -104,6 +104,35 @@ class CampaignTests(unittest.TestCase):
         self.assertEqual(resolved["status"], "approved")
         self.assertEqual(stored["requests"][0]["event_id"], stored["events"][0]["record_id"])
 
+    def test_shared_tags_equipment_and_state_resolution_persist(self):
+        campaign = self.repository.save_campaign("Connected State", "2000-01-01")
+
+        def add_shared_state(value):
+            value["shared_tags"] = [{
+                "record_id": "tag-1", "name": "Door Magic",
+                "created_by_player_id": "contact-1", "created_at": "2000-01-01T00:00:00Z",
+            }]
+            value["tag_assignments"] = [{
+                "record_id": "assignment-1", "collection": "spells",
+                "target_record_id": "spell-1", "tag_id": "tag-1",
+                "created_by_player_id": "contact-1", "created_at": "2000-01-01T00:00:00Z",
+            }]
+
+        self.repository.update_campaign(campaign["record_id"], add_shared_state)
+        request = self.repository.add_request(campaign["record_id"], "equipment_change", {})
+
+        def equip(state):
+            state.setdefault("people", {}).setdefault("person-1", {}).setdefault("equipment", {})["focus"] = "wand-instance"
+
+        self.repository.resolve_request(
+            campaign["record_id"], request["record_id"], "approved",
+            event_type="equipment_changed", event_date="2000-01-01", state_updater=equip,
+        )
+        stored = self.repository.get(campaign["record_id"])
+        self.assertEqual(stored["shared_tags"][0]["created_by_player_id"], "contact-1")
+        self.assertEqual(stored["tag_assignments"][0]["target_record_id"], "spell-1")
+        self.assertEqual(stored["game_state"]["people"]["person-1"]["equipment"]["focus"], "wand-instance")
+
 
 if __name__ == "__main__":
     unittest.main()

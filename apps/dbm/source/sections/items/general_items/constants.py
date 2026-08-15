@@ -2,6 +2,7 @@ GENERAL_ITEM_TYPES = (
     "Alchemical",
     "Broom",
     "Divination",
+    "Flyable",
     "Instrument",
     "Magical Artifact",
     "Muggle Item",

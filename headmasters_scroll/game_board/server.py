@@ -96,6 +96,18 @@ class TeachingOptionsBody(BaseModel):
     teacher_person_id: str = Field(min_length=1, max_length=100)
 
 
+class AdminRegionSearchOptionsBody(BaseModel):
+    session_id: str = Field(min_length=1, max_length=100)
+    person_id: str = Field(min_length=1, max_length=100)
+
+
+class AdminRegionSearchBody(AdminRegionSearchOptionsBody):
+    map_id: str = Field(min_length=1, max_length=120)
+    region_id: str = Field(min_length=1, max_length=120)
+    mode_id: str = Field(min_length=1, max_length=120)
+    extraction_method_id: str = Field(default="", max_length=120)
+
+
 class RequestResolutionBody(BaseModel):
     campaign_id: str = Field(min_length=1, max_length=100)
     decision: str = Field(min_length=1, max_length=20)
@@ -169,9 +181,20 @@ class BoardPersonActionBody(BaseModel):
     battle_name: str = Field(default="", max_length=200)
 
 
+class CharacterCurrencyAdjustmentBody(BaseModel):
+    session_id: str = Field(min_length=1, max_length=100)
+    change_knuts: int = Field(ge=-2_147_483_647, le=2_147_483_647)
+
+
 class MapVisibilityBody(BaseModel):
     session_id: str = Field(min_length=1, max_length=100)
     published: bool
+
+
+class SecretRevealBody(BaseModel):
+    session_id: str = Field(min_length=1, max_length=100)
+    map_id: str = Field(min_length=1, max_length=100)
+    revealed: bool
 
 
 class MapPresentationBody(BaseModel):
@@ -1024,8 +1047,8 @@ def create_apps(
             str(result.get("text") or "A creature interaction was resolved."),
             body.session_id, result,
         )
-        await runtime.broadcast_character_sheets(body.session_id)
         await runtime.broadcast_board(body.session_id)
+        await runtime.broadcast_character_sheets(body.session_id)
         await runtime.notify_admins()
         return result
 
@@ -1074,6 +1097,24 @@ def create_apps(
             text=body.text,
             battle_name=body.battle_name,
         )
+        await runtime.broadcast_board(body.session_id)
+        await runtime.broadcast_character_sheets(body.session_id)
+        await runtime.notify_admins()
+        return result
+
+    @admin_app.post(
+        "/api/admin/board/people/{person_id}/currency-adjustment",
+        dependencies=[Depends(admin_guard)],
+    )
+    async def adjust_character_currency(
+        person_id: str, body: CharacterCurrencyAdjustmentBody
+    ):
+        result = admin_result(
+            service.adjust_person_currency,
+            body.session_id,
+            person_id,
+            body.change_knuts,
+        )
         await runtime.broadcast_character_sheets(body.session_id)
         await runtime.notify_admins()
         return result
@@ -1091,6 +1132,25 @@ def create_apps(
         )
         for session in service.sessions_view():
             await runtime.broadcast_board(session["id"])
+        return result
+
+    @admin_app.put(
+        "/api/admin/board/secrets/{region_id}/visibility",
+        dependencies=[Depends(admin_guard)],
+    )
+    async def reveal_board_secret(
+        region_id: str,
+        body: SecretRevealBody,
+    ):
+        result = admin_result(
+            service.set_secret_revealed,
+            body.session_id,
+            body.map_id,
+            region_id,
+            body.revealed,
+        )
+        await runtime.broadcast_board(body.session_id)
+        await runtime.notify_admins()
         return result
 
     @admin_app.put(
@@ -1379,6 +1439,38 @@ def create_apps(
         )
 
     @admin_app.post(
+        "/api/admin/regions/search-options", dependencies=[Depends(admin_guard)]
+    )
+    async def admin_region_search_options(body: AdminRegionSearchOptionsBody):
+        return admin_result(
+            service.admin_region_search_options,
+            body.session_id,
+            body.person_id,
+        )
+
+    @admin_app.post(
+        "/api/admin/regions/search", dependencies=[Depends(admin_guard)]
+    )
+    async def admin_region_search(body: AdminRegionSearchBody):
+        result = admin_result(
+            service.admin_search_region,
+            body.session_id,
+            body.person_id,
+            body.map_id,
+            body.region_id,
+            body.mode_id,
+            body.extraction_method_id,
+        )
+        await runtime.chat(
+            "headmaster", "Headmaster", "headmaster",
+            result["text"], body.session_id, result,
+        )
+        await runtime.broadcast_board(body.session_id)
+        await runtime.broadcast_character_sheets(body.session_id)
+        await runtime.notify_admins()
+        return result
+
+    @admin_app.post(
         "/api/admin/requests/{request_id}/resolve",
         dependencies=[Depends(admin_guard)],
     )
@@ -1401,6 +1493,13 @@ def create_apps(
             if item.get("campaign_id") == body.campaign_id
         ), "")
         if session_id and body.decision == "approved":
+            roll = result.get("roll")
+            if isinstance(roll, dict):
+                await runtime.chat(
+                    "headmaster", "Headmaster", "headmaster",
+                    str(roll.get("text") or "A Flying check was made."),
+                    str(session_id), roll,
+                )
             await runtime.broadcast_character_sheets(str(session_id))
             await runtime.broadcast_board(str(session_id))
         await runtime.notify_admins()
@@ -1700,6 +1799,22 @@ def create_apps(
                             })
                             await runtime.notify_admins()
                         else:
+                            roll = result.get("roll")
+                            if isinstance(roll, dict):
+                                await runtime.chat(
+                                    connection.contact_id,
+                                    connection.name,
+                                    "player",
+                                    str(roll.get("text") or "A Flying check was made."),
+                                    connection.session_id,
+                                    roll,
+                                )
+                            await websocket.send_json({
+                                "v": 1,
+                                "type": "equipment_change_result",
+                                "result": result,
+                            })
+                            await runtime.broadcast_board(connection.session_id)
                             await runtime.broadcast_character_sheets(connection.session_id)
                     except (KeyError, PermissionError, RuntimeError, TypeError, ValueError) as error:
                         await websocket.send_json({"v": 1, "type": "server_error", "message": str(error)})
@@ -1727,6 +1842,84 @@ def create_apps(
                             str(message.get("name", ""))[:100],
                         )
                         await runtime.broadcast_character_sheets(connection.session_id)
+                    except (KeyError, PermissionError, RuntimeError, TypeError, ValueError) as error:
+                        await websocket.send_json({"v": 1, "type": "server_error", "message": str(error)})
+                elif message.get("type") == "region_interaction_request":
+                    try:
+                        snapshot = service.region_interaction_snapshot(
+                            connection.session_id, connection.contact_id,
+                            str(message.get("map_id", ""))[:120],
+                            str(message.get("region_id", ""))[:120],
+                        )
+                        await websocket.send_json({
+                            "v": 1, "type": "region_interaction_snapshot",
+                            "interaction": snapshot,
+                        })
+                    except (KeyError, PermissionError, RuntimeError, TypeError, ValueError) as error:
+                        await websocket.send_json({"v": 1, "type": "server_error", "message": str(error)})
+                elif message.get("type") in {"secret_gate_request", "region_search_request"}:
+                    now = time.monotonic()
+                    while connection.roll_events and connection.roll_events[0] <= now - 10:
+                        connection.roll_events.popleft()
+                    if len(connection.roll_events) >= 10:
+                        await websocket.send_json({
+                            "v": 1, "type": "server_error",
+                            "message": "Please wait a moment before searching again.",
+                        })
+                        continue
+                    connection.roll_events.append(now)
+                    try:
+                        if message.get("type") == "secret_gate_request":
+                            result = service.attempt_secret_gate(
+                                connection.session_id, connection.contact_id,
+                                str(message.get("map_id", ""))[:120],
+                                str(message.get("region_id", ""))[:120],
+                            )
+                        else:
+                            result = service.search_region(
+                                connection.session_id, connection.contact_id,
+                                str(message.get("map_id", ""))[:120],
+                                str(message.get("region_id", ""))[:120],
+                                str(message.get("mode_id", ""))[:120],
+                                str(message.get("extraction_method_id", ""))[:120],
+                            )
+                        await runtime.chat(
+                            connection.contact_id, connection.name, "player",
+                            result["text"], connection.session_id, result,
+                        )
+                        await websocket.send_json({
+                            "v": 1, "type": str(result.get("kind") or "region_search_result"),
+                            "result": result,
+                        })
+                        await runtime.broadcast_board(connection.session_id)
+                        await runtime.broadcast_character_sheets(connection.session_id)
+                    except (KeyError, PermissionError, RuntimeError, TypeError, ValueError) as error:
+                        await websocket.send_json({"v": 1, "type": "server_error", "message": str(error)})
+                elif message.get("type") == "shop_purchase_request":
+                    try:
+                        result = service.purchase_shop_listing(
+                            connection.session_id, connection.contact_id,
+                            str(message.get("map_id", ""))[:120],
+                            str(message.get("region_id", ""))[:120],
+                            str(message.get("listing_id", ""))[:120],
+                        )
+                        await runtime.chat(
+                            connection.contact_id, connection.name, "player",
+                            result["text"], connection.session_id, result,
+                        )
+                        await websocket.send_json({
+                            "v": 1, "type": "shop_purchase_result", "result": result,
+                        })
+                        await runtime.broadcast_character_sheets(connection.session_id)
+                        snapshot = service.region_interaction_snapshot(
+                            connection.session_id, connection.contact_id,
+                            str(message.get("map_id", ""))[:120],
+                            str(message.get("region_id", ""))[:120],
+                        )
+                        await websocket.send_json({
+                            "v": 1, "type": "region_interaction_snapshot",
+                            "interaction": snapshot,
+                        })
                     except (KeyError, PermissionError, RuntimeError, TypeError, ValueError) as error:
                         await websocket.send_json({"v": 1, "type": "server_error", "message": str(error)})
                 elif message.get("type") == "creature_interaction_request":

@@ -1,4 +1,9 @@
 from database.name_links import ensure_unique_record_name
+from shared.item_assets import normalize_item_image_reference
+from shared.bonus_records import (
+    normalize_bonus_record_values,
+    validate_bonus_record_values,
+)
 
 
 class HoldableItemController:
@@ -17,6 +22,8 @@ class HoldableItemController:
         return self.database.read(self.collection_name, record_id)
 
     def create_record(self, record_values):
+        record_values = self.normalize_record_values(record_values)
+        validate_bonus_record_values(record_values)
         ensure_unique_record_name(
             self.database.get_collection(self.collection_name),
             record_values.get("name", ""),
@@ -31,6 +38,8 @@ class HoldableItemController:
         return created_record
 
     def update_record(self, record_id, record_values):
+        record_values = self.normalize_record_values(record_values)
+        validate_bonus_record_values(record_values)
         if "name" in record_values:
             ensure_unique_record_name(
                 self.database.get_collection(self.collection_name),
@@ -56,6 +65,14 @@ class HoldableItemController:
         self.database.save()
 
         return deleted_record
+
+    def normalize_record_values(self, record_values):
+        normalized_values = normalize_bonus_record_values(record_values)
+        if "image_asset" in normalized_values:
+            normalized_values["image_asset"] = normalize_item_image_reference(
+                normalized_values.get("image_asset")
+            )
+        return normalized_values
 
     def record_sort_key(self, record):
         return (

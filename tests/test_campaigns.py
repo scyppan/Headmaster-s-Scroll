@@ -133,6 +133,23 @@ class CampaignTests(unittest.TestCase):
         self.assertEqual(stored["tag_assignments"][0]["target_record_id"], "spell-1")
         self.assertEqual(stored["game_state"]["people"]["person-1"]["equipment"]["focus"], "wand-instance")
 
+    def test_flyable_equipment_and_airborne_state_persist(self):
+        campaign = self.repository.save_campaign("Flying", "2000-01-01")
+
+        def mount(state):
+            person = state.setdefault("people", {}).setdefault("person-1", {})
+            person["equipment"] = {"flyable": "broom-instance"}
+            person["airborne"] = True
+
+        self.repository.update_game_state(campaign["record_id"], mount)
+        person = self.repository.get(campaign["record_id"])["game_state"]["people"]["person-1"]
+        self.assertEqual(person["equipment"]["flyable"], "broom-instance")
+        self.assertTrue(person["airborne"])
+        self.assertEqual(
+            set(person["equipment"]),
+            {"focus", "accessory_1", "accessory_2", "flyable"},
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

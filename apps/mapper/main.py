@@ -25,7 +25,11 @@ from headmasters_scroll.board import (
 from headmasters_scroll.assets import MAP_CANVAS_HEIGHT, MAP_CANVAS_WIDTH
 from headmasters_scroll.preferences import Preferences
 from headmasters_scroll.paths import RUNTIME_DIRECTORY
+from headmasters_scroll.store import SharedJsonStore
+from headmasters_scroll.region_interactions import ensure_gathering_catalog
 from headmasters_scroll.windowing import MAPPER_ICON, apply_window_icon, configure_windows_app_id, maximize_window
+from apps.mapper.catalog_cache import MapperCatalogCache, source_fingerprint
+from apps.mapper.region_content_dialog import RegionContentDialog
 
 
 BEHAVIOR_LABELS = {
@@ -33,6 +37,8 @@ BEHAVIOR_LABELS = {
     "shop": "Shop",
     "travel": "Travel",
     "library": "Library",
+    "secret": "Secret",
+    "storeroom": "Storeroom",
     "other": "Other",
 }
 BEHAVIOR_COLORS = {
@@ -40,6 +46,8 @@ BEHAVIOR_COLORS = {
     "shop": "#9a6b20",
     "travel": "#7b3f8c",
     "library": "#3f7853",
+    "secret": "#555555",
+    "storeroom": "#8a5c35",
     "other": "#765f45",
 }
 
@@ -150,6 +158,8 @@ class MapperWindow(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
         self.repository = WorldBoardRepository()
+        self.catalog_cache = MapperCatalogCache()
+        self.shared_store = SharedJsonStore()
         self.preferences_store = Preferences("mapper")
         self.preferences = self.preferences_store.load()
         self.world_session = None
@@ -178,6 +188,9 @@ class MapperWindow(tk.Tk):
         self.drag_state: dict | None = None
         self.pan_state: tuple[float, float, float, float] | None = None
         self.pan_watchdog_id: str | None = None
+        self._world_watch_after_id: str | None = None
+        self._known_world_fingerprint: dict[str, int] | None = None
+        self._closing = False
         self.map_image = None
         self.tk_map_image = None
         self.tk_map_image_size: tuple | None = None
@@ -201,6 +214,10 @@ class MapperWindow(tk.Tk):
         self._build()
         self.refresh()
         self.after_idle(lambda: maximize_window(self))
+        self._world_watch_after_id = self.after(
+            2000,
+            self.monitor_external_world_save,
+        )
 
     def _configure_style(self) -> None:
         style = ttk.Style(self)
@@ -374,7 +391,12 @@ class MapperWindow(tk.Tk):
         self.hover_text.edit_modified(False)
         self.target_frame = ttk.Frame(props)
         self.target_frame.pack(fill="x", pady=(6, 0))
-        ttk.Label(self.target_frame, text="Travel Destination", font=("Segoe UI", 9, "bold")).pack(anchor="w")
+        self.target_heading = ttk.Label(
+            self.target_frame,
+            text="Travel Destination",
+            font=("Segoe UI", 9, "bold"),
+        )
+        self.target_heading.pack(anchor="w")
         self.target_label = ttk.Label(self.target_frame, textvariable=self.region_target, wraplength=220)
         self.target_label.pack(fill="x")
         target_buttons = ttk.Frame(self.target_frame)
@@ -383,6 +405,28 @@ class MapperWindow(tk.Tk):
         ttk.Button(target_buttons, text="Clear", command=self.clear_destination).pack(side="left", padx=4)
         self.target_location_id = ""
         self.target_warp_point_id = ""
+        self.secret_skill = tk.StringVar(value="Perception")
+        self.secret_threshold = tk.StringVar(value="7")
+        self.secret_passage = tk.BooleanVar(value=False)
+        self.secret_frame = ttk.Frame(props)
+        ttk.Label(self.secret_frame, text="Secret gate", font=("Segoe UI", 9, "bold")).pack(anchor="w")
+        secret_fields = ttk.Frame(self.secret_frame)
+        secret_fields.pack(fill="x", pady=(3, 0))
+        ttk.Label(secret_fields, text="Raw skill").pack(side="left")
+        secret_skill_entry = ttk.Entry(secret_fields, textvariable=self.secret_skill, width=14)
+        secret_skill_entry.pack(side="left", padx=(4, 7), fill="x", expand=True)
+        ttk.Label(secret_fields, text="Threshold").pack(side="left")
+        secret_threshold_entry = ttk.Spinbox(secret_fields, textvariable=self.secret_threshold, from_=0, to=999, width=5)
+        secret_threshold_entry.pack(side="left", padx=(4, 0))
+        secret_skill_entry.bind("<FocusOut>", self.region_property_focus_out)
+        secret_threshold_entry.bind("<FocusOut>", self.region_property_focus_out)
+        ttk.Checkbutton(
+            self.secret_frame,
+            text="Secret passage",
+            variable=self.secret_passage,
+            command=self.secret_passage_changed,
+        ).pack(anchor="w", pady=(4, 0))
+        self.contents_button = ttk.Button(props, text="Searches & contents…", command=self.open_region_contents)
         self.region_help_label = ttk.Label(
             props,
             text="Changes save automatically. Tip: middle-drag pans; mouse wheel zooms at the cursor.",
@@ -391,12 +435,24 @@ class MapperWindow(tk.Tk):
         self.region_help_label.pack(anchor="w", pady=(12, 0))
 
     def close_window(self) -> None:
+        if self._closing:
+            return
+        self._closing = True
         self.region_property_focus_out()
         self.flush_metadata_save()
-        if self.confirm_discard():
-            self.remember_catalog_selection()
-            self.remember_right_panel_width()
-            self.destroy()
+        if not self.confirm_discard():
+            self._closing = False
+            return
+        if self._world_watch_after_id is not None:
+            try:
+                self.after_cancel(self._world_watch_after_id)
+            except tk.TclError:
+                pass
+            self._world_watch_after_id = None
+        self.finish_pan(focus_canvas=False)
+        self.remember_catalog_selection()
+        self.remember_right_panel_width()
+        self.destroy()
 
     @staticmethod
     def write_crash_log(details: str) -> Path:
@@ -466,10 +522,23 @@ class MapperWindow(tk.Tk):
 
     def refresh(self) -> None:
         try:
-            self.world_session = self.repository.load()
-            ensure_board_collections(self.world_session.data)
-            self.maps = list(self.world_session.data.get("maps", []))
-            self.locations = sorted(self.world_session.data.get("locations", []), key=lambda item: str(item.get("name", "")).casefold())
+            cached = self.catalog_cache.load()
+            if cached is None:
+                self.world_session = self.repository.load()
+                ensure_board_collections(self.world_session.data)
+                self.catalog_cache.write(self.world_session.data)
+                source = self.world_session.data
+                cache_status = "Index refreshed"
+            else:
+                # Browsing and map switching need only locations and maps.
+                # Delay the large conflict-aware edit session until the first
+                # committed edit instead of copying all people and events at
+                # every launch.
+                self.world_session = None
+                source = cached
+                cache_status = "Ready"
+            self.maps = list(source.get("maps", []))
+            self.locations = sorted(source.get("locations", []), key=lambda item: str(item.get("name", "")).casefold())
             self.location_options = {
                 f"{item.get('name', 'Unnamed')}  [{item.get('record_id')}]": str(item.get("record_id"))
                 for item in self.locations
@@ -483,13 +552,85 @@ class MapperWindow(tk.Tk):
                 # Keep the selected catalog role. A location default map can
                 # simultaneously be the primary map of one named floor.
                 self.load_map(record, self.selected_floor_id)
+            elif self.selected_map_id:
+                # An external edit may remove or detach the previously open
+                # map. Never leave its shapes or image displayed under the new
+                # catalog state.
+                self.clear_map_editor()
             selected = f"floor:{self.selected_location_id}:{self.selected_floor_id}" if self.selected_floor_id else f"location:{self.selected_location_id}"
             if self.selected_location_id and self.map_tree.exists(selected):
                 self.map_tree.selection_set(selected)
                 self.map_tree.see(selected)
-            self.status_value.set(f"{len(self.locations)} locations • {len(self.maps)} prepared maps")
+            self.status_value.set(
+                f"{cache_status} • {len(self.locations)} locations • "
+                f"{len(self.maps)} prepared maps"
+            )
+            self._known_world_fingerprint = source_fingerprint(
+                self.catalog_cache.source_path
+            )
         except Exception as error:
             messagebox.showerror("Mapper", str(error), parent=self)
+
+    def edit_session(self):
+        """Return one reusable conflict-aware session for this Mapper run."""
+
+        if self.world_session is None:
+            self.status_value.set("Preparing map editor…")
+            self.update_idletasks()
+            self.world_session = self.repository.load()
+            ensure_board_collections(self.world_session.data)
+        return self.world_session
+
+    def save_session(self, session) -> dict:
+        """Persist and refresh the disposable Mapper catalog cache."""
+
+        saved = self.repository.save(
+            session,
+            "mapper",
+            copy_result=False,
+        )
+        self.world_session = session
+        self.catalog_cache.write(saved)
+        self._known_world_fingerprint = source_fingerprint(
+            self.catalog_cache.source_path
+        )
+        return saved
+
+    def monitor_external_world_save(self) -> None:
+        """Refresh Mapper-owned records after another local app saves them."""
+
+        self._world_watch_after_id = None
+        if self._closing:
+            return
+        try:
+            current = source_fingerprint(self.catalog_cache.source_path)
+            if (
+                self._known_world_fingerprint is not None
+                and current != self._known_world_fingerprint
+            ):
+                if self.editor_dirty or self.draft_points or self.pending_image:
+                    self.status_value.set(
+                        "World data changed in another app • finish this edit, "
+                        "then reopen Mapper to refresh"
+                    )
+                else:
+                    selected_map_id = self.selected_map_id
+                    selected_location_id = self.selected_location_id
+                    selected_floor_id = self.selected_floor_id
+                    self.world_session = None
+                    self.selected_map_id = selected_map_id
+                    self.selected_location_id = selected_location_id
+                    self.selected_floor_id = selected_floor_id
+                    self.refresh()
+                    self.status_value.set("Mapper refreshed after an external save")
+        except (OSError, ValueError):
+            pass
+        finally:
+            if not self._closing:
+                self._world_watch_after_id = self.after(
+                    2000,
+                    self.monitor_external_world_save,
+                )
 
     def render_catalog(self) -> None:
         query = self.search_value.get().strip().casefold()
@@ -714,10 +855,10 @@ class MapperWindow(tk.Tk):
             self.has_floors_value.set(True)
             return
         try:
-            session = self.repository.load()
+            session = self.edit_session()
             stored = next(item for item in session.data["locations"] if str(item.get("record_id")) == self.selected_location_id)
             stored["has_floors"] = enabled
-            self.repository.save(session, "mapper")
+            self.save_session(session)
             location["has_floors"] = enabled
             self.render_catalog()
             selected = f"floor:{self.selected_location_id}:{self.selected_floor_id}" if self.selected_floor_id else f"location:{self.selected_location_id}"
@@ -896,7 +1037,7 @@ class MapperWindow(tk.Tk):
                 floor["sort_order"] = index
                 floor.setdefault("primary_map_id", "")
             try:
-                session = self.repository.load()
+                session = self.edit_session()
                 stored = next(
                     item for item in session.data["locations"]
                     if str(item.get("record_id")) == self.selected_location_id
@@ -929,7 +1070,7 @@ class MapperWindow(tk.Tk):
                     map_floor_id = str(map_record.get("floor_id", "") or "")
                     if map_floor_id in floor_ids:
                         map_record["name"] = map_name_for_floor(stored, map_floor_id)
-                saved = self.repository.save(session, "mapper")
+                saved = self.save_session(session)
                 self.locations = sorted(
                     saved.get("locations", []),
                     key=lambda item: str(item.get("name", "")).casefold(),
@@ -1055,14 +1196,14 @@ class MapperWindow(tk.Tk):
                 floor["sort_order"] = index
                 floor.setdefault("primary_map_id", "")
             try:
-                session = self.repository.load()
+                session = self.edit_session()
                 stored = next(
                     item for item in session.data["locations"]
                     if str(item.get("record_id")) == self.selected_location_id
                 )
                 stored["has_floors"] = True
                 stored["floors"] = floors
-                saved = self.repository.save(session, "mapper")
+                saved = self.save_session(session)
                 self.locations = sorted(
                     saved.get("locations", []),
                     key=lambda item: str(item.get("name", "")).casefold(),
@@ -1169,7 +1310,7 @@ class MapperWindow(tk.Tk):
         try:
             regions = [normalize_region(region) for region in self.regions]
             warp_points = [normalize_warp_point(point) for point in self.warp_points]
-            session = self.repository.load()
+            session = self.edit_session()
             record = next((item for item in session.data["maps"] if str(item.get("record_id")) == self.selected_map_id), None)
             now = utc_now()
             created_map = record is None
@@ -1218,7 +1359,7 @@ class MapperWindow(tk.Tk):
             for floor in location.get("floors", []) or []:
                 if str(floor.get("record_id")) == floor_id:
                     floor["primary_map_id"] = map_id
-            saved_document = self.repository.save(session, "mapper")
+            saved_document = self.save_session(session)
             if asset:
                 self.repository.assets.prune_map_variants(map_id, str(asset.get("file_extension", "")))
             self.world_session = session
@@ -1931,6 +2072,7 @@ class MapperWindow(tk.Tk):
             "name": f"Area {len(self.regions) + 1}",
             "type_label": "",
             "behavior_type": "area",
+            "secret_passage": False,
             "hover_text": "",
             "points": deepcopy(self.draft_points),
             "target_location_id": "",
@@ -1986,6 +2128,9 @@ class MapperWindow(tk.Tk):
                 self.hover_text.edit_modified(False)
                 self.target_location_id = str(region.get("target_location_id", ""))
                 self.target_warp_point_id = str(region.get("target_warp_point_id", ""))
+                self.secret_skill.set(str(region.get("secret_skill", "Perception") or "Perception"))
+                self.secret_threshold.set(str(int(region.get("secret_threshold", 7) or 0)))
+                self.secret_passage.set(bool(region.get("secret_passage", False)))
                 if self.region_tree.exists(region_id):
                     if self.region_tree.selection() != (region_id,):
                         self.updating_region_selection = True
@@ -2012,6 +2157,9 @@ class MapperWindow(tk.Tk):
                 self.hover_text.edit_modified(False)
             self.target_location_id = ""
             self.target_warp_point_id = ""
+            self.secret_skill.set("Perception")
+            self.secret_threshold.set("7")
+            self.secret_passage.set(False)
             if hasattr(self, "region_target"):
                 self.region_target.set("Not applicable")
         finally:
@@ -2057,10 +2205,22 @@ class MapperWindow(tk.Tk):
 
     def render_target_controls(self) -> None:
         behavior = next((key for key, label in BEHAVIOR_LABELS.items() if label == self.region_behavior.get()), "area")
-        if behavior != "travel":
+        self.secret_frame.pack_forget()
+        self.contents_button.pack_forget()
+        if behavior == "secret":
+            self.secret_frame.pack(fill="x", pady=(6, 0), before=self.region_help_label)
+        if behavior in {"secret", "library", "storeroom", "shop"}:
+            label = "Shop listings…" if behavior == "shop" else "Searches & contents…"
+            self.contents_button.configure(text=label)
+            self.contents_button.pack(fill="x", pady=(6, 0), before=self.region_help_label)
+        is_secret_passage = behavior == "secret" and self.secret_passage.get()
+        if behavior != "travel" and not is_secret_passage:
             self.target_frame.pack_forget()
             self.region_target.set("Not applicable")
             return
+        self.target_heading.configure(
+            text="Passage Destination" if is_secret_passage else "Travel Destination"
+        )
         self.target_frame.pack(fill="x", pady=(6, 0), before=self.region_help_label)
         target_map = next(
             (
@@ -2164,6 +2324,41 @@ class MapperWindow(tk.Tk):
         self.region_metadata_changed()
         self.flush_metadata_save()
 
+    def open_region_contents(self) -> None:
+        self.region_property_focus_out()
+        region = self.selected_region()
+        if region is None:
+            return
+        behavior = str(region.get("behavior_type", "") or "")
+        if behavior not in {"secret", "library", "storeroom", "shop"}:
+            return
+        database_session = self.shared_store.load("db.json")
+        database = database_session.data
+        if ensure_gathering_catalog(database):
+            outcome = self.shared_store.save(database_session, "mapper")
+            if not outcome.saved:
+                messagebox.showerror(
+                    "Database changed",
+                    "DBM changed the gathering catalog at the same time. Reload Mapper and try again.",
+                    parent=self,
+                )
+                return
+
+        def apply(updated: dict) -> None:
+            current = self.selected_region()
+            if current is None or current.get("record_id") != updated.get("record_id"):
+                return
+            self.record_history()
+            current.clear()
+            current.update(normalize_region(updated))
+            current["last_updated"] = utc_now()
+            self.editor_dirty = True
+            self.render_region_list()
+            self.select_region(str(current["record_id"]))
+            self.autosave_map("Region searches and contents")
+
+        RegionContentDialog(self, database, region, apply)
+
     def hover_text_changed(self, _event: tk.Event | None = None) -> None:
         if not self.hover_text.edit_modified():
             return
@@ -2177,6 +2372,11 @@ class MapperWindow(tk.Tk):
 
     def region_behavior_changed(self, _event: tk.Event | None = None) -> None:
         self.render_target_controls()
+
+    def secret_passage_changed(self) -> None:
+        self.render_target_controls()
+        self.region_metadata_changed()
+        self.flush_metadata_save()
 
     def region_property_focus_out(self, _event: tk.Event | None = None) -> None:
         """Commit region metadata only after the edited control loses focus."""
@@ -2196,12 +2396,34 @@ class MapperWindow(tk.Tk):
         behavior = next((key for key, label in BEHAVIOR_LABELS.items() if label == self.region_behavior.get()), "area")
         if behavior not in REGION_BEHAVIOR_TYPES:
             return
+        secret_threshold = 0
+        if behavior == "secret":
+            try:
+                secret_threshold = max(0, int(self.secret_threshold.get() or 0))
+            except (TypeError, ValueError):
+                secret_threshold = int(region.get("secret_threshold", 0) or 0)
+                self.secret_threshold.set(str(secret_threshold))
         changes = {
             "name": name,
             "behavior_type": behavior,
             "hover_text": self.hover_text.get("1.0", "end-1c").strip(),
-            "target_location_id": self.target_location_id if behavior == "travel" else "",
-            "target_warp_point_id": self.target_warp_point_id if behavior == "travel" else "",
+            "secret_passage": bool(self.secret_passage.get()) if behavior == "secret" else False,
+            "target_location_id": (
+                self.target_location_id
+                if behavior == "travel" or (behavior == "secret" and self.secret_passage.get())
+                else ""
+            ),
+            "target_warp_point_id": (
+                self.target_warp_point_id
+                if behavior == "travel" or (behavior == "secret" and self.secret_passage.get())
+                else ""
+            ),
+            "secret_skill": self.secret_skill.get().strip() if behavior == "secret" else "",
+            "secret_threshold": secret_threshold if behavior == "secret" else 0,
+            "search_modes": deepcopy(region.get("search_modes", [])) if behavior in {"secret", "library", "storeroom"} else [],
+            "contents": deepcopy(region.get("contents", [])) if behavior in {"secret", "library", "storeroom"} else [],
+            "shop_seed": str(region.get("shop_seed") or region.get("record_id")) if behavior == "shop" else "",
+            "shop_listings": deepcopy(region.get("shop_listings", [])) if behavior == "shop" else [],
         }
         if all(region.get(key, "") == value for key, value in changes.items()):
             return

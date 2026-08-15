@@ -101,7 +101,7 @@ class JsonDatabaseTests(unittest.TestCase):
                 for entry in person["name_details"]["entries"]
             ],
         )
-        self.assertEqual(29, old_database.data["_database"]["schema_version"])
+        self.assertEqual(36, old_database.data["_database"]["schema_version"])
         self.assertNotIn("sex", person)
         self.assertEqual([], person["spouse_relationships"])
         self.assertNotIn("image_url", person)
@@ -259,8 +259,8 @@ class JsonDatabaseTests(unittest.TestCase):
         old_database = JsonDatabase(old_database_path)
         old_database.load()
         person = old_database.read_person("legacy-person")
-        self.assertEqual(29, old_database.data["_database"]["schema_version"])
-        self.assertEqual("0.29.0", old_database.data["_database"]["database_version"])
+        self.assertEqual(36, old_database.data["_database"]["schema_version"])
+        self.assertEqual("0.36.0", old_database.data["_database"]["database_version"])
         self.assertNotIn("sex", person)
         self.assertTrue(person["can_give_birth"])
 

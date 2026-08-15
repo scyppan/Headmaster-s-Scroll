@@ -15,6 +15,7 @@ from headmasters_scroll.board import (
     WorldBoardRepository,
     active_faction_ids,
     normalize_map,
+    normalize_region,
     validate_world_board,
 )
 from headmasters_scroll.store import SharedJsonStore
@@ -144,6 +145,20 @@ class BoardFoundationTests(unittest.TestCase):
         actor = next(item for item in snapshot["actors"] if item["actor_id"] == "pc-1")
         self.assertEqual(actor["faction_name"], "Unknown")
 
+    def test_faction_events_accept_world_builder_and_display_clock_formats(self):
+        document = world_document()
+        document["events"][0]["time"] = "0800"
+        document["events"][1]["date"] = "2000-01-01"
+        document["events"][1]["time"] = "08:30"
+        self.assertEqual(
+            active_faction_ids(document, "pc-1", "2000-01-01T08:15"),
+            ["house-red"],
+        )
+        self.assertEqual(
+            active_faction_ids(document, "pc-1", "2000-01-01T08:45"),
+            [],
+        )
+
     def test_player_snapshot_requires_explicit_reveal_and_hides_npc_identity(self):
         concealed = self.repository.snapshot(
             "2000-06-01T12:00",
@@ -220,6 +235,73 @@ class BoardFoundationTests(unittest.TestCase):
         self.assertEqual(public_region["name"], "Gringotts")
         self.assertEqual(public_region["hover_text"], region["hover_text"])
         self.assertNotIn("type_label", public_region)
+
+    def test_revealed_secret_passage_becomes_player_travel_region(self):
+        document = world_document()
+        document["maps"][0]["players_published"] = True
+        document["maps"][0]["regions"] = [normalize_region({
+            "record_id": "secret-door",
+            "name": "Hidden Stair",
+            "type_label": "",
+            "behavior_type": "secret",
+            "secret_passage": True,
+            "secret_skill": "Perception",
+            "secret_threshold": 12,
+            "players_visible": False,
+            "hover_text": "A narrow stair descends behind the wall.",
+            "points": [
+                {"x": 0.1, "y": 0.1},
+                {"x": 0.3, "y": 0.1},
+                {"x": 0.2, "y": 0.3},
+            ],
+            "target_location_id": "castle",
+            "target_warp_point_id": "",
+            "_secret_revealed": True,
+        })]
+        snapshot = self.repository.snapshot(
+            "2000-06-01T12:00",
+            player_character_ids=["pc-1"],
+            for_players=True,
+            document_override=document,
+        )
+        passage = snapshot["maps"][0]["regions"][0]
+        self.assertEqual(passage["name"], "Hidden Stair")
+        self.assertEqual(passage["behavior_type"], "travel")
+        self.assertEqual(passage["interaction"], "travel")
+        self.assertEqual(passage["target_map_id"], "map-1")
+
+    def test_unfound_secret_does_not_leak_identity_or_destination(self):
+        document = world_document()
+        document["maps"][0]["players_published"] = True
+        document["maps"][0]["regions"] = [normalize_region({
+            "record_id": "secret-door",
+            "name": "Hidden Stair",
+            "type_label": "",
+            "behavior_type": "secret",
+            "secret_passage": True,
+            "secret_skill": "Perception",
+            "secret_threshold": 12,
+            "players_visible": True,
+            "hover_text": "A narrow stair descends behind the wall.",
+            "points": [
+                {"x": 0.1, "y": 0.1},
+                {"x": 0.3, "y": 0.1},
+                {"x": 0.2, "y": 0.3},
+            ],
+            "target_location_id": "castle",
+            "target_warp_point_id": "",
+        })]
+        snapshot = self.repository.snapshot(
+            "2000-06-01T12:00",
+            player_character_ids=["pc-1"],
+            for_players=True,
+            document_override=document,
+        )
+        secret = snapshot["maps"][0]["regions"][0]
+        self.assertEqual(secret["name"], "Search")
+        self.assertEqual(secret["behavior_type"], "secret")
+        self.assertEqual(secret["interaction"], "secret_gate")
+        self.assertEqual(secret["target_map_id"], "")
 
     def test_confirmed_obscurations_are_public_opaque_geometry_but_preview_settings_are_private(self):
         shape = {

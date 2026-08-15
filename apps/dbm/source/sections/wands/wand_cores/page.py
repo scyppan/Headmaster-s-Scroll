@@ -211,14 +211,36 @@ class WandCoresPage(tk.Frame):
                     parent=self,
                 )
                 return False
+            if not bonus.get("target"):
+                messagebox.showerror(
+                    "Bonus selection required",
+                    "Every bonus must select a value from its category.",
+                    parent=self,
+                )
+                return False
+            if bonus.get("amount") is None:
+                messagebox.showerror(
+                    "Bonus amount required",
+                    "Every bonus must have a whole-number amount.",
+                    parent=self,
+                )
+                return False
 
-        if self.current_record_id is None:
-            saved_record = self.controller.create_record(record_values)
-        else:
-            saved_record = self.controller.update_record(
-                self.current_record_id,
-                record_values,
+        try:
+            if self.current_record_id is None:
+                saved_record = self.controller.create_record(record_values)
+            else:
+                saved_record = self.controller.update_record(
+                    self.current_record_id,
+                    record_values,
+                )
+        except (TypeError, ValueError) as error:
+            messagebox.showerror(
+                "Cannot save wand core",
+                str(error),
+                parent=self,
             )
+            return False
 
         self.current_record_id = saved_record["record_id"]
         self.refresh_records(self.current_record_id)

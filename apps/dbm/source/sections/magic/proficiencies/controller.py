@@ -1,5 +1,7 @@
 from copy import deepcopy
 
+from headmasters_scroll.effects import TARGET_SCOPES, normalize_target_scope
+
 from sections.magic.proficiencies.constants import (
     PROFICIENCY_SKILLS,
     PROFICIENCY_SKILLS_BY_NORMALIZED_NAME,
@@ -20,6 +22,7 @@ class ProficiencyController:
         "name",
         "tradition",
         "skill",
+        "target_scope",
         "description",
         "history",
         "dbnotes",
@@ -43,6 +46,7 @@ class ProficiencyController:
             "tradition": "",
             "skill": "",
             "threshold": None,
+            "target_scope": "none",
             "required_materials": [],
             "description": "",
             "history": "",
@@ -95,6 +99,11 @@ class ProficiencyController:
 
     def normalize_record_values(self, record_values):
         normalized_values = deepcopy(record_values)
+
+        if "target_scope" in normalized_values:
+            normalized_values["target_scope"] = normalize_target_scope(
+                normalized_values.get("target_scope")
+            )
 
         for field_name in self.text_fields:
             if field_name in normalized_values:
@@ -185,6 +194,9 @@ class ProficiencyController:
     def validate_record_values(self, record_values):
         if not record_values.get("name", "").strip():
             raise ValueError("A proficiency must have a name.")
+
+        if record_values.get("target_scope", "none") not in TARGET_SCOPES:
+            raise ValueError("A proficiency must define a valid target.")
 
         skill = record_values.get("skill", "")
 

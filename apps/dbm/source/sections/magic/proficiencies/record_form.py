@@ -11,7 +11,12 @@ from sections.nature_and_alchemy.creatures.form_fields import (
     LabeledEntry,
 )
 from sections.nature_and_alchemy.creatures.tag_editor import TagEditor
-from shared.widgets import MultilineField, RoundedSelect, SoftButton
+from shared.widgets import (
+    MultilineField,
+    RoundedSelect,
+    SoftButton,
+    TargetScopeField,
+)
 from theme import SURFACE, TEXT_DARK, TEXT_MUTED, app_font
 
 
@@ -208,7 +213,18 @@ class ProficiencyForm(tk.Frame):
         self.threshold_field.grid(
             row=1,
             column=2,
-            columnspan=2,
+            sticky="ew",
+            padx=(10, 0),
+            pady=(0, 12),
+        )
+
+        self.target_scope_field = TargetScopeField(
+            self.overview_view,
+            self.handle_field_change,
+        )
+        self.target_scope_field.grid(
+            row=1,
+            column=3,
             sticky="ew",
             padx=(10, 0),
             pady=(0, 12),
@@ -304,6 +320,7 @@ class ProficiencyForm(tk.Frame):
         self.tradition_field.set_value(record.get("tradition", ""))
         self.skill_field.set_value(record.get("skill", ""))
         self.threshold_field.set_value(record.get("threshold"))
+        self.target_scope_field.set_value(record.get("target_scope", "none"))
         self.description_field.set_value(record.get("description", ""))
         self.tags_editor.set_tags(record.get("tags", []))
         self.required_materials_editor.set_materials(
@@ -331,6 +348,7 @@ class ProficiencyForm(tk.Frame):
             "tradition": self.tradition_field.get_value(),
             "skill": self.skill_field.get_value(),
             "threshold": self.threshold_field.get_value(),
+            "target_scope": self.target_scope_field.get_value(),
             "required_materials": (
                 self.required_materials_editor.get_materials()
             ),

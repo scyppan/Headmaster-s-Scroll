@@ -1,7 +1,13 @@
 import tkinter as tk
 
 from runtime_theme import bind_theme
-from shared.widgets import MultilineField, RoundedEntry, RoundedSelect, RoundedText
+from shared.widgets import (
+    ItemImageAssetField,
+    MultilineField,
+    RoundedEntry,
+    RoundedSelect,
+    RoundedText,
+)
 from theme import SURFACE, TEXT_DARK, TEXT_MUTED, app_font
 
 
@@ -73,14 +79,14 @@ class WandForm(tk.Frame):
             sticky="ew",
             pady=(14, 0),
         )
-        self.name_panel.grid_columnconfigure(0, weight=1)
+        self.name_panel.grid_columnconfigure(1, weight=1)
         bind_theme(self.name_panel, background="SURFACE")
 
         self.name_label = self.create_label(
             self.name_panel,
             "Generated Name",
         )
-        self.name_label.grid(row=0, column=0, sticky="ew")
+        self.name_label.grid(row=0, column=1, sticky="ew", padx=(10, 0))
 
         self.name_display = RoundedText(
             self.name_panel,
@@ -88,7 +94,7 @@ class WandForm(tk.Frame):
             height=2,
             font=app_font(11),
         )
-        self.name_display.grid(row=1, column=0, sticky="ew")
+        self.name_display.grid(row=1, column=1, sticky="ew", padx=(10, 0))
         self.name_display.scrollbar.grid_remove()
         self.name_display.text.configure(
             state="disabled",
@@ -109,7 +115,7 @@ class WandForm(tk.Frame):
         )
         self.last_updated_label.grid(
             row=2,
-            column=0,
+            column=1,
             sticky="ew",
             pady=(8, 0),
         )
@@ -117,6 +123,17 @@ class WandForm(tk.Frame):
             self.last_updated_label,
             background="SURFACE",
             foreground="TEXT_MUTED",
+        )
+
+        self.image_asset_field = ItemImageAssetField(
+            self.name_panel,
+            change_command=self.handle_field_change,
+        )
+        self.image_asset_field.grid(
+            row=0,
+            column=0,
+            rowspan=3,
+            sticky="nw",
         )
 
         self.pricing_panel = tk.Frame(self, bg=SURFACE)
@@ -302,6 +319,7 @@ class WandForm(tk.Frame):
         self.wood_value.set(record.get("wood_name", ""))
         self.quality_value.set(record.get("quality_name", ""))
         self.dbnotes_field.set_value(record.get("dbnotes", ""))
+        self.image_asset_field.set_value(record.get("image_asset", ""))
 
         last_updated = record.get("last_updated", "")
         display_date = (
@@ -325,6 +343,7 @@ class WandForm(tk.Frame):
             "wood_name": self.wood_value.get().strip(),
             "quality_name": self.quality_value.get().strip(),
             "dbnotes": self.dbnotes_field.get_value(),
+            "image_asset": self.image_asset_field.get_value(),
         }
 
     def refresh_preview(self):

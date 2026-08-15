@@ -108,6 +108,12 @@ from mage_maker.sections.books.models import (
     normalize_book_record,
     normalize_book_records,
 )
+from mage_maker.core.world_index import (
+    WorldIndexCache,
+    people_list_summary,
+    read_indexed_record,
+    scan_record_locations,
+)
 
 
 class JsonDatabase:
@@ -124,13 +130,67 @@ class JsonDatabase:
         shared_directory = os.environ.get("HEADMASTERS_SCROLL_DATA_DIRECTORY")
         self.shared_store = None
         self.shared_session = None
+        self.world_index = WorldIndexCache(self.database_path)
+        self.preferences_path = (
+            self.world_index.cache_path.parent / "preferences.json"
+        )
+        self.preferences = self.load_preferences()
+        self.record_indexes = {}
+        self.index_dirty = False
+        self.change_subscribers = []
         if shared_directory and self.database_path.resolve() == (Path(shared_directory) / "world.json").resolve():
             self.shared_store = SharedJsonStore()
 
-    def load(self):
+    def load_preferences(self):
+        try:
+            with self.preferences_path.open("r", encoding="utf-8") as stream:
+                values = json.load(stream)
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            return {}
+        return values if isinstance(values, dict) else {}
+
+    def get_preference(self, key, default=None):
+        return deepcopy(self.preferences.get(str(key or ""), default))
+
+    def set_preference(self, key, value):
+        normalized_key = str(key or "").strip()
+        if not normalized_key:
+            return False
+        if self.preferences.get(normalized_key) == value:
+            return False
+        self.preferences[normalized_key] = deepcopy(value)
+        self.preferences_path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = self.preferences_path.with_name(
+            f".{self.preferences_path.name}.{uuid.uuid4().hex}.tmp"
+        )
+        try:
+            with temporary.open(
+                "w",
+                encoding="utf-8",
+                newline="\n",
+            ) as stream:
+                json.dump(
+                    self.preferences,
+                    stream,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                )
+                stream.write("\n")
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temporary, self.preferences_path)
+        finally:
+            temporary.unlink(missing_ok=True)
+        return True
+
+    def load(self, rebuild_index=True):
+        cached_index_is_current = self.world_index.load()
         if self.shared_store:
             self.shared_session = self.shared_store.load("world.json")
-            loaded_data = deepcopy(self.shared_session.data)
+            # DataSession already owns an isolated working copy. A third
+            # whole-world deepcopy here added memory and latency without
+            # providing any additional isolation.
+            loaded_data = self.shared_session.data
         else:
             with self.database_path.open("r", encoding="utf-8") as database_file:
                 loaded_data = json.load(database_file)
@@ -141,6 +201,196 @@ class JsonDatabase:
         self.data = loaded_data
         self.dirty = migrated or collections_added
         self.revision += 1
+        self.rebuild_record_indexes()
+        if not cached_index_is_current and rebuild_index:
+            self.rebuild_world_index()
+        elif not cached_index_is_current:
+            self.index_dirty = True
+
+    def rebuild_record_indexes(self):
+        indexes = {}
+        for collection_name, records in self.data.items():
+            if not isinstance(records, list):
+                continue
+            collection_index = {}
+            for record in records:
+                if not isinstance(record, dict):
+                    continue
+                record_id = str(
+                    record.get("record_id")
+                    or record.get("event_id")
+                    or record.get("reading_id")
+                    or ""
+                ).strip()
+                if record_id:
+                    collection_index[record_id] = record
+            indexes[collection_name] = collection_index
+        self.record_indexes = indexes
+        return indexes
+
+    def rebuild_world_index(self):
+        try:
+            locations = scan_record_locations(self.database_path)
+            self.world_index.build(self.data, locations)
+            self.world_index.write()
+            self.index_dirty = False
+            return True
+        except (OSError, TypeError, ValueError, json.JSONDecodeError):
+            # A disposable cache must never prevent canonical data opening.
+            self.world_index.build(self.data)
+            self.index_dirty = True
+            return False
+
+    def list_people_list_summaries(self):
+        if not self.index_dirty and self.world_index.is_current():
+            return self.world_index.people_summaries()
+        return [
+            people_list_summary(person)
+            for person in self.data.get("people", [])
+            if isinstance(person, dict)
+        ]
+
+    def list_summaries(
+        self,
+        collection_name,
+        query="",
+        filters=None,
+        page=0,
+        page_size=100,
+    ):
+        if not self.index_dirty and self.world_index.is_current():
+            summaries = self.world_index.summaries(collection_name)
+        else:
+            summaries = [
+                people_list_summary(record)
+                if collection_name == "people"
+                else {
+                    "record_id": str(
+                        record.get("record_id")
+                        or record.get("event_id")
+                        or record.get("reading_id")
+                        or ""
+                    ),
+                    "name": str(
+                        record.get("name")
+                        or record.get("title")
+                        or record.get("displayed_name")
+                        or ""
+                    ),
+                    "_search_text": " ".join(
+                        str(value or "")
+                        for value in record.values()
+                        if isinstance(value, (str, int, float))
+                    ).casefold(),
+                }
+                for record in self.data.get(collection_name, [])
+                if isinstance(record, dict)
+            ]
+        normalized_query = str(query or "").strip().casefold()
+        if normalized_query:
+            summaries = [
+                summary
+                for summary in summaries
+                if normalized_query in str(
+                    summary.get("_search_text", "")
+                ).casefold()
+            ]
+        for field, expected in (filters or {}).items():
+            summaries = [
+                summary
+                for summary in summaries
+                if summary.get(field) == expected
+            ]
+        start = max(0, int(page or 0)) * max(1, int(page_size or 100))
+        return summaries[start : start + max(1, int(page_size or 100))]
+
+    def get_record(self, collection_name, record_id):
+        if not self.index_dirty and self.world_index.is_current():
+            indexed = read_indexed_record(
+                self.database_path,
+                self.world_index.payload,
+                collection_name,
+                record_id,
+            )
+            if indexed is not None:
+                return indexed
+        record = self.record_indexes.get(collection_name, {}).get(
+            str(record_id or "")
+        )
+        return deepcopy(record) if record is not None else None
+
+    def get_linked_records(self, collection_name, record_id, relationship):
+        if collection_name != "events":
+            return []
+        return [
+            record
+            for linked_id in self.linked_event_ids(relationship, record_id)
+            if (
+                record := self.get_record("events", linked_id)
+            ) is not None
+        ]
+
+    def begin_edit(self, collection_name, record_id):
+        record = self.get_record(collection_name, record_id)
+        if record is None:
+            raise KeyError(
+                f"Unknown {collection_name} record_id: {record_id}"
+            )
+        return {
+            "collection": str(collection_name),
+            "record_id": str(record_id),
+            "base_revision": self.revision,
+            "base_record": record,
+            "pending_changes": {},
+        }
+
+    def commit(self, edit_session):
+        if not isinstance(edit_session, dict):
+            raise TypeError("An edit session must be a dictionary.")
+        collection_name = str(edit_session.get("collection", ""))
+        record_id = str(edit_session.get("record_id", ""))
+        base_record = edit_session.get("base_record", {})
+        pending = edit_session.get("pending_changes", {})
+        if not isinstance(base_record, dict) or not isinstance(pending, dict):
+            raise TypeError("An edit session has invalid record changes.")
+        current = self.get_record(collection_name, record_id)
+        if current is None:
+            raise KeyError(
+                f"Unknown {collection_name} record_id: {record_id}"
+            )
+        conflicts = [
+            field
+            for field, app_value in pending.items()
+            if current.get(field) != base_record.get(field)
+            and app_value != current.get(field)
+        ]
+        if conflicts:
+            raise RuntimeError(
+                "Overlapping edits require review: "
+                + ", ".join(sorted(conflicts))
+            )
+        if collection_name == "people":
+            saved = self.update_person(record_id, pending)
+        else:
+            saved = self.update_record(collection_name, record_id, pending)
+        self.save()
+        return saved
+
+    def linked_event_ids(self, relationship, record_id):
+        return self.world_index.linked_event_ids(relationship, record_id)
+
+    def subscribe(self, callback):
+        if callable(callback) and callback not in self.change_subscribers:
+            self.change_subscribers.append(callback)
+
+    def notify_changed(self, collection_name, record_ids=()):
+        normalized_ids = tuple(
+            str(record_id or "").strip()
+            for record_id in record_ids
+            if str(record_id or "").strip()
+        )
+        for callback in tuple(self.change_subscribers):
+            callback(str(collection_name or ""), normalized_ids, self.revision)
 
     def ensure_application_collections(self, database_data):
         changed = False
@@ -360,6 +610,14 @@ class JsonDatabase:
         if not isinstance(schema_version, int) or schema_version > 36:
             return False
 
+        # Schema 36 is the current canonical format.  This branch used to run
+        # a repair/normalization pass on every launch, including clean files.
+        # Besides marking the database dirty, that caused millions of repeated
+        # cross-event calls.  Repairs belong to a versioned migration, not the
+        # steady-state load path.
+        if schema_version == 36:
+            return False
+
         if schema_version == 36:
             stored_events = database_data.get("events", [])
             stored_organizations = database_data.get("organizations", [])
@@ -367,9 +625,60 @@ class JsonDatabase:
             stored_books = database_data.get("books", [])
             stored_book_readings = database_data.get("book_readings", [])
             normalized_events = normalize_world_events(stored_events)
+            repaired_organizations = []
+
+            for organization in stored_organizations:
+                repaired = deepcopy(organization)
+                founding = normalize_organization_events(
+                    repaired.get("events", [])
+                )[0]
+
+                if repaired.get("is_faction") and founding["year"] is None:
+                    organization_id = str(
+                        repaired.get("record_id", "") or ""
+                    ).strip()
+                    joined_event = next(
+                        (
+                            event
+                            for event in normalized_events
+                            if event.get("event_type") == "joined_faction"
+                            and str(
+                                event.get("organization_id", "") or ""
+                            ).strip()
+                            == organization_id
+                        ),
+                        None,
+                    )
+                    founding_date = str(
+                        (joined_event or {}).get("date", "") or "1"
+                    ).strip()
+                    founding_year = int(
+                        split_world_event_date(founding_date)[0]
+                    )
+                    repaired.setdefault("events", []).insert(
+                        0,
+                        {
+                            "record_id": "organization-founding",
+                            "event_type": "founding",
+                            "title": "Founding",
+                            "date": founding_date,
+                            "time": "",
+                            "year": founding_year,
+                            "description": "",
+                            "person_ids": [],
+                            "item_ids": [],
+                            "item_link_types": {},
+                            "item_new_owners": {},
+                            "eminence_person_ids": [],
+                            "eminence_skills": {},
+                        },
+                    )
+
+                repaired_organizations.append(repaired)
+
             normalized_organizations = [
                 normalize_organization_record(organization)
-                for organization in stored_organizations
+                for organization in repaired_organizations
             ]
             normalized_locations = [
                 normalize_location_record(location)
@@ -2633,11 +2942,10 @@ class JsonDatabase:
         return deepcopy(self.data["people"])
 
     def read_person(self, record_id):
-        for person in self.data["people"]:
-            if person.get("record_id") == record_id:
-                return deepcopy(person)
-
-        return None
+        person = self.record_indexes.get("people", {}).get(
+            str(record_id or "")
+        )
+        return deepcopy(person) if person is not None else None
 
     def create_person(self, values):
         if not isinstance(values, dict):
@@ -2729,6 +3037,11 @@ class JsonDatabase:
         self.data["people"].append(person)
         self.dirty = True
         self.revision += 1
+        self.record_indexes.setdefault("people", {})[
+            person["record_id"]
+        ] = person
+        self.index_dirty = True
+        self.notify_changed("people", (person["record_id"],))
 
         return deepcopy(person)
 
@@ -2849,6 +3162,8 @@ class JsonDatabase:
             person["last_updated"] = datetime.now(timezone.utc).isoformat()
             self.dirty = True
             self.revision += 1
+            self.index_dirty = True
+            self.notify_changed("people", (record_id,))
 
             return deepcopy(person)
 
@@ -3221,6 +3536,12 @@ class JsonDatabase:
 
             self.dirty = True
             self.revision += 1
+            self.rebuild_record_indexes()
+            self.index_dirty = True
+            self.notify_changed(
+                "people",
+                (record_id,),
+            )
 
             return deepcopy(deleted_person)
 
@@ -3228,12 +3549,16 @@ class JsonDatabase:
 
     def list_records(self, collection_name):
         if collection_name not in (
+            "people",
             "locations",
             "organizations",
             "events",
             "items",
             "books",
             "book_readings",
+            "maps",
+            "board_groups",
+            "named_creatures",
         ):
             raise KeyError(f"Unknown application collection: {collection_name}")
 
@@ -3241,22 +3566,25 @@ class JsonDatabase:
 
     def read_record(self, collection_name, record_id):
         if collection_name not in (
+            "people",
             "locations",
             "organizations",
             "events",
             "items",
             "books",
             "book_readings",
+            "maps",
+            "board_groups",
+            "named_creatures",
         ):
             raise KeyError(
                 f"Unknown application collection: {collection_name}"
             )
 
-        for record in self.data[collection_name]:
-            if record.get("record_id") == record_id:
-                return deepcopy(record)
-
-        return None
+        record = self.record_indexes.get(collection_name, {}).get(
+            str(record_id or "")
+        )
+        return deepcopy(record) if record is not None else None
 
     def create_record(self, collection_name, values):
         if not isinstance(values, dict):
@@ -3276,6 +3604,11 @@ class JsonDatabase:
         self.data[collection_name].append(record)
         self.dirty = True
         self.revision += 1
+        self.record_indexes.setdefault(collection_name, {})[
+            record["record_id"]
+        ] = record
+        self.index_dirty = True
+        self.notify_changed(collection_name, (record["record_id"],))
         return deepcopy(record)
 
     def update_record(self, collection_name, record_id, values):
@@ -3293,6 +3626,8 @@ class JsonDatabase:
             record["last_updated"] = datetime.now(timezone.utc).isoformat()
             self.dirty = True
             self.revision += 1
+            self.index_dirty = True
+            self.notify_changed(collection_name, (record_id,))
             return deepcopy(record)
 
         raise KeyError(f"Unknown {collection_name} record_id: {record_id}")
@@ -3305,6 +3640,12 @@ class JsonDatabase:
             deleted_record = self.data[collection_name].pop(index)
             self.dirty = True
             self.revision += 1
+            self.record_indexes.get(collection_name, {}).pop(
+                record_id,
+                None,
+            )
+            self.index_dirty = True
+            self.notify_changed(collection_name, (record_id,))
             return deepcopy(deleted_record)
 
         raise KeyError(f"Unknown {collection_name} record_id: {record_id}")
@@ -3439,15 +3780,17 @@ class JsonDatabase:
             self.data["_database"]["last_saved"] = datetime.now(
                 timezone.utc
             ).isoformat()
-            self.shared_session.data = deepcopy(self.data)
+            self.shared_session.data = self.data
             outcome = self.shared_store.save(self.shared_session, "world-builder")
             if not outcome.saved:
                 raise RuntimeError(
                     "World Builder found overlapping changes in the shared world data. "
                     "Reload World Builder before saving this record."
                 )
-            self.data = deepcopy(self.shared_session.data)
+            self.data = self.shared_session.data
             self.dirty = False
+            self.rebuild_record_indexes()
+            self.rebuild_world_index()
             return
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -3473,3 +3816,5 @@ class JsonDatabase:
         os.replace(temporary_path, self.database_path)
         self.prune_backups()
         self.dirty = False
+        self.rebuild_record_indexes()
+        self.rebuild_world_index()

@@ -3,10 +3,12 @@ import sys
 import tkinter as tk
 import traceback
 from pathlib import Path
+from threading import Thread
 from tkinter import messagebox
 
 from mage_maker.core.controller import PeopleController
 from mage_maker.core.database import JsonDatabase
+from mage_maker.core.world_index import source_fingerprint
 from mage_maker.core.game_database import GameDatabase, GameDatabaseError
 from mage_maker.sections.events.controller import EventController
 from mage_maker.sections.locations.controller import LocationController
@@ -88,7 +90,9 @@ class MageMakerApp(tk.Tk):
             pass
 
         self.database = JsonDatabase(resolved_database_path)
-        self.database.load()
+        # A missing/stale disposable index must not keep the application shell
+        # from appearing.  The app starts its rebuild after the UI exists.
+        self.database.load(rebuild_index=False)
         self.game_database = GameDatabase(resolved_game_database_directory)
 
         try:
@@ -147,6 +151,8 @@ class MageMakerApp(tk.Tk):
         )
         self.status_value = tk.StringVar(value="Ready")
         self.pages = {}
+        self.page_refresh_revisions = {}
+        self.invalidated_pages = set()
         self.navigation_buttons = {}
         self.active_page_name = "mages"
         self.navigation_history = []
@@ -154,6 +160,22 @@ class MageMakerApp(tk.Tk):
         self.region_lock_id = self.saved_region_lock_id()
         self.organization_lock_id = self.saved_organization_lock_id()
         self.content = None
+        self._closing = False
+        self._close_save_running = False
+        self._close_save_error = None
+        self._close_save_thread = None
+        self._cross_page_refresh_after_id = None
+        self._world_watch_after_id = None
+        self._external_reload_thread = None
+        self._external_reload_database = None
+        self._external_reload_error = None
+        self._index_rebuild_thread = None
+        self._index_rebuild_error = None
+        self._index_widget_states = []
+        self._observed_world_fingerprint = source_fingerprint(
+            self.database.database_path
+        )
+        self.database.subscribe(self.database_changed)
         self.grid_rowconfigure(1, weight=1)
         self.grid_columnconfigure(0, weight=1)
         self.build_header()
@@ -180,9 +202,88 @@ class MageMakerApp(tk.Tk):
                     continue
 
         self.protocol("WM_DELETE_WINDOW", self.close_application)
+        if self.database.index_dirty:
+            self.after_idle(self.start_background_index_rebuild)
+        self._world_watch_after_id = self.after(
+            2000,
+            self.monitor_external_world_save,
+        )
 
         if self.game_database.error:
             self.set_status(self.game_database.error)
+
+    def start_background_index_rebuild(self):
+        if self._closing or self._index_rebuild_thread is not None:
+            return
+        self._index_rebuild_error = None
+        self.set_status("Indexing world data... editing will unlock when ready")
+        for button in self.navigation_buttons.values():
+            button.set_enabled(False)
+        self.set_index_editing_enabled(False)
+        self._index_rebuild_thread = Thread(
+            target=self.rebuild_index_worker,
+            name="world-builder-index-rebuild",
+            daemon=True,
+        )
+        self._index_rebuild_thread.start()
+        self.after(50, self.poll_background_index_rebuild)
+
+    def rebuild_index_worker(self):
+        try:
+            self.database.rebuild_world_index()
+        except Exception as error:
+            self._index_rebuild_error = error
+
+    def poll_background_index_rebuild(self):
+        worker = self._index_rebuild_thread
+        if worker is not None and worker.is_alive():
+            self.after(50, self.poll_background_index_rebuild)
+            return
+        self._index_rebuild_thread = None
+        if self._closing:
+            self.finish_close()
+            return
+        for button in self.navigation_buttons.values():
+            button.set_enabled(True)
+        self.set_index_editing_enabled(True)
+        if self._index_rebuild_error is None and not self.database.index_dirty:
+            self.set_status("World index ready")
+            self.invalidated_pages.add("mages")
+            self.refresh_page_if_needed(self.active_page_name, force=True)
+        else:
+            self.set_status(
+                "World index could not be rebuilt; canonical data remains safe"
+            )
+
+    def set_index_editing_enabled(self, enabled):
+        if enabled:
+            for widget, previous_state in self._index_widget_states:
+                try:
+                    widget.configure(state=previous_state)
+                except tk.TclError:
+                    pass
+            self._index_widget_states = []
+            return
+
+        self._index_widget_states = []
+        stack = list(self.content.winfo_children()) if self.content else []
+        while stack:
+            widget = stack.pop()
+            try:
+                stack.extend(widget.winfo_children())
+            except tk.TclError:
+                pass
+            try:
+                previous_state = str(widget.cget("state"))
+            except tk.TclError:
+                continue
+            if previous_state in ("disabled", "readonly"):
+                continue
+            try:
+                widget.configure(state="disabled")
+            except tk.TclError:
+                continue
+            self._index_widget_states.append((widget, previous_state))
 
     def configure_primary_icon(self, application_directory):
         icon_path = (
@@ -290,6 +391,10 @@ class MageMakerApp(tk.Tk):
             book_controller=self.book_controller,
         )
         self.pages["mages"].grid(row=0, column=0, sticky="nsew")
+        # MagesPage performs its initial population while it is constructed.
+        # Mark that revision as seen so the first tkraise does not repeat the
+        # full filtering/generation calculation a second time.
+        self.page_refresh_revisions["mages"] = self.database.revision
 
     def ensure_page(self, page_name):
         if page_name in self.pages:
@@ -446,6 +551,7 @@ class MageMakerApp(tk.Tk):
             "organizations",
             "items",
             "books",
+            "creatures",
             "settings",
         ):
             return False
@@ -506,23 +612,7 @@ class MageMakerApp(tk.Tk):
 
         self.active_page_name = page_name
 
-        if page_name == "mages":
-            mages_page = self.pages["mages"]
-            mages_page.refresh_people(
-                mages_page.current_record_id
-            )
-        elif page_name == "locations":
-            self.pages["locations"].refresh()
-        elif page_name == "periods":
-            self.pages["periods"].refresh()
-        elif page_name == "organizations":
-            self.pages["organizations"].refresh()
-        elif page_name == "items":
-            self.pages["items"].refresh_items()
-        elif page_name == "books":
-            self.pages["books"].refresh()
-        elif page_name == "settings":
-            self.pages["settings"].refresh()
+        self.refresh_page_if_needed(page_name)
 
         self.pages[page_name].tkraise()
 
@@ -533,6 +623,149 @@ class MageMakerApp(tk.Tk):
                 button.set_colors(BUTTON_SOFT, BUTTON_SOFT_HOVER, TEXT_DARK)
 
         return True
+
+    def refresh_page_if_needed(self, page_name, force=False):
+        if page_name not in self.pages:
+            return False
+        last_seen = self.page_refresh_revisions.get(page_name)
+        needs_refresh = (
+            force
+            or page_name in self.invalidated_pages
+            or last_seen != self.database.revision
+        )
+        if not needs_refresh:
+            return False
+
+        page = self.pages[page_name]
+        if page_name == "mages":
+            page.refresh_people(page.current_record_id)
+        elif page_name == "locations":
+            page.refresh()
+        elif page_name == "periods":
+            page.refresh()
+        elif page_name == "organizations":
+            page.refresh()
+        elif page_name == "items":
+            page.refresh_items()
+        elif page_name == "books":
+            page.refresh()
+        elif page_name == "creatures":
+            refresh_command = getattr(page, "refresh", None)
+            if callable(refresh_command):
+                refresh_command()
+        elif page_name == "settings":
+            page.refresh()
+
+        self.page_refresh_revisions[page_name] = self.database.revision
+        self.invalidated_pages.discard(page_name)
+        return True
+
+    def database_changed(self, collection_name, record_ids, revision):
+        affected_pages = {
+            "people": {"mages", "locations", "periods", "organizations"},
+            "events": {
+                "mages", "locations", "periods", "organizations", "items", "books"
+            },
+            "locations": {"locations", "periods", "mages", "organizations"},
+            "organizations": {"organizations", "mages", "locations"},
+            "items": {"items", "mages", "organizations"},
+            "books": {"books", "mages"},
+            "book_readings": {"books", "mages"},
+            "named_creatures": {"creatures", "mages"},
+            "maps": {"locations"},
+        }.get(
+            str(collection_name or ""),
+            set(self.pages),
+        )
+        self.invalidated_pages.update(affected_pages)
+
+    def monitor_external_world_save(self):
+        self._world_watch_after_id = None
+        if self._closing:
+            return
+        try:
+            current_fingerprint = source_fingerprint(
+                self.database.database_path
+            )
+        except OSError:
+            current_fingerprint = self._observed_world_fingerprint
+        if (
+            current_fingerprint != self._observed_world_fingerprint
+            and not self.database.dirty
+            and self.database.world_index.payload.get("source")
+            == current_fingerprint
+        ):
+            # A successful save through this process already rebuilt the
+            # index; do not mistake it for an external write.
+            self._observed_world_fingerprint = current_fingerprint
+        if (
+            current_fingerprint != self._observed_world_fingerprint
+            and not self.database.dirty
+            and self._external_reload_thread is None
+        ):
+            self.set_status("World data changed externally; refreshing index...")
+            self._external_reload_database = None
+            self._external_reload_error = None
+            self._external_reload_thread = Thread(
+                target=self.load_external_world,
+                name="world-builder-external-refresh",
+                daemon=True,
+            )
+            self._external_reload_thread.start()
+            self.after(50, self.poll_external_world_reload)
+            return
+        self._world_watch_after_id = self.after(
+            2000,
+            self.monitor_external_world_save,
+        )
+
+    def load_external_world(self):
+        try:
+            refreshed = JsonDatabase(self.database.database_path)
+            refreshed.load()
+            self._external_reload_database = refreshed
+        except Exception as error:
+            self._external_reload_error = error
+
+    def poll_external_world_reload(self):
+        worker = self._external_reload_thread
+        if worker is not None and worker.is_alive():
+            self.after(50, self.poll_external_world_reload)
+            return
+        self._external_reload_thread = None
+        refreshed = self._external_reload_database
+        if self._closing:
+            self.finish_close()
+            return
+        if self._external_reload_error is not None:
+            self.set_status(
+                f"Could not refresh externally changed world data: {self._external_reload_error}"
+            )
+        elif refreshed is not None and not self.database.dirty:
+            next_revision = self.database.revision + 1
+            self.database.data = refreshed.data
+            self.database.shared_store = refreshed.shared_store
+            self.database.shared_session = refreshed.shared_session
+            self.database.world_index = refreshed.world_index
+            self.database.record_indexes = refreshed.record_indexes
+            self.database.index_dirty = refreshed.index_dirty
+            self.database.dirty = refreshed.dirty
+            self.database.revision = next_revision
+            self._observed_world_fingerprint = source_fingerprint(
+                self.database.database_path
+            )
+            self.invalidated_pages.update(self.pages)
+            self.refresh_page_if_needed(self.active_page_name, force=True)
+            self.set_status("World data refreshed from disk")
+        else:
+            self.set_status(
+                "World data changed externally; save or discard local edits before refreshing"
+            )
+        self._external_reload_database = None
+        self._world_watch_after_id = self.after(
+            2000,
+            self.monitor_external_world_save,
+        )
 
     def go_back(self, event=None):
         if not self.navigation_history:
@@ -638,12 +871,13 @@ class MageMakerApp(tk.Tk):
         return self.pages["periods"].open_event(record_id)
 
     def saved_region_lock_id(self):
-        settings = self.database.data.get(APPLICATION_SETTINGS_KEY, {})
-        stored_location_id = (
-            str(settings.get(REGION_LOCK_SETTING_KEY, "") or "").strip()
-            if isinstance(settings, dict)
-            else ""
+        settings = self.database.get_preference(
+            APPLICATION_SETTINGS_KEY,
+            {},
         )
+        stored_location_id = str(
+            settings.get(REGION_LOCK_SETTING_KEY, "") or ""
+        ).strip()
 
         if (
             stored_location_id
@@ -656,7 +890,7 @@ class MageMakerApp(tk.Tk):
 
     def remember_region_lock(self, location_id):
         normalized_location_id = str(location_id or "").strip()
-        current_settings = self.database.data.get(
+        current_settings = self.database.get_preference(
             APPLICATION_SETTINGS_KEY,
             {},
         )
@@ -673,12 +907,16 @@ class MageMakerApp(tk.Tk):
             return False
 
         settings[REGION_LOCK_SETTING_KEY] = normalized_location_id
-        self.database.data[APPLICATION_SETTINGS_KEY] = settings
-        self.database.dirty = True
-        return True
+        return self.database.set_preference(
+            APPLICATION_SETTINGS_KEY,
+            settings,
+        )
 
     def saved_organization_lock_id(self):
-        settings = self.database.data.get(APPLICATION_SETTINGS_KEY, {})
+        settings = self.database.get_preference(
+            APPLICATION_SETTINGS_KEY,
+            {},
+        )
         stored_organization_id = (
             str(
                 settings.get(ORGANIZATION_LOCK_SETTING_KEY, "") or ""
@@ -702,7 +940,7 @@ class MageMakerApp(tk.Tk):
         normalized_organization_id = str(
             organization_id or ""
         ).strip()
-        current_settings = self.database.data.get(
+        current_settings = self.database.get_preference(
             APPLICATION_SETTINGS_KEY,
             {},
         )
@@ -723,9 +961,10 @@ class MageMakerApp(tk.Tk):
         settings[ORGANIZATION_LOCK_SETTING_KEY] = (
             normalized_organization_id
         )
-        self.database.data[APPLICATION_SETTINGS_KEY] = settings
-        self.database.dirty = True
-        return True
+        return self.database.set_preference(
+            APPLICATION_SETTINGS_KEY,
+            settings,
+        )
 
     def organization_lock_changed(self, organization_id):
         self.organization_lock_id = str(
@@ -743,7 +982,32 @@ class MageMakerApp(tk.Tk):
             if page is not None:
                 page.set_region_lock(self.region_lock_id)
 
-    def refresh_cross_page_data(self):
+    def refresh_cross_page_data(self, collection_name="", record_ids=()):
+        if self._closing:
+            return
+        if collection_name:
+            self.database_changed(
+                collection_name,
+                record_ids,
+                self.database.revision,
+            )
+        else:
+            self.invalidated_pages.update(self.pages)
+
+        if self._cross_page_refresh_after_id is not None:
+            try:
+                self.after_cancel(self._cross_page_refresh_after_id)
+            except tk.TclError:
+                pass
+        self._cross_page_refresh_after_id = self.after(
+            120,
+            self.finish_cross_page_refresh,
+        )
+
+    def finish_cross_page_refresh(self):
+        self._cross_page_refresh_after_id = None
+        if self._closing:
+            return
         ownership_changed = (
             self.event_controller.synchronize_item_ownership_from_events()
         )
@@ -753,44 +1017,7 @@ class MageMakerApp(tk.Tk):
 
         if retained_events_changed or ownership_changed:
             self.database.save()
-
-        mages_page = self.pages.get("mages")
-
-        if mages_page is not None:
-            mages_page.refresh_people(
-                mages_page.current_record_id
-            )
-            mages_page.refresh_linked_events()
-
-        location_page = self.pages.get("locations")
-
-        if location_page is not None:
-            location_page.refresh_person_data()
-
-        periods_page = self.pages.get("periods")
-
-        if periods_page is not None:
-            periods_page.refresh()
-
-        organization_page = self.pages.get("organizations")
-
-        if organization_page is not None:
-            organization_page.refresh(
-                organization_page.current_organization_id
-            )
-
-        items_page = self.pages.get("items")
-
-        if items_page is not None:
-            items_page.refresh_items(items_page.selected_item_id)
-
-        books_page = self.pages.get("books")
-
-        if books_page is not None:
-            books_page.refresh(books_page.selected_book_id)
-
-        if mages_page is not None:
-            mages_page.person_form.refresh_books_and_ledger()
+        self.refresh_page_if_needed(self.active_page_name, force=True)
 
     def refresh_mage_group_data(self):
         mages_page = self.pages.get("mages")
@@ -802,37 +1029,211 @@ class MageMakerApp(tk.Tk):
         self.status_value.set(str(message or "Ready"))
 
     def close_application(self):
-        if not self.pages["mages"].confirm_unsaved_changes():
+        if self._close_save_running:
+            self.set_status("Saving changes before closing...")
+            return
+        if self._closing:
             return
 
-        if (
-            "locations" in self.pages
-            and not self.pages[
-                "locations"
-            ].confirm_unsaved_location_changes()
-        ):
+        self.release_child_grabs()
+        if not self.has_unsaved_application_changes():
+            self._closing = True
+            self.finish_close()
             return
 
-        if (
-            "organizations" in self.pages
-            and not self.pages[
-                "organizations"
-            ].confirm_unsaved_organization_changes()
-        ):
+        save_choice = messagebox.askyesnocancel(
+            "Unsaved World Builder changes",
+            (
+                "World Builder has unsaved changes.\n\n"
+                "Yes: Save and close\n"
+                "No: Discard and close\n"
+                "Cancel: Return to World Builder"
+            ),
+            parent=self,
+            icon="warning",
+            default="yes",
+        )
+        if save_choice is None:
+            return
+        if not save_choice:
+            self._closing = True
+            self.finish_close()
             return
 
+        self._closing = True
+        self.set_status("Preparing changes to save...")
+        self.update_idletasks()
+        if not self.commit_open_editors():
+            self._closing = False
+            self.set_status("Close cancelled because an editor could not be saved")
+            return
+        if not self.database.dirty:
+            self.finish_close()
+            return
+        self.start_close_save()
+
+    def event_editors(self):
+        editors = []
+        mages_page = self.pages.get("mages")
+        person_form = getattr(mages_page, "person_form", None)
+        timeline = getattr(person_form, "timeline", None)
+        editors.append(getattr(timeline, "event_editor", None))
+        location_page = self.pages.get("locations")
+        editors.append(getattr(location_page, "event_editor", None))
+        periods_page = self.pages.get("periods")
+        events_view = getattr(periods_page, "events_view", None)
+        editors.append(getattr(events_view, "event_editor", None))
+        unique_editors = []
+        seen_ids = set()
+        for editor in editors:
+            if editor is None or id(editor) in seen_ids:
+                continue
+            seen_ids.add(id(editor))
+            unique_editors.append(editor)
+        return unique_editors
+
+    def has_unsaved_application_changes(self):
         if self.database.dirty:
-            try:
-                self.database.save()
-            except (OSError, TypeError, ValueError) as error:
+            return True
+        mages_page = self.pages.get("mages")
+        if bool(getattr(mages_page, "form_dirty", False)):
+            return True
+        location_page = self.pages.get("locations")
+        location_dirty = getattr(
+            location_page,
+            "has_unsaved_location_changes",
+            None,
+        )
+        if callable(location_dirty) and location_dirty():
+            return True
+        organization_page = self.pages.get("organizations")
+        if bool(getattr(organization_page, "form_dirty", False)):
+            return True
+        for editor in self.event_editors():
+            dirty_command = getattr(editor, "has_unsaved_changes", None)
+            if callable(dirty_command) and dirty_command():
+                return True
+        return False
+
+    def commit_open_editors(self):
+        for editor in self.event_editors():
+            dirty_command = getattr(editor, "has_unsaved_changes", None)
+            if not callable(dirty_command) or not dirty_command():
+                continue
+            if not editor.save():
                 messagebox.showerror(
-                    "Could not save application data",
-                    str(error),
+                    "Could not save event",
+                    "The open event could not be saved. Correct it or discard it before closing.",
                     parent=self,
                 )
-                return
+                return False
 
-        self.destroy()
+        mages_page = self.pages.get("mages")
+        if bool(getattr(mages_page, "form_dirty", False)):
+            if not mages_page.save_person():
+                return False
+        location_page = self.pages.get("locations")
+        location_dirty = getattr(
+            location_page,
+            "has_unsaved_location_changes",
+            None,
+        )
+        if callable(location_dirty) and location_dirty():
+            if not location_page.save_location():
+                return False
+        organization_page = self.pages.get("organizations")
+        if bool(getattr(organization_page, "form_dirty", False)):
+            if not organization_page.save_organization():
+                return False
+        return True
+
+    def start_close_save(self):
+        self._close_save_running = True
+        self._close_save_error = None
+        self.set_status("Saving changes before closing...")
+        self.update_idletasks()
+        self._close_save_thread = Thread(
+            target=self.save_for_close,
+            name="world-builder-close-save",
+            daemon=True,
+        )
+        self._close_save_thread.start()
+        self.after(50, self.poll_close_save)
+
+    def save_for_close(self):
+        try:
+            self.database.save()
+        except Exception as error:
+            self._close_save_error = error
+
+    def poll_close_save(self):
+        save_thread = self._close_save_thread
+        if save_thread is not None and save_thread.is_alive():
+            self.after(50, self.poll_close_save)
+            return
+        self._close_save_running = False
+        if self._close_save_error is None:
+            self.finish_close()
+            return
+
+        error = self._close_save_error
+        retry_choice = messagebox.askyesnocancel(
+            "Could not save World Builder",
+            (
+                f"{error}\n\n"
+                "Yes: Retry saving\n"
+                "No: Discard changes and close\n"
+                "Cancel: Return to World Builder"
+            ),
+            parent=self,
+            icon="error",
+            default="yes",
+        )
+        if retry_choice:
+            self.start_close_save()
+        elif retry_choice is False:
+            self.finish_close()
+        else:
+            self._closing = False
+            self.set_status("Save failed; World Builder remains open")
+
+    def release_child_grabs(self):
+        try:
+            grabbed = self.grab_current()
+            if grabbed is not None:
+                grabbed.grab_release()
+        except tk.TclError:
+            pass
+
+    def finish_close(self):
+        active_workers = (
+            self._index_rebuild_thread,
+            self._external_reload_thread,
+        )
+        if any(
+            worker is not None and worker.is_alive()
+            for worker in active_workers
+        ):
+            self.set_status("Closing after background work finishes...")
+            self.after(50, self.finish_close)
+            return
+        if self._cross_page_refresh_after_id is not None:
+            try:
+                self.after_cancel(self._cross_page_refresh_after_id)
+            except tk.TclError:
+                pass
+            self._cross_page_refresh_after_id = None
+        if self._world_watch_after_id is not None:
+            try:
+                self.after_cancel(self._world_watch_after_id)
+            except tk.TclError:
+                pass
+            self._world_watch_after_id = None
+        self.release_child_grabs()
+        try:
+            self.destroy()
+        except tk.TclError:
+            pass
 
     def save_shortcut(self, event=None):
         if self.active_page_name == "mages":

@@ -5,6 +5,7 @@ from database.name_links import (
     canonicalize_name_link,
     ensure_unique_record_name,
 )
+from shared.item_assets import normalize_item_image_reference
 
 
 class WandController:
@@ -84,6 +85,9 @@ class WandController:
     def prepare_values(self, record_values):
         prepared_values = {
             "dbnotes": record_values.get("dbnotes", "").strip(),
+            "image_asset": normalize_item_image_reference(
+                record_values.get("image_asset")
+            ),
         }
 
         for field_name, collection_name, collection_label in self.reference_fields:

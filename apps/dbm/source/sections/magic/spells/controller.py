@@ -1,5 +1,7 @@
 from copy import deepcopy
 
+from headmasters_scroll.effects import TARGET_SCOPES, normalize_target_scope
+
 from sections.magic.spells.constants import (
     SPELL_SKILLS,
     SPELL_SKILLS_BY_NORMALIZED_NAME,
@@ -20,6 +22,7 @@ class SpellController:
         "tradition",
         "skill",
         "subtype",
+        "target_scope",
         "description",
         "history",
         "rationale",
@@ -46,6 +49,7 @@ class SpellController:
             "skill": "",
             "subtype": "",
             "threshold": None,
+            "target_scope": "none",
             "description": "",
             "history": "",
             "rationale": "",
@@ -98,6 +102,11 @@ class SpellController:
 
     def normalize_record_values(self, record_values):
         normalized_values = deepcopy(record_values)
+
+        if "target_scope" in normalized_values:
+            normalized_values["target_scope"] = normalize_target_scope(
+                normalized_values.get("target_scope")
+            )
 
         for field_name in self.text_fields:
             if field_name in normalized_values:
@@ -163,6 +172,9 @@ class SpellController:
     def validate_record_values(self, record_values):
         if not record_values.get("name", "").strip():
             raise ValueError("A spell must have a name.")
+
+        if record_values.get("target_scope", "none") not in TARGET_SCOPES:
+            raise ValueError("A spell must define a valid target.")
 
         if not record_values.get("skill", "").strip():
             raise ValueError("A spell must have a skill.")

@@ -1,4 +1,5 @@
 from database.name_links import ensure_unique_record_name
+from headmasters_scroll.effects import TARGET_SCOPES, normalize_target_scope
 from sections.nature_and_alchemy.potions.recipe_schema import (
     INGREDIENT_TYPES,
 )
@@ -26,6 +27,7 @@ class AlchemyFormulaController:
             "tradition": "",
             "brew_time": "",
             "threshold": None,
+            "target_scope": "none",
             "description": "",
             "raw_effect": "",
             "effect_in_other_potions": "",
@@ -37,6 +39,9 @@ class AlchemyFormulaController:
         }
         complete_values["ingredients"] = self.normalize_ingredients(
             complete_values.get("ingredients", [])
+        )
+        complete_values["target_scope"] = normalize_target_scope(
+            complete_values.get("target_scope")
         )
         complete_values["required_proficiencies"] = (
             self.normalize_required_proficiencies(
@@ -70,6 +75,11 @@ class AlchemyFormulaController:
                 self.normalize_required_proficiencies(
                     normalized_values["required_proficiencies"]
                 )
+            )
+
+        if "target_scope" in normalized_values:
+            normalized_values["target_scope"] = normalize_target_scope(
+                normalized_values.get("target_scope")
             )
 
         self.validate_record_values(normalized_values)
@@ -125,6 +135,11 @@ class AlchemyFormulaController:
                 str,
             ):
                 raise TypeError(f"{field_label} must be text")
+
+        if record_values.get("target_scope", "none") not in TARGET_SCOPES:
+            raise ValueError(
+                f"{self.record_label.title()} must define a valid target"
+            )
 
         if "threshold" in record_values:
             self.validate_threshold(record_values["threshold"])

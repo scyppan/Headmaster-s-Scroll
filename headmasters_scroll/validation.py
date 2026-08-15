@@ -7,6 +7,7 @@ from .board import validate_world_board
 from .campaigns import validate_campaigns
 from .creatures import validate_creature_database
 from .catalog import validate_catalog
+from .region_interactions import validate_gathering_database
 
 
 TEACHING_EVENT_TYPES = {
@@ -110,6 +111,7 @@ def validate_document(filename: str, data: Any) -> None:
         else:
             try:
                 validate_creature_database(data)
+                validate_gathering_database(data)
                 if "tag_catalog" in data:
                     validate_catalog(data)
             except (TypeError, ValueError) as error:

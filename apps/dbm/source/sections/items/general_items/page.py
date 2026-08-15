@@ -95,6 +95,7 @@ class GeneralItemsPage(tk.Frame):
         self.record_form = GeneralItemForm(
             self.form_card,
             change_command=self.mark_form_dirty,
+            extraction_methods=self.controller.extraction_methods(),
         )
         self.record_form.grid(
             row=0,
@@ -216,6 +217,20 @@ class GeneralItemsPage(tk.Frame):
                 messagebox.showerror(
                     "Bonus type required",
                     "Every non-empty bonus must have a type.",
+                    parent=self,
+                )
+                return False
+            if not bonus.get("target"):
+                messagebox.showerror(
+                    "Bonus selection required",
+                    "Every bonus must select a value from its category.",
+                    parent=self,
+                )
+                return False
+            if bonus.get("amount") is None:
+                messagebox.showerror(
+                    "Bonus amount required",
+                    "Every bonus must have a whole-number amount.",
                     parent=self,
                 )
                 return False

@@ -2,7 +2,7 @@ import tkinter as tk
 
 from runtime_theme import bind_theme
 from sections.items.accessories.bonus_editor import BonusEditor
-from shared.widgets import MultilineField, RoundedEntry
+from shared.widgets import ItemImageAssetField, MultilineField, RoundedEntry
 from theme import SURFACE, TEXT_DARK, TEXT_MUTED, app_font
 
 
@@ -27,7 +27,7 @@ class AccessoryForm(tk.Frame):
             sticky="ew",
             pady=(0, 12),
         )
-        self.identity_panel.grid_columnconfigure(0, weight=1)
+        self.identity_panel.grid_columnconfigure(1, weight=1)
         bind_theme(self.identity_panel, background="SURFACE")
 
         self.name_label = tk.Label(
@@ -38,7 +38,7 @@ class AccessoryForm(tk.Frame):
             font=app_font(10),
             anchor="w",
         )
-        self.name_label.grid(row=0, column=0, sticky="ew")
+        self.name_label.grid(row=0, column=1, sticky="ew", padx=(10, 0))
         bind_theme(
             self.name_label,
             background="SURFACE",
@@ -54,7 +54,9 @@ class AccessoryForm(tk.Frame):
             height=42,
             font=app_font(12),
         )
-        self.name_entry.grid(row=1, column=0, sticky="ew", pady=(5, 0))
+        self.name_entry.grid(
+            row=1, column=1, sticky="ew", padx=(10, 0), pady=(5, 0)
+        )
 
         self.last_updated_value = tk.StringVar(
             value="Last updated: Not yet saved"
@@ -69,7 +71,7 @@ class AccessoryForm(tk.Frame):
         )
         self.last_updated_label.grid(
             row=2,
-            column=0,
+            column=1,
             sticky="ew",
             pady=(9, 0),
         )
@@ -77,6 +79,17 @@ class AccessoryForm(tk.Frame):
             self.last_updated_label,
             background="SURFACE",
             foreground="TEXT_MUTED",
+        )
+
+        self.image_asset_field = ItemImageAssetField(
+            self.identity_panel,
+            change_command=self.handle_field_change,
+        )
+        self.image_asset_field.grid(
+            row=0,
+            column=0,
+            rowspan=3,
+            sticky="nw",
         )
 
         self.description_field = MultilineField(
@@ -125,6 +138,7 @@ class AccessoryForm(tk.Frame):
         self.description_field.set_value(record.get("description", ""))
         self.bonus_editor.set_bonuses(record.get("bonuses", []))
         self.dbnotes_field.set_value(record.get("dbnotes", ""))
+        self.image_asset_field.set_value(record.get("image_asset", ""))
 
         last_updated = record.get("last_updated", "")
         display_date = (
@@ -147,6 +161,7 @@ class AccessoryForm(tk.Frame):
             "description": self.description_field.get_value(),
             "bonuses": self.bonus_editor.get_bonuses(),
             "dbnotes": self.dbnotes_field.get_value(),
+            "image_asset": self.image_asset_field.get_value(),
         }
 
     def handle_name_change(self, *arguments):

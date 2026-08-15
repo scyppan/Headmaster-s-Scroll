@@ -26,6 +26,7 @@ WORLD_EVENT_DATE_PATTERN = re.compile(
     r"^(-?\d{1,5})(?:-(\d{1,2})(?:-(\d{1,2}))?)?$"
 )
 WORLD_EVENT_TIME_PATTERN = re.compile(r"^(?:[01]\d|2[0-3])[0-5]\d$")
+WORLD_EVENT_COLON_TIME_PATTERN = re.compile(r"^((?:[01]\d|2[0-3])):([0-5]\d)$")
 JOB_EVENT_TYPES = frozenset(("started_job", "received_raise"))
 DEATH_EVENT_TYPES = frozenset(("died", "murder"))
 BIRTH_EVENT_TYPE = "born"
@@ -728,6 +729,13 @@ def normalize_world_event_time(value):
 
     if not time_text:
         return ""
+
+    # Game Board and session controls display times as HH:MM.  Accept that
+    # suite-wide representation when loading and store World Builder's
+    # canonical four-digit form internally.
+    colon_match = WORLD_EVENT_COLON_TIME_PATTERN.fullmatch(time_text)
+    if colon_match is not None:
+        return "".join(colon_match.groups())
 
     if WORLD_EVENT_TIME_PATTERN.fullmatch(time_text) is None:
         raise ValueError(

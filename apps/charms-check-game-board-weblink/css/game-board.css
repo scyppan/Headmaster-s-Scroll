@@ -1312,11 +1312,123 @@
   vector-effect: non-scaling-stroke;
 }
 
-#gameboard .ccgb-map-regions polygon.is-travel { cursor: pointer; }
+#gameboard .ccgb-map-regions polygon.is-travel,
+#gameboard .ccgb-map-regions polygon.is-interactive { cursor: pointer; }
+
+#gameboard .ccgb-map-regions polygon.is-secret,
+#gameboard .ccgb-map-regions polygon.is-secret:hover {
+  fill: rgba(255, 255, 255, 0.002);
+  stroke: transparent;
+}
 
 #gameboard .ccgb-map-regions polygon:hover {
   fill: rgba(228, 190, 104, 0.15);
   stroke: rgba(112, 67, 35, 0.72);
+}
+
+#gameboard .ccgb-region-dialog {
+  background: #fff3cf;
+  border: 2px solid #8a422c;
+  box-shadow: 0 18px 55px rgba(42, 25, 12, 0.42);
+  color: #382719;
+  max-height: min(76dvh, 720px);
+  max-width: min(92vw, 760px);
+  min-width: min(520px, 88vw);
+  padding: 12px;
+}
+
+#gameboard .ccgb-region-dialog::backdrop { background: rgba(29, 20, 13, 0.42); }
+
+#gameboard .ccgb-region-dialog header {
+  align-items: center;
+  border-bottom: 1px solid #b17a45;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  padding-bottom: 7px;
+}
+
+#gameboard .ccgb-region-dialog header strong { font: 700 20px Georgia, serif; }
+
+#gameboard .ccgb-region-dialog header button {
+  background: transparent;
+  border: 0;
+  color: #382719;
+  cursor: pointer;
+  font-size: 24px;
+  line-height: 1;
+}
+
+#gameboard .ccgb-region-primary,
+#gameboard .ccgb-region-options button,
+#gameboard .ccgb-shop-listings button {
+  background: #8a422c;
+  border: 1px solid #63311f;
+  color: #fff8e7;
+  cursor: pointer;
+  min-height: 38px;
+  padding: 7px 12px;
+}
+
+#gameboard .ccgb-region-options {
+  display: grid;
+  gap: 7px;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+}
+
+#gameboard .ccgb-region-options button { text-align: left; }
+#gameboard .ccgb-region-options small,
+#gameboard .ccgb-shop-listings small { display: block; margin-top: 3px; }
+
+#gameboard .ccgb-region-search-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) minmax(135px, 0.7fr);
+  gap: 6px;
+  min-width: 0;
+}
+
+#gameboard .ccgb-region-search-row > select {
+  min-width: 0;
+  border: 1px solid #9b683e;
+  background: #fff4cf;
+  color: #382719;
+  padding: 5px 7px;
+}
+
+#gameboard .ccgb-region-search-row > select.ccgb-required {
+  outline: 2px solid #9d281f;
+  outline-offset: 1px;
+}
+
+@media (max-width: 620px) {
+  #gameboard .ccgb-region-search-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+#gameboard .ccgb-region-dialog button:disabled {
+  cursor: not-allowed;
+  filter: grayscale(0.8);
+  opacity: 0.55;
+}
+
+#gameboard .ccgb-shop-balance { font-weight: 700; }
+
+#gameboard .ccgb-shop-listings {
+  display: grid;
+  gap: 6px;
+  max-height: 52dvh;
+  overflow: auto;
+}
+
+#gameboard .ccgb-shop-listings article {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.28);
+  border: 1px solid #d2aa70;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 8px;
 }
 
 #gameboard .ccgb-map-obscurations { z-index: 8; }

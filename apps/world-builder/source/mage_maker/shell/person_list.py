@@ -60,6 +60,8 @@ SORT_OPTIONS = (
     SORT_AGE,
 )
 GENERATION_MAX_SPAN_YEARS = 20
+VIRTUAL_ROW_HEIGHT = 58
+VIRTUAL_OVERSCAN = 4
 GENERATION_FILTER_PREFIX = "Generation "
 AGE_FILTER_PREFIX = "The "
 AGE_FILTER_SUFFIX = " Age"
@@ -404,6 +406,7 @@ class PeopleList(tk.Frame):
         )
         self.generation_move_command = generation_move_command
         self.people = []
+        self.people_by_id = {}
         self.periods = []
         self.periods_by_name = {}
         self.period_names_by_filter_label = {}
@@ -413,6 +416,9 @@ class PeopleList(tk.Frame):
         self.search_text_by_id = {}
         self.rows_by_id = {}
         self.row_labels_by_id = {}
+        self.row_pool = []
+        self.virtual_refresh_pending = False
+        self.search_filter_after_id = None
         self.group_colors_by_id = {}
         self.group_names_by_id = {}
         self.initial_values_complete_by_id = {}
@@ -443,7 +449,7 @@ class PeopleList(tk.Frame):
         self.heading.grid(row=0, column=0, sticky="ew", padx=16, pady=(16, 10))
 
         self.search_value = tk.StringVar()
-        self.search_value.trace_add("write", self.filter_people)
+        self.search_value.trace_add("write", self.schedule_search_filter)
         self.search_entry = RoundedEntry(
             self,
             textvariable=self.search_value,
@@ -715,11 +721,12 @@ class PeopleList(tk.Frame):
         scrollbar = tk.Scrollbar(
             list_container,
             orient="vertical",
-            command=self.canvas.yview,
+            command=self.scroll_to,
             relief="flat",
             borderwidth=0,
         )
         scrollbar.grid(row=0, column=1, sticky="ns")
+        self.people_scrollbar = scrollbar
         self.canvas.configure(yscrollcommand=scrollbar.set)
 
         self.row_container = tk.Frame(self.canvas, bg=FIELD_BACKGROUND)
@@ -765,6 +772,12 @@ class PeopleList(tk.Frame):
         mage_groups=None,
     ):
         self.people = list(people or [])
+        self.people_by_id = {
+            str(person.get("record_id", "") or ""): person
+            for person in self.people
+            if isinstance(person, dict)
+            and str(person.get("record_id", "") or "")
+        }
 
         if hasattr(self, "period_provider"):
             self.refresh_periods(rebuild=False)
@@ -776,6 +789,12 @@ class PeopleList(tk.Frame):
         self.initial_values_complete_by_id = {}
         self.unfinished_by_id = {}
         groups = normalize_mage_groups(mage_groups)
+        groups_by_id = {
+            str(group.get("group_id", "") or ""): group
+            for group in groups
+            if isinstance(group, dict)
+        }
+        default_group = groups[0]
         group_filter_options = [
             FILTER_SHOW_ALL,
             *[group["name"] for group in groups],
@@ -791,44 +810,31 @@ class PeopleList(tk.Frame):
             name = str(person.get("displayed_name", "")).strip() or "Unnamed magician"
             birth_text = self.format_birth_date(person)
             self.labels_by_id[record_id] = f"{name}\n{birth_text}"
-            group = mage_group_definition(
-                person.get("mage_group_id"),
-                groups,
+            group = groups_by_id.get(
+                str(person.get("mage_group_id", "") or ""),
+                default_group,
             )
             self.group_colors_by_id[record_id] = group["color"]
             self.group_names_by_id[record_id] = group["name"]
             self.initial_values_complete_by_id[record_id] = (
-                initial_values_are_complete(person)
+                bool(person.get("_has_initial_values"))
+                if "_has_initial_values" in person
+                else initial_values_are_complete(person)
             )
             self.unfinished_by_id[record_id] = bool(
                 person.get("unfinished", False)
             )
-            name_details = person.get("name_details", {})
-            name_entries = (
-                name_details.get("entries", [])
-                if isinstance(name_details, dict)
-                else []
-            )
-            name_detail_text = " ".join(
-                " ".join(
-                    str(entry.get(field_name, "") or "")
-                    for field_name in ("name_type", "name_entry", "date", "note")
-                )
-                for entry in name_entries
-                if isinstance(entry, dict)
-            )
-
+            cached_search_text = str(
+                person.get("_search_text", "") or ""
+            ).strip()
             self.search_text_by_id[record_id] = " ".join(
-                str(value or "")
+                value
                 for value in (
-                    person.get("displayed_name"),
-                    name_detail_text,
-                    person.get("school"),
-                    group["name"],
-                    person.get("birth_year"),
-                    person.get("death_year"),
+                    cached_search_text,
+                    group["name"].casefold(),
                 )
-            ).casefold()
+                if value
+            )
 
         if (
             hasattr(self, "group_filter_value")
@@ -1308,12 +1314,9 @@ class PeopleList(tk.Frame):
         return dict(self.generation_by_id)
 
     def record_generation_sort_key(self, record_id):
-        for person in self.people:
-            if str(person.get("record_id", "") or "") == str(
-                record_id or ""
-            ):
-                return person_generation_sort_key(person)
-
+        person = self.people_by_id.get(str(record_id or ""))
+        if person is not None:
+            return person_generation_sort_key(person)
         return 100000, 13, 32, "", str(record_id or "")
 
     def update_generation_move_button(self):
@@ -1562,6 +1565,23 @@ class PeopleList(tk.Frame):
             self.update_filter_summary()
 
         self.rebuild_rows()
+
+    def schedule_search_filter(self, *arguments):
+        if self.filter_updates_paused:
+            return
+        if self.search_filter_after_id is not None:
+            try:
+                self.after_cancel(self.search_filter_after_id)
+            except tk.TclError:
+                pass
+        self.search_filter_after_id = self.after(
+            120,
+            self.finish_search_filter,
+        )
+
+    def finish_search_filter(self):
+        self.search_filter_after_id = None
+        self.filter_people()
 
     def show_all_people(self):
         self.filter_updates_paused = True
@@ -1848,76 +1868,9 @@ class PeopleList(tk.Frame):
             for person in self.filtered_people()
         ]
 
-        for row in self.rows_by_id.values():
-            row.destroy()
-
-        self.rows_by_id = {}
-        self.row_labels_by_id = {}
-        wrap_length = max(140, self.canvas.winfo_width() - 31)
-
-        for row_index, record_id in enumerate(self.visible_record_ids):
-            row = tk.Frame(
-                self.row_container,
-                bg=FIELD_BACKGROUND,
-                cursor="hand2",
-            )
-            row.grid(row=row_index, column=0, sticky="ew")
-            row.grid_columnconfigure(1, weight=1)
-            group_bar = tk.Frame(
-                row,
-                bg=self.group_colors_by_id[record_id],
-                width=5,
-                cursor="hand2",
-            )
-            group_bar.grid(row=0, column=0, sticky="ns")
-            group_bar.grid_propagate(False)
-            label = tk.Label(
-                row,
-                text=self.labels_by_id[record_id],
-                bg=FIELD_BACKGROUND,
-                fg=TEXT_DARK,
-                font=app_font(10),
-                anchor="nw",
-                justify="left",
-                wraplength=wrap_length,
-                padx=10,
-                pady=8,
-                cursor="hand2",
-                highlightbackground=(
-                    LOCKED_BORDER
-                    if self.unfinished_by_id.get(record_id, False)
-                    else FIELD_BACKGROUND
-                ),
-                highlightcolor=(
-                    LOCKED_BORDER
-                    if self.unfinished_by_id.get(record_id, False)
-                    else FIELD_BACKGROUND
-                ),
-                highlightthickness=(
-                    2
-                    if self.unfinished_by_id.get(record_id, False)
-                    else 0
-                ),
-            )
-            label.grid(row=0, column=1, sticky="ew")
-
-            for widget in (row, group_bar, label):
-                widget.bind(
-                    "<Button-1>",
-                    partial(self.select_row, record_id),
-                )
-                widget.bind(
-                    "<Enter>",
-                    partial(self.enter_row, record_id),
-                )
-                widget.bind(
-                    "<Leave>",
-                    partial(self.leave_row, record_id),
-                )
-                widget.bind("<MouseWheel>", self.scroll_people)
-
-            self.rows_by_id[record_id] = row
-            self.row_labels_by_id[record_id] = label
+        self.canvas.yview_moveto(0)
+        self.ensure_row_pool()
+        self.render_visible_rows()
 
         visible_count = len(self.visible_record_ids)
         total_count = len(self.people)
@@ -1930,6 +1883,135 @@ class PeopleList(tk.Frame):
         self.refresh_row_colors()
         self.update_scroll_region()
         self.scroll_selected_into_view()
+
+    def ensure_row_pool(self):
+        viewport_height = max(1, self.canvas.winfo_height())
+        desired_size = max(
+            10,
+            (viewport_height // VIRTUAL_ROW_HEIGHT)
+            + (VIRTUAL_OVERSCAN * 2)
+            + 2,
+        )
+        wrap_length = max(140, self.canvas.winfo_width() - 31)
+
+        while len(self.row_pool) < desired_size:
+            row = tk.Frame(
+                self.row_container,
+                bg=FIELD_BACKGROUND,
+                cursor="hand2",
+            )
+            row.grid_columnconfigure(1, weight=1)
+            group_bar = tk.Frame(
+                row,
+                bg=FIELD_BACKGROUND,
+                width=5,
+                cursor="hand2",
+            )
+            group_bar.grid(row=0, column=0, sticky="ns")
+            group_bar.grid_propagate(False)
+            label = tk.Label(
+                row,
+                bg=FIELD_BACKGROUND,
+                fg=TEXT_DARK,
+                font=app_font(10),
+                anchor="nw",
+                justify="left",
+                wraplength=wrap_length,
+                padx=10,
+                pady=8,
+                cursor="hand2",
+            )
+            label.grid(row=0, column=1, sticky="nsew")
+
+            for widget in (row, group_bar, label):
+                widget._record_id = ""
+                widget.bind("<Button-1>", self.select_virtual_row)
+                widget.bind("<Enter>", self.enter_virtual_row)
+                widget.bind("<Leave>", self.leave_virtual_row)
+                widget.bind("<MouseWheel>", self.scroll_people)
+
+            self.row_pool.append((row, group_bar, label))
+
+        while len(self.row_pool) > desired_size:
+            row, _group_bar, _label = self.row_pool.pop()
+            row.destroy()
+
+    def schedule_virtual_refresh(self):
+        if self.virtual_refresh_pending:
+            return
+        self.virtual_refresh_pending = True
+        self.after_idle(self.render_visible_rows)
+
+    def render_visible_rows(self):
+        self.virtual_refresh_pending = False
+        self.ensure_row_pool()
+        total_count = len(self.visible_record_ids)
+        total_height = max(1, total_count * VIRTUAL_ROW_HEIGHT)
+        self.row_container.configure(height=total_height)
+        self.canvas.itemconfigure(self.row_window, height=total_height)
+        first_index = max(
+            0,
+            int(self.canvas.canvasy(0) // VIRTUAL_ROW_HEIGHT)
+            - VIRTUAL_OVERSCAN,
+        )
+        wrap_length = max(140, self.canvas.winfo_width() - 31)
+        self.rows_by_id = {}
+        self.row_labels_by_id = {}
+
+        for pool_index, (row, group_bar, label) in enumerate(self.row_pool):
+            row_index = first_index + pool_index
+            if row_index >= total_count:
+                row.place_forget()
+                for widget in (row, group_bar, label):
+                    widget._record_id = ""
+                continue
+
+            record_id = self.visible_record_ids[row_index]
+            for widget in (row, group_bar, label):
+                widget._record_id = record_id
+            row._row_index = row_index
+            row.place(
+                x=0,
+                y=row_index * VIRTUAL_ROW_HEIGHT,
+                relwidth=1,
+                height=VIRTUAL_ROW_HEIGHT,
+            )
+            group_bar.configure(bg=self.group_colors_by_id[record_id])
+            show_red_border = self.unfinished_by_id.get(record_id, False)
+            label.configure(
+                text=self.labels_by_id[record_id],
+                wraplength=wrap_length,
+                highlightbackground=(
+                    LOCKED_BORDER if show_red_border else FIELD_BACKGROUND
+                ),
+                highlightcolor=(
+                    LOCKED_BORDER if show_red_border else FIELD_BACKGROUND
+                ),
+                highlightthickness=2 if show_red_border else 0,
+            )
+            self.rows_by_id[record_id] = row
+            self.row_labels_by_id[record_id] = label
+
+        self.update_scroll_region()
+        self.refresh_row_colors()
+
+    def virtual_record_id(self, event):
+        return str(getattr(event.widget, "_record_id", "") or "")
+
+    def select_virtual_row(self, event):
+        record_id = self.virtual_record_id(event)
+        if record_id:
+            self.select_row(record_id, event)
+
+    def enter_virtual_row(self, event):
+        record_id = self.virtual_record_id(event)
+        if record_id:
+            self.enter_row(record_id, event)
+
+    def leave_virtual_row(self, event):
+        record_id = self.virtual_record_id(event)
+        if record_id:
+            self.leave_row(record_id, event)
 
     def select_row(self, record_id, event=None):
         if self.selection_command(record_id) is not False:
@@ -1949,7 +2031,8 @@ class PeopleList(tk.Frame):
         self.refresh_row_colors()
 
     def refresh_row_colors(self):
-        for row_index, record_id in enumerate(self.visible_record_ids):
+        for record_id, row in self.rows_by_id.items():
+            row_index = int(getattr(row, "_row_index", 0))
             if record_id == self.selected_record_id:
                 background = LIST_SELECTED
             elif record_id == self.hovered_record_id:
@@ -1959,10 +2042,7 @@ class PeopleList(tk.Frame):
             else:
                 background = FIELD_BACKGROUND
 
-            row = self.rows_by_id.get(record_id)
-
-            if row is not None:
-                row.configure(bg=background)
+            row.configure(bg=background)
 
             label = self.row_labels_by_id.get(record_id)
 
@@ -1971,37 +2051,51 @@ class PeopleList(tk.Frame):
 
     def resize_rows(self, event):
         self.canvas.itemconfigure(self.row_window, width=max(1, event.width - 2))
-        wrap_length = max(140, event.width - 31)
-
-        for label in self.row_labels_by_id.values():
-            label.configure(wraplength=wrap_length)
-
+        self.ensure_row_pool()
         self.update_scroll_region()
+        self.schedule_virtual_refresh()
 
     def update_scroll_region(self, event=None):
-        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+        total_height = max(
+            1,
+            len(self.visible_record_ids) * VIRTUAL_ROW_HEIGHT,
+        )
+        self.canvas.configure(
+            scrollregion=(0, 0, max(1, self.canvas.winfo_width()), total_height)
+        )
+
+    def scroll_to(self, *arguments):
+        self.canvas.yview(*arguments)
+        self.schedule_virtual_refresh()
 
     def scroll_people(self, event):
         if event.delta:
             self.canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+            self.schedule_virtual_refresh()
 
         return "break"
 
     def scroll_selected_into_view(self):
-        row = self.rows_by_id.get(self.selected_record_id)
-
-        if row is None:
+        try:
+            row_index = self.visible_record_ids.index(
+                self.selected_record_id
+            )
+        except ValueError:
             return
 
         self.update_idletasks()
-        content_height = max(1, self.row_container.winfo_height())
+        content_height = max(
+            1,
+            len(self.visible_record_ids) * VIRTUAL_ROW_HEIGHT,
+        )
         viewport_top = self.canvas.canvasy(0)
         viewport_bottom = viewport_top + self.canvas.winfo_height()
-        row_top = row.winfo_y()
-        row_bottom = row_top + row.winfo_height()
+        row_top = row_index * VIRTUAL_ROW_HEIGHT
+        row_bottom = row_top + VIRTUAL_ROW_HEIGHT
 
         if row_top < viewport_top:
             self.canvas.yview_moveto(row_top / content_height)
         elif row_bottom > viewport_bottom:
             target_top = row_bottom - self.canvas.winfo_height()
             self.canvas.yview_moveto(target_top / content_height)
+        self.schedule_virtual_refresh()

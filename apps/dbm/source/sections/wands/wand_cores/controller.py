@@ -1,3 +1,9 @@
+from shared.bonus_records import (
+    normalize_bonus_record_values,
+    validate_bonus_record_values,
+)
+
+
 class WandCoreController:
     collection_name = "wand_cores"
 
@@ -14,6 +20,8 @@ class WandCoreController:
         return self.database.read(self.collection_name, record_id)
 
     def create_record(self, record_values):
+        record_values = normalize_bonus_record_values(record_values)
+        validate_bonus_record_values(record_values)
         created_record = self.database.create(
             self.collection_name,
             record_values,
@@ -23,6 +31,8 @@ class WandCoreController:
         return created_record
 
     def update_record(self, record_id, record_values):
+        record_values = normalize_bonus_record_values(record_values)
+        validate_bonus_record_values(record_values)
         updated_record = self.database.update(
             self.collection_name,
             record_id,
@@ -47,4 +57,3 @@ class WandCoreController:
             record.get("last_updated", ""),
             record.get("record_id", ""),
         )
-

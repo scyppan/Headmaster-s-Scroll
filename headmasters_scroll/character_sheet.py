@@ -579,10 +579,10 @@ def _inventory(
         explicit = str(definition.get("activation_mode", "") or "").strip().casefold()
         if not explicit:
             explicit = "equipped" if collection in {"wands", "holdable_items", "accessories"} else "passive"
-        slot_type = ""
-        if collection in {"wands", "holdable_items"}:
+        slot_type = str(definition.get("equipment_slot_type", "") or "").casefold()
+        if not slot_type and collection in {"wands", "holdable_items"}:
             slot_type = "focus"
-        elif collection == "accessories":
+        elif not slot_type and collection == "accessories":
             slot_type = "accessory"
         entry.update({
             "definition_collection": collection,
@@ -592,6 +592,7 @@ def _inventory(
             "equipped": entry["record_id"] in equipped_ids,
             "bonuses": deepcopy(definition.get("bonuses", []) or source.get("bonuses", []) or []),
             "actions": deepcopy(definition.get("actions", []) or source.get("actions", []) or []),
+            "flight_threshold": definition.get("flight_threshold"),
         })
         if not entry.get("description"):
             entry["description"] = str(definition.get("description", "") or "")
@@ -657,10 +658,17 @@ def _inventory_roll_modifiers(inventory: list[dict[str, Any]]) -> dict[str, Any]
         if not active:
             continue
         source_name = "accessories" if item.get("equipment_slot_type") == "accessory" else (
-            "wand" if item.get("equipment_slot_type") == "focus" else "passive"
+            "wand" if item.get("equipment_slot_type") == "focus" else (
+                "flyable" if item.get("equipment_slot_type") == "flyable" else "passive"
+            )
         )
         for bonus in item.get("bonuses", []) or []:
             if not isinstance(bonus, dict):
+                continue
+            bonus_mode = str(
+                bonus.get("activation_mode", "passive") or "passive"
+            ).strip().casefold()
+            if bonus_mode != "passive":
                 continue
             target = str(bonus.get("target", "") or "").strip()
             kind = str(bonus.get("type", "") or "").strip().casefold()
@@ -905,6 +913,8 @@ def build_character_sheet(
         "pets": [*_creature_relationships(person_id, world, database, events), *campaign_pets],
         "inventory": sorted(inventory, key=lambda item: (str(item.get("name", "")).casefold(), str(item.get("record_id", "")))),
         "equipment": deepcopy((campaign_person or {}).get("equipment", {}) or {}),
+        "airborne": bool((campaign_person or {}).get("airborne", False)),
+        "currency_knuts": max(0, int((campaign_person or {}).get("currency_knuts", 0) or 0)),
         "shared_tags": [
             deepcopy(item) for item in campaign.get("shared_tags", []) or []
             if isinstance(item, dict)

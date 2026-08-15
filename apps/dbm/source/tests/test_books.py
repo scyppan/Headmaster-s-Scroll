@@ -326,7 +326,7 @@ class BookTests(unittest.TestCase):
             ("self", "parent", "database", "change_command"),
         )
 
-    def test_bookshelves_start_empty_without_changing_the_book_catalog(self):
+    def test_bookshelf_feature_is_absent_without_changing_the_book_catalog(self):
         database = JsonDatabase(DATABASE_PATH)
         database.load()
 
@@ -337,7 +337,7 @@ class BookTests(unittest.TestCase):
         ]
 
         self.assertEqual(len(imported_records), 608)
-        self.assertEqual(database.get_collection("bookshelves"), [])
+        self.assertFalse(database.has_container("bookshelves"))
         self.assertFalse(database.has_container("people"))
         self.assertTrue(database.has_container("schools"))
 

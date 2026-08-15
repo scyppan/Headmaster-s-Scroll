@@ -6,6 +6,13 @@ from copy import deepcopy
 from typing import Any, Iterable
 from uuid import NAMESPACE_URL, uuid5
 
+from .effects import (
+    TARGET_SCOPES,
+    normalize_bonuses,
+    normalize_target_scope,
+    validate_bonuses,
+)
+
 
 BOOK_CATEGORIES = (
     "Alchemy", "Arithmancy", "Artificing", "Astronomy", "Charms",
@@ -233,6 +240,10 @@ def enrich_catalog(document: dict[str, Any]) -> tuple[dict[str, Any], dict[str, 
             record["tag_ids"] = [canonical_tag_id(name) for name in after if name in CANONICAL_TAGS]
             if before != after:
                 tag_changes.append({"collection": collection, "record_id": record["record_id"], "name": record.get("name", ""), "before": before, "after": after})
+            if collection in {"spells", "proficiencies", "potions", "preparations"}:
+                record["target_scope"] = normalize_target_scope(
+                    record.get("target_scope")
+                )
 
     result["tag_catalog"] = [
         {"record_id": canonical_tag_id(name), "name": name, "normalized_name": name.casefold()}
@@ -257,6 +268,18 @@ def enrich_catalog(document: dict[str, Any]) -> tuple[dict[str, Any], dict[str, 
             record["equipment_slot_type"] = str(
                 record.get("equipment_slot_type", slot_type) or slot_type
             ).casefold()
+            if (
+                collection == "general_items"
+                and str(record.get("type", "") or "") in {"Broom", "Flyable"}
+            ):
+                record["activation_mode"] = "equipped"
+                record["equipment_slot_type"] = "flyable"
+                try:
+                    record["flight_threshold"] = max(
+                        1, min(100, int(record.get("flight_threshold", 7) or 7))
+                    )
+                except (TypeError, ValueError):
+                    record["flight_threshold"] = 7
             actions = []
             for index, action in enumerate(record.get("actions", []) or []):
                 if not isinstance(action, dict) or not action.get("action_type"):
@@ -271,6 +294,8 @@ def enrich_catalog(document: dict[str, Any]) -> tuple[dict[str, Any], dict[str, 
                 )
                 actions.append(normalized_action)
             record["actions"] = actions
+            if "bonuses" in record:
+                record["bonuses"] = normalize_bonuses(record.get("bonuses"))
             after = {
                 "activation_mode": record["activation_mode"],
                 "equipment_slot_type": record["equipment_slot_type"],
@@ -353,16 +378,43 @@ def validate_catalog(document: dict[str, Any]) -> None:
                 raise ValueError(f"{collection} {record.get('record_id')} requires at least one tag")
             if any(tag_id not in tag_ids for tag_id in record.get("tag_ids", []) or []):
                 raise ValueError(f"{collection} {record.get('record_id')} references an unknown tag")
+            if (
+                collection in {"spells", "proficiencies", "potions", "preparations"}
+                and record.get("target_scope", "none") not in TARGET_SCOPES
+            ):
+                raise ValueError(
+                    f"{collection} {record.get('record_id')} has an invalid target"
+                )
     for collection in ("wands", "holdable_items", "accessories", "general_items", "plants"):
         for record in document.get(collection, []) or []:
             if record.get("activation_mode") not in {"passive", "equipped", "click"}:
                 raise ValueError(f"{collection} {record.get('record_id')} has an invalid activation mode")
             slot = str(record.get("equipment_slot_type", "") or "")
-            if slot not in {"", "focus", "accessory"}:
+            if slot not in {"", "focus", "accessory", "flyable"}:
                 raise ValueError(f"{collection} {record.get('record_id')} has an invalid equipment slot")
+            if slot == "flyable":
+                try:
+                    threshold = int(record.get("flight_threshold"))
+                except (TypeError, ValueError) as error:
+                    raise ValueError(
+                        f"{collection} {record.get('record_id')} needs a Flying threshold"
+                    ) from error
+                if threshold < 1 or threshold > 100:
+                    raise ValueError(
+                        f"{collection} {record.get('record_id')} has an invalid Flying threshold"
+                    )
             action_ids = [
                 str(action.get("record_id", ""))
                 for action in record.get("actions", []) or [] if isinstance(action, dict)
             ]
             if any(not value for value in action_ids) or len(action_ids) != len(set(action_ids)):
                 raise ValueError(f"{collection} {record.get('record_id')} has invalid item actions")
+            complete_bonuses = [
+                bonus for bonus in normalize_bonuses(record.get("bonuses", []))
+                if isinstance(bonus, dict)
+                and bonus.get("type")
+                and bonus.get("target")
+                and bonus.get("amount") is not None
+            ]
+            if complete_bonuses:
+                validate_bonuses(complete_bonuses)

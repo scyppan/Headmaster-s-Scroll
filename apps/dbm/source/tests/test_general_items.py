@@ -205,6 +205,55 @@ class GeneralItemTests(unittest.TestCase):
                     {"name": "Invalid Item", "type": "Mystery"}
                 )
 
+    def test_alchemical_items_require_a_known_extraction_method(self):
+        class CatalogOnlyDatabase:
+            def get_collection(self, collection_name):
+                if collection_name == "gathering_methods":
+                    return [
+                        {"record_id": "prospect", "name": "Prospect"},
+                        {"record_id": "dive", "name": "Dive"},
+                    ]
+                return []
+
+        controller = GeneralItemController(CatalogOnlyDatabase())
+        with self.assertRaisesRegex(ValueError, "select an extraction method"):
+            controller.validate_record_values({
+                "name": "Quartz", "type": "Alchemical", "bonuses": [],
+            })
+        with self.assertRaisesRegex(ValueError, "no longer exists"):
+            controller.validate_record_values({
+                "name": "Quartz", "type": "Alchemical", "bonuses": [],
+                "extraction_method_id": "missing",
+            })
+
+        values = controller.normalize_record_values({
+            "name": "Quartz", "type": "Alchemical", "bonuses": [],
+            "extraction_method_id": "prospect",
+        })
+        controller.validate_record_values(values)
+        self.assertEqual(values["extraction_method_id"], "prospect")
+        self.assertEqual(values["gathering_method_ids"], ["prospect"])
+
+    def test_flyable_items_require_a_flying_threshold(self):
+        class CatalogOnlyDatabase:
+            def get_collection(self, _collection_name):
+                return []
+
+        controller = GeneralItemController(CatalogOnlyDatabase())
+        with self.assertRaisesRegex(ValueError, "Flying threshold"):
+            controller.validate_record_values({
+                "name": "Flying Carpet", "type": "Flyable", "bonuses": [],
+            })
+
+        values = controller.normalize_record_values({
+            "name": "Flying Carpet", "type": "Flyable", "bonuses": [],
+            "flight_threshold": "12",
+        })
+        controller.validate_record_values(values)
+        self.assertEqual(values["activation_mode"], "equipped")
+        self.assertEqual(values["equipment_slot_type"], "flyable")
+        self.assertEqual(values["flight_threshold"], 12)
+
 
 if __name__ == "__main__":
     unittest.main()

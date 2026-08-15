@@ -59,7 +59,7 @@ class BookPicker(tk.Toplevel):
         self.scope_buttons = {}
         self.refresh_job = None
 
-        self.title("Add Books to Bookshelf")
+        self.title("Choose Books")
         self.geometry("780x650")
         self.minsize(680, 520)
         self.transient(parent.winfo_toplevel())
@@ -69,7 +69,7 @@ class BookPicker(tk.Toplevel):
 
         self.heading = tk.Label(
             self,
-            text="Add Books to Bookshelf",
+            text="Choose Books",
             bg=APP_BACKGROUND,
             fg=TEXT_DARK,
             font=app_font(16),

@@ -76,6 +76,7 @@
       this.activeSection = 'overview';
       this.chatMessages = [];
       this.characterSheet = null;
+      this.regionInteraction = null;
       this.favoriteStorageKey = `${this.storageKey}-favorites`;
       this.spellLibraryStorageKey = `${this.storageKey}-spell-library`;
       this.knowledgeLibraryStorageKeys = {
@@ -541,6 +542,17 @@
         if (this.activeSection !== 'board') this.openSection(this.activeSection);
       } else if (message.type === 'request_submitted') {
         this.showChatNotice(message.message || 'Request sent to the Headmaster.');
+      } else if (message.type === 'region_interaction_snapshot' && message.interaction) {
+        this.regionInteraction = message.interaction;
+        this.renderRegionInteraction(message.interaction);
+      } else if (message.type === 'secret_gate_result' || message.type === 'region_search_result') {
+        this.regionGatePending = false;
+        this.showBoardNotice(message.result?.text || 'The search is complete.');
+        if (this.regionInteraction?.map_id && this.regionInteraction?.region_id) {
+          this.requestRegionInteraction(this.regionInteraction.map_id, this.regionInteraction.region_id);
+        }
+      } else if (message.type === 'shop_purchase_result') {
+        this.showBoardNotice(message.result?.text || 'The purchase is complete.');
       } else if (message.type === 'creature_harvest_result' && message.result) {
         const result = message.result;
         this.showChatNotice(
@@ -592,6 +604,7 @@
         this.releaseAssets();
         this.show('expired', message.message || 'The session has ended.');
       } else if (message.type === 'server_error') {
+        this.regionGatePending = false;
         const errorMessage = message.message || 'The message could not be sent.';
         if (this.activeSection === 'board') this.showBoardNotice(errorMessage);
         else this.showChatNotice(errorMessage);
@@ -1732,11 +1745,11 @@
           const items = visible.filter(item => categoryFor(item) === groupName);
           if (!items.length) return '';
           return `<section class="ccgb-inventory-group"><h2>${groupName}<span>${items.length}</span></h2><div class="ccgb-inventory-list">${items.map(item => {
-            const slots = item.equipment_slot_type === 'focus' ? ['focus'] : item.equipment_slot_type === 'accessory' ? ['accessory_1', 'accessory_2'] : [];
+            const slots = item.equipment_slot_type === 'focus' ? ['focus'] : item.equipment_slot_type === 'accessory' ? ['accessory_1', 'accessory_2'] : item.equipment_slot_type === 'flyable' ? ['flyable'] : [];
             const equippedSlot = slots.find(slot => equipment[slot] === item.record_id) || '';
             const controls = equippedSlot
               ? `<button data-equip-slot="${equippedSlot}" data-equip-item="" title="Unequip ${this.escapeHtml(item.name)}">−</button>`
-              : slots.map((slot, index) => `<button data-equip-slot="${slot}" data-equip-item="${this.escapeHtml(item.record_id)}" title="Equip in ${slot === 'focus' ? 'wand or focus' : `accessory slot ${index + 1}`}">${slot === 'focus' ? 'Equip' : `A${index + 1}`}</button>`).join('');
+              : slots.map((slot, index) => `<button data-equip-slot="${slot}" data-equip-item="${this.escapeHtml(item.record_id)}" title="${slot === 'flyable' ? `Attempt to fly (threshold ${this.escapeHtml(item.flight_threshold ?? '?')})` : `Equip in ${slot === 'focus' ? 'wand or focus' : `accessory slot ${index + 1}`}`}">${slot === 'flyable' ? 'Fly' : slot === 'focus' ? 'Equip' : `A${index + 1}`}</button>`).join('');
             const itemActions = (item.actions || []).filter(action => action?.record_id && ['roll', 'message', 'consume'].includes(String(action.action_type || '').toLowerCase())).map(action => `<button data-item-action="${this.escapeHtml(action.record_id)}" data-item-id="${this.escapeHtml(item.record_id)}" title="${this.escapeHtml(action.description || action.name || 'Use item')}">${this.escapeHtml(action.name || 'Use')}</button>`).join('');
             return `<article class="ccgb-inventory-row"><div><strong>${this.escapeHtml(item.name)}</strong><span>${this.escapeHtml(item.category)} · ×${this.escapeHtml(item.quantity ?? 1)}</span><small>${this.escapeHtml(item.description || '')}</small></div><div class="ccgb-inventory-actions">${controls}${itemActions}</div></article>`;
           }).join('')}</div></section>`;
@@ -2044,6 +2057,13 @@
         if (region.behavior_type === 'travel') {
           polygon.classList.add('is-travel');
           polygon.addEventListener('click', event => this.activateTravelRegion(event, stage, map, region));
+        } else if (['secret', 'library', 'storeroom', 'shop'].includes(region.behavior_type)) {
+          polygon.classList.add('is-interactive', `is-${region.behavior_type}`);
+          polygon.addEventListener('click', event => {
+            event.preventDefault();
+            event.stopPropagation();
+            this.requestRegionInteraction(map.record_id, region.record_id);
+          });
         }
         svg.appendChild(polygon);
       });
@@ -2095,6 +2115,133 @@
         x,
         y
       });
+    }
+
+    requestRegionInteraction(mapId, regionId) {
+      this.regionInteraction = { map_id: mapId, region_id: regionId };
+      this.send({
+        v: VERSION,
+        type: 'region_interaction_request',
+        map_id: mapId,
+        region_id: regionId
+      });
+    }
+
+    regionInteractionDialog() {
+      let dialog = this.root.querySelector('.ccgb-region-dialog');
+      if (dialog) return dialog;
+      dialog = document.createElement('dialog');
+      dialog.className = 'ccgb-region-dialog';
+      dialog.addEventListener('click', event => {
+        if (event.target === dialog) dialog.close();
+      });
+      this.root.appendChild(dialog);
+      return dialog;
+    }
+
+    renderRegionInteraction(interaction) {
+      const dialog = this.regionInteractionDialog();
+      dialog.replaceChildren();
+      const header = document.createElement('header');
+      const title = document.createElement('strong');
+      title.textContent = interaction.title || 'Search';
+      const close = document.createElement('button');
+      close.type = 'button';
+      close.textContent = '×';
+      close.title = 'Close';
+      close.addEventListener('click', () => dialog.close());
+      header.append(title, close);
+      dialog.appendChild(header);
+      if (interaction.kind === 'secret') {
+        const text = document.createElement('p');
+        text.textContent = interaction.gate_already_attempted
+          ? 'You find nothing more here today.'
+          : 'Something may be hidden here.';
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'ccgb-region-primary';
+        button.textContent = interaction.gate_already_attempted ? 'Searched today' : 'Searching…';
+        button.disabled = true;
+        button.addEventListener('click', () => this.send({
+          v: VERSION, type: 'secret_gate_request',
+          map_id: interaction.map_id, region_id: interaction.region_id
+        }));
+        dialog.append(text, button);
+        if (!interaction.gate_already_attempted && !this.regionGatePending) {
+          this.regionGatePending = true;
+          this.send({
+            v: VERSION, type: 'secret_gate_request',
+            map_id: interaction.map_id, region_id: interaction.region_id
+          });
+        }
+      } else if (interaction.kind === 'search') {
+        const modes = document.createElement('div');
+        modes.className = 'ccgb-region-options';
+        (interaction.modes || []).forEach(mode => {
+          const row = document.createElement('div');
+          row.className = 'ccgb-region-search-row';
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.disabled = Boolean(mode.attempted_today);
+          button.innerHTML = `<strong>${this.escapeHtml(mode.name || 'Search')}</strong><small>${this.escapeHtml(mode.skill || '')}${mode.attempted_today ? ' · attempted today' : ''}</small>`;
+          const extractionMethods = Array.isArray(mode.extraction_methods) ? mode.extraction_methods : [];
+          let extraction = null;
+          if (extractionMethods.length) {
+            extraction = document.createElement('select');
+            extraction.setAttribute('aria-label', 'Extraction method');
+            extraction.innerHTML = `<option value="">Extraction method…</option>${extractionMethods.map(method => `<option value="${this.escapeHtml(method.record_id || '')}">${this.escapeHtml(method.name || 'Method')}</option>`).join('')}`;
+            extraction.disabled = Boolean(mode.attempted_today);
+          }
+          button.addEventListener('click', () => {
+            if (extraction && !extraction.value) {
+              extraction.focus();
+              extraction.classList.add('ccgb-required');
+              return;
+            }
+            this.send({
+              v: VERSION, type: 'region_search_request', map_id: interaction.map_id,
+              region_id: interaction.region_id, mode_id: mode.record_id,
+              extraction_method_id: extraction ? extraction.value : ''
+            });
+          });
+          if (extraction) extraction.addEventListener('change', () => extraction.classList.remove('ccgb-required'));
+          row.append(button);
+          if (extraction) row.append(extraction);
+          modes.appendChild(row);
+        });
+        if (!(interaction.modes || []).length) {
+          const empty = document.createElement('p');
+          empty.textContent = 'There are no searches available here.';
+          modes.appendChild(empty);
+        }
+        dialog.appendChild(modes);
+      } else if (interaction.kind === 'shop') {
+        const balance = document.createElement('p');
+        balance.className = 'ccgb-shop-balance';
+        balance.textContent = `Balance: ${Number(interaction.balance_knuts || 0).toLocaleString()} Knuts`;
+        const listings = document.createElement('div');
+        listings.className = 'ccgb-shop-listings';
+        (interaction.listings || []).forEach(listing => {
+          const card = document.createElement('article');
+          const info = document.createElement('div');
+          const stock = listing.available
+            ? (listing.remaining === null || listing.remaining === undefined ? 'In stock' : `${listing.remaining} in stock`)
+            : 'Out of stock';
+          info.innerHTML = `<strong>${this.escapeHtml(listing.name || 'Item')}</strong><small>${this.escapeHtml(stock)} · ${Number(listing.price_knuts || 0).toLocaleString()} Knuts</small>`;
+          const buy = document.createElement('button');
+          buy.type = 'button';
+          buy.textContent = 'Buy';
+          buy.disabled = !listing.available || !listing.affordable;
+          buy.addEventListener('click', () => this.send({
+            v: VERSION, type: 'shop_purchase_request', map_id: interaction.map_id,
+            region_id: interaction.region_id, listing_id: listing.record_id
+          }));
+          card.append(info, buy);
+          listings.appendChild(card);
+        });
+        dialog.append(balance, listings);
+      }
+      if (!dialog.open) dialog.showModal();
     }
 
     showBoardNotice(message) {

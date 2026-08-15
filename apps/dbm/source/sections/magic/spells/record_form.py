@@ -8,7 +8,12 @@ from sections.nature_and_alchemy.creatures.form_fields import (
     LabeledEntry,
 )
 from sections.nature_and_alchemy.creatures.tag_editor import TagEditor
-from shared.widgets import MultilineField, RoundedSelect, SoftButton
+from shared.widgets import (
+    MultilineField,
+    RoundedSelect,
+    SoftButton,
+    TargetScopeField,
+)
 from theme import SURFACE, TEXT_DARK, TEXT_MUTED, app_font
 
 
@@ -109,9 +114,8 @@ class SpellForm(tk.Frame):
         self.incantation_field.grid(
             row=0,
             column=2,
-            columnspan=2,
             sticky="ew",
-            padx=(10, 0),
+            padx=(10, 8),
             pady=(0, 12),
         )
 
@@ -216,10 +220,10 @@ class SpellForm(tk.Frame):
         self.tradition_container.grid_columnconfigure(0, weight=1)
         bind_theme(self.tradition_container, background="SURFACE")
         self.tradition_container.grid(
-            row=1,
-            column=2,
+            row=0,
+            column=3,
             sticky="ew",
-            padx=8,
+            padx=(8, 0),
             pady=(0, 12),
         )
 
@@ -268,6 +272,18 @@ class SpellForm(tk.Frame):
             column=3,
             sticky="ew",
             padx=(8, 0),
+            pady=(0, 12),
+        )
+
+        self.target_scope_field = TargetScopeField(
+            self.overview_view,
+            self.handle_field_change,
+        )
+        self.target_scope_field.grid(
+            row=1,
+            column=2,
+            sticky="ew",
+            padx=8,
             pady=(0, 12),
         )
 
@@ -358,6 +374,7 @@ class SpellForm(tk.Frame):
         self.subtype_value.set(record.get("subtype", ""))
         self.tradition_value.set(record.get("tradition", ""))
         self.threshold_field.set_value(record.get("threshold"))
+        self.target_scope_field.set_value(record.get("target_scope", "none"))
         self.description_field.set_value(record.get("description", ""))
         self.history_field.set_value(record.get("history", ""))
         self.rationale_field.set_value(record.get("rationale", ""))
@@ -385,6 +402,7 @@ class SpellForm(tk.Frame):
             "skill": self.skill_value.get().strip(),
             "subtype": self.subtype_value.get().strip(),
             "threshold": self.threshold_field.get_value(),
+            "target_scope": self.target_scope_field.get_value(),
             "description": self.description_field.get_value(),
             "history": self.history_field.get_value(),
             "rationale": self.rationale_field.get_value(),

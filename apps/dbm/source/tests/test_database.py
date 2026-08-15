@@ -15,13 +15,13 @@ class JsonDatabaseTests(unittest.TestCase):
         self.assertFalse(database.has_container("people"))
         self.assertTrue(database.has_container("schools"))
         self.assertTrue(database.has_container("books"))
-        self.assertTrue(database.has_container("bookshelves"))
+        self.assertFalse(database.has_container("bookshelves"))
         self.assertTrue(database.has_container("foods_and_drinks"))
         self.assertTrue(database.has_container("spells"))
         self.assertTrue(database.has_container("accessories"))
 
         metadata = database.get_database_metadata()
-        self.assertEqual(metadata["schema_version"], 2)
+        self.assertEqual(metadata["schema_version"], 4)
         self.assertEqual(metadata["database_version"], "1.0")
 
     def test_food_and_drink_conversion_preserves_every_source_record(self):
@@ -125,7 +125,7 @@ class JsonDatabaseTests(unittest.TestCase):
             database = JsonDatabase(database_path)
             database.load()
             self.assertTrue(database.dirty)
-            self.assertEqual(database.get_database_metadata()["schema_version"], 2)
+            self.assertEqual(database.get_database_metadata()["schema_version"], 4)
             self.assertEqual(
                 database.get_collection("books")[0]["publication_date"],
                 "1900-01-01",

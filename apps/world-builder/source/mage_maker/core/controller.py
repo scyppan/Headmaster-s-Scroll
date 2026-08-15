@@ -164,6 +164,20 @@ class PeopleController:
         summaries.sort(key=self.person_sort_key)
         return summaries
 
+    def list_people_list_summaries(self):
+        provider = getattr(
+            self.database,
+            "list_people_list_summaries",
+            None,
+        )
+        summaries = (
+            provider()
+            if callable(provider)
+            else self.list_people_summaries()
+        )
+        summaries.sort(key=self.person_sort_key)
+        return summaries
+
     def person_sort_key(self, person):
         birth_year = self.sortable_number(person.get("birth_year"), 10000)
         birth_month = self.sortable_number(person.get("birth_month"), 13)
@@ -227,7 +241,7 @@ class PeopleController:
         if normalized_record_id not in available_ids:
             return False
 
-        stored_history = self.database.data.get(
+        stored_history = self.database.get_preference(
             RECENT_PERSON_STORAGE_KEY,
             [],
         )
@@ -252,8 +266,10 @@ class PeopleController:
         if updated_history == history:
             return False
 
-        self.database.data[RECENT_PERSON_STORAGE_KEY] = updated_history
-        self.database.dirty = True
+        self.database.set_preference(
+            RECENT_PERSON_STORAGE_KEY,
+            updated_history,
+        )
         return True
 
     def recent_person_ids(self, limit=5):
@@ -262,7 +278,7 @@ class PeopleController:
             for person in self.list_people_summaries()
             if str(person.get("record_id", "") or "").strip()
         }
-        stored_history = self.database.data.get(
+        stored_history = self.database.get_preference(
             RECENT_PERSON_STORAGE_KEY,
             [],
         )

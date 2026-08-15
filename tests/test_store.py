@@ -1,4 +1,5 @@
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -178,6 +179,27 @@ class StoreTests(unittest.TestCase):
         session = store.load("db.json")
         with self.assertRaises(DataLockError):
             store.save(session, "dbm")
+
+    def test_orphaned_process_lock_is_recovered(self):
+        lock_path = self.path.with_suffix(".json.lock")
+        lock_path.write_text("pid=2147483647\n", encoding="ascii")
+        session = self.store.load("db.json")
+        session.data["wand_woods"][0]["notes"] = "recovered"
+
+        outcome = self.store.save(session, "mapper")
+
+        self.assertTrue(outcome.saved)
+        self.assertFalse(lock_path.exists())
+
+    def test_lock_owned_by_this_process_is_not_removed(self):
+        lock_path = self.path.with_suffix(".json.lock")
+        lock_path.write_text(f"pid={os.getpid()}\n", encoding="ascii")
+        store = SharedJsonStore(self.directory, lock_timeout=0.01)
+        session = store.load("db.json")
+
+        with self.assertRaises(DataLockError):
+            store.save(session, "mapper")
+        self.assertTrue(lock_path.exists())
 
 
 if __name__ == "__main__":

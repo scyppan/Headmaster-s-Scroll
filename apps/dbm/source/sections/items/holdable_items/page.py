@@ -211,6 +211,20 @@ class HoldableItemsPage(tk.Frame):
                     parent=self,
                 )
                 return False
+            if not bonus.get("target"):
+                messagebox.showerror(
+                    "Bonus selection required",
+                    "Every bonus must select a value from its category.",
+                    parent=self,
+                )
+                return False
+            if bonus.get("amount") is None:
+                messagebox.showerror(
+                    "Bonus amount required",
+                    "Every bonus must have a whole-number amount.",
+                    parent=self,
+                )
+                return False
 
         try:
             if self.current_record_id is None:

@@ -1,4 +1,4 @@
-CURRENT_SCHEMA_VERSION = 2
+CURRENT_SCHEMA_VERSION = 4
 
 
 def migrate_database(database_data):
@@ -14,6 +14,16 @@ def migrate_database(database_data):
         for book in database_data.get("books", []):
             if isinstance(book, dict) and not str(book.get("publication_date", "") or "").strip():
                 book["publication_date"] = "1900-01-01"
+
+    if schema_version < 3:
+        from headmasters_scroll.region_interactions import ensure_gathering_catalog
+
+        ensure_gathering_catalog(database_data)
+
+    if schema_version < 4:
+        from headmasters_scroll.region_interactions import ensure_gathering_catalog
+
+        ensure_gathering_catalog(database_data)
 
     database_data["_database"] = {
         **database_metadata,

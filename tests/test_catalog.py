@@ -49,6 +49,26 @@ class CatalogEnrichmentTests(unittest.TestCase):
         self.assertEqual({item["name"] for item in enriched["tag_catalog"]}, set(CANONICAL_TAGS))
         self.assertTrue(set(enriched["books"][0]["categories"]).issubset(BOOK_CATEGORIES))
 
+    def test_flyables_use_the_mounted_slot_and_require_a_threshold(self):
+        document = self.document()
+        document["general_items"].append({
+            "record_id": "carpet", "name": "Flying Carpet", "type": "Flyable",
+            "bonuses": [{"type": "Skill", "target": "Flying", "amount": 2}],
+        })
+        enriched, _audit = enrich_catalog(document)
+        flyable = next(
+            item for item in enriched["general_items"]
+            if item["record_id"] == "carpet"
+        )
+        self.assertEqual(flyable["activation_mode"], "equipped")
+        self.assertEqual(flyable["equipment_slot_type"], "flyable")
+        self.assertEqual(flyable["flight_threshold"], 7)
+        validate_catalog(enriched)
+
+        flyable["flight_threshold"] = 0
+        with self.assertRaisesRegex(ValueError, "Flying threshold"):
+            validate_catalog(enriched)
+
 
 if __name__ == "__main__":
     unittest.main()

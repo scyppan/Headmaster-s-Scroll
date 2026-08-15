@@ -4,6 +4,7 @@ import calendar
 import hashlib
 import math
 import os
+import random
 import re
 import sys
 import threading
@@ -40,6 +41,7 @@ from ..creatures import (
     roll_creature_action,
     utc_now as creature_utc_now,
 )
+from ..region_interactions import draw_loot, loot_cost, shop_window
 from .storage import GameBoardRepository
 
 
@@ -612,23 +614,84 @@ class GameBoardService:
                 person_id = str(request.get("person_id") or "")
                 slot = str(request.get("slot") or "")
                 item_id = str(request.get("item_id") or "")
-                if slot not in {"focus", "accessory_1", "accessory_2"}:
+                if slot not in {"focus", "accessory_1", "accessory_2", "flyable"}:
                     raise ValueError("The requested equipment slot is invalid")
                 current = str(campaign["game_state"]["current_game_datetime"])
                 event_date, event_time = current.split("T", 1)
+                flight_roll: dict[str, Any] | None = None
+                flight_success = True
+                if slot == "flyable" and item_id:
+                    session_id = str(request.get("session_id") or "")
+                    contact_id = str(request.get("contact_id") or "")
+                    sheet = self.character_sheet_for(session_id, contact_id) or {}
+                    item = next(
+                        (
+                            value for value in sheet.get("inventory", []) or []
+                            if str(value.get("record_id", "") or "") == item_id
+                        ),
+                        None,
+                    )
+                    if item is None or str(item.get("equipment_slot_type", "")) != "flyable":
+                        raise PermissionError("That Flyable is no longer available")
+                    threshold = int(item.get("flight_threshold"))
+                    flight_roll = perform_character_roll(sheet, "skill", "Flying")
+                    natural = int((flight_roll.get("dice") or [0])[0] or 0)
+                    flight_success = (
+                        natural != 1
+                        and int(flight_roll.get("total", 0) or 0) >= threshold
+                    )
+                    critical = (
+                        "failure" if natural == 1
+                        else "success" if natural == 10 and flight_success
+                        else ""
+                    )
+                    character_name = str(sheet.get("character_name") or "A character")
+                    item_name = str(item.get("name") or "a flyable item")
+                    flight_roll.update({
+                        "action_type": "flyable",
+                        "target_id": item_id,
+                        "target_name": item_name,
+                        "threshold": threshold,
+                        "success": flight_success,
+                        "critical": critical,
+                        "outcome": (
+                            "critical_success" if critical == "success"
+                            else "critical_failure" if critical == "failure"
+                            else "success" if flight_success else "failure"
+                        ),
+                        "text": (
+                            f"{character_name} gets airborne on {item_name} "
+                            f"with a Flying total of {flight_roll.get('total')} against {threshold}."
+                            if flight_success else
+                            f"{character_name} fails to get airborne on {item_name} "
+                            f"with a Flying total of {flight_roll.get('total')} against {threshold}."
+                        ),
+                    })
                 def equip(state: dict[str, Any]) -> None:
-                    equipment = state.setdefault("people", {}).setdefault(person_id, {}).setdefault("equipment", {})
-                    equipment[slot] = item_id
+                    person = state.setdefault("people", {}).setdefault(person_id, {})
+                    equipment = person.setdefault("equipment", {})
+                    if flight_success:
+                        equipment[slot] = item_id
+                    if slot == "flyable" and flight_success:
+                        person["airborne"] = bool(item_id)
                     for other_slot, equipped_id in list(equipment.items()):
-                        if other_slot != slot and item_id and equipped_id == item_id:
+                        if other_slot != slot and item_id and flight_success and equipped_id == item_id:
                             equipment[other_slot] = ""
-                return self.campaign_repository.resolve_request(
+                resolved = self.campaign_repository.resolve_request(
                     campaign_id, request_id, "approved",
                     event_type="equipment_changed", event_date=event_date,
                     event_time=event_time,
-                    event_details={"person_ids": [person_id], "slot": slot, "item_id": item_id},
+                    event_details={
+                        "person_ids": [person_id], "slot": slot,
+                        "item_id": item_id if flight_success else "",
+                        "flight_roll": deepcopy(flight_roll),
+                    },
                     state_updater=equip,
                 )
+                if flight_roll is not None:
+                    resolved["roll"] = flight_roll
+                    resolved["text"] = flight_roll["text"]
+                return resolved
             if request.get("request_type") == "creature_interaction":
                 session_id = str(request.get("session_id") or "")
                 actor_id = actor_person_id or str(request.get("actor_person_id") or "")
@@ -1469,6 +1532,35 @@ class GameBoardService:
                         # This document is a private per-request copy. Reveal
                         # the occupied destination only to its linked player.
                         viewer_map["players_published"] = True
+            interaction_state = (
+                campaign.get("game_state", {}).get("region_interactions", {}) or {}
+            )
+            revealed_secret_ids = {
+                str(item.get("region_id", "") or "")
+                for item in interaction_state.get("revealed_secrets", []) or []
+                if str(item.get("region_id", "") or "")
+            }
+            if for_players and contact_id:
+                viewer_character_id = str(
+                    (viewer or {}).get("character_id", "") or ""
+                )
+                game_day = self._game_day(campaign)
+                revealed_secret_ids.update(
+                    str(item.get("region_id", "") or "")
+                    for item in interaction_state.get("secret_unlocks", []) or []
+                    if str(item.get("character_id", "") or "")
+                    == viewer_character_id
+                    and str(item.get("game_day", "") or "") == game_day
+                )
+            if for_players and revealed_secret_ids:
+                for map_record in document.get("maps", []) or []:
+                    for region in map_record.get("regions", []) or []:
+                        if (
+                            str(region.get("behavior_type", "") or "") == "secret"
+                            and str(region.get("record_id", "") or "")
+                            in revealed_secret_ids
+                        ):
+                            region["_secret_revealed"] = True
             snapshot = self.world_board.snapshot(
                 game_datetime,
                 player_character_ids=character_ids,
@@ -1483,6 +1575,10 @@ class GameBoardService:
             snapshot["active_map_id"] = str(
                 campaign["game_state"].get("active_map_id", "") or ""
             )
+            if not for_players:
+                snapshot["revealed_secret_region_ids"] = sorted(
+                    revealed_secret_ids
+                )
             if for_players and contact_id:
                 player_active = str(
                     campaign["game_state"].get("player_active_map_ids", {}).get(
@@ -1536,10 +1632,11 @@ class GameBoardService:
                 # camera selected for its viewer, never every player's view.
                 map_record.pop("headmaster_camera", None)
                 map_record.pop("player_cameras", None)
-            if not for_players:
-                campaign_people = campaign.get("game_state", {}).get("people", {}) or {}
-                for actor in snapshot.get("actors", []):
-                    person_state = campaign_people.get(str(actor.get("actor_id", "")), {})
+            campaign_people = campaign.get("game_state", {}).get("people", {}) or {}
+            for actor in snapshot.get("actors", []):
+                person_state = campaign_people.get(str(actor.get("actor_id", "")), {})
+                actor["airborne"] = bool(person_state.get("airborne", False))
+                if not for_players:
                     actor["wounds"] = deepcopy(person_state.get("wounds", []) or [])
                     actor["battle"] = deepcopy(person_state.get("battle"))
                     actor["character_notes"] = deepcopy(
@@ -2209,6 +2306,792 @@ class GameBoardService:
                 sheet["teaching_targets"] = []
             return sheet
 
+    @staticmethod
+    def _catalog_record(
+        database: dict[str, Any], reference: dict[str, Any]
+    ) -> dict[str, Any]:
+        collection = str(reference.get("collection", "") or "")
+        record_id = str(reference.get("record_id", "") or "")
+        if collection in {"creature_parts", "plant_parts"}:
+            parents = "creatures" if collection == "creature_parts" else "plants"
+            parent_id = str(reference.get("parent_record_id", "") or "")
+            parent = next(
+                (item for item in database.get(parents, []) or []
+                 if str(item.get("record_id", "")) == parent_id), None
+            )
+            record = next(
+                (item for item in (parent or {}).get("parts", []) or []
+                 if str(item.get("record_id", "")) == record_id), None
+            )
+        else:
+            record = next(
+                (item for item in database.get(collection, []) or []
+                 if str(item.get("record_id", "")) == record_id), None
+            )
+        if record is None:
+            raise KeyError("A region references a missing catalog record")
+        return record
+
+    def _region_player_context(
+        self, session_id: str, contact_id: str, map_id: str, region_id: str
+    ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any]]:
+        _wrapper, session = self._active(session_id)
+        player = self._player(session, contact_id)
+        character_id = str(player.get("character_id", "") or "")
+        if not character_id:
+            raise PermissionError("This player is not linked to a character")
+        campaign, document = self._campaign_document(session)
+        person = next(
+            (item for item in document.get("people", []) or []
+             if str(item.get("record_id", "")) == character_id), None
+        )
+        if person is None:
+            raise PermissionError("The linked character no longer exists")
+        placement = normalize_person_board(person.get("board")).get("placement") or {}
+        if str(placement.get("map_id", "") or "") != str(map_id):
+            raise PermissionError("The character must occupy the same map")
+        map_record = self._campaign_map(document, map_id)
+        region = next(
+            (item for item in map_record.get("regions", []) or []
+             if str(item.get("record_id", "")) == str(region_id)), None
+        )
+        if region is None:
+            raise KeyError("Unknown region")
+        globally_or_personally_revealed = (
+            str(region.get("behavior_type", "") or "") == "secret"
+            and self._secret_is_revealed(
+                campaign,
+                str(region.get("record_id", "") or ""),
+                str(person.get("record_id", "") or ""),
+            )
+        )
+        if not bool(region.get("players_visible", True)) and not globally_or_personally_revealed:
+            raise KeyError("Unknown region")
+        return session, campaign, document, person, region
+
+    @staticmethod
+    def _raw_skill(sheet: dict[str, Any], skill_name: str) -> int:
+        needle = str(skill_name or "").strip().casefold()
+        skill = next(
+            (item for item in (sheet.get("attributes") or {}).get("skills", []) or []
+             if str(item.get("name", "")).strip().casefold() == needle), None
+        )
+        if skill is None:
+            return 0
+        return int(skill.get("total", skill.get("value", 0)) or 0)
+
+    @staticmethod
+    def _game_day(campaign: dict[str, Any]) -> str:
+        return str(campaign["game_state"]["current_game_datetime"]).split("T", 1)[0]
+
+    @classmethod
+    def _secret_is_revealed(
+        cls,
+        campaign: dict[str, Any],
+        region_id: str,
+        character_id: str,
+    ) -> bool:
+        interactions = (
+            campaign.get("game_state", {}).get("region_interactions", {}) or {}
+        )
+        if any(
+            str(item.get("region_id", "") or "") == region_id
+            for item in interactions.get("revealed_secrets", []) or []
+        ):
+            return True
+        day = cls._game_day(campaign)
+        return any(
+            str(item.get("character_id", "") or "") == character_id
+            and str(item.get("region_id", "") or "") == region_id
+            and str(item.get("game_day", "") or "") == day
+            for item in interactions.get("secret_unlocks", []) or []
+        )
+
+    def region_interaction_snapshot(
+        self, session_id: str, contact_id: str, map_id: str, region_id: str
+    ) -> dict[str, Any]:
+        with self._lock:
+            _session, campaign, _document, person, region = self._region_player_context(
+                session_id, contact_id, map_id, region_id
+            )
+            behavior = str(region.get("behavior_type", "area") or "area")
+            character_id = str(person["record_id"])
+            day = self._game_day(campaign)
+            state = campaign["game_state"].get("region_interactions", {}) or {}
+            unlocked = self._secret_is_revealed(
+                campaign, region_id, character_id
+            )
+            attempted_region = any(
+                str(item.get("character_id")) == character_id
+                and str(item.get("region_id")) == region_id
+                and str(item.get("game_day")) == day
+                and str(item.get("mode_id")) != "__gate__"
+                for item in state.get("attempts", []) or []
+            )
+            attempted_mode_ids = {
+                str(item.get("mode_id", ""))
+                for item in state.get("attempts", []) or []
+                if str(item.get("character_id", "")) == character_id
+                and str(item.get("region_id", "")) == region_id
+                and str(item.get("game_day", "")) == day
+            }
+            if behavior == "secret" and not unlocked:
+                return {
+                    "kind": "secret", "map_id": map_id, "region_id": region_id,
+                    "title": "Search", "unlocked": False,
+                    "gate_already_attempted": "__gate__" in attempted_mode_ids,
+                }
+            if behavior in {"secret", "library", "storeroom"}:
+                database = self.shared_store.load("db.json").data
+                return {
+                    "kind": "search", "map_id": map_id, "region_id": region_id,
+                    "title": str(region.get("name") or "Search"), "unlocked": True,
+                    "modes": [
+                        {
+                            "record_id": str(mode["record_id"]),
+                            "name": str(mode["name"]),
+                            "skill": str(mode["skill"]),
+                            "extraction_methods": self._extraction_methods_for_mode(
+                                region, mode, database
+                            ),
+                            "attempted_today": attempted_region or str(mode["record_id"]) in attempted_mode_ids,
+                        }
+                        for mode in region.get("search_modes", []) or []
+                    ],
+                }
+            if behavior == "shop":
+                return self._shop_snapshot(campaign, region, person, map_id)
+            raise ValueError("This region has no player interaction")
+
+    @staticmethod
+    def _contact_id_for_character(
+        session: dict[str, Any], person_id: str
+    ) -> str:
+        player = next(
+            (
+                item for item in session.get("roster", []) or []
+                if str(item.get("character_id", "") or "") == str(person_id)
+            ),
+            None,
+        )
+        if player is None:
+            raise PermissionError(
+                "This character is not linked to a player in this session"
+            )
+        return str(player.get("contact_id", "") or "")
+
+    def admin_region_search_options(
+        self, session_id: str, person_id: str
+    ) -> dict[str, Any]:
+        """Return searchable same-map regions for a session-linked character."""
+
+        with self._lock:
+            _wrapper, session = self._active(session_id)
+            contact_id = self._contact_id_for_character(session, person_id)
+            _campaign, document = self._campaign_document(session)
+            person = next(
+                (
+                    item for item in document.get("people", []) or []
+                    if str(item.get("record_id", "") or "") == str(person_id)
+                ),
+                None,
+            )
+            if person is None:
+                raise KeyError("Unknown character")
+            placement = normalize_person_board(person.get("board")).get("placement") or {}
+            map_id = str(placement.get("map_id", "") or "")
+            if not map_id:
+                raise ValueError("This character is not currently on a map")
+            map_record = self._campaign_map(document, map_id)
+            regions: list[dict[str, Any]] = []
+            for region in map_record.get("regions", []) or []:
+                if str(region.get("behavior_type", "") or "") not in {
+                    "secret", "library", "storeroom",
+                }:
+                    continue
+                snapshot = self.region_interaction_snapshot(
+                    session_id,
+                    contact_id,
+                    map_id,
+                    str(region.get("record_id", "") or ""),
+                )
+                if snapshot.get("kind") == "search":
+                    regions.append(snapshot)
+            return {
+                "person_id": str(person_id),
+                "person_name": str(person.get("name") or "Character"),
+                "map_id": map_id,
+                "map_name": str(map_record.get("name") or "Current map"),
+                "regions": regions,
+            }
+
+    def admin_search_region(
+        self,
+        session_id: str,
+        person_id: str,
+        map_id: str,
+        region_id: str,
+        mode_id: str,
+        extraction_method_id: str = "",
+    ) -> dict[str, Any]:
+        with self._lock:
+            _wrapper, session = self._active(session_id)
+            contact_id = self._contact_id_for_character(session, person_id)
+        return self.search_region(
+            session_id,
+            contact_id,
+            map_id,
+            region_id,
+            mode_id,
+            extraction_method_id,
+        )
+
+    def attempt_secret_gate(
+        self, session_id: str, contact_id: str, map_id: str, region_id: str
+    ) -> dict[str, Any]:
+        with self._lock:
+            _session, campaign, _document, person, region = self._region_player_context(
+                session_id, contact_id, map_id, region_id
+            )
+            if str(region.get("behavior_type")) != "secret":
+                raise ValueError("That region is not a Secret")
+            character_id = str(person["record_id"])
+            day = self._game_day(campaign)
+            ledger = campaign["game_state"].get("region_interactions", {}) or {}
+            if any(
+                str(item.get("character_id")) == character_id
+                and str(item.get("region_id")) == region_id
+                and str(item.get("mode_id")) == "__gate__"
+                and str(item.get("game_day")) == day
+                for item in ledger.get("attempts", []) or []
+            ):
+                raise ValueError("This Secret cannot be searched again until the next game day")
+            sheet = self.character_sheet_for(session_id, contact_id) or {}
+            skill = str(region.get("secret_skill", "") or "")
+            skill_value = self._raw_skill(sheet, skill)
+            die = random.SystemRandom().randint(1, 10)
+            total = die + skill_value
+            success = total >= int(region.get("secret_threshold", 0) or 0)
+
+            def update(state: dict[str, Any]) -> None:
+                interactions = state.setdefault("region_interactions", {})
+                interactions.setdefault("attempts", []).append({
+                    "record_id": str(uuid4()), "character_id": character_id,
+                    "map_id": map_id, "region_id": region_id, "mode_id": "__gate__",
+                    "game_day": day, "natural_roll": die,
+                    "skill_value": skill_value, "total": total, "created_at": iso_utc(utc_now()),
+                })
+                if success:
+                    interactions.setdefault("secret_unlocks", []).append({
+                        "record_id": str(uuid4()), "character_id": character_id,
+                        "map_id": map_id, "region_id": region_id, "game_day": day,
+                        "created_at": iso_utc(utc_now()),
+                    })
+
+            self.campaign_repository.update_game_state(campaign["record_id"], update)
+            name = str(sheet.get("character_name") or person.get("displayed_name") or "A player")
+            return {
+                "kind": "secret_gate_result", "success": success, "natural_roll": die,
+                "skill": skill, "skill_value": skill_value, "total": total,
+                "text": (
+                    f"{name} searches for a secret with {skill}: {die} + {skill_value} = {total}. "
+                    + ("Something hidden is revealed." if success else "They find nothing today.")
+                ),
+            }
+
+    def _competency_entries(
+        self, region: dict[str, Any], mode: dict[str, Any], sheet: dict[str, Any],
+        database: dict[str, Any], extraction_method_id: str = ""
+    ) -> list[dict[str, Any]]:
+        known_proficiencies = {
+            str(item.get("record_id", "")) for item in sheet.get("proficiencies", []) or []
+        }
+        known_recipe_records = [
+            item for item in sheet.get("recipes", []) or [] if isinstance(item, dict)
+        ]
+        known_recipes = {str(item.get("record_id", "")) for item in known_recipe_records}
+        known_ingredient_names = {
+            str(ingredient.get("name", "") or "").strip().casefold()
+            for recipe in known_recipe_records
+            for ingredient in recipe.get("ingredients", []) or []
+            if isinstance(ingredient, dict) and str(ingredient.get("name", "") or "").strip()
+        }
+        result: list[dict[str, Any]] = []
+        for entry in region.get("contents", []) or []:
+            if str(mode.get("record_id")) not in {
+                str(value) for value in entry.get("search_mode_ids", []) or []
+            }:
+                continue
+            try:
+                reference = entry.get("reference", {})
+                record = self._catalog_record(database, reference)
+            except KeyError:
+                continue
+            methods = {str(value) for value in record.get("gathering_method_ids", []) or []}
+            is_alchemical_item = (
+                str(reference.get("collection", "")) == "general_items"
+                and str(record.get("type", "")) == "Alchemical"
+            )
+            if is_alchemical_item:
+                item_extraction_method = str(
+                    record.get("extraction_method_id", "") or ""
+                )
+                if not item_extraction_method and len(methods) == 1:
+                    item_extraction_method = next(iter(methods))
+                if (
+                    not extraction_method_id
+                    or item_extraction_method != extraction_method_id
+                ):
+                    continue
+            elif methods and str(mode.get("gathering_method_id")) not in methods:
+                continue
+            required = {
+                str(value.get("record_id") if isinstance(value, dict) else value)
+                for value in record.get("required_proficiencies", []) or []
+            }
+            specialized = str(record.get("required_proficiency_id", "") or "")
+            if specialized:
+                required.add(specialized)
+            collection = str(reference.get("collection", "") or "")
+            if collection in {"creatures", "creature_parts"}:
+                if collection == "creatures":
+                    creature = record
+                else:
+                    parent_id = str(reference.get("parent_record_id", "") or "")
+                    creature = next(
+                        (item for item in database.get("creatures", []) or []
+                         if str(item.get("record_id", "")) == parent_id), {}
+                    )
+                awareness_id = str(creature.get("awareness_proficiency_id", "") or "")
+                if awareness_id:
+                    required.add(awareness_id)
+            required.discard("")
+            if not required.issubset(known_proficiencies):
+                continue
+            skill_name = str(mode.get("skill", "") or "").casefold()
+            recipe_ids = {
+                str(value.get("record_id") if isinstance(value, dict) else value)
+                for value in record.get("recipe_ids", []) or []
+            }
+            if skill_name in {"potions", "artificing"}:
+                explicitly_known = bool(recipe_ids.intersection(known_recipes))
+                name_is_known_ingredient = (
+                    str(record.get("name") or record.get("title") or "")
+                    .strip().casefold() in known_ingredient_names
+                )
+                if not explicitly_known and not name_is_known_ingredient:
+                    continue
+            enriched = deepcopy(entry)
+            enriched["catalog"] = record
+            result.append(enriched)
+        return result
+
+    def _extraction_methods_for_mode(
+        self,
+        region: dict[str, Any],
+        mode: dict[str, Any],
+        database: dict[str, Any],
+    ) -> list[dict[str, str]]:
+        method_ids: set[str] = set()
+        mode_id = str(mode.get("record_id", "") or "")
+        for entry in region.get("contents", []) or []:
+            if mode_id not in {
+                str(value)
+                for value in entry.get("search_mode_ids", []) or []
+            }:
+                continue
+            reference = entry.get("reference", {}) or {}
+            if str(reference.get("collection", "")) != "general_items":
+                continue
+            try:
+                record = self._catalog_record(database, reference)
+            except KeyError:
+                continue
+            if str(record.get("type", "")) != "Alchemical":
+                continue
+            extraction_method_id = str(
+                record.get("extraction_method_id", "") or ""
+            )
+            legacy_methods = {
+                str(value)
+                for value in record.get("gathering_method_ids", []) or []
+                if str(value)
+            }
+            if not extraction_method_id and len(legacy_methods) == 1:
+                extraction_method_id = next(iter(legacy_methods))
+            if extraction_method_id:
+                method_ids.add(extraction_method_id)
+        methods_by_id = {
+            str(record.get("record_id", "")): record
+            for record in database.get("gathering_methods", []) or []
+        }
+        return [
+            {
+                "record_id": method_id,
+                "name": str(
+                    methods_by_id.get(method_id, {}).get("name")
+                    or method_id
+                ),
+            }
+            for method_id in sorted(
+                method_ids,
+                key=lambda value: str(
+                    methods_by_id.get(value, {}).get("name") or value
+                ).casefold(),
+            )
+        ]
+
+    @staticmethod
+    def _inventory_add(
+        person_state: dict[str, Any], reference: dict[str, Any], record: dict[str, Any],
+        quantity: int, *, source: str
+    ) -> None:
+        stacks = person_state.setdefault("campaign_inventory", [])
+        collection = str(reference.get("collection", "") or "")
+        record_id = str(reference.get("record_id", "") or "")
+        stack = next(
+            (item for item in stacks
+             if str(item.get("definition_collection", "")) == collection
+             and str(item.get("definition_record_id", "")) == record_id), None
+        )
+        if stack is not None:
+            stack["quantity"] = int(stack.get("quantity", 0) or 0) + int(quantity)
+            return
+        stacks.append({
+            "record_id": str(uuid4()), "item_id": record_id,
+            "part_id": record_id if collection.endswith("_parts") else "",
+            "name": str(record.get("name") or record.get("title") or "Found item"),
+            "category": collection.replace("_", " ").title(), "quantity": int(quantity),
+            "source_creature_id": "", "source_species_id": "",
+            "acquired_at": iso_utc(utc_now()), "definition_collection": collection,
+            "definition_record_id": record_id,
+            "description": str(record.get("description", "") or "")[:4000],
+            "method": source,
+        })
+
+    def search_region(
+        self, session_id: str, contact_id: str, map_id: str, region_id: str,
+        mode_id: str, extraction_method_id: str = ""
+    ) -> dict[str, Any]:
+        with self._lock:
+            _session, campaign, document, person, region = self._region_player_context(
+                session_id, contact_id, map_id, region_id
+            )
+            behavior = str(region.get("behavior_type", "") or "")
+            if behavior not in {"secret", "library", "storeroom"}:
+                raise ValueError("That region cannot be searched")
+            character_id = str(person["record_id"])
+            day = self._game_day(campaign)
+            interaction_state = campaign["game_state"].get("region_interactions", {}) or {}
+            if behavior == "secret" and not self._secret_is_revealed(
+                campaign, region_id, character_id
+            ):
+                raise PermissionError("This Secret has not been found today")
+            if any(
+                str(item.get("character_id")) == character_id
+                and str(item.get("region_id")) == region_id
+                and str(item.get("mode_id")) != "__gate__"
+                and str(item.get("game_day")) == day
+                for item in interaction_state.get("attempts", []) or []
+            ):
+                raise ValueError("This region was already searched today")
+            mode = next(
+                (item for item in region.get("search_modes", []) or []
+                 if str(item.get("record_id")) == mode_id), None
+            )
+            if mode is None:
+                raise KeyError("Unknown search mode")
+            sheet = self.character_sheet_for(session_id, contact_id) or {}
+            database = self.shared_store.load("db.json").data
+            extraction_methods = self._extraction_methods_for_mode(
+                region, mode, database
+            )
+            extraction_method_ids = {
+                str(item["record_id"]) for item in extraction_methods
+            }
+            extraction_method_id = str(extraction_method_id or "")
+            if extraction_method_ids and not extraction_method_id:
+                raise ValueError(
+                    "Select an extraction method before searching."
+                )
+            if (
+                extraction_method_id
+                and extraction_method_id not in extraction_method_ids
+            ):
+                raise ValueError(
+                    "That extraction method is not available here."
+                )
+            entries = self._competency_entries(
+                region,
+                mode,
+                sheet,
+                database,
+                extraction_method_id,
+            )
+            depletion = interaction_state.get("source_depletion", {}) or {}
+
+            def available(entry: dict[str, Any]) -> int | None:
+                if not bool(entry.get("depletable", False)):
+                    return None
+                record = entry.get("catalog", {})
+                initial = max(1, int(record.get("default_source_quantity", 1) or 1))
+                used = int(depletion.get(f"{region_id}:{entry['record_id']}", 0) or 0)
+                return max(0, initial - used)
+
+            skill_name = str(mode.get("skill", "") or "")
+            skill_value = self._raw_skill(sheet, skill_name)
+            outcome = draw_loot(entries, skill_value, available_quantity=available)
+            by_id = {str(item["record_id"]): item for item in entries}
+            awarded_names: list[str] = []
+            destroyed_name = ""
+            destroyed_creature = False
+
+            def update(state: dict[str, Any]) -> None:
+                interactions = state.setdefault("region_interactions", {})
+                interactions.setdefault("attempts", []).append({
+                    "record_id": str(uuid4()), "character_id": character_id,
+                    "map_id": map_id, "region_id": region_id, "mode_id": mode_id,
+                    "extraction_method_id": extraction_method_id,
+                    "game_day": day, "natural_roll": outcome.natural_roll,
+                    "skill_value": skill_value, "total": outcome.total,
+                    "created_at": iso_utc(utc_now()),
+                })
+                depletion_state = interactions.setdefault("source_depletion", {})
+                person_state = state.setdefault("people", {}).setdefault(character_id, {})
+                for entry_id in outcome.awarded_ids:
+                    entry = by_id[entry_id]
+                    reference = entry["reference"]
+                    record = entry["catalog"]
+                    name = str(record.get("name") or record.get("title") or "Something")
+                    awarded_names.append(name)
+                    if bool(entry.get("depletable", False)):
+                        key = f"{region_id}:{entry_id}"
+                        depletion_state[key] = int(depletion_state.get(key, 0) or 0) + 1
+                    if str(reference.get("collection")) == "creatures":
+                        creatures = state.setdefault("creatures", {})
+                        existing = next(
+                            (item for item in creatures.values()
+                             if str(item.get("species_record_id")) == str(reference.get("record_id"))
+                             and str((item.get("placement") or {}).get("map_id")) == map_id
+                             and str(item.get("visibility", "headmaster")) == "headmaster"), None
+                        )
+                        if existing is not None:
+                            existing["visibility"] = "players"
+                        else:
+                            counters = state.setdefault("creature_counters", {})
+                            species_id = str(reference["record_id"])
+                            counter = int(counters.get(species_id, 0) or 0) + 1
+                            counters[species_id] = counter
+                            points = region.get("points", []) or []
+                            x = sum(float(point["x"]) for point in points) / len(points)
+                            y = sum(float(point["y"]) for point in points) / len(points)
+                            map_record = self._campaign_map(document, map_id)
+                            creature = generate_creature_instance(record, counter, {
+                                "location_id": str(map_record.get("location_id", "")),
+                                "floor_id": str(map_record.get("floor_id", "") or ""),
+                                "map_id": map_id, "x": x, "y": y,
+                            })
+                            creature["visibility"] = "players"
+                            creatures[creature["record_id"]] = creature
+                    else:
+                        self._inventory_add(person_state, reference, record, 1, source=str(region.get("name") or "Search"))
+                if outcome.destroyed_id:
+                    entry = by_id[outcome.destroyed_id]
+                    record = entry["catalog"]
+                    nonlocal destroyed_name, destroyed_creature
+                    destroyed_name = str(record.get("name") or record.get("title") or "Something")
+                    reference = entry.get("reference", {})
+                    if str(reference.get("collection", "")) == "creatures":
+                        creatures = state.setdefault("creatures", {})
+                        escaped_id = next(
+                            (
+                                instance_id for instance_id, instance in creatures.items()
+                                if str(instance.get("species_record_id", ""))
+                                == str(reference.get("record_id", ""))
+                                and str((instance.get("placement") or {}).get("map_id", "")) == map_id
+                                and str(instance.get("visibility", "headmaster")) == "headmaster"
+                            ),
+                            "",
+                        )
+                        if escaped_id:
+                            creatures.pop(escaped_id, None)
+                        destroyed_creature = True
+                    if bool(entry.get("depletable", False)):
+                        key = f"{region_id}:{outcome.destroyed_id}"
+                        depletion_state[key] = int(depletion_state.get(key, 0) or 0) + 1
+                    interactions.setdefault("natural_one_losses", []).append({
+                        "record_id": str(uuid4()), "character_id": character_id,
+                        "region_id": region_id, "content_entry_id": outcome.destroyed_id,
+                        "name": destroyed_name, "game_day": day,
+                        "created_at": iso_utc(utc_now()),
+                    })
+
+            self.campaign_repository.update_game_state(campaign["record_id"], update)
+            character_name = str(sheet.get("character_name") or person.get("displayed_name") or "A player")
+            extraction_method_name = next(
+                (
+                    str(item.get("name", ""))
+                    for item in extraction_methods
+                    if str(item.get("record_id", ""))
+                    == extraction_method_id
+                ),
+                "",
+            )
+            if destroyed_name:
+                detail = (
+                    f"They find {destroyed_name}, but it escapes."
+                    if destroyed_creature
+                    else f"They find {destroyed_name}, but destroy or lose it."
+                )
+            elif awarded_names:
+                detail = "They find " + ", ".join(awarded_names) + "."
+            else:
+                detail = "They find nothing."
+            return {
+                "kind": "region_search_result", "natural_roll": outcome.natural_roll,
+                "skill": skill_name, "skill_value": skill_value, "total": outcome.total,
+                "extraction_method_id": extraction_method_id,
+                "extraction_method": extraction_method_name,
+                "awarded": awarded_names, "destroyed": destroyed_name,
+                "loot_points_remaining": outcome.points_remaining,
+                "text": (
+                    f"{character_name} searches using {skill_name}"
+                    + (
+                        f" and {extraction_method_name}"
+                        if extraction_method_name else ""
+                    )
+                    + f": {outcome.natural_roll} + {skill_value} = {outcome.total}. {detail}"
+                ),
+            }
+
+    def _shop_snapshot(
+        self, campaign: dict[str, Any], region: dict[str, Any], person: dict[str, Any],
+        map_id: str
+    ) -> dict[str, Any]:
+        database = self.shared_store.load("db.json").data
+        sales = (campaign["game_state"].get("region_interactions", {}) or {}).get("shop_window_sales", {}) or {}
+        character_id = str(person["record_id"])
+        person_state = campaign["game_state"].get("people", {}).get(character_id, {}) or {}
+        balance = int(person_state.get("currency_knuts", 0) or 0)
+        current = str(campaign["game_state"]["current_game_datetime"])
+        listings: list[dict[str, Any]] = []
+        for listing in region.get("shop_listings", []) or []:
+            try:
+                record = self._catalog_record(database, listing.get("reference", {}))
+            except KeyError:
+                continue
+            window = shop_window(region, listing, current)
+            frequency = str(listing.get("frequency", "always"))
+            quantity = None if frequency == "always" else max(1, int(record.get("default_stock_quantity", record.get("default_source_quantity", 1)) or 1))
+            sold = int(sales.get(f"{region['record_id']}:{listing['record_id']}:{window['window_id']}", 0) or 0)
+            remaining = None if quantity is None else max(0, quantity - sold)
+            available = bool(window["available"] and (remaining is None or remaining > 0))
+            price = int(listing.get("price_knuts", 9_999_999) or 0)
+            listings.append({
+                "record_id": str(listing["record_id"]),
+                "name": str(record.get("name") or record.get("title") or "Item"),
+                "description": str(record.get("description", "") or "")[:1000],
+                "price_knuts": price, "frequency": frequency,
+                "available": available, "remaining": remaining,
+                "affordable": available and balance >= price,
+            })
+        return {
+            "kind": "shop", "map_id": map_id, "region_id": str(region["record_id"]),
+            "title": str(region.get("name") or "Shop"), "balance_knuts": balance,
+            "listings": listings,
+        }
+
+    def purchase_shop_listing(
+        self, session_id: str, contact_id: str, map_id: str, region_id: str,
+        listing_id: str
+    ) -> dict[str, Any]:
+        with self._lock:
+            _session, campaign, _document, person, region = self._region_player_context(
+                session_id, contact_id, map_id, region_id
+            )
+            if str(region.get("behavior_type")) != "shop":
+                raise ValueError("That region is not a shop")
+            listing = next(
+                (item for item in region.get("shop_listings", []) or []
+                 if str(item.get("record_id")) == listing_id), None
+            )
+            if listing is None:
+                raise KeyError("Unknown shop listing")
+            database = self.shared_store.load("db.json").data
+            record = self._catalog_record(database, listing["reference"])
+            window = shop_window(region, listing, str(campaign["game_state"]["current_game_datetime"]))
+            if not window["available"]:
+                raise ValueError("That listing is not currently in stock")
+            character_id = str(person["record_id"])
+            price = int(listing.get("price_knuts", 9_999_999) or 0)
+            frequency = str(listing.get("frequency", "always"))
+            sales_key = f"{region_id}:{listing_id}:{window['window_id']}"
+            result_balance = 0
+
+            def update(state: dict[str, Any]) -> None:
+                nonlocal result_balance
+                interactions = state.setdefault("region_interactions", {})
+                sales = interactions.setdefault("shop_window_sales", {})
+                if frequency != "always":
+                    authored = max(1, int(record.get("default_stock_quantity", record.get("default_source_quantity", 1)) or 1))
+                    if int(sales.get(sales_key, 0) or 0) >= authored:
+                        raise ValueError("That listing has sold out")
+                person_state = state.setdefault("people", {}).setdefault(character_id, {})
+                balance = int(person_state.get("currency_knuts", 0) or 0)
+                if balance < price:
+                    raise ValueError("The character cannot afford that item")
+                person_state["currency_knuts"] = balance - price
+                result_balance = balance - price
+                if frequency != "always":
+                    sales[sales_key] = int(sales.get(sales_key, 0) or 0) + 1
+                self._inventory_add(person_state, listing["reference"], record, 1, source=str(region.get("name") or "Shop"))
+                interactions.setdefault("purchases", []).append({
+                    "record_id": str(uuid4()), "character_id": character_id,
+                    "map_id": map_id, "region_id": region_id, "listing_id": listing_id,
+                    "definition_collection": str(listing["reference"].get("collection", "")),
+                    "definition_record_id": str(listing["reference"].get("record_id", "")),
+                    "price_knuts": price, "game_datetime": str(state["current_game_datetime"]),
+                    "created_at": iso_utc(utc_now()),
+                })
+
+            self.campaign_repository.update_game_state(campaign["record_id"], update)
+            item_name = str(record.get("name") or record.get("title") or "an item")
+            character_name = str(person.get("displayed_name") or "A player")
+            return {
+                "kind": "shop_purchase_result", "item_name": item_name,
+                "price_knuts": price, "balance_knuts": result_balance,
+                "text": f"{character_name} buys {item_name} for {price} Knuts.",
+            }
+
+    def adjust_person_currency(
+        self, session_id: str, person_id: str, change_knuts: int
+    ) -> dict[str, Any]:
+        """Adjust a campaign character's balance from Headmaster-only controls."""
+
+        change = int(change_knuts)
+        with self._lock:
+            session = self._board_context(session_id)
+            campaign, document = self._campaign_document(session)
+            if not any(
+                str(person.get("record_id", "")) == person_id
+                for person in document.get("people", [])
+                if isinstance(person, dict)
+            ):
+                raise KeyError("Unknown person")
+            result_balance = 0
+
+            def update(state: dict[str, Any]) -> None:
+                nonlocal result_balance
+                person_state = state.setdefault("people", {}).setdefault(person_id, {})
+                current = max(0, int(person_state.get("currency_knuts", 0) or 0))
+                result_balance = current + change
+                if result_balance < 0:
+                    raise ValueError("That adjustment would make the balance negative")
+                person_state["currency_knuts"] = result_balance
+
+            self.campaign_repository.update_game_state(campaign["record_id"], update)
+            return {"person_id": person_id, "balance_knuts": result_balance}
+
     def roll_character_action(
         self,
         session_id: str,
@@ -2315,7 +3198,7 @@ class GameBoardService:
         self, session_id: str, contact_id: str, slot: str, item_id: str,
     ) -> dict[str, Any]:
         slot = str(slot or "").strip()
-        if slot not in {"focus", "accessory_1", "accessory_2"}:
+        if slot not in {"focus", "accessory_1", "accessory_2", "flyable"}:
             raise ValueError("Unknown equipment slot")
         with self._lock:
             _wrapper, session = self._active(session_id)
@@ -2329,7 +3212,11 @@ class GameBoardService:
             item = next((entry for entry in inventory if str(entry.get("record_id", "")) == item_id), None) if item_id else None
             if item_id and item is None:
                 raise PermissionError("That item is not in this character's inventory")
-            expected = "focus" if slot == "focus" else "accessory"
+            expected = (
+                "focus" if slot == "focus"
+                else "flyable" if slot == "flyable"
+                else "accessory"
+            )
             if item is not None and str(item.get("equipment_slot_type", "")) != expected:
                 raise ValueError(f"That item cannot occupy the {slot.replace('_', ' ')} slot")
             campaign = self.campaign_repository.get(campaign_id)
@@ -2344,16 +3231,74 @@ class GameBoardService:
                 request = self.campaign_repository.add_request(campaign_id, "equipment_change", details)
                 return {"status": "pending", "request": request}
 
+            flight_roll: dict[str, Any] | None = None
+            if slot == "flyable" and item is not None:
+                try:
+                    threshold = int(item.get("flight_threshold"))
+                except (TypeError, ValueError) as error:
+                    raise ValueError(
+                        "That flyable item does not have a valid Flying threshold"
+                    ) from error
+                flight_roll = perform_character_roll(sheet, "skill", "Flying")
+                natural = int((flight_roll.get("dice") or [0])[0] or 0)
+                success = natural != 1 and int(flight_roll.get("total", 0) or 0) >= threshold
+                critical = (
+                    "failure" if natural == 1
+                    else "success" if natural == 10 and success
+                    else ""
+                )
+                character_name = str(sheet.get("character_name") or "A character")
+                item_name = str(item.get("name") or "a flyable item")
+                flight_roll.update({
+                    "action_type": "flyable",
+                    "target_id": str(item.get("record_id") or ""),
+                    "target_name": item_name,
+                    "threshold": threshold,
+                    "success": success,
+                    "critical": critical,
+                    "outcome": (
+                        "critical_success" if critical == "success"
+                        else "critical_failure" if critical == "failure"
+                        else "success" if success else "failure"
+                    ),
+                    "text": (
+                        f"{character_name} gets airborne on {item_name} "
+                        f"with a Flying total of {flight_roll.get('total')} against {threshold}."
+                        if success else
+                        f"{character_name} fails to get airborne on {item_name} "
+                        f"with a Flying total of {flight_roll.get('total')} against {threshold}."
+                    ),
+                })
+                if not success:
+                    return {
+                        "status": "failed", "slot": slot,
+                        "item_id": item_id,
+                        "airborne": bool(person_state.get("airborne", False)),
+                        "roll": flight_roll, "text": flight_roll["text"],
+                    }
+
             def update(state: dict[str, Any]) -> None:
-                equipment = state.setdefault("people", {}).setdefault(character_id, {}).setdefault("equipment", {})
+                person = state.setdefault("people", {}).setdefault(character_id, {})
+                equipment = person.setdefault("equipment", {})
                 equipment[slot] = item_id
+                if slot == "flyable":
+                    person["airborne"] = bool(item_id)
                 if item_id:
                     for other_slot, equipped_id in list(equipment.items()):
                         if other_slot != slot and equipped_id == item_id:
                             equipment[other_slot] = ""
 
             self.campaign_repository.update_game_state(campaign_id, update)
-            return {"status": "equipped", "slot": slot, "item_id": item_id}
+            result = {
+                "status": "equipped" if item_id else "unequipped",
+                "slot": slot,
+                "item_id": item_id,
+                "airborne": bool(item_id) if slot == "flyable" else bool(person_state.get("airborne", False)),
+            }
+            if flight_roll is not None:
+                result["roll"] = flight_roll
+                result["text"] = flight_roll["text"]
+            return result
 
     def use_inventory_item(
         self, session_id: str, contact_id: str, item_id: str, action_id: str,
@@ -2520,6 +3465,15 @@ class GameBoardService:
                 elif action == "leave_battle":
                     person["battle"] = None
                     result = {"active": False}
+                elif action == "ground":
+                    equipment = person.setdefault("equipment", {})
+                    removed_item_id = str(equipment.get("flyable", "") or "")
+                    equipment["flyable"] = ""
+                    person["airborne"] = False
+                    result = {
+                        "airborne": False,
+                        "removed_item_id": removed_item_id,
+                    }
                 elif action == "add_note":
                     note_text = str(text or "").strip()
                     if not note_text:
@@ -2552,6 +3506,8 @@ class GameBoardService:
                 })
             elif action in {"enter_battle", "leave_battle"}:
                 event_details["battle"] = deepcopy(result)
+            elif action == "ground":
+                event_details.update(deepcopy(result))
             else:
                 event_details.update({
                     "note_id": result["record_id"],
@@ -3258,7 +4214,16 @@ class GameBoardService:
             if person is None:
                 raise KeyError("Unknown person")
             region = next((item for item in source["regions"] if item["record_id"] == region_id), None)
-            if region is None or region.get("behavior_type") != "travel":
+            behavior = str((region or {}).get("behavior_type", "") or "")
+            revealed_secret_passage = bool(
+                region
+                and behavior == "secret"
+                and region.get("secret_passage", False)
+                and self._secret_is_revealed(campaign, region_id, person_id)
+            )
+            if region is None or not (
+                behavior == "travel" or revealed_secret_passage
+            ):
                 raise ValueError("That area is not a travel destination")
             if not point_in_polygon(float(x), float(y), region["points"]):
                 raise ValueError("The travel point is outside that area")
@@ -3310,6 +4275,65 @@ class GameBoardService:
             )
             self._persist_campaign_document(campaign["record_id"], document)
             return deepcopy(board["placement"])
+
+    def set_secret_revealed(
+        self,
+        session_id: str,
+        map_id: str,
+        region_id: str,
+        revealed: bool,
+    ) -> dict[str, Any]:
+        """Reveal or conceal one authored Secret for every campaign player."""
+
+        with self._lock:
+            session = self._board_context(session_id)
+            campaign, document = self._campaign_document(session)
+            map_record = self._campaign_map(document, map_id)
+            region = next(
+                (
+                    item
+                    for item in map_record.get("regions", []) or []
+                    if str(item.get("record_id", "") or "") == region_id
+                ),
+                None,
+            )
+            if region is None or str(
+                region.get("behavior_type", "") or ""
+            ) != "secret":
+                raise ValueError("That map area is not a Secret")
+
+            def update(state: dict[str, Any]) -> None:
+                interactions = state.setdefault("region_interactions", {})
+                records = [
+                    item
+                    for item in interactions.setdefault(
+                        "revealed_secrets", []
+                    )
+                    if str(item.get("region_id", "") or "") != region_id
+                ]
+                if revealed:
+                    records.append(
+                        {
+                            "record_id": str(uuid4()),
+                            "map_id": map_id,
+                            "region_id": region_id,
+                            "created_at": iso_utc(utc_now()),
+                        }
+                    )
+                interactions["revealed_secrets"] = records
+
+            self.campaign_repository.update_game_state(
+                campaign["record_id"], update
+            )
+            return {
+                "map_id": map_id,
+                "region_id": region_id,
+                "name": str(region.get("name", "") or "Secret"),
+                "secret_passage": bool(
+                    region.get("secret_passage", False)
+                ),
+                "revealed": bool(revealed),
+            }
 
     def create_board_group(
         self,
@@ -3388,6 +4412,9 @@ class GameBoardService:
             world_session = self.shared_store.load("world.json")
             if not any(str(person.get("record_id", "")) == person_id for person in world_session.data.get("people", [])):
                 raise KeyError("Unknown person")
+            game_datetime = str(campaign["game_state"]["current_game_datetime"])
+            event_date, _, event_time = game_datetime.partition("T")
+            event_time = event_time.replace(":", "")[:4]
             existing = next(
                 (
                     item for item in world_session.data.get("organizations", [])
@@ -3406,7 +4433,21 @@ class GameBoardService:
                     "parent_organization_id": "",
                     "is_faction": True,
                     "faction_color": normalized_color,
-                    "events": [],
+                    "events": [{
+                        "record_id": "organization-founding",
+                        "event_type": "founding",
+                        "title": "Founding",
+                        "date": event_date,
+                        "time": "",
+                        "year": int(re.match(r"^-?\d+", event_date).group()),
+                        "description": "",
+                        "person_ids": [],
+                        "item_ids": [],
+                        "item_link_types": {},
+                        "item_new_owners": {},
+                        "eminence_person_ids": [],
+                        "eminence_skills": {},
+                    }],
                     "jobs": [],
                 })
             else:
@@ -3414,8 +4455,6 @@ class GameBoardService:
                 # color changes the one faction record for every character,
                 # rather than creating a person-specific presentation value.
                 existing["faction_color"] = normalized_color
-            game_datetime = str(campaign["game_state"]["current_game_datetime"])
-            event_date, _, event_time = game_datetime.partition("T")
             if faction_id not in active_faction_ids(world_session.data, person_id, game_datetime):
                 world_session.data.setdefault("events", []).append({
                     "record_id": str(uuid4()),

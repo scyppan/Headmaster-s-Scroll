@@ -1,0 +1,74 @@
+﻿Master Name,Workbook Birthdates Found,Existing World Name,Existing Record ID,Existing World Birthdate,Existing Canon,Existing Player Character,Birthdate Comparison,Action
+Albus Dumbledore,,Albus Dumbledore,6e99daab-6798-4ce1-b451-060437fc037f,1881-08-08,False,False,No workbook birthdate evidence,Skipped; existing world.json entry preserved unchanged
+Alice Tolipan,1984-07-31 — familytree-20250718-221014.json,Alice Tolipan,78ad93b3-82d8-4592-bb78-2b229e5b3857,1984-09-02,False,False,Birthdate differs: workbook 1984-07-31; world.json 1984-09-02,Skipped; existing world.json entry preserved unchanged
+Alicia Spinnet,1977-12-10 — familytree-20250718-221014.json,Alicia Spinnet,8d725029-e682-4691-b9c3-0afb04b2ba74,1977-12-15,True,False,Birthdate differs: workbook 1977-12-10; world.json 1977-12-15,Skipped; existing world.json entry preserved unchanged
+Angelina Johnson,1977-09-08 — familytree-20250718-221014.json,Angelina Johnson,015ddb5b-ce96-4b8e-9e13-79117199f292,1977-10-27,False,False,Birthdate differs: workbook 1977-09-08; world.json 1977-10-27,Skipped; existing world.json entry preserved unchanged
+Anthony Goldstein,1979-01-24 — familytree-20250718-221014.json,Anthony Goldstein,1ed2c18c-fbba-40db-925a-9cd4236416e2,1980-01-31,False,False,Birthdate differs: workbook 1979-01-24; world.json 1980-01-31,Skipped; existing world.json entry preserved unchanged
+Argus Filch,"1930 — 260815031807_people_formidable_entries.csv
+1930-04-17 — 260815031751_character_formidable_entries.csv",Argus Filch,7e5d8c0f-2f5e-432d-86f2-674f4d0fadeb,1948-05-05,False,False,Birthdate differs: workbook 1930-04-17; world.json 1948-05-05,Skipped; existing world.json entry preserved unchanged
+Arthur Weasley,1950-02-06 — familytree-20250718-221014.json,Arthur Weasley,c35c9332-dbd4-4680-8d5a-eb9872d9026f,1950-02-06,False,False,Compatible birthdate evidence,Skipped; existing world.json entry preserved unchanged
+Bill Weasley,1970-11-29 — familytree-20250718-221014.json,Bill Weasley,fa1e0297-4fc5-4e77-a992-381306d84881,1970-11-29,False,False,Compatible birthdate evidence,Skipped; existing world.json entry preserved unchanged
+Cho Chang,"CONFLICT
+1977-10-31 — familytree-20250718-221014.json
+1979-04-07 — 260815031751_character_formidable_entries.csv",Cho Chang,0b355b5f-1659-43fa-b7bf-7f3838959c9a,1979-05-15,False,False,Workbook has conflicting birthdates; existing entry preserved,Skipped; existing world.json entry preserved unchanged
+Colin Creevey,c. 1981 — HouseRosters.xlsm.xlsx (inferred from cohort),Colin Creevey,305a05a2-7ec1-403b-b00d-8678bb896fcb,1982-01-29,False,False,Birthdate differs: workbook 1981; world.json 1982-01-29,Skipped; existing world.json entry preserved unchanged
+Dean Thomas,1980-01-07 — 260815031751_character_formidable_entries.csv,Dean Thomas,176b841b-540b-434e-add7-5120223b7f6f,1980-01-07,False,False,Compatible birthdate evidence,Skipped; existing world.json entry preserved unchanged
+Dennis Creevey,c. 1982 — HouseRosters.xlsm.xlsx (inferred from cohort),Dennis Creevey,135c0ffb-6c82-4918-94c5-dde857c2ed5f,1983-06-12,False,False,Birthdate differs: workbook 1982; world.json 1983-06-12,Skipped; existing world.json entry preserved unchanged
+Ernie Macmillan,c. 1980 — HouseRosters.xlsm.xlsx (inferred from cohort),Ernie Macmillan,1c2e6c15-b2d9-4981-856b-505f2a462b4f,1980-03-12,True,False,Compatible birthdate evidence,Skipped; existing world.json entry preserved unchanged
+Euan Bruce,,Euan Bruce,a7bc9826-202b-47c5-876e-bed43ac5c92d,1957,False,False,No workbook birthdate evidence,Skipped; existing world.json entry preserved unchanged
+Gawain Robards,"CONFLICT
+1942 — 260815031807_people_formidable_entries.csv
+1942-10-30 — familytree-20250718-221014.json
+1957-11-19 — 260815031751_character_formidable_entries.csv",Gawain Robards,79ad14bb-26fc-4b27-ae65-3196762c680b,1937,True,False,Workbook has conflicting birthdates; existing entry preserved,Skipped; existing world.json entry preserved unchanged
+George Weasley,1978-04-01 — familytree-20250718-221014.json,George Weasley,e1b2ee79-98ed-4304-b14f-b80f2c4046c1,1978-04-01,False,False,Compatible birthdate evidence,Skipped; existing world.json entry preserved unchanged
+Ginny Weasley,1981-08-11 — 260815031751_character_formidable_entries.csv; familytree-20250718-221014.json,Ginny Weasley,91025900-cbe7-4f88-a881-12f0a6500815,1981-08-11,False,False,Compatible birthdate evidence,Skipped; existing world.json entry preserved unchanged
+Hannah Abbott,"CONFLICT
+1980-04-04 — familytree-20250718-221014.json
+1980-08-31 — 260815031751_character_formidable_entries.csv",Hannah Abbott,6852cb5c-e0c3-4146-8820-f976587c8481,1979-11-29,False,False,Workbook has conflicting birthdates; existing entry preserved,Skipped; existing world.json entry preserved unchanged
+Harry Potter,1980-07-31 — 260815031751_character_formidable_entries.csv; familytree-20250718-221014.json,Harry Potter,da621804-0d7d-4af5-8cd1-54e535323c8b,1980-07-31,True,False,Compatible birthdate evidence,Skipped; existing world.json entry preserved unchanged
+Hermione Granger,1979-09-19 — 260815031751_character_formidable_entries.csv; 260815031822_people_old_formidable_entries.csv; familytree-20250718-221014.json,Hermione Granger,594ad00f-0b79-4118-ba66-a875f7ba9811,1979-09-19,True,False,Compatible birthdate evidence,Skipped; existing world.json entry preserved unchanged
+Horace Slughorn,1899-04-28 — 260815031751_character_formidable_entries.csv,Horace Slughorn,c5931c31-a3ec-4f50-a12c-739c83f39dad,1899-07-06,False,False,Birthdate differs: workbook 1899-04-28; world.json 1899-07-06,Skipped; existing world.json entry preserved unchanged
+Justin Finch-Fletchley,,Justin Finch-Fletchley,3ff72a1f-1263-4e79-ad92-d1b9ed350ee3,1979-09-22,True,False,No workbook birthdate evidence,Skipped; existing world.json entry preserved unchanged
+Katie Bell,1978-09-24 — familytree-20250718-221014.json,Katie Bell,a8fc8d1a-7604-4e69-ac10-c01b354865ac,1979-07-25,False,False,Birthdate differs: workbook 1978-09-24; world.json 1979-07-25,Skipped; existing world.json entry preserved unchanged
+Kingsley Gudgeon,c. 1989 — HouseRosters.xlsm.xlsx (inferred from cohort),Kingsley Gudgeon,ee2b39ed-706b-462f-9d1a-9bb5a84679b1,1989-04-27,False,False,Compatible birthdate evidence,Skipped; existing world.json entry preserved unchanged
+Kingsley Shacklebolt,1915-06-20 — familytree-20250718-221014.json,Kingsley Shacklebolt,d2f63d30-b1fc-4d75-a342-75c16c9db0b2,1949-10-20,False,False,Birthdate differs: workbook 1915-06-20; world.json 1949-10-20,Skipped; existing world.json entry preserved unchanged
+Lavender Brown,1980-06-13 — 260815031751_character_formidable_entries.csv,Lavender Brown,123d9889-e0dd-457f-9cbb-8363a6444c29,1980-03-14,False,False,Birthdate differs: workbook 1980-06-13; world.json 1980-03-14,Skipped; existing world.json entry preserved unchanged
+Lee Jordan,1977-08-17 — familytree-20250718-221014.json,Lee Jordan,c1c24da7-af71-44c1-ae51-052259c25383,1978-07-04,False,False,Birthdate differs: workbook 1977-08-17; world.json 1978-07-04,Skipped; existing world.json entry preserved unchanged
+Luca Caruso,1985-03-03 — familytree-20250718-221014.json,Luca Caruso,1b45533f-1445-43e9-ac87-40104c33a169,1982-09-13,False,False,Birthdate differs: workbook 1985-03-03; world.json 1982-09-13,Skipped; existing world.json entry preserved unchanged
+Luna Lovegood,1981-02-13 — 260815031751_character_formidable_entries.csv,Luna Lovegood,afa0f6ae-5267-481b-9f8d-7891b0e7653c,1981-02-13,True,False,Compatible birthdate evidence,Skipped; existing world.json entry preserved unchanged
+Marietta Edgecombe,1979-02-25 — familytree-20250718-221014.json,Marietta Edgecombe,8f2a492b-7158-4ab7-8c31-a32e5cd25f88,1978-10-11,False,False,Birthdate differs: workbook 1979-02-25; world.json 1978-10-11,Skipped; existing world.json entry preserved unchanged
+Michael Corner,1979-09-26 — familytree-20250718-221014.json,Michael Corner,34b97744-6b58-4b74-a3e7-138b5524919c,1980-02-22,True,False,Birthdate differs: workbook 1979-09-26; world.json 1980-02-22,Skipped; existing world.json entry preserved unchanged
+Minerva McGonagall,1935-10-04 — 260815031751_character_formidable_entries.csv,Minerva McGonagall,9eb7c539-cfb4-4661-b3bb-8f4ab75bb69a,1935-10-04,True,False,Compatible birthdate evidence,Skipped; existing world.json entry preserved unchanged
+Neville Longbottom,"CONFLICT
+1980-05-25 — familytree-20250718-221014.json
+1980-07-30 — 260815031751_character_formidable_entries.csv; 260815031807_people_formidable_entries.csv",Neville Longbottom,e040f41f-13dd-418a-953f-ebc2988446b6,1980-07-30,False,False,Workbook has conflicting birthdates; existing entry preserved,Skipped; existing world.json entry preserved unchanged
+Nigel Wolpert,1983-06-17 — familytree-20250718-221014.json,Nigel Wolpert,175f1474-7db6-4ac1-9ea7-38038a81edf3,1982-08-01,False,False,Birthdate differs: workbook 1983-06-17; world.json 1982-08-01,Skipped; existing world.json entry preserved unchanged
+Nymphadora Tonks,1973-07-30 — familytree-20250718-221014.json,Nymphadora Tonks,024dde35-66df-4b86-a098-57a5a5980ffa,1973-05-15,False,False,Birthdate differs: workbook 1973-07-30; world.json 1973-05-15,Skipped; existing world.json entry preserved unchanged
+Oliver Wood,1975-10-05 — familytree-20250718-221014.json,Oliver Wood,a2b6515b-0e9a-477d-ad92-e8dbab58c6d8,1976-04-19,False,False,Birthdate differs: workbook 1975-10-05; world.json 1976-04-19,Skipped; existing world.json entry preserved unchanged
+Otto Ryan,"CONFLICT
+1949 — 260815031807_people_formidable_entries.csv
+1949-03-15 — 260815031751_character_formidable_entries.csv
+1950-07-11 — familytree-20250718-221014.json",Otto Ryan,c321bb6c-57ba-4224-b62a-24968d62f36e,1950-07-11,False,False,Workbook has conflicting birthdates; existing entry preserved,Skipped; existing world.json entry preserved unchanged
+Padma Patil,"CONFLICT
+1980-02-05 — 260815031751_character_formidable_entries.csv
+1980-04-05 — familytree-20250718-221014.json",Padma Patil,a711ec2a-e501-4921-a7f6-1e622832034c,1979-09-25,False,False,Workbook has conflicting birthdates; existing entry preserved,Skipped; existing world.json entry preserved unchanged
+Parvati Patil,1980-02-05 — 260815031751_character_formidable_entries.csv,Parvati Patil,17af755b-e7ec-4d6a-bc63-70f51b7ad898,1979-09-25,False,False,Birthdate differs: workbook 1980-02-05; world.json 1979-09-25,Skipped; existing world.json entry preserved unchanged
+Percy Weasley,"CONFLICT
+1976-08-22 — 260815031751_character_formidable_entries.csv; 260815031807_people_formidable_entries.csv
+1978-08-22 — familytree-20250718-221014.json",Percy Weasley,0c685dc2-b174-43f4-986e-ed47de6d2bbf,1976-08-22,False,False,Workbook has conflicting birthdates; existing entry preserved,Skipped; existing world.json entry preserved unchanged
+Pomona Sprout,1932-02-18 — familytree-20250718-221014.json,Pomona Sprout,f7478a34-1f5f-4922-beec-cf9acafc689f,1895-05-15,False,False,Birthdate differs: workbook 1932-02-18; world.json 1895-05-15,Skipped; existing world.json entry preserved unchanged
+Poppy Pomfrey,"CONFLICT
+1931 — 260815031807_people_formidable_entries.csv
+1932-02-25 — 260815031751_character_formidable_entries.csv; familytree-20250718-221014.json",Poppy Pomfrey,76cab833-aa83-4279-8827-eec8a996e825,1932-02-25,False,False,Workbook has conflicting birthdates; existing entry preserved,Skipped; existing world.json entry preserved unchanged
+Remus Lupin,1960-03-10 — familytree-20250718-221014.json,Remus Lupin,4e83492f-582d-4907-af20-6a44fca03bdc,1960-03-10,False,False,Compatible birthdate evidence,Skipped; existing world.json entry preserved unchanged
+Rubeus Hagrid,"CONFLICT
+1928-12-06 — 260815031751_character_formidable_entries.csv
+1929-03-05 — familytree-20250718-221014.json",Rubeus Hagrid,791b1974-8526-404a-98b5-d3e6c3621ff0,1928-12-06,True,False,Workbook has conflicting birthdates; existing entry preserved,Skipped; existing world.json entry preserved unchanged
+Rufus Scrimgeour,1915-05-25 — familytree-20250718-221014.json,Rufus Scrimgeour,2795a527-6daa-408e-8248-b43ef3a5e2dd,1919,False,False,Birthdate differs: workbook 1915-05-25; world.json 1919,Skipped; existing world.json entry preserved unchanged
+Seamus Finnegan,c. 1980 — HouseRosters.xlsm.xlsx (inferred from cohort),Seamus Finnegan,d39df4b0-eec5-4069-b065-e81c0a62f03c,1980-01-30,False,False,Compatible birthdate evidence,Skipped; existing world.json entry preserved unchanged
+Severus Snape,1961-07-09 — familytree-20250718-221014.json,Severus Snape,16622042-6bfb-49a3-bedb-6e4f367181d0,1960-01-09,False,False,Birthdate differs: workbook 1961-07-09; world.json 1960-01-09,Skipped; existing world.json entry preserved unchanged
+Susan Bones,1979-11-28 — familytree-20250718-221014.json,Susan Bones,ceabdad2-445f-45f8-ad12-9eec36befb16,1980-04-03,True,False,Birthdate differs: workbook 1979-11-28; world.json 1980-04-03,Skipped; existing world.json entry preserved unchanged
+Sybill Trelawney,,Sybill Trelawney,9778cba2-2b79-4f17-b5ab-091550cc59dd,1962-03-09,False,False,No workbook birthdate evidence,Skipped; existing world.json entry preserved unchanged
+Terry Boot,1980-02-19 — familytree-20250718-221014.json,Terry Boot,54cb26f5-233b-40a4-9a29-eb4d70eb7b86,1979-12-01,False,False,Birthdate differs: workbook 1980-02-19; world.json 1979-12-01,Skipped; existing world.json entry preserved unchanged
+Xenophilius Lovegood,1952-08-16 — familytree-20250718-221014.json,Xenophilius Lovegood,eefeb5ed-89b5-439e-ab4e-e8bfe1ed8537,1963-12-26,False,False,Birthdate differs: workbook 1952-08-16; world.json 1963-12-26,Skipped; existing world.json entry preserved unchanged
+Zacharias Smith,c. 1980 — HouseRosters.xlsm.xlsx (inferred from cohort),Zacharias Smith,8bbf7198-4379-408a-aef6-c1f6273c2ccb,1979-10-18,True,False,Birthdate differs: workbook 1980; world.json 1979-10-18,Skipped; existing world.json entry preserved unchanged

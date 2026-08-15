@@ -772,6 +772,8 @@ class GameBoardWindow(tk.Tk):
         self.board_token_controls_dock: ttk.Frame | None = None
         self.board_groups_dock: ttk.Frame | None = None
         self.board_creatures_dock: ttk.Frame | None = None
+        self.board_secrets_dock: ttk.Frame | None = None
+        self.board_secret_region_ids: list[str] = []
         self.creature_placement: dict[str, Any] | None = None
         self.board_creature_ids: list[str] = []
         self.board_tools_panels: dict[str, ttk.Frame] = {}
@@ -782,6 +784,7 @@ class GameBoardWindow(tk.Tk):
             "creatures": 440,
             "obfuscation-tools": 330,
             "token-tools": 390,
+            "secrets": 360,
         }
         self.board_reveal_value = tk.BooleanVar(value=False)
         self.board_zoom_status_value = tk.StringVar(value="Zoom 100% · 0 clicks")
@@ -1568,6 +1571,184 @@ class GameBoardWindow(tk.Tk):
             text="Open zoom profile…",
             command=self.open_board_zoom_controls,
         ).pack(fill="x", pady=(4, 0))
+
+    def _create_board_secret_controls(self, parent: tk.Misc) -> None:
+        shell = ttk.Frame(parent, style="Card.TFrame", padding=5)
+        self.board_secrets_dock = shell
+        self.board_tools_panels["secrets"] = shell
+
+        header = ttk.Frame(shell, style="Card.TFrame")
+        header.pack(fill="x", pady=(0, 4))
+        ttk.Label(
+            header, text="SECRETS", style="Card.TLabel", font=("Segoe UI", 8, "bold")
+        ).pack(side="left")
+        self.board_secret_action_button = ttk.Button(
+            header,
+            text="Reveal",
+            width=9,
+            style="Good.TButton",
+            command=self.toggle_selected_board_secret,
+        )
+        self.board_secret_action_button.pack(side="right")
+        self._attach_tooltip(
+            self.board_secret_action_button,
+            "Reveal or conceal the selected secret for every player",
+        )
+
+        self.board_secret_list = tk.Listbox(
+            shell,
+            exportselection=False,
+            height=12,
+            background="#fff8e6",
+            foreground=self.INK,
+            selectbackground=self.ACCENT,
+            selectforeground="#fff8e7",
+            borderwidth=1,
+            relief="solid",
+            font=("Segoe UI", 9),
+        )
+        self.board_secret_list.pack(fill="both", expand=True)
+        self.board_secret_list.bind(
+            "<<ListboxSelect>>", lambda _event: self._sync_board_secret_controls()
+        )
+        self.board_secret_list.bind(
+            "<Double-Button-1>", lambda _event: self.toggle_selected_board_secret()
+        )
+        self.board_secret_status = tk.StringVar(value="Open a map to view its secrets.")
+        ttk.Label(
+            shell,
+            textvariable=self.board_secret_status,
+            style="Card.TLabel",
+            wraplength=320,
+            justify="left",
+            font=("Segoe UI", 8),
+        ).pack(fill="x", pady=(4, 0))
+        self._refresh_board_secret_list()
+
+    def _selected_board_secret(self) -> dict[str, Any] | None:
+        if not hasattr(self, "board_secret_list"):
+            return None
+        selection = self.board_secret_list.curselection()
+        if not selection:
+            return None
+        index = int(selection[0])
+        if index >= len(self.board_secret_region_ids):
+            return None
+        region_id = self.board_secret_region_ids[index]
+        current_map = self._current_board_map() or {}
+        return next(
+            (
+                region
+                for region in current_map.get("regions", [])
+                if str(region.get("record_id", "")) == region_id
+            ),
+            None,
+        )
+
+    def _refresh_board_secret_list(self) -> None:
+        if not hasattr(self, "board_secret_list"):
+            return
+        previous_id = ""
+        selected = self.board_secret_list.curselection()
+        if selected and int(selected[0]) < len(self.board_secret_region_ids):
+            previous_id = self.board_secret_region_ids[int(selected[0])]
+
+        self.board_secret_list.delete(0, "end")
+        self.board_secret_region_ids = []
+        current_map = self._current_board_map()
+        revealed = {
+            str(value)
+            for value in self.board_snapshot.get("revealed_secret_region_ids", [])
+        }
+        secrets = [
+            region
+            for region in (current_map or {}).get("regions", [])
+            if str(region.get("behavior_type", "")) == "secret"
+        ]
+        secrets.sort(key=lambda region: str(region.get("name") or "Secret").casefold())
+        for region in secrets:
+            region_id = str(region.get("record_id", ""))
+            state = "Shown" if region_id in revealed else "Hidden"
+            passage = "  [passage]" if region.get("secret_passage") else ""
+            self.board_secret_list.insert(
+                "end", f"{state:<6}  {str(region.get('name') or 'Secret')}{passage}"
+            )
+            self.board_secret_region_ids.append(region_id)
+
+        if previous_id in self.board_secret_region_ids:
+            index = self.board_secret_region_ids.index(previous_id)
+            self.board_secret_list.selection_set(index)
+            self.board_secret_list.see(index)
+        elif self.board_secret_region_ids:
+            self.board_secret_list.selection_set(0)
+
+        if current_map is None:
+            self.board_secret_status.set("Open a map to view its secrets.")
+        elif not secrets:
+            self.board_secret_status.set("This map has no authored secrets.")
+        else:
+            self.board_secret_status.set(
+                "Double-click a secret or use Reveal/Conceal. Passages become travel regions when shown."
+            )
+        self._sync_board_secret_controls()
+
+    def _sync_board_secret_controls(self) -> None:
+        if not hasattr(self, "board_secret_action_button"):
+            return
+        region = self._selected_board_secret()
+        if region is None:
+            self.board_secret_action_button.configure(text="Reveal", state="disabled")
+            return
+        revealed = {
+            str(value)
+            for value in self.board_snapshot.get("revealed_secret_region_ids", [])
+        }
+        is_revealed = str(region.get("record_id", "")) in revealed
+        self.board_secret_action_button.configure(
+            text="Conceal" if is_revealed else "Reveal",
+            state="normal",
+            style="Quiet.TButton" if is_revealed else "Good.TButton",
+        )
+
+    def toggle_selected_board_secret(self) -> None:
+        region = self._selected_board_secret()
+        session = self._selected_session()
+        session_id = str(
+            self.board_snapshot.get("session_id", "")
+            or (session or {}).get("id", "")
+        )
+        map_id = self.selected_board_map_id
+        if region is None or not session_id or not map_id:
+            self.bell()
+            self.set_notice("Select a secret on an open session map", error=True)
+            return
+        revealed = {
+            str(value)
+            for value in self.board_snapshot.get("revealed_secret_region_ids", [])
+        }
+        region_id = str(region.get("record_id", ""))
+        make_visible = region_id not in revealed
+        payload = {
+            "session_id": session_id,
+            "map_id": map_id,
+            "revealed": make_visible,
+        }
+
+        def changed(_result: Any) -> None:
+            action = "revealed to" if make_visible else "concealed from"
+            self.set_notice(
+                f"{str(region.get('name') or 'Secret')} was {action} all players"
+            )
+            self.refresh(silent=True)
+
+        self._background(
+            lambda: self.client.request(
+                "PUT",
+                f"/api/admin/board/secrets/{region_id}/visibility",
+                payload,
+            ),
+            changed,
+        )
 
     def open_board_map_controls(self) -> None:
         self.show_board_tools_panel("obfuscation-tools")
@@ -2409,6 +2590,7 @@ class GameBoardWindow(tk.Tk):
             "creatures": "Creatures",
             "obfuscation-tools": "Obfuscation",
             "token-tools": "Tokens & Zoom",
+            "secrets": "Secrets",
         }
         if hasattr(self, "headmaster_tool_title"):
             self.headmaster_tool_title.set(labels.get(key, "Headmaster Tools"))
@@ -2422,7 +2604,7 @@ class GameBoardWindow(tk.Tk):
         for panel_key, panel in self.board_tools_panels.items():
             if panel_key == key:
                 if not panel.winfo_manager():
-                    large = key in {"groups", "creatures"}
+                    large = key in {"groups", "creatures", "secrets"}
                     panel.pack(
                         fill="both" if large else "x",
                         expand=large,
@@ -2445,6 +2627,7 @@ class GameBoardWindow(tk.Tk):
         self._sync_board_presentation_controls()
         self._render_board_actor_list()
         self._render_board_creature_list()
+        self._refresh_board_secret_list()
         self._save_board_workspace()
 
     def _current_board_map(self) -> dict[str, Any] | None:
@@ -2559,6 +2742,7 @@ class GameBoardWindow(tk.Tk):
             self._draw_board_map(map_id)
         self._render_board_actor_list()
         self._render_board_creature_list()
+        self._refresh_board_secret_list()
 
     def _board_tab_click(self, event: tk.Event) -> str | None:
         """Close a map when the × area at the right edge of its tab is clicked."""
@@ -4459,6 +4643,7 @@ class GameBoardWindow(tk.Tk):
             return
         popup.add_command(label=str(actor.get("name") or "Unknown occupant"), state="disabled")
         popup.add_command(label="Teach...", command=self.teach_selected_actor)
+        popup.add_command(label="Search area...", command=self.search_area_for_selected_actor)
         popup.add_separator()
         visible = actor.get("visibility") == "players"
         popup.add_command(label="Transport…", command=self.transport_selected_actor)
@@ -4466,7 +4651,13 @@ class GameBoardWindow(tk.Tk):
         popup.add_separator()
         popup.add_command(label="Assign wound…", command=self.add_selected_actor_wound)
         popup.add_command(label="Enter or leave battle…", command=self.toggle_selected_actor_battle)
+        popup.add_command(
+            label="Ground",
+            state="normal" if actor.get("airborne") else "disabled",
+            command=lambda: self._send_selected_actor_action("ground"),
+        )
         popup.add_command(label="Add character note…", command=self.add_selected_actor_note)
+        popup.add_command(label="Adjust Knut balance…", command=self.adjust_selected_actor_currency)
         popup.add_separator()
         popup.add_command(
             label="Hide from players" if visible else "Reveal to players",
@@ -4538,6 +4729,187 @@ class GameBoardWindow(tk.Tk):
         render()
         shell.after_idle(entry.focus_set)
         return shell
+
+    def search_area_for_selected_actor(self) -> None:
+        actor = self._selected_board_actor()
+        if not actor or not self.selected_session_id:
+            return
+        payload = {
+            "session_id": self.selected_session_id,
+            "person_id": str(actor.get("actor_id") or ""),
+        }
+        self._background(
+            lambda: self.client.request(
+                "POST", "/api/admin/regions/search-options", payload
+            ),
+            lambda options: self._open_region_search_dialog(actor, options),
+        )
+
+    def _open_region_search_dialog(
+        self, actor: dict[str, Any], options: dict[str, Any]
+    ) -> None:
+        regions = list(options.get("regions", []) or [])
+        if not regions:
+            messagebox.showinfo(
+                "Search area",
+                "There are no available searchable areas on this character's map.",
+                parent=self,
+            )
+            return
+
+        dialog = tk.Toplevel(self)
+        dialog.title(f"Search area — {actor.get('name') or 'Character'}")
+        dialog.transient(self)
+        dialog.grab_set()
+        dialog.geometry("640x430")
+        dialog.minsize(520, 360)
+        apply_window_icon(dialog, GAME_BOARD_ICON)
+
+        shell = ttk.Frame(dialog, padding=10)
+        shell.pack(fill="both", expand=True)
+        shell.columnconfigure(0, weight=1)
+        shell.columnconfigure(1, weight=1)
+        shell.rowconfigure(2, weight=1)
+
+        ttk.Label(
+            shell,
+            text=f"{options.get('map_name') or 'Current map'} · {actor.get('name') or 'Character'}",
+            style="CardTitle.TLabel",
+        ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 6))
+
+        query = tk.StringVar()
+        search_entry = ttk.Entry(shell, textvariable=query)
+        search_entry.grid(row=1, column=0, sticky="ew", padx=(0, 5))
+        search_entry.insert(0, "")
+        ttk.Label(shell, text="Method", style="Card.TLabel").grid(
+            row=1, column=1, sticky="w", padx=(5, 0)
+        )
+
+        region_list = tk.Listbox(shell, exportselection=False)
+        region_list.grid(row=2, column=0, sticky="nsew", padx=(0, 5), pady=(5, 8))
+        mode_list = tk.Listbox(shell, exportselection=False)
+        mode_list.grid(row=2, column=1, sticky="nsew", padx=(5, 0), pady=(5, 8))
+
+        extraction_row = ttk.Frame(shell)
+        extraction_row.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(0, 8))
+        extraction_row.columnconfigure(1, weight=1)
+        extraction_label = ttk.Label(
+            extraction_row, text="Extraction", style="Card.TLabel"
+        )
+        extraction_var = tk.StringVar()
+        extraction_box = ttk.Combobox(
+            extraction_row,
+            textvariable=extraction_var,
+            state="readonly",
+        )
+
+        visible_regions: list[dict[str, Any]] = []
+        visible_modes: list[dict[str, Any]] = []
+        extraction_by_name: dict[str, str] = {}
+
+        def selected_region() -> dict[str, Any] | None:
+            indices = region_list.curselection()
+            return visible_regions[indices[0]] if indices else None
+
+        def selected_mode() -> dict[str, Any] | None:
+            indices = mode_list.curselection()
+            return visible_modes[indices[0]] if indices else None
+
+        def render_extraction(_event: tk.Event | None = None) -> None:
+            nonlocal extraction_by_name
+            method = selected_mode() or {}
+            extraction_methods = list(method.get("extraction_methods", []) or [])
+            extraction_by_name = {
+                str(item.get("name") or "Method"): str(item.get("record_id") or "")
+                for item in extraction_methods
+            }
+            extraction_box.configure(values=list(extraction_by_name))
+            extraction_var.set("")
+            if extraction_methods:
+                extraction_label.grid(row=0, column=0, sticky="w", padx=(0, 6))
+                extraction_box.grid(row=0, column=1, sticky="ew")
+            else:
+                extraction_label.grid_remove()
+                extraction_box.grid_remove()
+
+        def render_modes(_event: tk.Event | None = None) -> None:
+            nonlocal visible_modes
+            region = selected_region() or {}
+            visible_modes = list(region.get("modes", []) or [])
+            mode_list.delete(0, "end")
+            for mode in visible_modes:
+                suffix = " · already searched" if mode.get("attempted_today") else ""
+                mode_list.insert(
+                    "end",
+                    f"{mode.get('name') or 'Search'} · {mode.get('skill') or 'Skill'}{suffix}",
+                )
+            if visible_modes:
+                mode_list.selection_set(0)
+            render_extraction()
+
+        def render_regions(*_args: Any) -> None:
+            nonlocal visible_regions
+            needle = query.get().strip().casefold()
+            visible_regions = [
+                item for item in regions
+                if not needle or needle in str(item.get("title") or "Search").casefold()
+            ]
+            region_list.delete(0, "end")
+            for region in visible_regions:
+                region_list.insert("end", str(region.get("title") or "Search"))
+            if visible_regions:
+                region_list.selection_set(0)
+            render_modes()
+
+        def search() -> None:
+            region = selected_region()
+            mode = selected_mode()
+            if region is None or mode is None:
+                messagebox.showinfo(
+                    "Search area", "Choose an area and search method.", parent=dialog
+                )
+                return
+            if mode.get("attempted_today"):
+                messagebox.showinfo(
+                    "Search area", "This area was already searched today.", parent=dialog
+                )
+                return
+            method_id = extraction_by_name.get(extraction_var.get(), "")
+            if extraction_by_name and not method_id:
+                messagebox.showinfo(
+                    "Search area", "Choose an extraction method.", parent=dialog
+                )
+                extraction_box.focus_set()
+                return
+            payload = {
+                "session_id": self.selected_session_id,
+                "person_id": str(actor.get("actor_id") or ""),
+                "map_id": str(options.get("map_id") or ""),
+                "region_id": str(region.get("region_id") or ""),
+                "mode_id": str(mode.get("record_id") or ""),
+                "extraction_method_id": method_id,
+            }
+            self._background(
+                lambda: self.client.request(
+                    "POST", "/api/admin/regions/search", payload
+                ),
+                lambda _result: (dialog.destroy(), self.refresh(silent=True)),
+            )
+
+        region_list.bind("<<ListboxSelect>>", render_modes)
+        mode_list.bind("<<ListboxSelect>>", render_extraction)
+        query.trace_add("write", render_regions)
+        render_regions()
+
+        actions = ttk.Frame(shell)
+        actions.grid(row=4, column=0, columnspan=2, sticky="ew")
+        ttk.Button(
+            actions, text="Cancel", style="Quiet.TButton", command=dialog.destroy
+        ).pack(side="right")
+        ttk.Button(actions, text="Search", command=search).pack(
+            side="right", padx=(0, 6)
+        )
+        dialog.after_idle(search_entry.focus_set)
 
     def teach_selected_actor(self) -> None:
         actor = self._selected_board_actor()
@@ -5046,6 +5418,36 @@ class GameBoardWindow(tk.Tk):
         ttk.Button(actions, text="Cancel", style="Quiet.TButton", command=dialog.destroy).pack(side="right")
         ttk.Button(actions, text="Add note", command=save).pack(side="right", padx=(0, 5))
         editor.focus_set()
+
+    def adjust_selected_actor_currency(self) -> None:
+        actor = self._selected_board_actor()
+        if actor is None:
+            return
+        change = simpledialog.askinteger(
+            "Wizarding currency",
+            (
+                f"Knut adjustment for {actor.get('name') or 'this character'}:\n"
+                "Use a positive amount to add money or a negative amount to remove it."
+            ),
+            initialvalue=0,
+            minvalue=-2_147_483_647,
+            maxvalue=2_147_483_647,
+            parent=self,
+        )
+        if change is None or change == 0:
+            return
+        payload = {
+            "session_id": self.selected_session_id,
+            "change_knuts": int(change),
+        }
+        self._background(
+            lambda: self.client.request(
+                "POST",
+                f"/api/admin/board/people/{actor['actor_id']}/currency-adjustment",
+                payload,
+            ),
+            lambda _result: self.refresh(silent=True),
+        )
 
     def _render_board_actor_list(self) -> None:
         frame = getattr(self, "board_actor_rows_frame", None)
@@ -5703,7 +6105,7 @@ class GameBoardWindow(tk.Tk):
             ("creatures", "◆", "Creatures"),
             ("obfuscation-tools", "▧", "Obfuscation"),
             ("token-tools", "◉", "Tokens & Zoom"),
-            ("reveal", "✦", "Reveal"),
+            ("secrets", "✦", "Secrets"),
             ("roll", "⚄", "Roll"),
             ("target", "⌖", "Target"),
             ("marker", "◎", "Marker"),
@@ -5800,6 +6202,7 @@ class GameBoardWindow(tk.Tk):
         self._create_board_token_controls(self.board_tools_content)
         self._create_board_groups_controls(self.board_tools_content)
         self._create_board_creature_controls(self.board_tools_content)
+        self._create_board_secret_controls(self.board_tools_content)
 
     def collapse_headmaster_tools(self) -> None:
         self.headmaster_tools_collapsed = True
@@ -5858,6 +6261,12 @@ class GameBoardWindow(tk.Tk):
             self.show_board_tools_panel("token-tools")
             if hasattr(self, "notice"):
                 self.set_notice("Token and zoom controls opened")
+            return
+        if key == "secrets":
+            self.show_board_tools_panel("secrets")
+            self._refresh_board_secret_list()
+            if hasattr(self, "notice"):
+                self.set_notice("Secret visibility controls opened")
             return
         if key == "board-settings":
             self.open_board_settings()

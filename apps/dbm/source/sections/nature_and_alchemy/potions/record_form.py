@@ -5,7 +5,7 @@ from sections.nature_and_alchemy.creatures.form_fields import LabeledEntry
 from sections.nature_and_alchemy.potions.recipe_editor import (
     RecipeEditor,
 )
-from shared.widgets import MultilineField, SoftButton
+from shared.widgets import MultilineField, SoftButton, TargetScopeField
 from theme import (
     BUTTON_SOFT,
     BUTTON_SOFT_HOVER,
@@ -117,7 +117,6 @@ class AlchemyFormulaForm(tk.Frame):
         self.name_field.grid(
             row=0,
             column=0,
-            columnspan=2,
             sticky="ew",
             padx=(0, 8),
             pady=(0, 12),
@@ -130,7 +129,7 @@ class AlchemyFormulaForm(tk.Frame):
         )
         self.inventor_field.grid(
             row=0,
-            column=2,
+            column=1,
             sticky="ew",
             padx=8,
             pady=(0, 12),
@@ -142,6 +141,18 @@ class AlchemyFormulaForm(tk.Frame):
             self.handle_field_change,
         )
         self.tradition_field.grid(
+            row=0,
+            column=2,
+            sticky="ew",
+            padx=8,
+            pady=(0, 12),
+        )
+
+        self.target_scope_field = TargetScopeField(
+            self.overview_view,
+            self.handle_field_change,
+        )
+        self.target_scope_field.grid(
             row=0,
             column=3,
             sticky="ew",
@@ -233,6 +244,7 @@ class AlchemyFormulaForm(tk.Frame):
         self.name_field.set_value(record.get("name", ""))
         self.inventor_field.set_value(record.get("inventor", ""))
         self.tradition_field.set_value(record.get("tradition", ""))
+        self.target_scope_field.set_value(record.get("target_scope", "none"))
         self.description_field.set_value(record.get("description", ""))
         self.raw_effect_field.set_value(record.get("raw_effect", ""))
         self.other_potions_effect_field.set_value(
@@ -259,6 +271,7 @@ class AlchemyFormulaForm(tk.Frame):
             "name": self.name_field.get_value(),
             "inventor": self.inventor_field.get_value(),
             "tradition": self.tradition_field.get_value(),
+            "target_scope": self.target_scope_field.get_value(),
             "description": self.description_field.get_value(),
             "raw_effect": self.raw_effect_field.get_value(),
             "effect_in_other_potions": (

@@ -264,6 +264,42 @@ class CharacterSheetTests(unittest.TestCase):
         self.assertEqual(charms["breakdown"]["accessories"], 3)
         self.assertTrue(next(item for item in sheet["inventory"] if item["record_id"] == "ring-instance")["equipped"])
 
+    def test_flyable_bonuses_apply_only_while_mounted(self):
+        self.world["items"] = [{
+            "record_id": "broom-instance", "name": "Training Broom",
+            "definition_record_id": "broom-definition", "quantity": 1,
+            "passage_history": [{"date": "2001-01-01", "person_id": "person-1"}],
+        }]
+        self.database.update({
+            "wands": [], "holdable_items": [], "accessories": [], "plants": [],
+            "general_items": [{
+                "record_id": "broom-definition", "name": "Training Broom",
+                "type": "Flyable", "activation_mode": "equipped",
+                "equipment_slot_type": "flyable", "flight_threshold": 9,
+                "bonuses": [{"type": "Skill", "target": "Flying", "amount": 4}],
+            }],
+        })
+        campaign = self.campaign()
+        unmounted = build_character_sheet(self.person, self.world, self.database, campaign)
+        flying = next(item for item in unmounted["attributes"]["skills"] if item["name"] == "Flying")
+        self.assertEqual(flying["total"], 0)
+        item = unmounted["inventory"][0]
+        self.assertEqual(item["equipment_slot_type"], "flyable")
+        self.assertEqual(item["flight_threshold"], 9)
+        self.assertFalse(item["equipped"])
+
+        campaign["game_state"]["people"] = {
+            "person-1": {
+                "equipment": {"flyable": "broom-instance"},
+                "airborne": True,
+            }
+        }
+        mounted = build_character_sheet(self.person, self.world, self.database, campaign)
+        flying = next(item for item in mounted["attributes"]["skills"] if item["name"] == "Flying")
+        self.assertEqual(flying["total"], 4)
+        self.assertTrue(mounted["airborne"])
+        self.assertEqual(flying["breakdown"]["flyable"], 4)
+
     def test_natural_ten_does_not_bypass_an_unreachable_threshold(self):
         sheet = build_character_sheet(
             self.person, self.world, self.database, self.campaign("2006-01-01T08:00")

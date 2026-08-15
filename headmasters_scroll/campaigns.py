@@ -19,7 +19,7 @@ HISTORY_KEEP = "keep"
 HISTORY_DISCARD = "discard"
 HISTORY_POLICIES = {HISTORY_KEEP, HISTORY_DISCARD}
 REQUEST_STATUSES = {"pending", "approved", "rejected"}
-EQUIPMENT_SLOTS = ("focus", "accessory_1", "accessory_2")
+EQUIPMENT_SLOTS = ("focus", "accessory_1", "accessory_2", "flyable")
 
 LEGACY_GENERATED_ZOOM_TIERS = {
     "0": {"token_size": 0, "nameplate_size": 11},
@@ -293,6 +293,8 @@ def normalize_campaign_game_state(
                 raw_state.get("campaign_inventory")
             ),
             "equipment": _normalize_equipment(raw_state.get("equipment")),
+            "airborne": bool(raw_state.get("airborne", False)),
+            "currency_knuts": max(0, int(raw_state.get("currency_knuts", 0) or 0)),
         }
 
     creatures: dict[str, dict[str, Any]] = {}
@@ -352,6 +354,9 @@ def normalize_campaign_game_state(
             placement = actor.get("placement") or {}
             if str(placement.get("location_id", "") or "") != group_location:
                 raise ValueError("Every group member must occupy the group's location")
+    region_interactions = _normalize_region_interaction_state(
+        raw.get("region_interactions")
+    )
     return {
         "initialized": bool(raw.get("initialized", False)),
         "current_game_datetime": current,
@@ -363,6 +368,7 @@ def normalize_campaign_game_state(
         "creatures": creatures,
         "creature_counters": creature_counters,
         "groups": groups,
+        "region_interactions": region_interactions,
     }
 
 
@@ -385,7 +391,7 @@ def _normalize_campaign_inventory(value: Any) -> list[dict[str, Any]]:
             "part_id": str(raw.get("part_id", "") or item_id),
             "name": str(raw.get("name", "") or "Creature part")[:200],
             "category": str(raw.get("category", "Creature Part") or "Creature Part")[:100],
-            "quantity": min(10, quantity),
+            "quantity": quantity,
             "source_creature_id": str(raw.get("source_creature_id", "") or ""),
             "source_species_id": str(raw.get("source_species_id", "") or ""),
             "acquired_at": str(raw.get("acquired_at", "") or utc_now()),
@@ -401,6 +407,49 @@ def _normalize_equipment(value: Any) -> dict[str, str]:
     return {
         slot: str(raw.get(slot, "") or "").strip()
         for slot in EQUIPMENT_SLOTS
+    }
+
+
+def _normalize_region_interaction_state(value: Any) -> dict[str, Any]:
+    raw = value if isinstance(value, dict) else {}
+
+    def records(name: str, *, maximum: int = 100000) -> list[dict[str, Any]]:
+        source = raw.get(name, []) or []
+        if not isinstance(source, list) or len(source) > maximum:
+            raise ValueError(f"Campaign region {name} must be a bounded list")
+        result: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for item in source:
+            if not isinstance(item, dict):
+                raise ValueError(f"Campaign region {name} entries must be objects")
+            record_id = str(item.get("record_id", "") or "").strip()
+            if not record_id or record_id in seen:
+                raise ValueError(f"Campaign region {name} entries require unique IDs")
+            seen.add(record_id)
+            result.append(deepcopy(item))
+        return result
+
+    def counters(name: str) -> dict[str, int]:
+        source = raw.get(name, {}) or {}
+        if not isinstance(source, dict):
+            raise ValueError(f"Campaign region {name} must be keyed by source ID")
+        result: dict[str, int] = {}
+        for raw_key, raw_value in source.items():
+            key = str(raw_key or "").strip()
+            amount = int(raw_value)
+            if not key or amount < 0:
+                raise ValueError(f"Campaign region {name} requires non-negative counters")
+            result[key] = amount
+        return result
+
+    return {
+        "attempts": records("attempts"),
+        "secret_unlocks": records("secret_unlocks"),
+        "revealed_secrets": records("revealed_secrets"),
+        "source_depletion": counters("source_depletion"),
+        "shop_window_sales": counters("shop_window_sales"),
+        "purchases": records("purchases"),
+        "natural_one_losses": records("natural_one_losses"),
     }
 
 
@@ -609,6 +658,7 @@ class CampaignRepository:
                 prior.get("campaign_inventory")
             ),
             "equipment": _normalize_equipment(prior.get("equipment")),
+            "currency_knuts": max(0, int(prior.get("currency_knuts", 0) or 0)),
         }
 
     def ensure_game_state(
@@ -676,6 +726,9 @@ class CampaignRepository:
                 normalized["game_state"].get("creature_counters", {})
             ),
             "groups": deepcopy(world_document.get("board_groups", []) or []),
+            "region_interactions": deepcopy(
+                normalized["game_state"].get("region_interactions", {})
+            ),
         }
         campaign["game_state"] = normalize_campaign_game_state(
             state, normalized["game_world_start_date"]

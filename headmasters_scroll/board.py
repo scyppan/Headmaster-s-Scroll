@@ -8,11 +8,14 @@ from typing import Any, Iterable
 from uuid import uuid4
 
 from .assets import AssetStore
+from .region_interactions import normalize_region_interactions
 
 
 DISPLAY_MODES = {"dot", "token"}
 VISIBILITY_MODES = {"players", "headmaster"}
-REGION_BEHAVIOR_TYPES = {"area", "shop", "travel", "library", "other"}
+REGION_BEHAVIOR_TYPES = {
+    "area", "shop", "travel", "library", "secret", "storeroom", "other"
+}
 OBSCURATION_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 OFF_LIMITS_MESSAGE = "This area is off limits for now. Speak with your Headmaster."
 DEFAULT_MAP_TOKEN_SCALE = 0.0055
@@ -152,22 +155,27 @@ def normalize_region(value: Any) -> dict[str, Any]:
         raise ValueError("A map region polygon must enclose an area")
     target_location_id = str(result.get("target_location_id", "") or "").strip()
     target_warp_point_id = str(result.get("target_warp_point_id", "") or "").strip()
-    if behavior_type != "travel" and (target_location_id or target_warp_point_id):
-        raise ValueError("Only travel regions may specify a destination")
+    secret_passage = behavior_type == "secret" and bool(
+        result.get("secret_passage", target_location_id or target_warp_point_id)
+    )
+    has_travel_behavior = behavior_type == "travel" or secret_passage
+    if not has_travel_behavior and (target_location_id or target_warp_point_id):
+        raise ValueError("Only Travel regions and Secret passages may specify a destination")
     result.update(
         record_id=record_id,
         name=name,
         type_label=type_label,
         behavior_type=behavior_type,
+        secret_passage=secret_passage,
         players_visible=bool(result.get("players_visible", True)),
         hover_text=str(result.get("hover_text", "") or "").strip(),
         points=normalized_points,
-        target_location_id=target_location_id if behavior_type == "travel" else "",
-        target_warp_point_id=target_warp_point_id if behavior_type == "travel" else "",
+        target_location_id=target_location_id if has_travel_behavior else "",
+        target_warp_point_id=target_warp_point_id if has_travel_behavior else "",
         created_at=str(result.get("created_at", "") or "").strip(),
         last_updated=str(result.get("last_updated", "") or "").strip(),
     )
-    return result
+    return normalize_region_interactions(result)
 
 
 def normalize_map_point(value: Any, label: str, *, optional: bool = False) -> dict[str, float] | None:
@@ -398,8 +406,16 @@ def _date_key(value: Any, time_value: Any = "") -> tuple[int, int, int, int, int
         day = int(parts[2]) if len(parts) > 2 else 1
         hour, minute = (0, 0)
         if str(time_value or "").strip():
-            clock = str(time_value).strip().split(":")
-            hour, minute = int(clock[0]), int(clock[1])
+            time_text = str(time_value).strip()
+            if ":" in time_text:
+                clock = time_text.split(":")
+                hour, minute = int(clock[0]), int(clock[1])
+            elif len(time_text) == 4 and time_text.isdigit():
+                hour, minute = int(time_text[:2]), int(time_text[2:])
+            else:
+                raise ValueError("Invalid world time")
+            if not 0 <= hour <= 23 or not 0 <= minute <= 59:
+                raise ValueError("Invalid world time")
         return (year, month, day, hour, minute)
     except (TypeError, ValueError, IndexError) as error:
         raise ValueError(f"Invalid world date: {value}") from error
@@ -551,12 +567,18 @@ class WorldBoardRepository:
         ensure_board_collections(session.data)
         return session
 
-    def save(self, session, app_id: str = "game-board") -> dict[str, Any]:
+    def save(
+        self,
+        session,
+        app_id: str = "game-board",
+        *,
+        copy_result: bool = True,
+    ) -> dict[str, Any]:
         validate_world_board(session.data)
         outcome = self.store.save(session, app_id)
         if not outcome.saved:
             raise RuntimeError("The world changed in the same place; refresh before trying again")
-        return deepcopy(session.data)
+        return deepcopy(session.data) if copy_result else session.data
 
     @staticmethod
     def _location_maps(document: dict[str, Any]) -> list[dict[str, Any]]:
@@ -690,7 +712,11 @@ class WorldBoardRepository:
                 public = deepcopy(item)
                 public["regions"] = []
                 for region in item.get("regions", []):
-                    if not bool(region.get("players_visible", True)):
+                    # An explicit campaign reveal overrides Mapper's default
+                    # visibility, including for completely concealed secrets.
+                    if not bool(region.get("players_visible", True)) and not bool(
+                        region.get("_secret_revealed", False)
+                    ):
                         continue
                     target_location_id = str(region.get("target_location_id", "") or "")
                     target_warp_point_id = str(region.get("target_warp_point_id", "") or "")
@@ -711,18 +737,42 @@ class WorldBoardRepository:
                         or ""
                     )
                     target_available = bool(target_map_id and target_map_id in visible_map_ids)
+                    behavior = str(region.get("behavior_type", "area") or "area")
+                    is_secret = behavior == "secret"
+                    secret_revealed = is_secret and bool(
+                        region.get("_secret_revealed", False)
+                    )
+                    revealed_passage = secret_revealed and bool(
+                        region.get("secret_passage", False)
+                    )
+                    public_behavior = "travel" if revealed_passage else behavior
                     public["regions"].append({
                         "record_id": region["record_id"],
-                        "name": region["name"],
-                        "behavior_type": region["behavior_type"],
-                        "hover_text": region["hover_text"],
+                        "name": (
+                            region["name"]
+                            if not is_secret or secret_revealed
+                            else "Search"
+                        ),
+                        "behavior_type": public_behavior,
+                        "hover_text": (
+                            region["hover_text"]
+                            if not is_secret or secret_revealed
+                            else ""
+                        ),
                         "points": deepcopy(region["points"]),
                         "target_map_id": (
                             target_map_id
-                            if region["behavior_type"] == "travel" and target_available
+                            if public_behavior == "travel" and target_available
                             else ""
                         ),
                         "target_available": target_available,
+                        "interaction": (
+                            "travel" if public_behavior == "travel" else
+                            "search" if secret_revealed else
+                            "secret_gate" if is_secret else
+                            "search" if behavior in {"library", "storeroom"} else
+                            "shop" if behavior == "shop" else ""
+                        ),
                     })
                 public["obscurations"] = [
                     {"record_id": item["record_id"], "points": deepcopy(item["points"])}

@@ -279,7 +279,7 @@ class MagesPage(tk.Frame):
     def refresh_people(self, selected_record_id=None):
         summary_provider = getattr(
             self.controller,
-            "list_people_summaries",
+            "list_people_list_summaries",
             None,
         )
         self.people = (

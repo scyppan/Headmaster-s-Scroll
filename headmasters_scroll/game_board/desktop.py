@@ -818,15 +818,26 @@ class GameBoardWindow(tk.Tk):
         self.board_groups_dock: ttk.Frame | None = None
         self.board_creatures_dock: ttk.Frame | None = None
         self.board_secrets_dock: ttk.Frame | None = None
+        self.board_battles_dock: ttk.Frame | None = None
         self.board_secret_region_ids: list[str] = []
         self.creature_placement: dict[str, Any] | None = None
+        self.pending_creature_battle_id = ""
         self.board_creature_ids: list[str] = []
         self.board_tools_panels: dict[str, ttk.Frame] = {}
+        self.battle_ids: list[str] = []
+        self.selected_battle_id = ""
+        self.battle_order_ids: list[str] = []
+        self.battle_local_orders: dict[str, list[str]] = {}
+        self._battle_drag_participant_id = ""
+        self.turn_sheet_window: tk.Toplevel | None = None
+        self.turn_sheet_notebook: ttk.Notebook | None = None
+        self._last_open_turn_key = ""
         self.active_headmaster_tool = "groups"
         self.headmaster_tools_collapsed = False
         self.headmaster_tool_widths = {
             "groups": 430,
             "creatures": 440,
+            "battles": 520,
             "obfuscation-tools": 330,
             "token-tools": 390,
             "secrets": 360,
@@ -1980,6 +1991,853 @@ class GameBoardWindow(tk.Tk):
             button.pack(side="left", fill="x", expand=True, padx=(0, 2))
             self._attach_tooltip(button, help_text)
 
+    def _create_board_battle_controls(self, parent: tk.Misc) -> None:
+        shell = ttk.Frame(parent, style="Card.TFrame", padding=5)
+        self.board_battles_dock = shell
+        self.board_tools_panels["battles"] = shell
+        header = ttk.Frame(shell, style="Card.TFrame")
+        header.pack(fill="x")
+        ttk.Label(
+            header, text="BATTLES", style="Card.TLabel",
+            font=("Segoe UI", 8, "bold"),
+        ).pack(side="left")
+        for text, command, tip in (
+            ("+", self.create_board_battle, "Create a battle on an open map"),
+            ("⇧", self.start_selected_battle, "Push the staged lineup and order to players, then start"),
+            ("×", self.end_selected_battle, "End this battle; actor consequences remain"),
+        ):
+            button = ttk.Button(
+                header, text=text, width=3, style="Quiet.TButton", command=command
+            )
+            button.pack(side="right", padx=(3, 0))
+            self._attach_tooltip(button, tip)
+        self.battle_list = tk.Listbox(
+            shell, height=4, exportselection=False,
+            background="#fff8e6", foreground=self.INK,
+            selectbackground=self.ACCENT, selectforeground="#fff8e7",
+        )
+        self.battle_list.pack(fill="x", pady=(4, 3))
+        self.battle_list.bind("<<ListboxSelect>>", self._battle_selected)
+        order_header = ttk.Frame(shell, style="Card.TFrame")
+        order_header.pack(fill="x")
+        self.battle_round_label = ttk.Label(
+            order_header, text="Select a battle", style="Card.TLabel",
+            font=("Segoe UI", 8, "bold"),
+        )
+        self.battle_round_label.pack(side="left", fill="x", expand=True)
+        for text, command, tip in (
+            ("+", self.add_battle_participant_dialog, "Add people or creatures"),
+            ("−", self.remove_selected_battle_participant, "Remove selected combatant"),
+            ("↺", self.reset_selected_battle_order, "Reset calculated turn order"),
+        ):
+            button = ttk.Button(
+                order_header, text=text, width=3, style="Quiet.TButton", command=command
+            )
+            button.pack(side="right", padx=(2, 0))
+            self._attach_tooltip(button, tip)
+        self.battle_order_tree = ttk.Treeview(
+            shell, columns=("turn", "name", "state"), show="headings",
+            height=12, selectmode="browse",
+        )
+        self.battle_order_tree.heading("turn", text="#")
+        self.battle_order_tree.heading("name", text="Combatant")
+        self.battle_order_tree.heading("state", text="State")
+        self.battle_order_tree.column("turn", width=34, stretch=False, anchor="center")
+        self.battle_order_tree.column("name", width=235, stretch=True)
+        self.battle_order_tree.column("state", width=90, stretch=False, anchor="center")
+        self.battle_order_tree.pack(fill="both", expand=True)
+        self.battle_order_tree.bind("<Double-Button-1>", self.open_selected_battle_sheet)
+        self.battle_order_tree.bind("<ButtonPress-1>", self._battle_drag_start, add="+")
+        self.battle_order_tree.bind("<ButtonRelease-1>", self._battle_drag_finish, add="+")
+        turn_controls = ttk.Frame(shell, style="Card.TFrame")
+        turn_controls.pack(fill="x", pady=(4, 0))
+        for text, action, tip in (
+            ("‹", "previous", "Return to the previous combatant"),
+            ("✓", "mark", "Mark the current action as used"),
+            ("Skip", "skip", "Skip the current turn"),
+            ("Undo", "undo", "Clear the current action marker"),
+            ("Next ›", "next", "Advance to the next eligible combatant"),
+        ):
+            button = ttk.Button(
+                turn_controls, text=text, style="Quiet.TButton",
+                command=lambda selected=action: self.change_selected_battle_turn(selected),
+            )
+            button.pack(side="left", fill="x", expand=True, padx=(0, 2))
+            self._attach_tooltip(button, tip)
+
+    def _session_battles(self) -> list[dict[str, Any]]:
+        return list((((self.state_data.get("battles") or {}).get(
+            self.selected_session_id or "", {}
+        ) or {}).get("battles", []) or []))
+
+    def _selected_battle(self) -> dict[str, Any] | None:
+        return next((
+            item for item in self._session_battles()
+            if str(item.get("record_id", "")) == self.selected_battle_id
+        ), None)
+
+    def _render_board_battles(self) -> None:
+        if not hasattr(self, "battle_list"):
+            return
+        battles = self._session_battles()
+        self.battle_ids = [str(item.get("record_id", "")) for item in battles]
+        if self.selected_battle_id not in self.battle_ids:
+            self.selected_battle_id = self.battle_ids[0] if self.battle_ids else ""
+        self.battle_list.delete(0, "end")
+        for index, battle in enumerate(battles):
+            status = str(battle.get("status", "draft")).title()
+            self.battle_list.insert(
+                "end", f"{battle.get('name', 'Battle')} · {status} · Round {battle.get('round', 1)}"
+            )
+            if str(battle.get("record_id", "")) == self.selected_battle_id:
+                self.battle_list.selection_set(index)
+        battle = self._selected_battle()
+        self.battle_order_tree.delete(*self.battle_order_tree.get_children())
+        self.battle_order_ids = []
+        if battle is None:
+            self.battle_round_label.configure(text="No active battle")
+            return
+        self.battle_round_label.configure(
+            text=f"{battle.get('name', 'Battle')} · Round {battle.get('round', 1)}"
+        )
+        server_entries = list(battle.get("order_entries", []) or [])
+        entries_by_id = {
+            str(entry.get("record_id", "")): entry for entry in server_entries
+        }
+        server_order = [str(entry.get("record_id", "")) for entry in server_entries]
+        if battle.get("status") == "draft":
+            staged = self.battle_local_orders.get(self.selected_battle_id, [])
+            staged = [item for item in staged if item in entries_by_id]
+            staged.extend(item for item in server_order if item not in staged)
+            self.battle_local_orders[self.selected_battle_id] = staged
+            shown_entries = [entries_by_id[item] for item in staged]
+        else:
+            self.battle_local_orders.pop(self.selected_battle_id, None)
+            shown_entries = server_entries
+        for position, entry in enumerate(shown_entries, 1):
+            participant_id = str(entry.get("record_id", ""))
+            self.battle_order_ids.append(participant_id)
+            state = (
+                "CURRENT" if entry.get("current")
+                else "Acted" if entry.get("acted")
+                else "Skipped" if entry.get("skipped")
+                else f"Round {entry.get('eligible_round')}" if int(entry.get("eligible_round", 1)) > int(battle.get("round", 1))
+                else "Ready"
+            )
+            self.battle_order_tree.insert(
+                "", "end", iid=participant_id,
+                values=(position, entry.get("name", "Unknown"), state),
+                tags=("current",) if entry.get("current") else (),
+            )
+        self.battle_order_tree.tag_configure(
+            "current", background="#e3bd57", foreground="#24150d"
+        )
+        current = str(battle.get("current_participant_id", "") or "")
+        turn_key = f"{battle.get('record_id')}:{battle.get('round')}:{current}"
+        if battle.get("status") == "active" and current and turn_key != self._last_open_turn_key:
+            self._last_open_turn_key = turn_key
+            self.after_idle(lambda: self.open_battle_turn_sheet(battle["record_id"], current))
+
+    def _battle_selected(self, _event: tk.Event | None = None) -> None:
+        selected = self.battle_list.curselection()
+        if selected and int(selected[0]) < len(self.battle_ids):
+            self.selected_battle_id = self.battle_ids[int(selected[0])]
+            self._render_board_battles()
+
+    def create_board_battle(self) -> None:
+        if not self.selected_session_id or not self.selected_board_map_id:
+            messagebox.showinfo("Battles", "Open a campaign session and map first.", parent=self)
+            return
+        name = simpledialog.askstring("New battle", "Battle name", parent=self)
+        if not name:
+            return
+        payload = {
+            "session_id": self.selected_session_id,
+            "name": name.strip(), "map_id": self.selected_board_map_id,
+        }
+        def done(result: dict[str, Any]) -> None:
+            self.selected_battle_id = str(result.get("record_id", ""))
+            self.refresh(silent=True)
+        self._background(
+            lambda: self.client.request("POST", "/api/admin/battles", payload), done
+        )
+
+    def start_selected_battle(self) -> None:
+        if not self.selected_battle_id or not self.selected_session_id:
+            return
+        battle_id = self.selected_battle_id
+        session_id = self.selected_session_id
+        order = list(self.battle_local_orders.get(battle_id, []))
+        def push() -> dict[str, Any]:
+            if order:
+                self.client.request(
+                    "PUT", f"/api/admin/battles/{battle_id}/order",
+                    {"session_id": session_id, "order": order},
+                )
+            return self.client.request(
+                "POST", f"/api/admin/battles/{battle_id}/start",
+                {"session_id": session_id, "action": "start"},
+            )
+        self._background(
+            push,
+            lambda _result: (
+                self.battle_local_orders.pop(battle_id, None),
+                self.set_notice("Battle pushed to players and started"),
+                self.refresh(silent=True),
+            ),
+        )
+
+    def end_selected_battle(self) -> None:
+        battle = self._selected_battle()
+        if battle is None or not self.selected_session_id:
+            return
+        if not messagebox.askyesno(
+            "End battle",
+            "End this tracker? Wounds, notes, inventory, placement, and life state will remain.",
+            parent=self,
+        ):
+            return
+        battle_id = self.selected_battle_id
+        self._background(
+            lambda: self.client.request(
+                "DELETE", f"/api/admin/battles/{battle_id}?session_id={urllib.parse.quote(self.selected_session_id or '')}"
+            ),
+            lambda _result: (
+                setattr(self, "selected_battle_id", ""), self.refresh(silent=True)
+            ),
+        )
+
+    def _arrival_warps_for_map(self, map_id: str) -> list[dict[str, Any]]:
+        record = next((
+            item for item in self.board_snapshot.get("maps", []) or []
+            if str(item.get("record_id", "")) == map_id
+        ), {})
+        return list(record.get("warp_points", []) or [])
+
+    def _choose_arrival_warp(
+        self, map_id: str, title: str, callback: Callable[[dict[str, Any]], None],
+    ) -> None:
+        warps = self._arrival_warps_for_map(map_id)
+        if not warps:
+            messagebox.showerror(
+                title, "This map has no arrival warp. Add one in Mapper first.", parent=self
+            )
+            return
+        dialog = tk.Toplevel(self)
+        dialog.title(title)
+        dialog.transient(self)
+        dialog.grab_set()
+        dialog.geometry("460x400")
+        apply_window_icon(dialog, GAME_BOARD_ICON)
+        body = ttk.Frame(dialog, padding=10)
+        body.pack(fill="both", expand=True)
+        ttk.Label(body, text="Choose arrival warp", style="Title.TLabel").pack(anchor="w")
+        query = tk.StringVar()
+        ttk.Entry(body, textvariable=query).pack(fill="x", pady=5)
+        listing = tk.Listbox(body, exportselection=False, background="#fff8e6")
+        listing.pack(fill="both", expand=True)
+        shown: list[dict[str, Any]] = []
+        def render(*_args: Any) -> None:
+            needle = query.get().strip().casefold()
+            shown[:] = [
+                item for item in warps
+                if not needle or needle in str(item.get("name") or "Arrival").casefold()
+            ]
+            listing.delete(0, "end")
+            for item in shown:
+                listing.insert("end", str(item.get("name") or "Arrival warp"))
+        def choose() -> None:
+            selection = listing.curselection()
+            if not selection:
+                return
+            selected = shown[int(selection[0])]
+            dialog.destroy()
+            callback(selected)
+        query.trace_add("write", render)
+        listing.bind("<Double-Button-1>", lambda _event: choose())
+        actions = ttk.Frame(body)
+        actions.pack(fill="x", pady=(6, 0))
+        ttk.Button(actions, text="Cancel", style="Quiet.TButton", command=dialog.destroy).pack(side="right")
+        ttk.Button(actions, text="Choose", command=choose).pack(side="right", padx=(0, 5))
+        render()
+
+    def add_battle_participant_dialog(self) -> None:
+        battle = self._selected_battle()
+        if battle is None or not self.selected_session_id:
+            messagebox.showinfo("Battles", "Select a battle first.", parent=self)
+            return
+        dialog = tk.Toplevel(self)
+        dialog.title("Build battle lineup")
+        dialog.transient(self)
+        dialog.grab_set()
+        dialog.geometry("860x650")
+        dialog.minsize(680, 480)
+        apply_window_icon(dialog, GAME_BOARD_ICON)
+        body = ttk.Frame(dialog, padding=10)
+        body.pack(fill="both", expand=True)
+        ttk.Label(
+            body, text="Combatants", style="Section.TLabel"
+        ).pack(anchor="w")
+        query = tk.StringVar()
+        actor_filter = tk.StringVar(value="All actors")
+        map_filter = tk.StringVar(value="Current map first")
+        battle_filter = tk.StringVar(value="Available")
+        filters = ttk.Frame(body)
+        filters.pack(fill="x", pady=(5, 5))
+        search = ttk.Entry(filters, textvariable=query)
+        search.pack(side="left", fill="x", expand=True)
+        for variable, values, width in (
+            (actor_filter, ("All actors", "People", "Creatures", "Named creatures"), 17),
+            (map_filter, ("Current map first", "Current map only", "All maps"), 18),
+            (battle_filter, ("Available", "All", "Already battling"), 18),
+        ):
+            box = ttk.Combobox(
+                filters, textvariable=variable, values=values,
+                state="readonly", width=width,
+            )
+            box.pack(side="left", padx=(5, 0))
+        listing = tk.Listbox(
+            body, exportselection=False, selectmode="extended", background="#fff8e6",
+            selectbackground=self.ACCENT, selectforeground="#fff8e7",
+        )
+        listing.pack(fill="both", expand=True)
+        all_records: list[dict[str, Any]] = []
+        shown: list[dict[str, Any]] = []
+        selected_keys: set[tuple[str, str]] = set()
+        selection_status = ttk.Label(body, text="Loading compact actor index…", style="Muted.TLabel")
+        selection_status.pack(fill="x", pady=(4, 0))
+
+        def key_for(item: dict[str, Any]) -> tuple[str, str]:
+            return str(item.get("actor_type", "")), str(item.get("actor_id", ""))
+
+        def sync_selection() -> None:
+            indices = {int(index) for index in listing.curselection()}
+            for index, item in enumerate(shown):
+                key = key_for(item)
+                if index in indices:
+                    selected_keys.add(key)
+                else:
+                    selected_keys.discard(key)
+
+        def render(*_args: Any) -> None:
+            if shown:
+                sync_selection()
+            needle = " ".join(query.get().strip().casefold().split())
+            kind_choice = actor_filter.get()
+            map_choice = map_filter.get()
+            state_choice = battle_filter.get()
+            filtered: list[dict[str, Any]] = []
+            for item in all_records:
+                actor_type = str(item.get("actor_type", ""))
+                kind = "Named creatures" if actor_type == "named_creature" else (
+                    "People" if actor_type == "person" else "Creatures"
+                )
+                if kind_choice != "All actors" and kind != kind_choice:
+                    continue
+                if map_choice == "Current map only" and not item.get("on_battle_map"):
+                    continue
+                already = bool(item.get("already_in_battle"))
+                in_this = str(item.get("battle_id", "")) == str(battle.get("record_id", ""))
+                if state_choice == "Available" and already:
+                    continue
+                if state_choice == "Already battling" and not already:
+                    continue
+                name = str(item.get("name") or "Unknown")
+                haystack = f"{name} {kind} {item.get('source', '')}".casefold()
+                if needle and needle not in haystack and SequenceMatcher(
+                    None, needle, name.casefold()
+                ).ratio() < 0.46:
+                    continue
+                enriched = dict(item)
+                enriched["_kind"] = kind[:-1] if kind.endswith("s") else kind
+                enriched["_in_this_battle"] = in_this
+                filtered.append(enriched)
+            if map_choice == "Current map first":
+                filtered.sort(key=lambda item: (
+                    not bool(item.get("on_battle_map")),
+                    str(item.get("name", "")).casefold(),
+                ))
+            else:
+                filtered.sort(key=lambda item: str(item.get("name", "")).casefold())
+            shown[:] = filtered
+            listing.delete(0, "end")
+            for index, item in enumerate(shown):
+                place = "Here" if item.get("on_battle_map") else "Off map"
+                used = (
+                    " · in this battle" if item.get("_in_this_battle")
+                    else " · in another battle" if item.get("already_in_battle") else ""
+                )
+                listing.insert(
+                    "end", f"{item.get('name')}   ·   {item.get('_kind')}   ·   {place}{used}"
+                )
+                if key_for(item) in selected_keys:
+                    listing.selection_set(index)
+            selection_status.configure(
+                text=f"{len(selected_keys)} selected · {len(shown)} shown · {len(all_records)} indexed"
+            )
+
+        def display(payload: dict[str, Any]) -> None:
+            all_records[:] = list(payload.get("actors", []) or [])
+            render()
+
+        def load() -> None:
+            path = (
+                f"/api/admin/battles/{battle['record_id']}/actor-choices"
+                f"?session_id={urllib.parse.quote(self.selected_session_id or '')}"
+            )
+            self._background(lambda: self.client.request("GET", path), display)
+
+        def commit_records(records: list[dict[str, Any]], warp: dict[str, Any] | None = None) -> None:
+            target_map = str(battle.get("map_id", ""))
+            session_id = str(self.selected_session_id or "")
+            battle_id = str(battle.get("record_id", ""))
+            transferable = [
+                item for item in records
+                if item.get("already_in_battle")
+                and str(item.get("battle_id", "")) != battle_id
+            ]
+            transfer = False
+            if transferable:
+                transfer = messagebox.askyesno(
+                    "Transfer combatants",
+                    f"Transfer {len(transferable)} selected combatant(s) from their current battles?",
+                    parent=dialog,
+                )
+                if not transfer:
+                    return
+            dialog.destroy()
+            def save_lineup() -> int:
+                references: list[dict[str, str]] = []
+                for record in records:
+                    actor_type = str(record.get("actor_type", ""))
+                    actor_id = str(record.get("actor_id", ""))
+                    point = warp if not record.get("on_battle_map") else record
+                    if actor_type == "person" and not record.get("on_battle_map"):
+                        self.client.request("POST", "/api/admin/board/transport", {
+                            "session_id": session_id, "person_id": actor_id,
+                            "map_id": target_map,
+                            "warp_point_id": str((warp or {}).get("record_id", "")),
+                        })
+                    elif actor_type == "creature" and not record.get("on_battle_map"):
+                        self.client.request(
+                            "PUT", f"/api/admin/board/creatures/{actor_id}", {
+                                "session_id": session_id, "map_id": target_map,
+                                "x": float((warp or {}).get("x", 0.5)),
+                                "y": float((warp or {}).get("y", 0.5)),
+                            },
+                        )
+                    if actor_type == "named_creature":
+                        if point is None or point.get("x") is None or point.get("y") is None:
+                            raise ValueError("Named creatures require an arrival warp")
+                        self.client.request(
+                            "POST", f"/api/admin/battles/{battle_id}/named-creatures", {
+                                "session_id": session_id,
+                                "named_creature_id": actor_id, "map_id": target_map,
+                                "x": float(point.get("x")), "y": float(point.get("y")),
+                            },
+                        )
+                    else:
+                        references.append({"actor_type": actor_type, "actor_id": actor_id})
+                if references:
+                    self.client.request(
+                        "POST", f"/api/admin/battles/{battle_id}/participants/bulk", {
+                            "session_id": session_id, "actors": references,
+                            "transfer": transfer,
+                        },
+                    )
+                return len(records)
+            self._background(
+                save_lineup,
+                lambda count: (
+                    self.set_notice(f"Added {count} combatants in one staged update"),
+                    self.refresh(silent=True),
+                ),
+            )
+
+        def add_records(records: list[dict[str, Any]]) -> None:
+            if not records:
+                messagebox.showinfo(
+                    "Battle lineup", "No eligible combatants match that action.", parent=dialog
+                )
+                return
+            records = [
+                item for item in records
+                if str(item.get("battle_id", "")) != str(battle.get("record_id", ""))
+            ]
+            if not records:
+                messagebox.showinfo("Battle lineup", "Those combatants are already in this battle.", parent=dialog)
+                return
+            off_map = [item for item in records if not item.get("on_battle_map")]
+            if off_map:
+                if not messagebox.askyesno(
+                    "Transport combatants",
+                    f"Transport {len(off_map)} off-map combatant(s) to one arrival warp?",
+                    parent=dialog,
+                ):
+                    return
+                self._choose_arrival_warp(
+                    str(battle.get("map_id")), "Battle arrival",
+                    lambda warp: commit_records(records, warp),
+                )
+            else:
+                commit_records(records)
+
+        def add_selected() -> None:
+            sync_selection()
+            chosen = [item for item in all_records if key_for(item) in selected_keys]
+            add_records(chosen)
+
+        def add_all_on_map() -> None:
+            chosen = [
+                item for item in all_records
+                if item.get("on_battle_map")
+                and not item.get("already_in_battle")
+            ]
+            add_records(chosen)
+
+        query.trace_add("write", render)
+        actor_filter.trace_add("write", render)
+        map_filter.trace_add("write", render)
+        battle_filter.trace_add("write", render)
+        def selection_changed(_event: tk.Event[tk.Misc] | None = None) -> None:
+            sync_selection()
+            selection_status.configure(
+                text=f"{len(selected_keys)} selected · {len(shown)} shown · {len(all_records)} indexed"
+            )
+        listing.bind("<<ListboxSelect>>", selection_changed)
+        actions = ttk.Frame(body)
+        actions.pack(fill="x", pady=(6, 0))
+        ttk.Button(actions, text="Cancel", style="Quiet.TButton", command=dialog.destroy).pack(side="right")
+        ttk.Button(actions, text="Add selected", command=add_selected).pack(side="right", padx=(0, 5))
+        ttk.Button(actions, text="Add all on map", command=add_all_on_map).pack(side="right", padx=(0, 5))
+        ttk.Button(
+            actions, text="Create generic creature…",
+            command=lambda: (dialog.destroy(), self._begin_generic_battle_creature(battle["record_id"])),
+        ).pack(side="left")
+        load()
+        search.focus_set()
+
+    def _begin_generic_battle_creature(self, battle_id: str) -> None:
+        self.pending_creature_battle_id = battle_id
+        self.open_add_creature_dialog()
+
+    def remove_selected_battle_participant(self) -> None:
+        selected = self.battle_order_tree.selection()
+        if not selected or not self.selected_battle_id or not self.selected_session_id:
+            return
+        participant_id = str(selected[0])
+        path = (
+            f"/api/admin/battles/{self.selected_battle_id}/participants/{participant_id}"
+            f"?session_id={urllib.parse.quote(self.selected_session_id)}"
+        )
+        self._background(
+            lambda: self.client.request("DELETE", path),
+            lambda _result: self.refresh(silent=True),
+        )
+
+    def reset_selected_battle_order(self) -> None:
+        if not self.selected_battle_id or not self.selected_session_id:
+            return
+        battle = self._selected_battle()
+        if battle and battle.get("status") == "draft":
+            calculated = [str(item) for item in battle.get("calculated_order", []) or []]
+            self.battle_local_orders[self.selected_battle_id] = calculated
+            self._render_board_battles()
+            self.set_notice("Calculated order restored locally")
+            return
+        self._api_action(
+            "PUT", f"/api/admin/battles/{self.selected_battle_id}/order",
+            {"session_id": self.selected_session_id, "order": None},
+            "Calculated order restored",
+        )
+
+    def _battle_drag_start(self, event: tk.Event) -> None:
+        self._battle_drag_participant_id = str(
+            self.battle_order_tree.identify_row(event.y) or ""
+        )
+
+    def _battle_drag_finish(self, event: tk.Event) -> None:
+        source = self._battle_drag_participant_id
+        self._battle_drag_participant_id = ""
+        target = str(self.battle_order_tree.identify_row(event.y) or "")
+        if not source or not target or source == target:
+            return
+        order = list(self.battle_order_ids)
+        order.remove(source)
+        order.insert(order.index(target), source)
+        battle = self._selected_battle()
+        if battle and battle.get("status") == "draft":
+            self.battle_local_orders[self.selected_battle_id] = order
+            self._render_board_battles()
+            self.set_notice("Draft order staged locally · push when ready")
+            return
+        self._api_action(
+            "PUT", f"/api/admin/battles/{self.selected_battle_id}/order",
+            {"session_id": self.selected_session_id, "order": order},
+            "Battle order changed",
+        )
+
+    def change_selected_battle_turn(self, action: str) -> None:
+        if not self.selected_battle_id or not self.selected_session_id:
+            return
+        self._api_action(
+            "POST", f"/api/admin/battles/{self.selected_battle_id}/turn",
+            {"session_id": self.selected_session_id, "action": action},
+            "Battle turn updated",
+        )
+
+    def open_selected_battle_sheet(self, _event: tk.Event | None = None) -> None:
+        selected = self.battle_order_tree.selection()
+        if selected and self.selected_battle_id:
+            self.open_battle_turn_sheet(self.selected_battle_id, str(selected[0]))
+
+    def open_battle_turn_sheet(self, battle_id: str, participant_id: str) -> None:
+        if not self.selected_session_id:
+            return
+        path = (
+            f"/api/admin/battles/{battle_id}/participants/{participant_id}/sheet"
+            f"?session_id={urllib.parse.quote(self.selected_session_id)}"
+        )
+        self._background(
+            lambda: self.client.request("GET", path),
+            lambda payload: self._render_battle_turn_sheet(
+                battle_id, participant_id, payload
+            ),
+        )
+
+    def _render_battle_turn_sheet(
+        self, battle_id: str, participant_id: str, payload: dict[str, Any],
+    ) -> None:
+        window = self.turn_sheet_window
+        if window is None or not window.winfo_exists():
+            window = tk.Toplevel(self)
+            self.turn_sheet_window = window
+            window.title("Battle turn")
+            window.geometry("920x720")
+            window.minsize(620, 460)
+            apply_window_icon(window, GAME_BOARD_ICON)
+            window.protocol("WM_DELETE_WINDOW", window.withdraw)
+        window.deiconify()
+        window.lift()
+        for child in window.winfo_children():
+            child.destroy()
+        root = ttk.Frame(window, padding=8)
+        root.pack(fill="both", expand=True)
+        actor_type = str(payload.get("actor_type", "person"))
+        source = payload.get("sheet", {}) if actor_type == "person" else payload.get("creature", {})
+        title = str(
+            source.get("character_name") or source.get("display_name")
+            or source.get("species_name") or "Combatant"
+        )
+        heading = ttk.Frame(root)
+        heading.pack(fill="x")
+        ttk.Label(heading, text=title, style="Title.TLabel").pack(side="left")
+        ttk.Label(
+            heading, text=f"Round {self._selected_battle().get('round', 1) if self._selected_battle() else 1}",
+            style="Card.TLabel",
+        ).pack(side="right")
+        notebook = ttk.Notebook(root)
+        notebook.pack(fill="both", expand=True, pady=(6, 6))
+        self.turn_sheet_notebook = notebook
+
+        def text_tab(label: str, value: Any) -> ttk.Frame:
+            frame = ttk.Frame(notebook, padding=8)
+            notebook.add(frame, text=label)
+            text_widget = tk.Text(
+                frame, wrap="word", background="#fff8e6", foreground=self.INK,
+                relief="flat", padx=8, pady=8,
+            )
+            text_widget.pack(fill="both", expand=True)
+            text_widget.insert("1.0", json.dumps(value, ensure_ascii=False, indent=2))
+            text_widget.configure(state="disabled")
+            return frame
+
+        if actor_type == "person":
+            sheet = payload.get("sheet", {}) or {}
+            overview = {
+                key: sheet.get(key) for key in (
+                    "character_name", "birth_date", "school", "eminence", "narrative"
+                ) if sheet.get(key) not in (None, "", [])
+            }
+            text_tab("Overview", overview)
+            for label, key in (
+                ("Attributes", "attributes"), ("Spells", "spells"),
+                ("Proficiencies", "proficiencies"), ("Recipes", "recipes"),
+                ("Pets", "pets"), ("Inventory", "inventory"),
+                ("Relationships", "relationships"), ("Wounds", "wounds"),
+                ("Notes", "notes"),
+            ):
+                frame = text_tab(label, sheet.get(key, []))
+                if key in {"spells", "proficiencies", "recipes"}:
+                    roll_type = {
+                        "spells": "spell",
+                        "proficiencies": "proficiency",
+                        "recipes": "recipe",
+                    }[key]
+                    toolbar = ttk.Frame(frame)
+                    toolbar.pack(fill="x", before=frame.winfo_children()[0])
+                    records = list(sheet.get(key, []) or [])
+                    selected = tk.StringVar()
+                    panel = self._searchable_record_panel(
+                        toolbar, records, selected, height=5
+                    )
+                    panel.pack(fill="x")
+                    ttk.Button(
+                        toolbar, text=f"Use selected {roll_type}",
+                        command=lambda rt=roll_type, chosen=selected, person_id=str((payload.get("participant") or {}).get("actor_id", "")): self._battle_person_roll(
+                            battle_id, person_id, rt, chosen.get()
+                        ),
+                    ).pack(anchor="e", pady=(4, 0))
+        else:
+            creature = payload.get("creature", {}) or {}
+            text_tab("Overview", creature.get("generated", {}))
+            actions = text_tab("Attacks & Abilities", creature.get("actions", []))
+            action_row = ttk.Frame(actions)
+            action_row.pack(fill="x", before=actions.winfo_children()[0])
+            action_records = list(creature.get("actions", []) or [])
+            action_id = tk.StringVar()
+            self._searchable_record_panel(
+                action_row, action_records, action_id, height=6
+            ).pack(fill="x")
+            ttk.Button(
+                action_row, text="Use selected action",
+                command=lambda: self._battle_creature_roll(
+                    battle_id, str(creature.get("record_id", "")), action_id.get()
+                ),
+            ).pack(anchor="e", pady=(4, 0))
+            text_tab("Wounds", creature.get("wounds", []))
+            text_tab("Notes", creature.get("encounter_notes", []))
+        consequences = ttk.Frame(root)
+        consequences.pack(fill="x", pady=(0, 5))
+        actor_id = str((payload.get("participant") or {}).get("actor_id", ""))
+        wounds = list(source.get("wounds", []) or [])
+        ttk.Button(
+            consequences, text="+ Wound",
+            command=lambda: self._battle_add_wound(battle_id, participant_id),
+        ).pack(side="left")
+        ttk.Button(
+            consequences, text="Heal / remove wound",
+            command=lambda: self._battle_remove_wound(
+                battle_id, participant_id, wounds
+            ),
+        ).pack(side="left", padx=(4, 0))
+        ttk.Button(
+            consequences, text="+ Note",
+            command=lambda: self._battle_add_note(battle_id, participant_id),
+        ).pack(side="left", padx=(4, 0))
+        controls = ttk.Frame(root)
+        controls.pack(fill="x")
+        for label, action in (
+            ("Previous", "previous"), ("Undo action", "undo"),
+            ("Mark action", "mark"), ("Skip", "skip"), ("Next turn", "next"),
+        ):
+            ttk.Button(
+                controls, text=label,
+                command=lambda selected=action: self.change_selected_battle_turn(selected),
+            ).pack(side="left", fill="x", expand=True, padx=(0, 4))
+
+    def _battle_consequence(
+        self, battle_id: str, participant_id: str, payload: dict[str, Any],
+    ) -> None:
+        if not self.selected_session_id:
+            return
+        body = {"session_id": self.selected_session_id, **payload}
+        self._background(
+            lambda: self.client.request(
+                "POST",
+                f"/api/admin/battles/{battle_id}/participants/{participant_id}/consequences",
+                body,
+            ),
+            lambda _result: self.open_battle_turn_sheet(battle_id, participant_id),
+        )
+
+    def _battle_add_wound(self, battle_id: str, participant_id: str) -> None:
+        severity = simpledialog.askstring(
+            "Assign wound", "Severity: light, medium, or heavy", parent=self.turn_sheet_window,
+        )
+        if severity is None:
+            return
+        severity = severity.strip().casefold()
+        if severity not in {"light", "medium", "heavy"}:
+            messagebox.showerror("Assign wound", "Enter light, medium, or heavy.", parent=self.turn_sheet_window)
+            return
+        note = simpledialog.askstring(
+            "Assign wound", "Wound details (optional)", parent=self.turn_sheet_window,
+        )
+        self._battle_consequence(
+            battle_id, participant_id,
+            {"action": "add_wound", "severity": severity, "text": note or ""},
+        )
+
+    def _battle_add_note(self, battle_id: str, participant_id: str) -> None:
+        note = simpledialog.askstring(
+            "Battle note", "Note", parent=self.turn_sheet_window,
+        )
+        if note and note.strip():
+            self._battle_consequence(
+                battle_id, participant_id,
+                {"action": "add_note", "text": note.strip()},
+            )
+
+    def _battle_remove_wound(
+        self, battle_id: str, participant_id: str, wounds: list[dict[str, Any]],
+    ) -> None:
+        if not wounds:
+            messagebox.showinfo("Wounds", "This combatant has no wounds.", parent=self.turn_sheet_window)
+            return
+        dialog = tk.Toplevel(self.turn_sheet_window or self)
+        dialog.title("Heal or remove wound")
+        dialog.geometry("480x300")
+        apply_window_icon(dialog, GAME_BOARD_ICON)
+        listing = tk.Listbox(dialog, exportselection=False, background="#fff8e6")
+        listing.pack(fill="both", expand=True, padx=8, pady=8)
+        for wound in wounds:
+            listing.insert(
+                "end", f"{str(wound.get('severity', '')).title()} · {wound.get('note', '') or 'No details'}"
+            )
+        def remove() -> None:
+            selected = listing.curselection()
+            if not selected:
+                return
+            wound = wounds[int(selected[0])]
+            dialog.destroy()
+            self._battle_consequence(
+                battle_id, participant_id,
+                {"action": "heal_wound", "wound_id": str(wound.get("record_id", ""))},
+            )
+        ttk.Button(dialog, text="Heal / remove", command=remove).pack(fill="x", padx=8, pady=(0, 8))
+        listing.bind("<Double-Button-1>", lambda _event: remove())
+
+    def _battle_person_roll(
+        self, battle_id: str, person_id: str, roll_type: str, target_id: str,
+    ) -> None:
+        if not target_id or not self.selected_session_id:
+            return
+        self._background(
+            lambda: self.client.request(
+                "POST", f"/api/admin/battles/people/{person_id}/roll", {
+                    "session_id": self.selected_session_id,
+                    "roll_type": roll_type, "target_id": target_id,
+                }
+            ),
+            lambda _result: self.refresh(silent=True),
+        )
+
+    def _battle_creature_roll(
+        self, battle_id: str, creature_id: str, action_id: str,
+    ) -> None:
+        del battle_id
+        if not action_id or not self.selected_session_id:
+            return
+        self._background(
+            lambda: self.client.request(
+                "POST", f"/api/admin/board/creatures/{creature_id}/roll", {
+                    "session_id": self.selected_session_id, "action_id": action_id,
+                }
+            ),
+            lambda _result: self.refresh(silent=True),
+        )
+
     def _current_map_creatures(self) -> list[dict[str, Any]]:
         query = (
             self.board_creature_search_var.get().strip().casefold()
@@ -2076,6 +2934,10 @@ class GameBoardWindow(tk.Tk):
         dialog.geometry("620x560")
         dialog.minsize(460, 380)
         apply_window_icon(dialog, GAME_BOARD_ICON)
+        def cancel_dialog() -> None:
+            self.pending_creature_battle_id = ""
+            dialog.destroy()
+        dialog.protocol("WM_DELETE_WINDOW", cancel_dialog)
         body = ttk.Frame(dialog, padding=10)
         body.pack(fill="both", expand=True)
         ttk.Label(body, text="Creature catalog", style="Title.TLabel").pack(anchor="w")
@@ -2143,11 +3005,37 @@ class GameBoardWindow(tk.Tk):
                 item for item in records
                 if str(item.get("record_id", "")) == selected_id.get()
             )
+            battle_id = str(self.pending_creature_battle_id or "")
+            if battle_id:
+                battle = next((
+                    item for item in self._session_battles()
+                    if str(item.get("record_id", "")) == battle_id
+                ), None)
+                if battle is None:
+                    messagebox.showerror("Battles", "That battle is no longer available.", parent=dialog)
+                    return
+                species_id = selected_id.get()
+                species_name = str(selected.get("name") or "Creature")
+                self.pending_creature_battle_id = ""
+                dialog.destroy()
+                map_id = str(battle.get("map_id", ""))
+                warps = self._arrival_warps_for_map(map_id)
+                preferred = next((item for item in warps if item.get("player_arrival")), None)
+                callback = lambda warp: self._place_battle_creature_batch(
+                    battle_id, map_id, species_id, species_name, count, warp
+                )
+                if preferred is not None:
+                    callback(preferred)
+                else:
+                    self._choose_arrival_warp(map_id, "Battle arrival", callback)
+                return
             self.creature_placement = {
                 "species_id": selected_id.get(),
                 "species_name": str(selected.get("name") or "Creature"),
                 "quantity": count, "placed": 0, "busy": False,
+                "battle_id": self.pending_creature_battle_id,
             }
+            self.pending_creature_battle_id = ""
             dialog.destroy()
             self._update_creature_placement_notice()
             canvas = self.board_canvases.get(self.selected_board_map_id)
@@ -2158,10 +3046,48 @@ class GameBoardWindow(tk.Tk):
         results.bind("<<ListboxSelect>>", choose)
         controls = ttk.Frame(body)
         controls.pack(fill="x", pady=(7, 0))
-        ttk.Button(controls, text="Cancel", style="Quiet.TButton", command=dialog.destroy).pack(side="right")
+        ttk.Button(controls, text="Cancel", style="Quiet.TButton", command=cancel_dialog).pack(side="right")
         ttk.Button(controls, text="Place on map", command=begin).pack(side="right", padx=(0, 5))
         run_search()
         search.focus_set()
+
+    def _place_battle_creature_batch(
+        self, battle_id: str, map_id: str, species_id: str,
+        species_name: str, quantity: int, warp: dict[str, Any],
+    ) -> None:
+        if not self.selected_session_id:
+            return
+        session_id = self.selected_session_id
+        x = float(warp.get("x", 0.5))
+        y = float(warp.get("y", 0.5))
+        self.set_notice(f"Adding {quantity} {species_name} to the battle…")
+
+        def create() -> int:
+            for _index in range(quantity):
+                creature = self.client.request(
+                    "POST", "/api/admin/board/creatures", {
+                        "session_id": session_id, "species_id": species_id,
+                        "map_id": map_id, "x": x, "y": y,
+                    },
+                )
+                creature_id = str((creature or {}).get("record_id", ""))
+                if not creature_id:
+                    raise RuntimeError("The creature was created without an ID")
+                self.client.request(
+                    "POST", f"/api/admin/battles/{battle_id}/participants", {
+                        "session_id": session_id, "actor_type": "creature",
+                        "actor_id": creature_id,
+                    },
+                )
+            return quantity
+
+        self._background(
+            create,
+            lambda placed: (
+                self.set_notice(f"Added {placed} {species_name} to the battle"),
+                self.refresh(silent=True),
+            ),
+        )
 
     def _update_creature_placement_notice(self) -> None:
         placement = self.creature_placement
@@ -2200,6 +3126,21 @@ class GameBoardWindow(tk.Tk):
                 self.refresh(silent=True)
                 return
             current["busy"] = False
+            battle_id = str(current.get("battle_id", "") or "")
+            creature_id = str(
+                (_result or {}).get("record_id")
+                or (_result or {}).get("actor_id") or ""
+            )
+            if battle_id and creature_id and self.selected_session_id:
+                try:
+                    self.client.request(
+                        "POST", f"/api/admin/battles/{battle_id}/participants", {
+                            "session_id": self.selected_session_id,
+                            "actor_type": "creature", "actor_id": creature_id,
+                        }
+                    )
+                except Exception as error:
+                    self.set_notice(str(error), error=True)
             current["placed"] = int(current["placed"]) + 1
             if int(current["placed"]) >= int(current["quantity"]):
                 self.creature_placement = None
@@ -2633,6 +3574,7 @@ class GameBoardWindow(tk.Tk):
         labels = {
             "groups": "Characters",
             "creatures": "Creatures",
+            "battles": "Battles",
             "obfuscation-tools": "Obfuscation",
             "token-tools": "Tokens & Zoom",
             "secrets": "Secrets",
@@ -2649,7 +3591,7 @@ class GameBoardWindow(tk.Tk):
         for panel_key, panel in self.board_tools_panels.items():
             if panel_key == key:
                 if not panel.winfo_manager():
-                    large = key in {"groups", "creatures", "secrets"}
+                    large = key in {"groups", "creatures", "battles", "secrets"}
                     panel.pack(
                         fill="both" if large else "x",
                         expand=large,
@@ -6159,6 +7101,7 @@ class GameBoardWindow(tk.Tk):
         tools = (
             ("groups", "●", "Characters"),
             ("creatures", "◆", "Creatures"),
+            ("battles", "⚔", "Battles"),
             ("obfuscation-tools", "▧", "Obfuscation"),
             ("token-tools", "◉", "Tokens & Zoom"),
             ("secrets", "✦", "Secrets"),
@@ -6258,6 +7201,7 @@ class GameBoardWindow(tk.Tk):
         self._create_board_token_controls(self.board_tools_content)
         self._create_board_groups_controls(self.board_tools_content)
         self._create_board_creature_controls(self.board_tools_content)
+        self._create_board_battle_controls(self.board_tools_content)
         self._create_board_secret_controls(self.board_tools_content)
 
     def collapse_headmaster_tools(self) -> None:
@@ -6307,6 +7251,12 @@ class GameBoardWindow(tk.Tk):
             self._render_board_creature_list()
             if hasattr(self, "notice"):
                 self.set_notice("Creature encounter controls opened")
+            return
+        if key == "battles":
+            self.show_board_tools_panel("battles")
+            self._render_board_battles()
+            if hasattr(self, "notice"):
+                self.set_notice("Battle trackers opened")
             return
         if key == "obfuscation-tools":
             self.open_board_map_controls()
@@ -7524,6 +8474,7 @@ class GameBoardWindow(tk.Tk):
         if not board.get("maps"):
             board["maps"] = list(state.get("location_maps") or [])
         self._render_board(board)
+        self._render_board_battles()
         self.after_idle(self._hide_board_loading)
 
         pending_rows: list[tuple[str, tuple[Any, ...]]] = []

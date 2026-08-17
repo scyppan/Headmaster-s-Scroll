@@ -1164,6 +1164,66 @@
   overflow: hidden;
 }
 
+#gameboard .ccgb-battle-tracker {
+  align-items: center;
+  background: #f3e2af;
+  border: 1px solid #a77734;
+  display: flex;
+  flex: 0 0 auto;
+  gap: 10px;
+  min-height: 34px;
+  padding: 4px 7px;
+}
+
+#gameboard .ccgb-battle-tracker.is-my-turn {
+  background: #dceec9;
+  border-color: #426b35;
+  box-shadow: inset 0 0 0 2px #d7ad42;
+}
+
+#gameboard .ccgb-battle-summary {
+  align-items: center;
+  display: flex;
+  flex: 1 1 auto;
+  gap: 12px;
+  min-width: 0;
+}
+
+#gameboard .ccgb-battle-summary strong,
+#gameboard .ccgb-battle-summary span { white-space: nowrap; }
+
+#gameboard .ccgb-battle-current {
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#gameboard .ccgb-battle-order { flex: 0 0 auto; position: relative; }
+#gameboard .ccgb-battle-order > summary {
+  cursor: pointer;
+  font-weight: 700;
+  list-style: none;
+  padding: 3px 6px;
+}
+#gameboard .ccgb-battle-order > ol {
+  background: #fff4d2;
+  border: 1px solid #8b5737;
+  box-shadow: 0 5px 16px rgba(48, 30, 16, .24);
+  margin: 4px 0 0;
+  max-height: min(45vh, 360px);
+  min-width: 210px;
+  overflow: auto;
+  padding: 6px 8px 6px 32px;
+  position: absolute;
+  right: 0;
+  top: 100%;
+  z-index: 40;
+}
+#gameboard .ccgb-battle-order li { padding: 2px 4px; }
+#gameboard .ccgb-battle-order li.is-current { background: #dfb74f; font-weight: 700; }
+#gameboard .ccgb-battle-order li.is-mine { color: #184b20; }
+#gameboard .ccgb-battle-order li.is-done { opacity: .58; }
+
 #gameboard .ccgb-map-tabs {
   background: #dfc792;
   display: flex;

@@ -57,6 +57,7 @@
       this.characterId = '';
       this.assetCredential = '';
       this.board = { maps: [], actors: [], controlled_character_ids: [] };
+      this.battleState = { battles: [] };
       this.activeMapId = '';
       this.assetUrls = new Map();
       this.assetRequests = new Map();
@@ -580,6 +581,9 @@
         if (this.activeSection === 'board') this.renderBoardView();
       } else if (message.type === 'board_patch' && message.patch) {
         this.applyBoardPatch(message.patch);
+      } else if ((message.type === 'battle_snapshot' || message.type === 'battle_updated') && message.battle_state) {
+        this.battleState = message.battle_state;
+        if (this.activeSection === 'board') this.renderBoardView();
       } else if ((message.type === 'character_sheet_snapshot' || message.type === 'character_sheet_updated') && message.character_sheet) {
         this.receivedFreshSheet = true;
         this.characterSheet = message.character_sheet;
@@ -2284,6 +2288,8 @@
 
       const shell = document.createElement('section');
       shell.className = 'ccgb-map-shell';
+      const battleTracker = this.renderBattleTracker();
+      if (battleTracker) shell.appendChild(battleTracker);
       const tabs = document.createElement('div');
       tabs.className = 'ccgb-map-tabs';
       maps.forEach(map => {
@@ -2344,6 +2350,41 @@
         Number(map.token_scale || DEFAULT_TOKEN_SCALE),
         map.camera
       );
+    }
+
+    renderBattleTracker() {
+      const battle = Array.isArray(this.battleState?.battles)
+        ? this.battleState.battles[0]
+        : null;
+      if (!battle) return null;
+      const tracker = document.createElement('section');
+      tracker.className = `ccgb-battle-tracker${battle.my_turn ? ' is-my-turn' : ''}`;
+      const summary = document.createElement('div');
+      summary.className = 'ccgb-battle-summary';
+      const title = document.createElement('strong');
+      title.textContent = battle.name || 'Battle';
+      const round = document.createElement('span');
+      round.textContent = `Round ${Number(battle.round || 1)}`;
+      const turn = document.createElement('span');
+      turn.className = 'ccgb-battle-current';
+      turn.textContent = battle.my_turn
+        ? 'Your turn'
+        : String(battle.current_name || 'Headmaster turn');
+      summary.append(title, round, turn);
+      const details = document.createElement('details');
+      details.className = 'ccgb-battle-order';
+      const toggle = document.createElement('summary');
+      toggle.textContent = 'Order';
+      const list = document.createElement('ol');
+      (battle.order || []).forEach(entry => {
+        const item = document.createElement('li');
+        item.className = `${entry.current ? 'is-current ' : ''}${entry.mine ? 'is-mine ' : ''}${entry.acted || entry.skipped ? 'is-done' : ''}`.trim();
+        item.textContent = entry.name || 'Unknown';
+        list.appendChild(item);
+      });
+      details.append(toggle, list);
+      tracker.append(summary, details);
+      return tracker;
     }
 
     createBoardRegionLayer(stage, map) {

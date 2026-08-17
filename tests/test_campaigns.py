@@ -61,6 +61,7 @@ class CampaignTests(unittest.TestCase):
         self.assertEqual(state["maps"], {})
         self.assertEqual(state["people"], {})
         self.assertEqual(state["groups"], [])
+        self.assertEqual(state["battles"], {})
 
     def test_board_cameras_are_resolution_independent_and_validated(self):
         self.assertEqual(

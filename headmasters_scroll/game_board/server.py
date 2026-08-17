@@ -342,6 +342,63 @@ class CreatureInteractionBody(BaseModel):
     creature_name: str = Field(default="", max_length=200)
 
 
+class BattleCreateBody(BaseModel):
+    session_id: str = Field(min_length=1, max_length=100)
+    name: str = Field(min_length=1, max_length=200)
+    map_id: str = Field(min_length=1, max_length=120)
+
+
+class BattleActorBody(BaseModel):
+    session_id: str = Field(min_length=1, max_length=100)
+    actor_type: str = Field(min_length=1, max_length=20)
+    actor_id: str = Field(min_length=1, max_length=120)
+    transfer: bool = False
+
+
+class BattleActorReference(BaseModel):
+    actor_type: str = Field(min_length=1, max_length=20)
+    actor_id: str = Field(min_length=1, max_length=120)
+
+
+class BattleActorsBody(BaseModel):
+    session_id: str = Field(min_length=1, max_length=100)
+    actors: list[BattleActorReference] = Field(min_length=1, max_length=500)
+    transfer: bool = False
+
+
+class BattleNamedCreatureBody(BaseModel):
+    session_id: str = Field(min_length=1, max_length=100)
+    named_creature_id: str = Field(min_length=1, max_length=120)
+    map_id: str = Field(min_length=1, max_length=120)
+    x: float = Field(ge=0.0, le=1.0)
+    y: float = Field(ge=0.0, le=1.0)
+
+
+class BattleOrderBody(BaseModel):
+    session_id: str = Field(min_length=1, max_length=100)
+    order: list[str] | None = Field(default=None, max_length=500)
+
+
+class BattleTurnBody(BaseModel):
+    session_id: str = Field(min_length=1, max_length=100)
+    action: str = Field(min_length=1, max_length=20)
+    summary: str = Field(default="", max_length=1000)
+
+
+class BattleConsequenceBody(BaseModel):
+    session_id: str = Field(min_length=1, max_length=100)
+    action: str = Field(min_length=1, max_length=30)
+    wound_id: str = Field(default="", max_length=120)
+    severity: str = Field(default="", max_length=20)
+    text: str = Field(default="", max_length=4000)
+
+
+class HeadmasterPersonRollBody(BaseModel):
+    session_id: str = Field(min_length=1, max_length=100)
+    roll_type: str = Field(min_length=1, max_length=30)
+    target_id: str = Field(min_length=1, max_length=160)
+
+
 @dataclass
 class PlayerConnection:
     websocket: Any
@@ -464,6 +521,7 @@ class GameBoardRuntime:
             sessions = self.service.sessions_view()
             archived_sessions = self.service.archived_sessions_view()
             boards = {}
+            battles = {}
             for session in sessions + archived_sessions:
                 try:
                     boards[session["id"]] = self.service.board_snapshot(
@@ -472,6 +530,11 @@ class GameBoardRuntime:
                     )
                 except (KeyError, ValueError):
                     continue
+                if session.get("campaign_id"):
+                    try:
+                        battles[session["id"]] = self.service.battle_snapshot(session["id"])
+                    except (KeyError, ValueError):
+                        pass
             try:
                 location_maps = self.service.location_maps()
             except (KeyError, ValueError):
@@ -486,6 +549,7 @@ class GameBoardRuntime:
                 "session": sessions[0] if sessions else None,
                 "connections": [item.public(self.service) for item in self.connections.values()],
                 "boards": boards,
+                "battles": battles,
                 "location_maps": location_maps,
                 "gmail": self.gmail().status(),
                 "requests": self.service.pending_campaign_requests(),
@@ -697,6 +761,27 @@ class GameBoardRuntime:
             ),
             return_exceptions=True,
         )
+        await self.notify_admins()
+
+    async def send_battle_snapshot(
+        self, connection: PlayerConnection, message_type: str = "battle_snapshot",
+    ) -> None:
+        snapshot = await asyncio.to_thread(
+            self.service.battle_snapshot,
+            connection.session_id,
+            contact_id=connection.contact_id,
+            for_players=True,
+        )
+        await connection.websocket.send_json({
+            "v": 1, "type": message_type, "battle_state": snapshot,
+        })
+
+    async def broadcast_battles(self, session_id: str) -> None:
+        await asyncio.gather(*(
+            self.send_battle_snapshot(connection, "battle_updated")
+            for connection in list(self.connections.values())
+            if connection.session_id == session_id
+        ), return_exceptions=True)
         await self.notify_admins()
 
     async def broadcast_character_sheets(self, session_id: str) -> None:
@@ -1136,6 +1221,189 @@ def create_apps(
         await runtime.notify_admins()
         return result
 
+    async def publish_battle_change(session_id: str, battle_id: str) -> None:
+        snapshot = admin_result(service.battle_snapshot, session_id)
+        active = any(
+            str(item.get("record_id", "")) == battle_id
+            and str(item.get("status", "")) == "active"
+            for item in snapshot.get("battles", []) or []
+        )
+        if active:
+            await runtime.broadcast_battles(session_id)
+        else:
+            await runtime.notify_admins()
+
+    @admin_app.get("/api/admin/battles", dependencies=[Depends(admin_guard)])
+    async def list_battles(session_id: str = Query(min_length=1, max_length=100)):
+        return admin_result(service.battle_snapshot, session_id)
+
+    @admin_app.get(
+        "/api/admin/battles/{battle_id}/actor-choices",
+        dependencies=[Depends(admin_guard)],
+    )
+    async def battle_actor_choices(
+        battle_id: str,
+        session_id: str = Query(min_length=1, max_length=100),
+        q: str = Query(default="", max_length=200),
+    ):
+        return await asyncio.to_thread(
+            admin_result, service.battle_actor_choices,
+            session_id, battle_id, q,
+        )
+
+    @admin_app.post("/api/admin/battles", dependencies=[Depends(admin_guard)])
+    async def create_battle(body: BattleCreateBody):
+        result = admin_result(
+            service.create_battle, body.session_id, body.name, body.map_id
+        )
+        await runtime.notify_admins()
+        return result
+
+    @admin_app.post(
+        "/api/admin/battles/{battle_id}/start",
+        dependencies=[Depends(admin_guard)],
+    )
+    async def start_battle(battle_id: str, body: BattleTurnBody):
+        result = admin_result(service.start_battle, body.session_id, battle_id)
+        await runtime.broadcast_battles(body.session_id)
+        return result
+
+    @admin_app.delete(
+        "/api/admin/battles/{battle_id}", dependencies=[Depends(admin_guard)]
+    )
+    async def end_battle(battle_id: str, session_id: str = Query(min_length=1, max_length=100)):
+        admin_result(service.end_battle, session_id, battle_id)
+        await runtime.broadcast_battles(session_id)
+        return {"ended": True}
+
+    @admin_app.post(
+        "/api/admin/battles/{battle_id}/participants",
+        dependencies=[Depends(admin_guard)],
+    )
+    async def add_battle_participant(battle_id: str, body: BattleActorBody):
+        result = admin_result(
+            service.add_battle_actor, body.session_id, battle_id,
+            body.actor_type, body.actor_id, transfer=body.transfer,
+        )
+        await publish_battle_change(body.session_id, battle_id)
+        return result
+
+    @admin_app.post(
+        "/api/admin/battles/{battle_id}/participants/bulk",
+        dependencies=[Depends(admin_guard)],
+    )
+    async def add_battle_participants_bulk(
+        battle_id: str, body: BattleActorsBody,
+    ):
+        result = admin_result(
+            service.add_battle_actors, body.session_id, battle_id,
+            [item.model_dump() for item in body.actors], transfer=body.transfer,
+        )
+        await publish_battle_change(body.session_id, battle_id)
+        return {"participants": result}
+
+    @admin_app.post(
+        "/api/admin/battles/{battle_id}/named-creatures",
+        dependencies=[Depends(admin_guard)],
+    )
+    async def add_named_battle_participant(
+        battle_id: str, body: BattleNamedCreatureBody,
+    ):
+        result = admin_result(
+            service.add_named_creature_to_battle,
+            body.session_id, battle_id, body.named_creature_id,
+            body.map_id, body.x, body.y,
+        )
+        await runtime.broadcast_board(body.session_id)
+        await publish_battle_change(body.session_id, battle_id)
+        return result
+
+    @admin_app.delete(
+        "/api/admin/battles/{battle_id}/participants/{participant_id}",
+        dependencies=[Depends(admin_guard)],
+    )
+    async def remove_battle_participant(
+        battle_id: str, participant_id: str,
+        session_id: str = Query(min_length=1, max_length=100),
+    ):
+        admin_result(
+            service.remove_battle_actor, session_id, battle_id, participant_id
+        )
+        await publish_battle_change(session_id, battle_id)
+        return {"removed": True}
+
+    @admin_app.put(
+        "/api/admin/battles/{battle_id}/order",
+        dependencies=[Depends(admin_guard)],
+    )
+    async def reorder_battle(battle_id: str, body: BattleOrderBody):
+        result = admin_result(
+            service.reorder_battle, body.session_id, battle_id, body.order
+        )
+        await publish_battle_change(body.session_id, battle_id)
+        return result
+
+    @admin_app.post(
+        "/api/admin/battles/{battle_id}/turn",
+        dependencies=[Depends(admin_guard)],
+    )
+    async def change_battle_turn(battle_id: str, body: BattleTurnBody):
+        result = admin_result(
+            service.update_battle_turn, body.session_id, battle_id,
+            body.action, summary=body.summary,
+        )
+        await runtime.broadcast_battles(body.session_id)
+        return result
+
+    @admin_app.get(
+        "/api/admin/battles/{battle_id}/participants/{participant_id}/sheet",
+        dependencies=[Depends(admin_guard)],
+    )
+    async def battle_participant_sheet(
+        battle_id: str, participant_id: str,
+        session_id: str = Query(min_length=1, max_length=100),
+    ):
+        return await asyncio.to_thread(
+            admin_result, service.battle_combatant_sheet,
+            session_id, battle_id, participant_id,
+        )
+
+    @admin_app.post(
+        "/api/admin/battles/{battle_id}/participants/{participant_id}/consequences",
+        dependencies=[Depends(admin_guard)],
+    )
+    async def update_battle_participant_consequence(
+        battle_id: str, participant_id: str, body: BattleConsequenceBody,
+    ):
+        result = admin_result(
+            service.update_battle_combatant,
+            body.session_id, battle_id, participant_id, body.action,
+            wound_id=body.wound_id, severity=body.severity, text=body.text,
+        )
+        await runtime.broadcast_board(body.session_id)
+        await runtime.broadcast_character_sheets(body.session_id)
+        await runtime.broadcast_battles(body.session_id)
+        return result
+
+    @admin_app.post(
+        "/api/admin/battles/people/{person_id}/roll",
+        dependencies=[Depends(admin_guard)],
+    )
+    async def headmaster_battle_person_roll(
+        person_id: str, body: HeadmasterPersonRollBody,
+    ):
+        result = admin_result(
+            service.headmaster_roll_person_action,
+            body.session_id, person_id, body.roll_type, body.target_id,
+        )
+        await runtime.chat(
+            person_id, str(result.get("character_name") or "Character"),
+            "headmaster", str(result.get("text") or "A character acts."),
+            body.session_id, result,
+        )
+        await runtime.broadcast_battles(body.session_id)
+        return result
+
     @admin_app.get("/api/admin/creatures", dependencies=[Depends(admin_guard)])
     def search_creature_species(
         q: str = Query(default="", max_length=200),
@@ -1226,6 +1494,7 @@ def create_apps(
             body.session_id,
             result,
         )
+        await runtime.broadcast_battles(body.session_id)
         return result
 
     @admin_app.post(
@@ -1887,6 +2156,7 @@ def create_apps(
                 notify_admins=False,
             )
             await runtime.send_board_snapshot(connection)
+            await runtime.send_battle_snapshot(connection)
             await runtime.notify_admins()
 
         bootstrap_task = asyncio.create_task(bootstrap_connection())
@@ -2009,6 +2279,10 @@ def create_apps(
                             connection.session_id,
                             result,
                         )
+                        if str(message.get("roll_type", "")).casefold() in {
+                            "spell", "proficiency", "item", "item_action", "potion"
+                        } or message.get("type") == "recipe_attempt_request":
+                            await runtime.broadcast_battles(connection.session_id)
                         if message.get("type") == "recipe_attempt_request":
                             await runtime.broadcast_character_sheets(
                                 connection.session_id

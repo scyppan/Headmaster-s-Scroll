@@ -32,6 +32,7 @@ from ..board import (
     point_in_polygon,
 )
 from ..campaigns import CampaignRepository, normalize_board_camera, normalize_zoom_profile
+from ..battles import calculated_order, normalize_battle, participant, public_battle
 from ..character_attributes import calculate_character_attributes
 from ..character_sheet import build_character_sheet
 from ..character_rolls import perform_character_roll
@@ -306,6 +307,784 @@ class GameBoardService:
                 "creatures": [], "books": [],
             }
         return build_character_sheet(person, document, database, campaign)
+
+    def _battle_person_sort_key(
+        self, person: dict[str, Any], world: dict[str, Any], database: dict[str, Any],
+        campaign: dict[str, Any], random_key: float,
+    ) -> tuple[Any, ...]:
+        attributes = calculate_character_attributes(
+            person, world, database,
+            str(campaign["game_state"]["current_game_datetime"]),
+            (campaign["game_state"].get("people", {}) or {}).get(
+                str(person.get("record_id", "")), {}
+            ),
+        )
+        eminence = sum(
+            int((item.get("breakdown") or {}).get("eminence", 0) or 0)
+            for item in attributes.get("skills", []) or []
+            if isinstance(item, dict)
+        )
+        try:
+            birth = (
+                int(person.get("birth_year")),
+                int(person.get("birth_month") or 1),
+                int(person.get("birth_day") or 1),
+            )
+        except (TypeError, ValueError):
+            birth = (999999, 12, 31)
+        return (-eminence, birth, float(random_key), str(person.get("record_id", "")))
+
+    def _recalculate_battle_order(
+        self, battle: dict[str, Any], world: dict[str, Any], database: dict[str, Any],
+        campaign: dict[str, Any], *, preserve_manual: bool = True,
+    ) -> None:
+        people_by_id = {
+            str(item.get("record_id", "")): item
+            for item in world.get("people", []) or [] if isinstance(item, dict)
+        }
+        person_entries = [
+            item for item in battle["participants"] if item["actor_type"] == "person"
+        ]
+        person_entries.sort(key=lambda item: self._battle_person_sort_key(
+            people_by_id.get(item["actor_id"], {}), world, database, campaign,
+            item["random_key"],
+        ))
+        for rank, item in enumerate(person_entries):
+            item["calculated_rank"] = rank
+        creatures = [
+            item for item in battle["participants"] if item["actor_type"] == "creature"
+        ]
+        new_calculated = calculated_order(person_entries, creatures)
+        prior_order = list(battle.get("order", []))
+        battle["calculated_order"] = new_calculated
+        if not preserve_manual or not battle.get("manual_order"):
+            battle["order"] = new_calculated
+        else:
+            retained = [item for item in prior_order if item in set(new_calculated)]
+            retained.extend(item for item in new_calculated if item not in retained)
+            battle["order"] = retained
+        if battle.get("current_participant_id") not in battle["order"]:
+            battle["current_participant_id"] = battle["order"][0] if battle["order"] else ""
+
+    @staticmethod
+    def _battle_participant_by_id(
+        battle: dict[str, Any], participant_id: str,
+    ) -> dict[str, Any]:
+        found = next((
+            item for item in battle.get("participants", [])
+            if item.get("record_id") == participant_id
+        ), None)
+        if found is None:
+            raise KeyError("Unknown battle participant")
+        return found
+
+    def _battle_actor_catalog(
+        self, campaign: dict[str, Any], world: dict[str, Any], *, for_players: bool = False,
+    ) -> dict[tuple[str, str], dict[str, Any]]:
+        result: dict[tuple[str, str], dict[str, Any]] = {}
+        people_state = campaign["game_state"].get("people", {}) or {}
+        for person in world.get("people", []) or []:
+            if not isinstance(person, dict) or not person.get("record_id"):
+                continue
+            actor_id = str(person["record_id"])
+            state = people_state.get(actor_id, {}) or {}
+            result[("person", actor_id)] = {
+                "actor_id": actor_id,
+                "actor_type": "person",
+                "name": str(person.get("displayed_name") or "Unknown"),
+                "true_name": str(person.get("displayed_name") or "Unknown"),
+                "map_id": str((state.get("placement") or {}).get("map_id", "") or ""),
+                "x": (state.get("placement") or {}).get("x"),
+                "y": (state.get("placement") or {}).get("y"),
+                "visibility": str(state.get("visibility", "headmaster") or "headmaster"),
+                "name_revealed": bool(state.get("name_revealed", False)),
+                "wounds": deepcopy(state.get("wounds", []) or []),
+                "battle": deepcopy(state.get("battle")),
+            }
+        for creature_id, creature in (campaign["game_state"].get("creatures", {}) or {}).items():
+            creature = normalize_campaign_creature(creature)
+            result[("creature", str(creature_id))] = {
+                "actor_id": str(creature_id),
+                "actor_type": "creature",
+                "name": str(creature.get("display_name") or creature.get("species_name") or "Creature"),
+                "true_name": str(creature.get("display_name") or creature.get("internal_label") or "Creature"),
+                "map_id": str((creature.get("placement") or {}).get("map_id", "") or ""),
+                "x": (creature.get("placement") or {}).get("x"),
+                "y": (creature.get("placement") or {}).get("y"),
+                "visibility": str(creature.get("visibility", "headmaster") or "headmaster"),
+                "wounds": deepcopy(creature.get("wounds", []) or []),
+                "life_state": str(creature.get("life_state", "alive") or "alive"),
+                "named_creature_id": str(creature.get("named_creature_id", "") or ""),
+            }
+        return result
+
+    def battle_snapshot(
+        self, session_id: str, *, contact_id: str = "", for_players: bool = False,
+    ) -> dict[str, Any]:
+        session = self._board_context(session_id)
+        campaign, world = self._campaign_document(session)
+        actors = self._battle_actor_catalog(campaign, world, for_players=for_players)
+        battles = list((campaign["game_state"].get("battles", {}) or {}).values())
+        if not for_players:
+            rendered = []
+            for raw in battles:
+                battle = normalize_battle(raw)
+                by_id = {item["record_id"]: item for item in battle["participants"]}
+                order = []
+                for participant_id in battle["order"]:
+                    item = by_id.get(participant_id)
+                    if not item:
+                        continue
+                    actor = actors.get((item["actor_type"], item["actor_id"]), {})
+                    order.append({
+                        **deepcopy(item),
+                        "name": str(actor.get("true_name") or actor.get("name") or "Unknown"),
+                        "map_id": str(actor.get("map_id", "") or ""),
+                        "wounds": deepcopy(actor.get("wounds", []) or []),
+                        "life_state": str(actor.get("life_state", "alive") or "alive"),
+                        "current": participant_id == battle["current_participant_id"],
+                        "acted": item["acted_round"] == battle["round"],
+                        "skipped": item["skipped_round"] == battle["round"],
+                    })
+                rendered.append({**deepcopy(battle), "order_entries": order})
+            return {"campaign_id": campaign["record_id"], "battles": rendered}
+        roster = next((
+            item for item in session.get("roster", [])
+            if str(item.get("contact_id", "")) == str(contact_id)
+        ), None)
+        character_id = str((roster or {}).get("character_id", "") or "")
+        visible = [
+            item for item in (
+                public_battle(normalize_battle(raw), actors, viewer_character_id=character_id)
+                for raw in battles
+            ) if item is not None
+        ]
+        return {"campaign_id": campaign["record_id"], "battles": visible}
+
+    def battle_actor_choices(
+        self, session_id: str, battle_id: str, query: str = "",
+    ) -> dict[str, Any]:
+        session = self._board_context(session_id)
+        campaign, world = self._campaign_document(session)
+        battle = normalize_battle(
+            (campaign["game_state"].get("battles", {}) or {}).get(battle_id)
+        )
+        needle = str(query or "").strip().casefold()
+        actors = self._battle_actor_catalog(campaign, world)
+        occupied = {
+            (item["actor_type"], item["actor_id"]): str(battle_key)
+            for battle_key, raw in (campaign["game_state"].get("battles", {}) or {}).items()
+            for item in normalize_battle(raw)["participants"]
+        }
+        choices: list[dict[str, Any]] = []
+        for key, actor in actors.items():
+            name = str(actor.get("true_name") or actor.get("name") or "Unknown")
+            if needle and needle not in name.casefold():
+                continue
+            choices.append({
+                "actor_type": key[0], "actor_id": key[1], "name": name,
+                "map_id": str(actor.get("map_id", "") or ""),
+                "x": actor.get("x"), "y": actor.get("y"),
+                "on_battle_map": str(actor.get("map_id", "")) == battle["map_id"],
+                "already_in_battle": key in occupied,
+                "battle_id": occupied.get(key, ""),
+                "source": "campaign" if key[0] == "creature" else "world",
+            })
+        overlaid_named = {
+            str(item.get("named_creature_id", "") or "")
+            for item in (campaign["game_state"].get("creatures", {}) or {}).values()
+        }
+        for named in world.get("named_creatures", []) or []:
+            named_id = str(named.get("record_id", "") or "")
+            name = str(named.get("name") or "Named creature")
+            if not named_id or named_id in overlaid_named or (needle and needle not in name.casefold()):
+                continue
+            placement = named.get("placement") or {}
+            choices.append({
+                "actor_type": "named_creature", "actor_id": named_id,
+                "name": name, "map_id": str(placement.get("map_id", "") or ""),
+                "x": placement.get("x"), "y": placement.get("y"),
+                "on_battle_map": str(placement.get("map_id", "")) == battle["map_id"],
+                "already_in_battle": False, "source": "world",
+            })
+        choices.sort(key=lambda item: (
+            not item["on_battle_map"], item["already_in_battle"],
+            item["name"].casefold(), item["actor_id"],
+        ))
+        return {"battle": deepcopy(battle), "actors": choices[:10000]}
+
+    def add_named_creature_to_battle(
+        self, session_id: str, battle_id: str, named_creature_id: str,
+        map_id: str, x: float, y: float,
+    ) -> dict[str, Any]:
+        with self._lock:
+            session = self._board_context(session_id)
+            campaign, world = self._campaign_document(session)
+            named = next((
+                item for item in world.get("named_creatures", []) or []
+                if str(item.get("record_id", "")) == named_creature_id
+            ), None)
+            if named is None:
+                raise KeyError("Unknown named creature")
+            species_id = str(named.get("species_record_id", "") or "")
+            species = next((
+                item for item in self._database_document().get("creatures", []) or []
+                if str(item.get("record_id", "")) == species_id
+            ), None)
+            if species is None:
+                raise KeyError("That named creature's species is unavailable")
+            map_record = self._campaign_map(world, map_id)
+            result: dict[str, Any] = {}
+
+            def create(state: dict[str, Any]) -> None:
+                nonlocal result
+                counters = state.setdefault("creature_counters", {})
+                counter = int(counters.get(species_id, 0) or 0) + 1
+                counters[species_id] = counter
+                creature = generate_creature_instance(species, counter, {
+                    "location_id": str(map_record.get("location_id", "")),
+                    "floor_id": str(map_record.get("floor_id", "") or ""),
+                    "map_id": map_id, "x": float(x), "y": float(y),
+                })
+                creature["named_creature_id"] = named_creature_id
+                creature["display_name"] = str(named.get("name") or creature["species_name"])
+                creature["visibility"] = "headmaster"
+                saved_stats = named.get("generated") or named.get("statistics")
+                if isinstance(saved_stats, dict) and saved_stats:
+                    creature["generated"].update(deepcopy(saved_stats))
+                state.setdefault("creatures", {})[creature["record_id"]] = creature
+                result = deepcopy(creature)
+
+            self.campaign_repository.update_game_state(campaign["record_id"], create)
+            self.add_battle_actor(
+                session_id, battle_id, "creature", str(result["record_id"])
+            )
+            return result
+
+    def create_battle(self, session_id: str, name: str, map_id: str) -> dict[str, Any]:
+        with self._lock:
+            session = self._board_context(session_id)
+            campaign, world = self._campaign_document(session)
+            valid_maps = {
+                str(item.get("record_id", ""))
+                for item in self.world_board._location_maps(world)
+            }
+            if map_id not in valid_maps:
+                raise KeyError("Unknown battle map")
+            now = iso_utc(utc_now())
+            battle = normalize_battle({
+                "record_id": str(uuid4()), "name": str(name or "Battle"),
+                "map_id": map_id, "status": "draft", "round": 1,
+                "participants": [], "order": [], "calculated_order": [],
+                "created_at": now, "updated_at": now,
+            })
+            self.campaign_repository.update_game_state(
+                campaign["record_id"],
+                lambda state: state.setdefault("battles", {}).__setitem__(battle["record_id"], battle),
+            )
+            return battle
+
+    def start_battle(self, session_id: str, battle_id: str) -> dict[str, Any]:
+        with self._lock:
+            session = self._board_context(session_id)
+            campaign, world = self._campaign_document(session)
+            database = self._database_document()
+            result: dict[str, Any] = {}
+            now = iso_utc(utc_now())
+            def update(state: dict[str, Any]) -> None:
+                nonlocal result
+                battle = state.setdefault("battles", {}).get(battle_id)
+                if battle is None:
+                    raise KeyError("Unknown battle")
+                battle = normalize_battle(battle)
+                self._recalculate_battle_order(battle, world, database, campaign, preserve_manual=True)
+                battle["status"] = "active"
+                battle["started_at"] = battle.get("started_at") or now
+                battle["updated_at"] = now
+                if not battle["current_participant_id"] and battle["order"]:
+                    battle["current_participant_id"] = battle["order"][0]
+                state["battles"][battle_id] = battle
+                result = deepcopy(battle)
+            self.campaign_repository.update_game_state(campaign["record_id"], update)
+            return result
+
+    def end_battle(self, session_id: str, battle_id: str) -> None:
+        with self._lock:
+            session = self._board_context(session_id)
+            campaign, _world = self._campaign_document(session)
+            def update(state: dict[str, Any]) -> None:
+                battle = state.setdefault("battles", {}).pop(battle_id, None)
+                if battle is None:
+                    raise KeyError("Unknown battle")
+                for item in battle.get("participants", []) or []:
+                    if item.get("actor_type") == "person":
+                        (state.setdefault("people", {}).setdefault(item["actor_id"], {}))["battle"] = None
+                    elif item.get("actor_type") == "creature" and item["actor_id"] in state.get("creatures", {}):
+                        state["creatures"][item["actor_id"]]["battle"] = None
+            self.campaign_repository.update_game_state(campaign["record_id"], update)
+
+    def add_battle_actor(
+        self, session_id: str, battle_id: str, actor_type: str, actor_id: str,
+        *, transfer: bool = False,
+    ) -> dict[str, Any]:
+        actor_type = str(actor_type or "").casefold()
+        if actor_type not in {"person", "creature"}:
+            raise ValueError("Battles support people and creatures")
+        with self._lock:
+            session = self._board_context(session_id)
+            campaign, world = self._campaign_document(session)
+            database = self._database_document()
+            actors = self._battle_actor_catalog(campaign, world)
+            if (actor_type, actor_id) not in actors:
+                raise KeyError("Unknown battle actor")
+            now = iso_utc(utc_now())
+            result: dict[str, Any] = {}
+            def update(state: dict[str, Any]) -> None:
+                nonlocal result
+                battles = state.setdefault("battles", {})
+                for other_id, other in list(battles.items()):
+                    if other_id == battle_id:
+                        continue
+                    matching = next((item for item in normalize_battle(other)["participants"] if
+                        item.get("actor_type") == actor_type and item.get("actor_id") == actor_id
+                    ), None)
+                    if matching is None:
+                        continue
+                    if not transfer:
+                        raise ValueError("That actor is already in another active battle")
+                    old = normalize_battle(other)
+                    removed_id = matching["record_id"]
+                    old["participants"] = [item for item in old["participants"] if item["record_id"] != removed_id]
+                    old["order"] = [item for item in old["order"] if item != removed_id]
+                    old["calculated_order"] = [item for item in old["calculated_order"] if item != removed_id]
+                    if old["current_participant_id"] == removed_id:
+                        old["current_participant_id"] = old["order"][0] if old["order"] else ""
+                    old["updated_at"] = now
+                    battles[other_id] = old
+                raw_battle = battles.get(battle_id)
+                if raw_battle is None:
+                    raise KeyError("Unknown battle")
+                battle = normalize_battle(raw_battle)
+                if any(item["actor_type"] == actor_type and item["actor_id"] == actor_id for item in battle["participants"]):
+                    raise ValueError("That actor is already in this battle")
+                new_item = participant(actor_type, actor_id, now=now, eligible_round=battle["round"])
+                prior_current = battle.get("current_participant_id", "")
+                prior_order = list(battle["order"])
+                prior_index = prior_order.index(prior_current) if prior_current in prior_order else -1
+                battle["participants"].append(new_item)
+                self._recalculate_battle_order(battle, world, database, campaign, preserve_manual=True)
+                new_index = battle["order"].index(new_item["record_id"])
+                current_index = battle["order"].index(prior_current) if prior_current in battle["order"] else -1
+                if battle["status"] == "active" and prior_index >= 0 and new_index <= current_index:
+                    new_item["eligible_round"] = battle["round"] + 1
+                battle["current_participant_id"] = prior_current or (
+                    battle["order"][0] if battle["order"] else ""
+                )
+                battle["updated_at"] = now
+                actor_state = (
+                    state.setdefault("people", {}).setdefault(actor_id, {})
+                    if actor_type == "person" else state.setdefault("creatures", {})[actor_id]
+                )
+                actor_state["battle"] = {
+                    "active": True, "record_id": battle_id, "name": battle["name"],
+                    "entered_at": now,
+                }
+                battles[battle_id] = battle
+                result = deepcopy(new_item)
+            self.campaign_repository.update_game_state(campaign["record_id"], update)
+            return result
+
+    def add_battle_actors(
+        self, session_id: str, battle_id: str,
+        actor_references: list[dict[str, Any]], *, transfer: bool = False,
+    ) -> list[dict[str, Any]]:
+        """Add a staged lineup with one validation pass and one campaign save."""
+        references: list[tuple[str, str]] = []
+        seen: set[tuple[str, str]] = set()
+        for raw in actor_references[:500]:
+            actor_type = str((raw or {}).get("actor_type", "") or "").casefold()
+            actor_id = str((raw or {}).get("actor_id", "") or "")
+            key = (actor_type, actor_id)
+            if actor_type not in {"person", "creature"} or not actor_id:
+                raise ValueError("Battles support people and creatures")
+            if key not in seen:
+                references.append(key)
+                seen.add(key)
+        if not references:
+            return []
+        with self._lock:
+            session = self._board_context(session_id)
+            campaign, world = self._campaign_document(session)
+            database = self._database_document()
+            catalog = self._battle_actor_catalog(campaign, world)
+            missing = [key for key in references if key not in catalog]
+            if missing:
+                raise KeyError("One or more battle actors are unavailable")
+            now = iso_utc(utc_now())
+            result: list[dict[str, Any]] = []
+
+            def update(state: dict[str, Any]) -> None:
+                nonlocal result
+                battles = state.setdefault("battles", {})
+                raw_battle = battles.get(battle_id)
+                if raw_battle is None:
+                    raise KeyError("Unknown battle")
+                battle = normalize_battle(raw_battle)
+                prior_current = battle.get("current_participant_id", "")
+                prior_order = list(battle["order"])
+                prior_index = prior_order.index(prior_current) if prior_current in prior_order else -1
+                added: list[dict[str, Any]] = []
+                for actor_type, actor_id in references:
+                    if any(
+                        item["actor_type"] == actor_type and item["actor_id"] == actor_id
+                        for item in battle["participants"]
+                    ):
+                        continue
+                    for other_id, raw_other in list(battles.items()):
+                        if other_id == battle_id:
+                            continue
+                        other = normalize_battle(raw_other)
+                        matching = next((
+                            item for item in other["participants"]
+                            if item["actor_type"] == actor_type and item["actor_id"] == actor_id
+                        ), None)
+                        if matching is None:
+                            continue
+                        if not transfer:
+                            raise ValueError("One or more actors are already in another active battle")
+                        removed_id = matching["record_id"]
+                        other["participants"] = [item for item in other["participants"] if item["record_id"] != removed_id]
+                        other["order"] = [item for item in other["order"] if item != removed_id]
+                        other["calculated_order"] = [item for item in other["calculated_order"] if item != removed_id]
+                        if other["current_participant_id"] == removed_id:
+                            other["current_participant_id"] = other["order"][0] if other["order"] else ""
+                        other["updated_at"] = now
+                        battles[other_id] = other
+                    item = participant(
+                        actor_type, actor_id, now=now,
+                        eligible_round=battle["round"],
+                    )
+                    battle["participants"].append(item)
+                    added.append(item)
+                self._recalculate_battle_order(
+                    battle, world, database, campaign, preserve_manual=True
+                )
+                current_index = battle["order"].index(prior_current) if prior_current in battle["order"] else -1
+                for item in added:
+                    new_index = battle["order"].index(item["record_id"])
+                    if battle["status"] == "active" and prior_index >= 0 and new_index <= current_index:
+                        item["eligible_round"] = battle["round"] + 1
+                    actor_state = (
+                        state.setdefault("people", {}).setdefault(item["actor_id"], {})
+                        if item["actor_type"] == "person"
+                        else state.setdefault("creatures", {})[item["actor_id"]]
+                    )
+                    actor_state["battle"] = {
+                        "active": True, "record_id": battle_id,
+                        "name": battle["name"], "entered_at": now,
+                    }
+                battle["current_participant_id"] = prior_current or (
+                    battle["order"][0] if battle["order"] else ""
+                )
+                battle["updated_at"] = now
+                battles[battle_id] = battle
+                result = deepcopy(added)
+
+            self.campaign_repository.update_game_state(campaign["record_id"], update)
+            return result
+
+    def remove_battle_actor(
+        self, session_id: str, battle_id: str, participant_id: str,
+    ) -> None:
+        with self._lock:
+            session = self._board_context(session_id)
+            campaign, _world = self._campaign_document(session)
+            def update(state: dict[str, Any]) -> None:
+                battle = normalize_battle(state.setdefault("battles", {}).get(battle_id))
+                item = self._battle_participant_by_id(battle, participant_id)
+                battle["participants"] = [entry for entry in battle["participants"] if entry["record_id"] != participant_id]
+                battle["order"] = [entry for entry in battle["order"] if entry != participant_id]
+                battle["calculated_order"] = [entry for entry in battle["calculated_order"] if entry != participant_id]
+                if battle["current_participant_id"] == participant_id:
+                    battle["current_participant_id"] = battle["order"][0] if battle["order"] else ""
+                actor_state = (
+                    state.setdefault("people", {}).setdefault(item["actor_id"], {})
+                    if item["actor_type"] == "person" else state.setdefault("creatures", {}).get(item["actor_id"], {})
+                )
+                actor_state["battle"] = None
+                state["battles"][battle_id] = battle
+            self.campaign_repository.update_game_state(campaign["record_id"], update)
+
+    def reorder_battle(
+        self, session_id: str, battle_id: str, order: list[str] | None,
+    ) -> dict[str, Any]:
+        with self._lock:
+            session = self._board_context(session_id)
+            campaign, world = self._campaign_document(session)
+            database = self._database_document()
+            result: dict[str, Any] = {}
+            def update(state: dict[str, Any]) -> None:
+                nonlocal result
+                battle = normalize_battle(state.setdefault("battles", {}).get(battle_id))
+                expected = set(item["record_id"] for item in battle["participants"])
+                if order is None:
+                    self._recalculate_battle_order(battle, world, database, campaign, preserve_manual=False)
+                    battle["manual_order"] = False
+                else:
+                    normalized = [str(item) for item in order]
+                    if len(normalized) != len(expected) or set(normalized) != expected:
+                        raise ValueError("Battle order must contain every participant exactly once")
+                    battle["order"] = normalized
+                    battle["manual_order"] = True
+                state["battles"][battle_id] = battle
+                result = deepcopy(battle)
+            self.campaign_repository.update_game_state(campaign["record_id"], update)
+            return result
+
+    def update_battle_turn(
+        self, session_id: str, battle_id: str, action: str, *, summary: str = "",
+    ) -> dict[str, Any]:
+        action = str(action or "").casefold()
+        with self._lock:
+            session = self._board_context(session_id)
+            campaign, _world = self._campaign_document(session)
+            result: dict[str, Any] = {}
+            def update(state: dict[str, Any]) -> None:
+                nonlocal result
+                battle = normalize_battle(state.setdefault("battles", {}).get(battle_id))
+                current = self._battle_participant_by_id(battle, battle["current_participant_id"])
+                if action == "mark":
+                    current["acted_round"] = battle["round"]
+                    current["skipped_round"] = 0
+                    current["action_summary"] = str(summary or "Action completed")[:1000]
+                elif action == "undo":
+                    current["acted_round"] = 0
+                    current["skipped_round"] = 0
+                    current["action_summary"] = ""
+                elif action == "skip":
+                    current["skipped_round"] = battle["round"]
+                    current["acted_round"] = 0
+                    current["action_summary"] = str(summary or "Turn skipped")[:1000]
+                elif action in {"next", "previous"}:
+                    if action == "next" and current["acted_round"] != battle["round"] and current["skipped_round"] != battle["round"]:
+                        current["skipped_round"] = battle["round"]
+                    order = battle["order"]
+                    start = order.index(current["record_id"])
+                    direction = 1 if action == "next" else -1
+                    selected = ""
+                    for offset in range(1, len(order) + 1):
+                        index = start + direction * offset
+                        if action == "next" and index >= len(order):
+                            break
+                        if action == "previous" and index < 0:
+                            break
+                        candidate = self._battle_participant_by_id(battle, order[index])
+                        dead_creature = (
+                            candidate["actor_type"] == "creature"
+                            and str((state.get("creatures", {}).get(candidate["actor_id"], {}) or {}).get("life_state", "alive")) == "dead"
+                        )
+                        if dead_creature:
+                            candidate["skipped_round"] = battle["round"]
+                            candidate["action_summary"] = "Skipped — dead"
+                            continue
+                        if candidate["eligible_round"] <= battle["round"]:
+                            selected = candidate["record_id"]
+                            break
+                    if not selected and action == "next" and order:
+                        battle["round"] += 1
+                        selected = next((
+                            item_id for item_id in order
+                            if self._battle_participant_by_id(battle, item_id)["eligible_round"] <= battle["round"]
+                            and not (
+                                self._battle_participant_by_id(battle, item_id)["actor_type"] == "creature"
+                                and str((state.get("creatures", {}).get(
+                                    self._battle_participant_by_id(battle, item_id)["actor_id"], {}
+                                ) or {}).get("life_state", "alive")) == "dead"
+                            )
+                        ), order[0])
+                    if selected:
+                        battle["current_participant_id"] = selected
+                else:
+                    raise ValueError("Unknown battle turn action")
+                state["battles"][battle_id] = battle
+                result = deepcopy(battle)
+            self.campaign_repository.update_game_state(campaign["record_id"], update)
+            return result
+
+    def battle_combatant_sheet(
+        self, session_id: str, battle_id: str, participant_id: str,
+    ) -> dict[str, Any]:
+        session = self._board_context(session_id)
+        campaign, world = self._campaign_document(session)
+        battle = normalize_battle((campaign["game_state"].get("battles", {}) or {}).get(battle_id))
+        item = self._battle_participant_by_id(battle, participant_id)
+        if item["actor_type"] == "person":
+            return {"actor_type": "person", "participant": deepcopy(item), "sheet": self._sheet_for_person(session_id, item["actor_id"])}
+        creature = normalize_campaign_creature(
+            (campaign["game_state"].get("creatures", {}) or {}).get(item["actor_id"])
+        )
+        species = next((
+            record for record in self._database_document().get("creatures", []) or []
+            if str(record.get("record_id", "")) == creature["species_record_id"]
+        ), {})
+        return {
+            "actor_type": "creature", "participant": deepcopy(item),
+            "creature": deepcopy(creature), "species": deepcopy(species),
+        }
+
+    def update_battle_combatant(
+        self, session_id: str, battle_id: str, participant_id: str, action: str,
+        *, wound_id: str = "", severity: str = "", text: str = "",
+    ) -> dict[str, Any]:
+        """Apply a non-action consequence without consuming the combatant's turn."""
+        action = str(action or "").strip().casefold()
+        with self._lock:
+            session = self._board_context(session_id)
+            campaign, _world = self._campaign_document(session)
+            result: dict[str, Any] = {}
+
+            def update(state: dict[str, Any]) -> None:
+                nonlocal result
+                raw_battle = state.setdefault("battles", {}).get(battle_id)
+                if raw_battle is None:
+                    raise KeyError("Unknown battle")
+                battle = normalize_battle(raw_battle)
+                entry = self._battle_participant_by_id(battle, participant_id)
+                actor = (
+                    state.setdefault("people", {}).setdefault(entry["actor_id"], {})
+                    if entry["actor_type"] == "person"
+                    else state.setdefault("creatures", {}).get(entry["actor_id"])
+                )
+                if actor is None:
+                    raise KeyError("Unknown combatant")
+                wounds = actor.setdefault("wounds", [])
+                if action == "add_wound":
+                    level = str(severity or "").strip().casefold()
+                    if level not in {"light", "medium", "heavy"}:
+                        raise ValueError("Choose a light, medium, or heavy wound")
+                    item = {
+                        "record_id": str(uuid4()), "severity": level,
+                        "note": str(text or "").strip()[:1000],
+                        "created_at": iso_utc(utc_now()),
+                    }
+                    wounds.append(item)
+                    result = deepcopy(item)
+                elif action == "edit_wound":
+                    item = next((row for row in wounds if str(row.get("record_id", "")) == wound_id), None)
+                    if item is None:
+                        raise KeyError("Unknown wound")
+                    level = str(severity or item.get("severity", "")).strip().casefold()
+                    if level not in {"light", "medium", "heavy"}:
+                        raise ValueError("Choose a light, medium, or heavy wound")
+                    item["severity"] = level
+                    item["note"] = str(text if text != "" else item.get("note", ""))[:1000]
+                    result = deepcopy(item)
+                elif action in {"heal_wound", "remove_wound"}:
+                    before = len(wounds)
+                    actor["wounds"] = [row for row in wounds if str(row.get("record_id", "")) != wound_id]
+                    if len(actor["wounds"]) == before:
+                        raise KeyError("Unknown wound")
+                    result = {"record_id": wound_id, "removed": True}
+                elif action == "add_note":
+                    value = str(text or "").strip()
+                    if not value:
+                        raise ValueError("A battle note cannot be empty")
+                    item = {
+                        "record_id": str(uuid4()), "text": value[:4000],
+                        "created_at": iso_utc(utc_now()),
+                    }
+                    note_collection = (
+                        "character_notes" if entry["actor_type"] == "person"
+                        else "encounter_notes"
+                    )
+                    actor.setdefault(note_collection, []).append(item)
+                    result = deepcopy(item)
+                else:
+                    raise ValueError("Unknown combatant update")
+                actor["last_updated"] = iso_utc(utc_now())
+
+            self.campaign_repository.update_game_state(campaign["record_id"], update)
+            return result
+
+    def _battle_for_actor(
+        self, state: dict[str, Any], actor_type: str, actor_id: str,
+    ) -> tuple[dict[str, Any], dict[str, Any]] | None:
+        for raw in (state.get("battles", {}) or {}).values():
+            battle = normalize_battle(raw)
+            found = next((
+                item for item in battle["participants"]
+                if item["actor_type"] == actor_type and item["actor_id"] == actor_id
+            ), None)
+            if found is not None:
+                return battle, found
+        return None
+
+    def _assert_battle_action_available(
+        self, state: dict[str, Any], actor_type: str, actor_id: str,
+    ) -> tuple[dict[str, Any], dict[str, Any]] | None:
+        context = self._battle_for_actor(state, actor_type, actor_id)
+        if context is None:
+            return None
+        battle, item = context
+        if battle["status"] != "active":
+            return context
+        if battle["current_participant_id"] != item["record_id"]:
+            raise PermissionError("It is not this combatant's turn")
+        if item["eligible_round"] > battle["round"]:
+            raise PermissionError("This combatant becomes eligible next round")
+        if item["acted_round"] == battle["round"]:
+            raise PermissionError("This combatant has already used an action this round")
+        if item["skipped_round"] == battle["round"]:
+            raise PermissionError("This combatant's turn was skipped")
+        return context
+
+    def _commit_battle_action(
+        self, campaign_id: str, actor_type: str, actor_id: str, summary: str,
+    ) -> dict[str, Any] | None:
+        result: dict[str, Any] | None = None
+
+        def update(state: dict[str, Any]) -> None:
+            nonlocal result
+            context = self._assert_battle_action_available(state, actor_type, actor_id)
+            if context is None:
+                return
+            battle, item = context
+            if battle["status"] != "active":
+                return
+            item["acted_round"] = battle["round"]
+            item["skipped_round"] = 0
+            item["action_summary"] = str(summary or "Action completed")[:1000]
+            battle["updated_at"] = iso_utc(utc_now())
+            state.setdefault("battles", {})[battle["record_id"]] = battle
+            result = deepcopy(battle)
+
+        self.campaign_repository.update_game_state(campaign_id, update)
+        return result
+
+    @staticmethod
+    def _roll_consumes_battle_action(roll_type: str) -> bool:
+        return str(roll_type or "").strip().casefold() in {
+            "spell", "proficiency", "item", "item_action", "potion",
+        }
+
+    def headmaster_roll_person_action(
+        self, session_id: str, person_id: str, roll_type: str, target_id: str,
+    ) -> dict[str, Any]:
+        with self._lock:
+            session = self._board_context(session_id)
+            campaign, _world = self._campaign_document(session)
+            if self._roll_consumes_battle_action(roll_type):
+                self._assert_battle_action_available(
+                    campaign["game_state"], "person", person_id
+                )
+            sheet = self._sheet_for_person(session_id, person_id)
+            result = perform_character_roll(sheet, roll_type, target_id)
+            if self._roll_consumes_battle_action(roll_type):
+                self._commit_battle_action(
+                    campaign["record_id"], "person", person_id,
+                    str(result.get("text") or result.get("target_name") or "Action completed"),
+                )
+            return result
 
     def teaching_options(
         self, session_id: str, teacher_person_id: str,
@@ -2113,9 +2892,16 @@ class GameBoardService:
             creature = campaign.get("game_state", {}).get("creatures", {}).get(creature_id)
             if creature is None:
                 raise KeyError("Unknown campaign creature")
+            self._assert_battle_action_available(
+                campaign["game_state"], "creature", creature_id
+            )
             result = roll_creature_action(creature, action_id)
             result["awareness_proficiency_id"] = str(
                 creature.get("awareness_proficiency_id", "")
+            )
+            self._commit_battle_action(
+                campaign["record_id"], "creature", creature_id,
+                str(result.get("text") or result.get("name") or "Creature action"),
             )
             return result
 
@@ -3140,17 +3926,29 @@ class GameBoardService:
             raise PermissionError(
                 "Recipe attempts require confirmation before ingredients are used"
             )
-        controlled = self.controlled_character_ids(session_id, contact_id)
         with self._lock:
+            controlled = self.controlled_character_ids(session_id, contact_id)
             wrapper, session = self._active(session_id)
             player = self._player(session, contact_id)
             character_id = str(player.get("character_id", "") or "")
             if not character_id or character_id not in controlled:
                 raise PermissionError("This player does not control a linked character")
-        sheet = self.character_sheet_for(session_id, contact_id)
-        if sheet is None:
-            raise PermissionError("No World Builder character is linked to this player")
-        return perform_character_roll(sheet, roll_type, target_id)
+            campaign_id = str(session.get("campaign_id", "") or "")
+            campaign = self.campaign_repository.get(campaign_id) if campaign_id else None
+            if campaign and self._roll_consumes_battle_action(roll_type):
+                self._assert_battle_action_available(
+                    campaign["game_state"], "person", character_id
+                )
+            sheet = self.character_sheet_for(session_id, contact_id)
+            if sheet is None:
+                raise PermissionError("No World Builder character is linked to this player")
+            result = perform_character_roll(sheet, roll_type, target_id)
+            if campaign and self._roll_consumes_battle_action(roll_type):
+                self._commit_battle_action(
+                    campaign_id, "person", character_id,
+                    str(result.get("text") or result.get("target_name") or "Action completed"),
+                )
+            return result
 
     def attempt_character_recipe(
         self,
@@ -3170,6 +3968,11 @@ class GameBoardService:
             campaign_id = str(session.get("campaign_id", "") or "")
             if not campaign_id:
                 raise PermissionError("This session is not linked to a campaign")
+
+            campaign_for_turn = self.campaign_repository.get(campaign_id)
+            self._assert_battle_action_available(
+                campaign_for_turn["game_state"], "person", character_id
+            )
 
             sheet = self.character_sheet_for(session_id, contact_id)
             if sheet is None:
@@ -3283,6 +4086,10 @@ class GameBoardService:
                 result["recipe_output"] = {
                     **deepcopy(output_item), "quantity": output_quantity,
                 }
+            self._commit_battle_action(
+                campaign_id, "person", character_id,
+                str(result.get("text") or recipe.get("name") or "Recipe attempted"),
+            )
             return result
 
     def update_character_equipment(

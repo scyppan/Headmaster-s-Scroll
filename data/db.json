@@ -2,7 +2,7 @@
   "_database": {
     "schema_version": 9,
     "database_version": "26.7.22.001",
-    "last_saved": "2026-08-17T13:04:21.923919+00:00"
+    "last_saved": "2026-08-17T13:07:32.731573+00:00"
   },
   "wand_woods": [
     {
@@ -108902,8 +108902,8 @@
     }
   ],
   "_headmasters_scroll": {
-    "revision_id": "92d4f3af-6935-48dd-b26a-c33c1745eb01",
-    "last_modified_at": "2026-08-17T13:04:21.970019Z",
+    "revision_id": "c4707567-ec63-4a1c-8d77-3809642d99ff",
+    "last_modified_at": "2026-08-17T13:07:32.797671Z",
     "last_modified_by": "dbm"
   },
   "tag_catalog": [
@@ -109778,6 +109778,190 @@
       "spell_requirements": [],
       "record_id": "b66fe852-387a-442c-a1ae-a0eb0faae831",
       "last_updated": "2026-08-17T13:02:22.989744+00:00"
+    },
+    {
+      "name": "Stewing Horn Slugs",
+      "skill": "Potions",
+      "threshold": 7,
+      "description": "",
+      "tags": [],
+      "dbnotes": "",
+      "formulations": [
+        {
+          "record_id": "9b6eb18c-3c52-4133-98ba-58f5fce9cb0e",
+          "name": "Default",
+          "output_item": {
+            "collection": "general_items",
+            "record_id": "656e9e41-14a7-424c-bb8f-4b050a8c0210",
+            "name": "Stewed Horned Slugs"
+          },
+          "output_quantity": 1,
+          "ingredient_requirements": [
+            {
+              "record_id": "a8a0c693-7f6d-4642-be02-2c88f6ffabf0",
+              "alternatives": [
+                {
+                  "collection": "creature_parts",
+                  "record_id": "creature-part-099d1202-7794-5060-a746-c91b3e911d24",
+                  "parent_record_id": "creature_1475",
+                  "name": "Live Horned Slugs",
+                  "quantity": 12
+                }
+              ]
+            }
+          ],
+          "vessel_requirements": [
+            {
+              "record_id": "7935d147-619e-4c83-9ada-365f62f7010f",
+              "alternatives": [
+                {
+                  "collection": "general_items",
+                  "record_id": "f1ade462-2fc1-4213-b069-cf787351bab9",
+                  "name": "Size 1 Brass Cauldron"
+                },
+                {
+                  "collection": "general_items",
+                  "record_id": "b920c8d7-36b2-4fc6-b938-9cfcde0bcd0d",
+                  "name": "Size 1 Copper Cauldron"
+                },
+                {
+                  "collection": "general_items",
+                  "record_id": "ccc75e0c-bd9d-43c2-8937-a07b4876aac9",
+                  "name": "Size 1 Gilded Cauldron"
+                },
+                {
+                  "collection": "general_items",
+                  "record_id": "fd08e8e7-bccf-418d-8b36-a67226a81ed7",
+                  "name": "Size 1 Iron Cauldron"
+                },
+                {
+                  "collection": "general_items",
+                  "record_id": "dfb53a45-bf34-4af9-acaf-e19c5f69b02f",
+                  "name": "Size 1 Pewter Cauldron"
+                },
+                {
+                  "collection": "general_items",
+                  "record_id": "4455f37d-2192-465b-ac3a-e4b96ffa41be",
+                  "name": "Size 1 Silver Cauldron"
+                },
+                {
+                  "collection": "general_items",
+                  "record_id": "0bed557d-fefd-4189-8689-31e61103ad55",
+                  "name": "Size 2 Copper Cauldron"
+                },
+                {
+                  "collection": "general_items",
+                  "record_id": "ee672d86-a396-49d0-a0bc-26f290785812",
+                  "name": "Size 2 Iron Cauldron"
+                },
+                {
+                  "collection": "general_items",
+                  "record_id": "f38d69e3-8055-4906-9dd7-bb7bba9c66c4",
+                  "name": "Size 2 Pewter Cauldron"
+                },
+                {
+                  "collection": "general_items",
+                  "record_id": "bcc869ce-a6a8-40e1-9f58-ae28dcc5e2b3",
+                  "name": "Size 3 Iron Cauldron"
+                },
+                {
+                  "collection": "general_items",
+                  "record_id": "a6761caa-0d72-4b75-beda-604478e4a589",
+                  "name": "Size 3 Pewter Cauldron"
+                }
+              ]
+            }
+          ],
+          "proficiency_requirements": [],
+          "spell_requirements": []
+        }
+      ],
+      "output_item": {
+        "collection": "general_items",
+        "record_id": "656e9e41-14a7-424c-bb8f-4b050a8c0210",
+        "name": "Stewed Horned Slugs"
+      },
+      "output_quantity": 1,
+      "ingredient_requirements": [
+        {
+          "record_id": "a8a0c693-7f6d-4642-be02-2c88f6ffabf0",
+          "alternatives": [
+            {
+              "collection": "creature_parts",
+              "record_id": "creature-part-099d1202-7794-5060-a746-c91b3e911d24",
+              "parent_record_id": "creature_1475",
+              "name": "Live Horned Slugs",
+              "quantity": 12
+            }
+          ]
+        }
+      ],
+      "vessel_requirements": [
+        {
+          "record_id": "7935d147-619e-4c83-9ada-365f62f7010f",
+          "alternatives": [
+            {
+              "collection": "general_items",
+              "record_id": "f1ade462-2fc1-4213-b069-cf787351bab9",
+              "name": "Size 1 Brass Cauldron"
+            },
+            {
+              "collection": "general_items",
+              "record_id": "b920c8d7-36b2-4fc6-b938-9cfcde0bcd0d",
+              "name": "Size 1 Copper Cauldron"
+            },
+            {
+              "collection": "general_items",
+              "record_id": "ccc75e0c-bd9d-43c2-8937-a07b4876aac9",
+              "name": "Size 1 Gilded Cauldron"
+            },
+            {
+              "collection": "general_items",
+              "record_id": "fd08e8e7-bccf-418d-8b36-a67226a81ed7",
+              "name": "Size 1 Iron Cauldron"
+            },
+            {
+              "collection": "general_items",
+              "record_id": "dfb53a45-bf34-4af9-acaf-e19c5f69b02f",
+              "name": "Size 1 Pewter Cauldron"
+            },
+            {
+              "collection": "general_items",
+              "record_id": "4455f37d-2192-465b-ac3a-e4b96ffa41be",
+              "name": "Size 1 Silver Cauldron"
+            },
+            {
+              "collection": "general_items",
+              "record_id": "0bed557d-fefd-4189-8689-31e61103ad55",
+              "name": "Size 2 Copper Cauldron"
+            },
+            {
+              "collection": "general_items",
+              "record_id": "ee672d86-a396-49d0-a0bc-26f290785812",
+              "name": "Size 2 Iron Cauldron"
+            },
+            {
+              "collection": "general_items",
+              "record_id": "f38d69e3-8055-4906-9dd7-bb7bba9c66c4",
+              "name": "Size 2 Pewter Cauldron"
+            },
+            {
+              "collection": "general_items",
+              "record_id": "bcc869ce-a6a8-40e1-9f58-ae28dcc5e2b3",
+              "name": "Size 3 Iron Cauldron"
+            },
+            {
+              "collection": "general_items",
+              "record_id": "a6761caa-0d72-4b75-beda-604478e4a589",
+              "name": "Size 3 Pewter Cauldron"
+            }
+          ]
+        }
+      ],
+      "proficiency_requirements": [],
+      "spell_requirements": [],
+      "record_id": "a8a5904c-1914-46c2-b7a9-7fa507199b5f",
+      "last_updated": "2026-08-17T13:07:32.731530+00:00"
     }
   ]
 }

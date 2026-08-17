@@ -145,6 +145,7 @@ def normalize_campaign_game_state(
         normalize_map_point,
     )
     from .creatures import normalize_campaign_creature
+    from .battles import normalize_battles
 
     raw = deepcopy(value) if isinstance(value, dict) else {}
     current = str(
@@ -357,6 +358,17 @@ def normalize_campaign_game_state(
     region_interactions = _normalize_region_interaction_state(
         raw.get("region_interactions")
     )
+    battles = normalize_battles(raw.get("battles"))
+    actor_battles = {
+        (participant["actor_type"], participant["actor_id"])
+        for battle in battles.values()
+        for participant in battle["participants"]
+    }
+    for actor_type, actor_id in actor_battles:
+        if actor_type == "person" and actor_id not in people:
+            raise ValueError("Battles may only contain existing people")
+        if actor_type == "creature" and actor_id not in creatures:
+            raise ValueError("Battles may only contain existing campaign creatures")
     return {
         "initialized": bool(raw.get("initialized", False)),
         "current_game_datetime": current,
@@ -369,6 +381,7 @@ def normalize_campaign_game_state(
         "creature_counters": creature_counters,
         "groups": groups,
         "region_interactions": region_interactions,
+        "battles": battles,
     }
 
 
@@ -729,6 +742,7 @@ class CampaignRepository:
             "region_interactions": deepcopy(
                 normalized["game_state"].get("region_interactions", {})
             ),
+            "battles": deepcopy(normalized["game_state"].get("battles", {})),
         }
         campaign["game_state"] = normalize_campaign_game_state(
             state, normalized["game_world_start_date"]

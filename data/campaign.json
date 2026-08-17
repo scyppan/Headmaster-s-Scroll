@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "_headmasters_scroll": {
-    "revision_id": "d884cda2-3603-487a-8543-4da2daab0609",
-    "last_modified_at": "2026-08-17T06:22:42.194247Z",
+    "revision_id": "74bf61c8-c134-4af4-879d-45b38facbf12",
+    "last_modified_at": "2026-08-17T06:27:36.900906Z",
     "last_modified_by": "game-board"
   },
   "campaigns": [
@@ -11,7 +11,7 @@
       "created_at": "2026-08-11T08:19:23.069609Z",
       "name": "Test camp",
       "game_world_start_date": "2000-08-27",
-      "last_updated": "2026-08-17T06:22:42.062264Z",
+      "last_updated": "2026-08-17T06:27:36.666317Z",
       "game_state": {
         "initialized": true,
         "current_game_datetime": "2000-08-27T08:00",
@@ -242,14 +242,14 @@
             "start_point": null,
             "headmaster_camera": {
               "zoom": 1.4784188477109286,
-              "center_x": 0.5954729975516901,
-              "center_y": 0.4852044972001846
+              "center_x": 0.5718382249015934,
+              "center_y": 0.4813171506301108
             },
             "player_cameras": {
               "6ca9e551-e305-4c3c-a763-d2ff9a13afff": {
                 "zoom": 3.5178762919199196,
                 "center_x": 0.8004097848996825,
-                "center_y": 0.4863373068608835
+                "center_y": 0.49180238673737614
               },
               "fcceeb1d-7919-455d-a076-3d45926583af": {
                 "zoom": 1.0,

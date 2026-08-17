@@ -889,6 +889,25 @@ def create_apps(
         # distinguish a listening service from completion of the first state.
         return {"service": "game-board", "ready": True}
 
+    @admin_app.get("/api/admin/admissions/pending", dependencies=[Depends(admin_guard)])
+    async def pending_admissions():
+        """Return the tiny admission queue without building full board state."""
+
+        pending = []
+        for session in service.sessions_view():
+            for request in session.get("pending", []) or []:
+                if request.get("status") != "pending":
+                    continue
+                pending.append({
+                    "request_id": str(request.get("id", "")),
+                    "name": str(request.get("name", "Player")),
+                    "requested_at": str(request.get("requested_at", "")),
+                    "client_ip": str(request.get("client_ip", "")),
+                    "session_id": str(session.get("id", "")),
+                    "session_title": str(session.get("title", "Session")),
+                })
+        return {"pending": pending}
+
     @admin_app.put("/api/admin/settings", dependencies=[Depends(admin_guard)])
     async def update_settings(body: SettingsBody):
         result = admin_result(service.update_settings, body.model_dump())
@@ -1015,15 +1034,25 @@ def create_apps(
 
     @admin_app.post("/api/admin/board/move", dependencies=[Depends(admin_guard)])
     async def move_board_person(body: BoardMoveBody):
-        result = admin_result(
-            service.move_person,
-            body.session_id,
-            body.person_id,
-            body.map_id,
-            body.x,
-            body.y,
-        )
-        await runtime.broadcast_board(body.session_id)
+        try:
+            result = await asyncio.to_thread(
+                service.move_person,
+                body.session_id,
+                body.person_id,
+                body.map_id,
+                body.x,
+                body.y,
+            )
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except PermissionError as error:
+            raise HTTPException(status_code=403, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        except RuntimeError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        runtime.invalidate_state()
+        asyncio.create_task(runtime.broadcast_board(body.session_id))
         return result
 
     @admin_app.post("/api/admin/board/transport", dependencies=[Depends(admin_guard)])
@@ -1787,6 +1816,10 @@ def create_apps(
         async def bootstrap_connection() -> None:
             # The receive loop starts immediately, so a disconnect revokes the
             # credential even while a large private sheet is being prepared.
+            # Keep the established protocol order for older web clients.  The
+            # sheet path is now cached and no longer expands every possible
+            # teaching target, so it completes quickly without blocking on
+            # unrelated characters.
             await runtime.send_character_sheet(connection, force=True)
             await websocket.send_json({
                 "v": 1,
@@ -1916,6 +1949,24 @@ def create_apps(
                             await runtime.broadcast_character_sheets(
                                 connection.session_id
                             )
+                    except (KeyError, PermissionError, RuntimeError, TypeError, ValueError) as error:
+                        await websocket.send_json({
+                            "v": 1, "type": "server_error", "message": str(error),
+                        })
+                elif message.get("type") == "teaching_options_request":
+                    try:
+                        if not connection.character_id:
+                            raise PermissionError("A linked character is required to teach")
+                        options = await asyncio.to_thread(
+                            service.teaching_options,
+                            connection.session_id,
+                            str(connection.character_id),
+                        )
+                        await websocket.send_json({
+                            "v": 1,
+                            "type": "teaching_options",
+                            "pupils": options.get("pupils", []),
+                        })
                     except (KeyError, PermissionError, RuntimeError, TypeError, ValueError) as error:
                         await websocket.send_json({
                             "v": 1, "type": "server_error", "message": str(error),

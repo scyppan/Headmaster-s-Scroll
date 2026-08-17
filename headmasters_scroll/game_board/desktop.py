@@ -262,6 +262,9 @@ class AdminClient:
     def state(self) -> dict[str, Any]:
         return self.request("GET", "/api/admin/state")
 
+    def pending_admissions(self) -> dict[str, Any]:
+        return self.request("GET", "/api/admin/admissions/pending", timeout=1.0)
+
     def health(self) -> dict[str, Any]:
         # The player health route has existed since the first server release,
         # is localhost-bound, and performs no heavy state assembly.  Checking
@@ -771,6 +774,7 @@ class GameBoardWindow(tk.Tk):
         self.server = LocalServer(self.client)
         self.state_data: dict[str, Any] = {"contacts": [], "settings": {}, "session": None, "connections": []}
         self.refreshing = False
+        self.admission_refreshing = False
         self.closing = False
         self.settings_dirty = False
         self.asset_store = AssetStore()
@@ -4512,6 +4516,12 @@ class GameBoardWindow(tk.Tk):
         )
 
     def _board_drag_end(self, event: tk.Event, map_id: str) -> None:
+        if self._board_preview_after is not None:
+            try:
+                self.after_cancel(self._board_preview_after)
+            except tk.TclError:
+                pass
+            self._board_preview_after = None
         if self._board_obscure_drag is not None and self.board_obscure_mode:
             changed = bool(self._board_obscure_drag.get("changed"))
             self._board_obscure_drag = None
@@ -4586,9 +4596,14 @@ class GameBoardWindow(tk.Tk):
             )
             return
         payload = {"session_id": self.selected_session_id, "person_id": person_id, "map_id": map_id, "x": x, "y": y}
+        def move_failed(error: Exception) -> None:
+            self._failed(error, False)
+            self.refresh(silent=True)
+
         self._background(
             lambda: self.client.request("POST", "/api/admin/board/move", payload),
             lambda _result: self.refresh(silent=True),
+            failure=move_failed,
         )
 
     def _board_piece_menu(self, event: tk.Event, map_id: str) -> str:
@@ -7333,7 +7348,41 @@ class GameBoardWindow(tk.Tk):
         self.server_status.configure(text="LOCAL SERVER ONLINE", foreground=self.GREEN)
         self.set_notice("Game Board is ready. Tailscale Funnel remains separately controlled.")
         self.refresh()
+        self.after(150, self._poll_admissions)
         self.after(2000, self._poll)
+
+    def _poll_admissions(self) -> None:
+        if self.closing:
+            return
+        if self.admission_refreshing:
+            self.after(500, self._poll_admissions)
+            return
+        self.admission_refreshing = True
+
+        def done(payload: dict[str, Any]) -> None:
+            self.admission_refreshing = False
+            pending_rows = [
+                (
+                    str(request.get("request_id") or ""),
+                    (
+                        f"{request.get('name') or 'Player'} — {request.get('session_title') or 'Session'}",
+                        request.get("requested_at") or "",
+                        request.get("client_ip") or "",
+                    ),
+                )
+                for request in (payload.get("pending") or [])
+                if request.get("request_id")
+            ]
+            self._replace_tree(self.pending_tree, pending_rows)
+            self._update_admission_alert(pending_rows)
+            self.after(500, self._poll_admissions)
+
+        def failed(_error: Exception) -> None:
+            self.admission_refreshing = False
+            if not self.closing:
+                self.after(1000, self._poll_admissions)
+
+        self._background(self.client.pending_admissions, done, failure=failed, quiet=True)
 
     def _poll(self) -> None:
         if not self.closing:
@@ -8566,22 +8615,44 @@ class GameBoardWindow(tk.Tk):
         self._background(work, done)
 
     def close(self) -> None:
+        if self.closing:
+            return
         self.closing = True
+        pending_map_ids = list(self._board_camera_save_after_ids)
         for after_id in list(self._board_camera_save_after_ids.values()):
             try:
                 self.after_cancel(after_id)
             except tk.TclError:
                 pass
         self._board_camera_save_after_ids.clear()
-        for map_id in list(self.board_view_states):
+        # Give immediate visual confirmation.  Camera saves are best-effort and
+        # strictly bounded so a stopped/stale service can never trap the window.
+        try:
+            self.withdraw()
+            self.update_idletasks()
+        except tk.TclError:
+            pass
+        deadline = time.monotonic() + 0.75
+        for map_id in pending_map_ids:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
             try:
-                self._save_board_camera(map_id, synchronous=True)
+                payload = self._board_camera_payload(map_id)
+                if payload:
+                    self.client.request(
+                        "PUT",
+                        f"/api/admin/board/maps/{map_id}/camera",
+                        payload,
+                        timeout=max(0.05, min(0.25, remaining)),
+                    )
             except Exception:
-                # A previously debounced save normally already holds this view;
-                # shutdown must still be allowed if the local service has stopped.
                 pass
         self.server.stop()
-        self.destroy()
+        try:
+            self.destroy()
+        except tk.TclError:
+            pass
 
 
 def main() -> None:

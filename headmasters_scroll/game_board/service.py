@@ -139,6 +139,9 @@ class GameBoardService:
         self._lock = threading.RLock()
         self._world_cache_fingerprint: tuple[int, int] | None = None
         self._world_cache: dict[str, Any] | None = None
+        self._database_cache_fingerprint: tuple[int, int] | None = None
+        self._database_cache: dict[str, Any] | None = None
+        self._character_sheet_cache: dict[tuple[Any, ...], dict[str, Any] | None] = {}
         self._tickets: dict[str, dict[str, Any]] = {}
         self._ticket_by_request: dict[str, str] = {}
         self._restore_for_reapproval()
@@ -167,6 +170,21 @@ class GameBoardService:
             document = self.shared_store.read_document("world.json")
             self._world_cache = document
             self._world_cache_fingerprint = fingerprint
+            return document
+
+    def _database_document(self) -> dict[str, Any]:
+        """Return the validated rules catalog without repeated session copies."""
+
+        fingerprint = self.shared_store.fingerprint("db.json")
+        with self._lock:
+            if (
+                self._database_cache is not None
+                and fingerprint == self._database_cache_fingerprint
+            ):
+                return self._database_cache
+            document = self.shared_store.read_document("db.json")
+            self._database_cache = document
+            self._database_cache_fingerprint = fingerprint
             return document
 
     def _restore_for_reapproval(self) -> None:
@@ -215,7 +233,7 @@ class GameBoardService:
         """Return compact searchable catalogs for the Headmaster UI."""
 
         try:
-            database = self.shared_store.load("db.json").data
+            database = self._database_document()
         except FileNotFoundError:
             # Board-only fixtures and recovery mode may intentionally omit the
             # rules catalog.  The rest of the Headmaster state must still load.
@@ -280,7 +298,7 @@ class GameBoardService:
         if person is None:
             raise KeyError("Unknown teacher")
         try:
-            database = self.shared_store.load("db.json").data
+            database = self._database_document()
         except FileNotFoundError:
             database = {
                 "schools": [], "spells": [], "proficiencies": [],
@@ -2241,33 +2259,11 @@ class GameBoardService:
     ) -> dict[str, Any] | None:
         """Return the linked World Builder character sheet for one player."""
 
-        with self._lock:
-            session = self._board_context(session_id)
-            campaign, document = self._campaign_document(session)
-            viewer = next(
-                (
-                    player for player in session.get("roster", [])
-                    if str(player.get("contact_id", "")) == contact_id
-                ),
-                None,
-            )
-            character_id = str((viewer or {}).get("character_id", "") or "")
-            person = next(
-                (
-                    item for item in document.get("people", [])
-                    if str(item.get("record_id", "")) == character_id
-                ),
-                None,
-            )
-            if person is None:
-                return None
-            try:
-                rules_database = self.shared_store.load("db.json").data
-            except FileNotFoundError:
-                rules_database = {"schools": []}
-            return build_character_sheet(
-                person, document, rules_database, campaign
-            )["attributes"]
+        # The full private sheet is sent immediately after connection. Build it
+        # once here and let the bootstrap reuse the revision-keyed cache instead
+        # of performing the same expensive calculation twice.
+        sheet = self.character_sheet_for(session_id, contact_id)
+        return deepcopy(sheet.get("attributes", {})) if sheet else None
 
     def character_sheet_for(
         self,
@@ -2278,6 +2274,18 @@ class GameBoardService:
 
         with self._lock:
             session = self._board_context(session_id)
+            try:
+                cache_key = (
+                    session_id,
+                    contact_id,
+                    self.world_fingerprint(),
+                    self.shared_store.fingerprint("db.json"),
+                    self.campaign_repository.store.fingerprint("campaign.json"),
+                )
+            except OSError:
+                cache_key = ()
+            if cache_key and cache_key in self._character_sheet_cache:
+                return self._character_sheet_cache[cache_key]
             campaign, document = self._campaign_document(session)
             viewer = next(
                 (
@@ -2297,7 +2305,7 @@ class GameBoardService:
             if person is None:
                 return None
             try:
-                database = self.shared_store.load("db.json").data
+                database = self._database_document()
             except FileNotFoundError:
                 # Small integration fixtures may exercise board-only behavior
                 # without a rules catalog. Production always has db.json.
@@ -2307,12 +2315,13 @@ class GameBoardService:
                     "foods_and_drinks": [], "creatures": [], "books": [],
                 }
             sheet = build_character_sheet(person, document, database, campaign)
-            try:
-                sheet["teaching_targets"] = self.teaching_options(
-                    session_id, character_id
-                )["pupils"]
-            except (KeyError, ValueError):
-                sheet["teaching_targets"] = []
+            # Nearby pupils are expensive and relevant only after the player
+            # opens Teach. They are requested lazily over the live connection.
+            sheet["teaching_targets"] = []
+            if cache_key:
+                if len(self._character_sheet_cache) >= 32:
+                    self._character_sheet_cache.clear()
+                self._character_sheet_cache[cache_key] = sheet
             return sheet
 
     @staticmethod
@@ -3713,45 +3722,75 @@ class GameBoardService:
             raise PermissionError("You do not control that token")
         with self._lock:
             session = self._board_context(session_id)
-            campaign, document = self._campaign_document(session)
-            map_record = self._campaign_map(document, map_id)
+            campaign_id = str(session.get("campaign_id", "") or "")
+            if not campaign_id:
+                raise ValueError("This session is not linked to a campaign")
+            world = self._world_document()
+            map_record = next(
+                (
+                    item for item in self.world_board._location_maps(world)
+                    if str(item.get("record_id", "")) == map_id
+                ),
+                None,
+            )
+            if map_record is None:
+                raise KeyError("That map is not assigned to a location or floor")
             person = next(
-                (item for item in document.get("people", []) if item.get("record_id") == person_id),
+                (item for item in world.get("people", []) if item.get("record_id") == person_id),
                 None,
             )
             if person is None:
                 raise KeyError("Unknown person")
-            board = normalize_person_board(person.get("board"))
-            board["placement"] = {
+            placement = {
                 "location_id": str(map_record["location_id"]),
                 "floor_id": str(map_record.get("floor_id", "") or ""),
                 "map_id": str(map_id),
                 "x": max(0.0, min(1.0, float(x))),
                 "y": max(0.0, min(1.0, float(y))),
             }
-            person["board"] = board
-            followers = [
-                item for item in (document.get("campaign_creatures", {}) or {}).values()
-                if isinstance(item, dict)
-                and str(item.get("related_character_id", "")) == person_id
-                and str(item.get("relationship_state", "")) == "lured"
-                and str(item.get("life_state", "alive")) == "alive"
-            ]
-            for index, follower in enumerate(followers):
-                angle = (index % 8) * (math.pi / 4.0)
-                radius = 0.012 + (index // 8) * 0.008
-                follower["placement"] = {
-                    "location_id": board["placement"]["location_id"],
-                    "floor_id": board["placement"]["floor_id"],
-                    "map_id": map_id,
-                    "x": max(0.005, min(0.995, board["placement"]["x"] + math.cos(angle) * radius)),
-                    "y": max(0.005, min(0.995, board["placement"]["y"] + math.sin(angle) * radius)),
-                }
-            self.world_board._remove_from_incompatible_groups(
-                document, person_id, board["placement"]["location_id"]
-            )
-            self._persist_campaign_document(campaign["record_id"], document)
-            return deepcopy(board["placement"])
+
+            def update(state: dict[str, Any]) -> None:
+                people = state.setdefault("people", {})
+                existing = people.get(person_id)
+                if not isinstance(existing, dict):
+                    existing = self.campaign_repository._person_state(
+                        normalize_person_board(person.get("board"))
+                    )
+                existing["placement"] = deepcopy(placement)
+                people[person_id] = existing
+                followers = [
+                    item for item in (state.get("creatures", {}) or {}).values()
+                    if isinstance(item, dict)
+                    and str(item.get("related_character_id", "")) == person_id
+                    and str(item.get("relationship_state", "")) == "lured"
+                    and str(item.get("life_state", "alive")) == "alive"
+                ]
+                for index, follower in enumerate(followers):
+                    angle = (index % 8) * (math.pi / 4.0)
+                    radius = 0.012 + (index // 8) * 0.008
+                    follower["placement"] = {
+                        "location_id": placement["location_id"],
+                        "floor_id": placement["floor_id"],
+                        "map_id": map_id,
+                        "x": max(0.005, min(0.995, placement["x"] + math.cos(angle) * radius)),
+                        "y": max(0.005, min(0.995, placement["y"] + math.sin(angle) * radius)),
+                    }
+                retained_groups = []
+                for group in state.get("groups", []) or []:
+                    if str(group.get("location_id", "")) != placement["location_id"]:
+                        group["members"] = [
+                            member for member in group.get("members", []) or []
+                            if not (
+                                str(member.get("actor_type", "")) == "person"
+                                and str(member.get("actor_id", "")) == person_id
+                            )
+                        ]
+                    if len(group.get("members", []) or []) >= 2:
+                        retained_groups.append(group)
+                state["groups"] = retained_groups
+
+            self.campaign_repository.update_game_state(campaign_id, update)
+            return deepcopy(placement)
 
     def place_person_on_map(
         self,

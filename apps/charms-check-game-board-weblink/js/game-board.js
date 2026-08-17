@@ -80,6 +80,8 @@
       this.activeSection = 'overview';
       this.chatMessages = [];
       this.characterSheet = null;
+      this.teachingTargetsLoaded = false;
+      this.pendingTeachOpen = false;
       this.regionInteraction = null;
       this.favoriteStorageKey = `${this.storageKey}-favorites`;
       this.spellLibraryStorageKey = `${this.storageKey}-spell-library`;
@@ -457,6 +459,8 @@
       if (message.type === 'connection_accepted') {
         this.playerId = message.player_id || '';
         this.characterId = message.character_id || '';
+        this.teachingTargetsLoaded = false;
+        this.pendingTeachOpen = false;
         if (message.character_attributes) {
           this.board.character_attributes = message.character_attributes;
         }
@@ -497,6 +501,8 @@
       } else if (message.type === 'identity_updated') {
         const player = message.player || 'Player';
         this.characterId = message.character_id || '';
+        this.teachingTargetsLoaded = false;
+        this.pendingTeachOpen = false;
         if (Object.prototype.hasOwnProperty.call(message, 'character_attributes')) {
           this.board.character_attributes = message.character_attributes;
         }
@@ -551,11 +557,23 @@
       } else if ((message.type === 'character_sheet_snapshot' || message.type === 'character_sheet_updated') && message.character_sheet) {
         this.receivedFreshSheet = true;
         this.characterSheet = message.character_sheet;
+        this.teachingTargetsLoaded = false;
         this.restoreKnowledgeLibraryStates();
         this.board.character_attributes = message.character_sheet.attributes;
         this.updatePlayerIdentity();
         this.scheduleStateCache();
         if (this.activeSection !== 'board') this.openSection(this.activeSection);
+      } else if (message.type === 'teaching_options') {
+        if (this.characterSheet) {
+          this.characterSheet.teaching_targets = Array.isArray(message.pupils) ? message.pupils : [];
+        }
+        this.teachingTargetsLoaded = true;
+        const reopen = this.pendingTeachOpen;
+        this.pendingTeachOpen = false;
+        if (reopen && this.activeSection !== 'board') {
+          this.openSection(this.activeSection);
+          setTimeout(() => this.root.querySelector('[data-teach-open]')?.click(), 0);
+        }
       } else if (message.type === 'request_submitted') {
         this.showChatNotice(message.message || 'Request sent to the Headmaster.');
       } else if (message.type === 'region_interaction_snapshot' && message.interaction) {
@@ -1809,6 +1827,13 @@
       };
       content.querySelector('[data-teach-open]').addEventListener('click', () => {
         panel.hidden = false;
+        if (!this.teachingTargetsLoaded) {
+          this.pendingTeachOpen = true;
+          panel.querySelector('[data-teach-pupils]').innerHTML = '<span>Loading nearby characters…</span>';
+          panel.querySelector('[data-teach-subjects]').innerHTML = '<span>Select a pupil first.</span>';
+          this.send({ v: VERSION, type: 'teaching_options_request' });
+          return;
+        }
         renderPupils(); renderSubjects(); updateSelection(); pupilSearch.focus();
       });
       panel.querySelector('[data-teach-cancel]').addEventListener('click', () => { panel.hidden = true; });

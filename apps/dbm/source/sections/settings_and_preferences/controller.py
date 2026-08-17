@@ -1,3 +1,5 @@
+from copy import deepcopy
+
 from preferences import PREFERENCES_PATH, UserPreferences
 
 
@@ -39,3 +41,15 @@ class SettingsController:
         self.preferences.save()
 
         return self.preferences.get_theme_preferences()
+
+    def load_searching_methods(self):
+        return deepcopy(
+            self.database.data.get("gathering_methods", []) or []
+        )
+
+    def save_searching_methods(self, methods):
+        self.database.data["gathering_methods"] = deepcopy(methods)
+        self.database.dirty = True
+        self.database.save()
+
+        return self.load_searching_methods()

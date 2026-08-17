@@ -373,6 +373,7 @@ class PotionTests(unittest.TestCase):
             filter_types,
             {
                 None,
+                "Raw Material",
                 "Creature Part",
                 "Plant Part",
                 "Food/Drink",
@@ -382,7 +383,7 @@ class PotionTests(unittest.TestCase):
             },
         )
 
-        for ingredient_type in filter_types - {None}:
+        for ingredient_type in filter_types - {None, "Raw Material"}:
             filtered_entries = catalog.search("", ingredient_type)
             self.assertTrue(filtered_entries)
             self.assertTrue(

@@ -15,7 +15,7 @@ from pathlib import Path
 from uuid import uuid4
 
 
-INDEX_FORMAT_VERSION = 2
+INDEX_FORMAT_VERSION = 3
 INDEXED_COLLECTIONS = (
     "people",
     "locations",
@@ -47,6 +47,17 @@ PEOPLE_LIST_FIELDS = (
     "school",
     "biological_mother_id",
     "biological_father_id",
+    "biological_mother_status",
+    "biological_father_status",
+    "can_give_birth",
+    "does_not_have_children",
+    "famous_person",
+    "mate_ids",
+    "spouse_relationships",
+    "blood_status",
+    "developmental_environment",
+    "parental_values",
+    "created_at",
 )
 
 
@@ -253,6 +264,13 @@ class WorldIndexCache:
                 if isinstance(database_metadata, dict)
                 else None
             ),
+            # Settings are small but are needed by the People list before the
+            # editable canonical document finishes loading.
+            "application_settings": (
+                data.get("_application_settings", {})
+                if isinstance(data.get("_application_settings"), dict)
+                else {}
+            ),
             "counts": {
                 name: len(data.get(name, []) or [])
                 for name in INDEXED_COLLECTIONS
@@ -311,7 +329,10 @@ class WorldIndexCache:
         return [str(value) for value in values]
 
 
-def scan_record_locations(path: Path) -> dict[str, dict[str, list[int]]]:
+def scan_record_locations(
+    path: Path,
+    record_ids_by_collection: dict[str, list[str]] | None = None,
+) -> dict[str, dict[str, list[int]]]:
     """Return byte ranges for object members of top-level collection arrays."""
 
     raw = Path(path).read_bytes()
@@ -391,6 +412,12 @@ def scan_record_locations(path: Path) -> dict[str, dict[str, list[int]]]:
         position = whitespace(position + 1)
         if key in INDEXED_COLLECTIONS and raw[position] == 91:
             collection_locations: dict[str, list[int]] = {}
+            known_ids = (
+                record_ids_by_collection.get(key, [])
+                if isinstance(record_ids_by_collection, dict)
+                else []
+            )
+            record_index = 0
             position += 1
             while True:
                 position = whitespace(position)
@@ -398,15 +425,40 @@ def scan_record_locations(path: Path) -> dict[str, dict[str, list[int]]]:
                     position += 1
                     break
                 start = position
-                end = value_end(start)
-                try:
-                    record = json.loads(raw[start:end].decode("utf-8"))
-                except (UnicodeError, json.JSONDecodeError):
-                    record = None
-                if isinstance(record, dict):
-                    record_id = _record_id(record)
-                    if record_id:
-                        collection_locations[record_id] = [start, end - start]
+                record_id = (
+                    str(known_ids[record_index] or "").strip()
+                    if record_index < len(known_ids)
+                    else ""
+                )
+                end = None
+                if record_id and raw[start] == 123:
+                    # Canonical files are written with a two-space indent, so
+                    # a top-level collection record ends at a four-space
+                    # closing brace. ``bytes.find`` performs this large scan
+                    # in native code instead of walking tens of megabytes one
+                    # Python byte at a time. Nested objects close at six or
+                    # more spaces, and newlines inside strings are escaped.
+                    closing = raw.find(b"\n    }", start)
+                    if closing >= 0:
+                        proposed_end = closing + len(b"\n    }")
+                        following = whitespace(proposed_end)
+                        if (
+                            following < length
+                            and raw[following] in (44, 93)
+                        ):
+                            end = proposed_end
+                if end is None:
+                    end = value_end(start)
+                if not record_id:
+                    try:
+                        record = json.loads(raw[start:end].decode("utf-8"))
+                    except (UnicodeError, json.JSONDecodeError):
+                        record = None
+                    if isinstance(record, dict):
+                        record_id = _record_id(record)
+                if record_id:
+                    collection_locations[record_id] = [start, end - start]
+                record_index += 1
                 position = whitespace(end)
                 if raw[position] == 44:
                     position += 1

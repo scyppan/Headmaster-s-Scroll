@@ -176,6 +176,7 @@ class DevelopmentView(tk.Frame):
             organization_location_provider
         )
         self.event_provider = event_provider
+        self._available_people_cache = None
         self.loading = False
         self.birth_year = None
         self.birth_month = None
@@ -1894,6 +1895,7 @@ class DevelopmentView(tk.Frame):
 
     def set_person(self, person):
         person_values = person if isinstance(person, dict) else {}
+        self._available_people_cache = None
 
         if not hasattr(self, "development_page_by_person_id"):
             self.development_page_by_person_id = {}
@@ -5358,11 +5360,18 @@ class DevelopmentView(tk.Frame):
         self.notify_change()
 
     def available_people(self):
+        if self._available_people_cache is not None:
+            return self._available_people_cache
+
         if self.people_provider is None:
-            return []
+            self._available_people_cache = []
+            return self._available_people_cache
 
         people = self.people_provider()
-        return list(people) if people is not None else []
+        self._available_people_cache = (
+            list(people) if people is not None else []
+        )
+        return self._available_people_cache
 
     def update_blood_status_control(self):
         available_people = self.available_people()

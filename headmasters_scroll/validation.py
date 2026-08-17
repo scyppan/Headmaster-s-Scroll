@@ -13,7 +13,7 @@ from .region_interactions import validate_gathering_database
 TEACHING_EVENT_TYPES = {
     "taught_spell": ("spells",),
     "taught_proficiency": ("proficiencies",),
-    "taught_recipe": ("potions", "preparations", "foods_and_drinks"),
+    "taught_recipe": ("recipes", "potions", "preparations", "foods_and_drinks"),
 }
 CREATURE_RELATIONSHIP_EVENT_TYPES = {
     "tamed_creature", "bonded_creature", "irked_creature"

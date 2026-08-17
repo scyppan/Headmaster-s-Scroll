@@ -6,10 +6,12 @@ from pathlib import Path
 from database import JsonDatabase
 from database.paths import DATABASE_PATH
 from sections.nature_and_alchemy.creatures import constants as creature_constants
+from sections.nature_and_alchemy.creatures.attack_editor import AttackEditor
 from sections.nature_and_alchemy.creatures.controller import (
     CreatureController,
 )
 from sections.nature_and_alchemy.creatures.page import CreaturesPage
+from sections.nature_and_alchemy.creatures.parts_editor import PartsEditor
 from shared.wounds import (
     WOUND_AMOUNT_LIMITS,
     WOUND_SEVERITIES,
@@ -18,6 +20,42 @@ from shared.wounds import (
 
 
 class CreatureTests(unittest.TestCase):
+    def test_legacy_blank_attack_ranges_and_part_metadata_survive_save(self):
+        attack_editor = object.__new__(AttackEditor)
+        attack_editor.attacks = [{
+            "record_id": "attack-id",
+            "name": "Scratch",
+            "roll": {"low": None, "high": None},
+            "description": "",
+            "immediate_damage": [],
+            "damage_over_time": [],
+            "aptitude_rating": "XX",
+        }]
+        attack_editor.save_selected_attack = lambda: None
+
+        converted_attack = attack_editor.get_attacks()[0]
+        self.assertEqual(converted_attack["roll"], {"low": None, "high": None})
+        self.assertEqual(converted_attack["record_id"], "attack-id")
+        self.assertEqual(converted_attack["aptitude_rating"], "XX")
+
+        parts_editor = object.__new__(PartsEditor)
+        parts_editor.parts = [{
+            "record_id": "part-id",
+            "name": "Claw",
+            "required_proficiency": "No",
+            "description": "Original",
+            "raw_effects": "",
+            "effect_in_potions": "",
+            "yield": {"low": 2, "high": 4},
+            "required_proficiency_id": "prof-id",
+        }]
+        parts_editor.save_selected_part = lambda: None
+
+        converted_part = parts_editor.get_parts()[0]
+        self.assertEqual(converted_part["record_id"], "part-id")
+        self.assertEqual(converted_part["yield"], {"low": 2, "high": 4})
+        self.assertEqual(converted_part["required_proficiency_id"], "prof-id")
+
     def test_page_accepts_database_from_content_host(self):
         constructor_parameters = tuple(
             signature(CreaturesPage.__init__).parameters

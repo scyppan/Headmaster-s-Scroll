@@ -4,6 +4,9 @@ from tkinter import messagebox
 from sections.settings_and_preferences.controller import SettingsController
 from sections.settings_and_preferences.general_view import GeneralSettingsView
 from sections.settings_and_preferences.theme_view import ThemeSettingsView
+from sections.settings_and_preferences.searching_methods_view import (
+    SearchingMethodsView,
+)
 from runtime_theme import bind_theme
 from shared.widgets import SoftButton
 from theme import (
@@ -88,6 +91,22 @@ class SettingsAndPreferencesPage(tk.Frame):
         self.theme_button.pack(side="left", padx=4, pady=12)
         self.navigation_buttons["theme"] = self.theme_button
 
+        self.searching_methods_button = SoftButton(
+            self.toolbar,
+            text="Searching Methods",
+            command=self.show_searching_methods_view,
+            background=PRIMARY_LIGHT,
+            fill=BUTTON_SOFT,
+            hover_fill=BUTTON_SOFT_HOVER,
+            background_role="PRIMARY_LIGHT",
+            width=154,
+            height=38,
+        )
+        self.searching_methods_button.pack(side="left", padx=4, pady=12)
+        self.navigation_buttons["searching_methods"] = (
+            self.searching_methods_button
+        )
+
         self.save_button = SoftButton(
             self.toolbar,
             text="Save Settings",
@@ -151,6 +170,17 @@ class SettingsAndPreferencesPage(tk.Frame):
         )
         self.views["theme"].grid(row=0, column=0, sticky="nsew")
 
+        self.views["searching_methods"] = SearchingMethodsView(
+            self.settings_card,
+            controller=self.controller,
+            dirty_command=self.handle_view_dirty,
+        )
+        self.views["searching_methods"].grid(
+            row=0,
+            column=0,
+            sticky="nsew",
+        )
+
         self.status_value = tk.StringVar(value="Ready")
         self.status_bar = tk.Label(
             self,
@@ -176,6 +206,9 @@ class SettingsAndPreferencesPage(tk.Frame):
 
     def show_theme_view(self):
         self.change_view("theme")
+
+    def show_searching_methods_view(self):
+        self.change_view("searching_methods")
 
     def change_view(self, view_name):
         if view_name == self.active_view_name:
@@ -210,6 +243,9 @@ class SettingsAndPreferencesPage(tk.Frame):
         if view_name == "theme":
             self.save_button.set_text("Save Theme")
             self.status_value.set("Theme colors")
+        elif view_name == "searching_methods":
+            self.save_button.set_text("Save Methods")
+            self.status_value.set("Searching methods")
         else:
             self.save_button.set_text("Save Settings")
             self.status_value.set("General settings")

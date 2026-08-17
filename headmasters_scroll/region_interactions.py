@@ -23,7 +23,7 @@ GATHERING_METHOD_DEFAULTS = (
 CATALOG_COLLECTIONS = {
     "creatures", "books", "plants", "creature_parts", "plant_parts",
     "potions", "preparations", "general_items", "accessories",
-    "holdable_items", "foods_and_drinks",
+    "holdable_items", "foods_and_drinks", "raw_materials",
 }
 
 
@@ -100,12 +100,12 @@ def validate_gathering_database(database: dict[str, Any]) -> None:
         normalized = {_text(item, 100) for item in assignments if _text(item, 100)}
         if len(normalized) != len(assignments) or normalized - method_ids:
             raise ValueError("A catalog definition references an unknown gathering method")
-        extraction_method_id = _text(
-            record.get("extraction_method_id"), 100
+        searching_method_id = _text(
+            record.get("searching_method_id"), 100
         )
-        if extraction_method_id and extraction_method_id not in method_ids:
+        if searching_method_id and searching_method_id not in method_ids:
             raise ValueError(
-                "An alchemical item references an unknown extraction method"
+                "A raw material references an unknown Searching Method"
             )
         for field in ("default_source_quantity", "default_stock_quantity"):
             if field in record and int(record[field]) < 1:

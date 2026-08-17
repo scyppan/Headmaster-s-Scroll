@@ -786,6 +786,10 @@ class WorldBoardRepository:
                 public["asset"] = (
                     {
                         "asset_id": metadata.get("asset_id"),
+                        # The content hash is safe to expose and lets the
+                        # browser retain immutable private image variants
+                        # without confusing a replaced map for the old file.
+                        "asset_version": metadata.get("sha256"),
                         "width": metadata.get("width"),
                         "height": metadata.get("height"),
                         "mime_type": metadata.get("mime_type"),
@@ -848,6 +852,7 @@ class WorldBoardRepository:
                 # movable dot plus the normal gold name plaque.
                 "display_mode": "dot" if is_player and not portrait else display_mode,
                 "portrait_asset_id": portrait.get("asset_id") if portrait else None,
+                "portrait_asset_version": portrait.get("sha256") if portrait else None,
                 "name": str(person.get("displayed_name", "") or "") if (not for_players or is_player or board["name_revealed"]) else "Unknown",
                 "name_revealed": bool(is_player or board["name_revealed"]),
                 "faction_revealed": bool(board["faction_revealed"]),

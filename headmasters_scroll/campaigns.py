@@ -489,7 +489,7 @@ def _normalize_tag_assignments(value: Any, tag_ids: set[str]) -> list[dict[str, 
         target_id = str(raw.get("target_record_id", "") or "").strip()
         tag_id = str(raw.get("tag_id", "") or "").strip()
         key = (collection, target_id, tag_id)
-        if collection not in {"spells", "proficiencies", "potions", "preparations", "foods_and_drinks"}:
+        if collection not in {"spells", "proficiencies", "recipes", "potions", "preparations", "foods_and_drinks"}:
             raise ValueError("Campaign tags may only target knowledge or recipes")
         if not target_id or tag_id not in tag_ids or key in seen:
             raise ValueError("Campaign tag assignments require unique valid targets and tags")

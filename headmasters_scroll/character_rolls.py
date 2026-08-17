@@ -3,7 +3,7 @@ from __future__ import annotations
 import random
 from typing import Any, Callable
 
-from .character_sheet import ability_for_skill
+from .character_sheet import ability_for_skill, recipe_requirements
 
 
 class CharacterRollError(ValueError):
@@ -229,36 +229,29 @@ def perform_character_roll(
             raise PermissionError(f"This character does not know that {roll_type}")
         target_name = str(target.get("name") or roll_type.title())
         if roll_type == "recipe":
-            required = [
-                item for item in target.get("ingredients", []) or []
-                if isinstance(item, dict) and str(item.get("name") or "").strip()
-            ]
-            inventory = sheet.get("inventory", []) or []
-            available: dict[str, float] = {}
-            for item in inventory:
-                if not isinstance(item, dict):
-                    continue
-                name = str(item.get("name") or "").strip().casefold()
-                if not name:
-                    continue
-                try:
-                    quantity = float(item.get("quantity", 1) or 0)
-                except (TypeError, ValueError):
-                    quantity = 1.0
-                available[name] = available.get(name, 0.0) + max(0.0, quantity)
-            missing: list[str] = []
-            for ingredient in required:
-                name = str(ingredient.get("name") or "").strip()
-                try:
-                    needed = float(ingredient.get("quantity", 1) or 1)
-                except (TypeError, ValueError):
-                    needed = 1.0
-                if available.get(name.casefold(), 0.0) < needed:
-                    amount = int(needed) if needed.is_integer() else needed
-                    missing.append(f"{amount} {name}")
-            if missing:
+            requirements = target.get("requirements", {}) or {}
+            if not requirements:
+                requirements = recipe_requirements(
+                    target,
+                    sheet.get("inventory", []) or [],
+                    {
+                        str(record.get("record_id", ""))
+                        for record in sheet.get("proficiencies", []) or []
+                        if isinstance(record, dict) and record.get("record_id")
+                    },
+                    {
+                        str(record.get("record_id", ""))
+                        for record in sheet.get("spells", []) or []
+                        if isinstance(record, dict) and record.get("record_id")
+                    },
+                )
+            if requirements and not requirements.get("ready", False):
+                missing = [
+                    str(value) for value in requirements.get("missing", []) or []
+                ]
                 raise PermissionError(
-                    "Missing recipe ingredients: " + ", ".join(missing)
+                    "Missing recipe ingredients or requirements: "
+                    + ", ".join(missing)
                 )
         skill_name = str(target.get("skill") or ("Potions" if roll_type == "recipe" else ""))
         ability_name = ability_for_skill(skill_name)

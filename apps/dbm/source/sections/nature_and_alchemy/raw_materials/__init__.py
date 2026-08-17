@@ -1,0 +1,1 @@
+"""Raw-material catalog editing."""

@@ -24,7 +24,7 @@ class JsonDatabase:
         self.shared_store = None
         self.shared_session = None
         if shared_directory and self.database_path.resolve() == (Path(shared_directory) / "db.json").resolve():
-            self.shared_store = SharedJsonStore()
+            self.shared_store = SharedJsonStore(Path(shared_directory))
 
     def load(self):
         if self.shared_store:

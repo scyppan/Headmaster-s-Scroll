@@ -4409,6 +4409,25 @@ class EventEditor(tk.Frame):
                 return False
 
         self.saving = True
+        previous_button_text = "Save Event"
+
+        try:
+            previous_button_text = str(
+                self.save_button.cget("text") or previous_button_text
+            )
+        except (AttributeError, tk.TclError):
+            pass
+
+        self.save_button.set_text("Saving...")
+        try:
+            self.save_button.configure(state="disabled")
+        except (AttributeError, tk.TclError):
+            pass
+        try:
+            self.configure(cursor="wait")
+            self.update_idletasks()
+        except tk.TclError:
+            pass
 
         try:
             saved = self.save_command(
@@ -4421,6 +4440,12 @@ class EventEditor(tk.Frame):
             return False
         finally:
             self.saving = False
+            try:
+                self.configure(cursor="")
+                self.save_button.configure(state="normal")
+                self.save_button.set_text(previous_button_text)
+            except (AttributeError, tk.TclError):
+                pass
 
         if saved is False:
             return False

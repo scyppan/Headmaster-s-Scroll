@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import messagebox
 
+from headmasters_scroll.errors import SharedDataError
 from sections.items.holdable_items.controller import HoldableItemController
 from sections.items.holdable_items.record_form import HoldableItemForm
 from sections.items.holdable_items.record_list import HoldableItemList
@@ -95,6 +96,7 @@ class HoldableItemsPage(tk.Frame):
         self.record_form = HoldableItemForm(
             self.form_card,
             change_command=self.mark_form_dirty,
+            database=self.database,
         )
         self.record_form.grid(
             row=0,
@@ -234,7 +236,9 @@ class HoldableItemsPage(tk.Frame):
                     self.current_record_id,
                     record_values,
                 )
-        except (TypeError, ValueError) as error:
+        except (
+            KeyError, OSError, RuntimeError, SharedDataError, TypeError, ValueError
+        ) as error:
             messagebox.showerror(
                 "Cannot save holdable item",
                 str(error),

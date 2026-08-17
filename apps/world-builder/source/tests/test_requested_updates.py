@@ -1,5 +1,10 @@
 import unittest
 
+from mage_maker.core.dates import (
+    format_date_parts,
+    normalize_partial_date,
+    split_partial_date,
+)
 from mage_maker.sections.events.controller import EventController
 from mage_maker.sections.events.models import normalize_world_event_date
 from mage_maker.sections.locations.location_hierarchy import (
@@ -231,6 +236,18 @@ class RequestedUpdateTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "-99999 and 99999"):
             normalize_extinction_year("100000", True)
+
+    def test_profile_dates_support_the_same_signed_historical_years(self):
+        self.assertEqual("-99999", normalize_partial_date("-99999"))
+        self.assertEqual("-0005-03-14", normalize_partial_date("-5-3-14"))
+        self.assertEqual("-0005-03-14", format_date_parts(-5, 3, 14))
+        self.assertEqual(
+            ("-0005", "03", "14"),
+            split_partial_date("-5-3-14"),
+        )
+
+        with self.assertRaises(ValueError):
+            normalize_partial_date("-100000")
 
     def test_prehistory_and_future_use_absolute_bounds(self):
         periods = load_period_definitions()

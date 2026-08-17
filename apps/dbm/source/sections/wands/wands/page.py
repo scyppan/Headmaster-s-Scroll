@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import messagebox
 
+from headmasters_scroll.errors import SharedDataError
 from runtime_theme import bind_theme
 from sections.wands.wands.controller import WandController
 from sections.wands.wands.record_form import WandForm
@@ -153,7 +154,9 @@ class WandsPage(tk.Frame):
             reference_names = self.controller.get_reference_names()
             self.record_form.set_reference_options(reference_names)
             self.record_form.refresh_preview()
-        except (TypeError, ValueError) as error:
+        except (
+            KeyError, OSError, RuntimeError, SharedDataError, TypeError, ValueError
+        ) as error:
             messagebox.showerror(
                 "Cannot load linked names",
                 str(error),
@@ -215,7 +218,9 @@ class WandsPage(tk.Frame):
                     self.current_record_id,
                     record_values,
                 )
-        except (TypeError, ValueError) as error:
+        except (
+            KeyError, OSError, RuntimeError, SharedDataError, TypeError, ValueError
+        ) as error:
             messagebox.showerror(
                 "Cannot save wand",
                 str(error),

@@ -712,6 +712,7 @@ class ProtectedAssetApiTests(unittest.TestCase):
             response = self.player.get("/v1/assets/map%3Amap-1", headers=headers)
             self.assertEqual(response.status_code, 200, response.text)
             self.assertEqual(response.headers["cache-control"], "private, no-store")
+            self.assertIn("etag", response.headers)
             self.assertEqual(self.player.get("/v1/assets/map%3Asecret", headers=headers).status_code, 403)
         headers = {**self.origin_headers, "Authorization": f"Bearer {credential}"}
         self.assertEqual(self.player.get("/v1/assets/map%3Amap-1", headers=headers).status_code, 403)
@@ -850,6 +851,8 @@ class ProtectedAssetApiTests(unittest.TestCase):
         self.assertEqual(player_snapshot["active_map_id"], "map-1")
         self.assertNotIn("player_cameras", player_map)
         self.assertNotIn("headmaster_camera", player_map)
+        self.assertNotIn("character_sheet", player_snapshot)
+        self.assertNotIn("character_attributes", player_snapshot)
 
         attributes = resumed.character_attributes_for(
             self.session_id, self.contact_id

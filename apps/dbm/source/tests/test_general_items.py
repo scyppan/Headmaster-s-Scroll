@@ -74,7 +74,7 @@ class GeneralItemTests(unittest.TestCase):
             records_by_name["Vitriol"]["has_magical_effects"],
             "No",
         )
-        self.assertEqual(records_by_name["Vitriol"]["type"], "Alchemical")
+        self.assertEqual(records_by_name["Vitriol"]["type"], "Alchemical Item")
         self.assertEqual(records_by_name["Firebolt Broom"]["type"], "Broom")
         self.assertEqual(records_by_name["Lute"]["type"], "Instrument")
         self.assertTrue(
@@ -110,7 +110,7 @@ class GeneralItemTests(unittest.TestCase):
         self.assertTrue(requested_names.issubset(records_by_name))
         self.assertTrue(
             all(
-                records_by_name[item_name]["type"] == "Alchemical"
+                records_by_name[item_name]["type"] == "Alchemical Item"
                 for item_name in requested_names
             )
         )
@@ -120,6 +120,9 @@ class GeneralItemTests(unittest.TestCase):
 
         self.assertIn("values=GENERAL_ITEM_TYPES", form_source)
         self.assertIn('text="Type"', form_source)
+        self.assertNotIn("Has Magical Effects", form_source)
+        self.assertNotIn('"has_magical_effects"', form_source)
+        self.assertIn("Raw Material", GENERAL_ITEM_TYPES)
 
     def test_controller_crud_saves_to_json(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -205,7 +208,7 @@ class GeneralItemTests(unittest.TestCase):
                     {"name": "Invalid Item", "type": "Mystery"}
                 )
 
-    def test_alchemical_items_require_a_known_extraction_method(self):
+    def test_general_items_do_not_store_searching_methods(self):
         class CatalogOnlyDatabase:
             def get_collection(self, collection_name):
                 if collection_name == "gathering_methods":
@@ -216,23 +219,39 @@ class GeneralItemTests(unittest.TestCase):
                 return []
 
         controller = GeneralItemController(CatalogOnlyDatabase())
-        with self.assertRaisesRegex(ValueError, "select an extraction method"):
-            controller.validate_record_values({
-                "name": "Quartz", "type": "Alchemical", "bonuses": [],
-            })
-        with self.assertRaisesRegex(ValueError, "no longer exists"):
-            controller.validate_record_values({
-                "name": "Quartz", "type": "Alchemical", "bonuses": [],
-                "extraction_method_id": "missing",
-            })
-
         values = controller.normalize_record_values({
-            "name": "Quartz", "type": "Alchemical", "bonuses": [],
+            "name": "Quartz", "type": "Alchemical Item", "bonuses": [],
             "extraction_method_id": "prospect",
+            "searching_method_id": "dive",
+            "gathering_method_ids": ["prospect"],
         })
         controller.validate_record_values(values)
-        self.assertEqual(values["extraction_method_id"], "prospect")
+        self.assertNotIn("extraction_method_id", values)
+        self.assertNotIn("searching_method_id", values)
+        self.assertNotIn("gathering_method_ids", values)
+
+    def test_raw_material_requires_and_preserves_searching_method(self):
+        class CatalogOnlyDatabase:
+            def get_collection(self, collection_name):
+                if collection_name == "gathering_methods":
+                    return [{"record_id": "prospect", "name": "Prospect"}]
+                return []
+
+        controller = GeneralItemController(CatalogOnlyDatabase())
+        with self.assertRaisesRegex(ValueError, "Searching Method"):
+            controller.validate_record_values(controller.normalize_record_values({
+                "name": "Quartz", "type": "Raw Material", "bonuses": [],
+            }))
+
+        values = controller.normalize_record_values({
+            "name": "Quartz", "type": "Raw Material", "bonuses": [],
+            "searching_method_id": "prospect",
+        })
+        controller.validate_record_values(values)
+        self.assertEqual(values["searching_method_id"], "prospect")
         self.assertEqual(values["gathering_method_ids"], ["prospect"])
+        self.assertEqual(values["activation_mode"], "passive")
+        self.assertEqual(values["equipment_slot_type"], "")
 
     def test_flyable_items_require_a_flying_threshold(self):
         class CatalogOnlyDatabase:

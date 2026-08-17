@@ -429,12 +429,22 @@ def prepare_event_eminence_updates(
     if not affected_person_ids:
         return {}
 
-    people_by_id = {
-        str(person.get("record_id", "") or "").strip(): person
-        for person in database.list_people()
-        if isinstance(person, dict)
-        and str(person.get("record_id", "") or "").strip()
-    }
+    person_reader = getattr(database, "read_person", None)
+    people_by_id = {}
+
+    if callable(person_reader):
+        for person_id in affected_person_ids:
+            person = person_reader(person_id)
+            if isinstance(person, dict):
+                people_by_id[person_id] = person
+    else:
+        people_by_id = {
+            str(person.get("record_id", "") or "").strip(): person
+            for person in database.list_people()
+            if isinstance(person, dict)
+            and str(person.get("record_id", "") or "").strip()
+            in affected_person_ids
+        }
     working_people = {
         person_id: deepcopy(people_by_id[person_id])
         for person_id in affected_person_ids

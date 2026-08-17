@@ -3,8 +3,10 @@ import tkinter as tk
 from runtime_theme import bind_theme
 from sections.items.general_items.bonus_editor import BonusEditor
 from sections.items.general_items.constants import GENERAL_ITEM_TYPES
+from sections.nature_and_alchemy.creatures.tag_editor import TagEditor
 from shared.widgets import (
     ItemImageAssetField,
+    ItemEffectEditor,
     MultilineField,
     RoundedEntry,
     RoundedSelect,
@@ -13,28 +15,35 @@ from theme import SURFACE, TEXT_DARK, TEXT_MUTED, app_font
 
 
 class GeneralItemForm(tk.Frame):
-    magical_effect_values = ("", "Yes", "No")
-
-    def __init__(self, parent, change_command, extraction_methods=()):
+    def __init__(self, parent, change_command, database=None):
         super().__init__(parent, bg=SURFACE)
         bind_theme(self, background="SURFACE")
 
         self.change_command = change_command
         self.loading_record = False
-        self.extraction_methods = list(extraction_methods or ())
-        self.extraction_method_by_name = {
-            str(record.get("name", "")): str(record.get("record_id", ""))
-            for record in self.extraction_methods
+        self.database = database
+        searching_methods = (
+            database.get_collection("gathering_methods")
+            if database is not None else []
+        )
+        self.searching_method_name_by_id = {
+            str(record.get("record_id", "")): str(record.get("name", ""))
+            for record in searching_methods
+            if isinstance(record, dict)
+            and record.get("record_id")
+            and record.get("name")
         }
-        self.extraction_method_name_by_id = {
-            record_id: name
-            for name, record_id in self.extraction_method_by_name.items()
+        self.searching_method_id_by_name = {
+            name: record_id
+            for record_id, name in self.searching_method_name_by_id.items()
         }
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_columnconfigure(1, weight=1)
-        self.grid_rowconfigure(1, weight=3)
-        self.grid_rowconfigure(2, weight=2)
+        self.grid_columnconfigure(2, weight=1)
+        self.grid_rowconfigure(1, weight=2)
+        self.grid_rowconfigure(2, weight=1)
+        self.grid_rowconfigure(3, weight=1)
 
         self.identity_panel = tk.Frame(self, bg=SURFACE)
         self.identity_panel.grid(
@@ -44,6 +53,7 @@ class GeneralItemForm(tk.Frame):
             sticky="ew",
             pady=(0, 12),
         )
+        self.identity_panel.grid_configure(columnspan=3)
         self.identity_panel.grid_columnconfigure(1, weight=3)
         self.identity_panel.grid_columnconfigure(2, weight=1)
         self.identity_panel.grid_columnconfigure(3, weight=1)
@@ -65,26 +75,6 @@ class GeneralItemForm(tk.Frame):
         )
         bind_theme(
             self.name_label,
-            background="SURFACE",
-            foreground="TEXT_DARK",
-        )
-
-        self.magical_effects_label = tk.Label(
-            self.identity_panel,
-            text="Has Magical Effects",
-            bg=SURFACE,
-            fg=TEXT_DARK,
-            font=app_font(10),
-            anchor="w",
-        )
-        self.magical_effects_label.grid(
-            row=0,
-            column=3,
-            sticky="ew",
-            padx=(10, 0),
-        )
-        bind_theme(
-            self.magical_effects_label,
             background="SURFACE",
             foreground="TEXT_DARK",
         )
@@ -145,21 +135,35 @@ class GeneralItemForm(tk.Frame):
             pady=(5, 0),
         )
 
-        self.magical_effects_value = tk.StringVar()
-        self.magical_effects_value.trace_add(
-            "write",
-            self.handle_magical_effects_change,
-        )
-        self.magical_effects_select = RoundedSelect(
+        self.base_knuts_label = tk.Label(
             self.identity_panel,
-            variable=self.magical_effects_value,
-            values=self.magical_effect_values,
+            text="Base Knuts",
+            bg=SURFACE,
+            fg=TEXT_DARK,
+            font=app_font(10),
+            anchor="w",
+        )
+        self.base_knuts_label.grid(
+            row=0,
+            column=3,
+            sticky="ew",
+            padx=(10, 0),
+        )
+        bind_theme(
+            self.base_knuts_label,
+            background="SURFACE",
+            foreground="TEXT_DARK",
+        )
+        self.base_knuts_value = tk.StringVar()
+        self.base_knuts_value.trace_add("write", self.handle_base_knuts_change)
+        self.base_knuts_entry = RoundedEntry(
+            self.identity_panel,
+            textvariable=self.base_knuts_value,
             background=SURFACE,
             height=42,
             font=app_font(11),
-            placeholder="Unspecified",
         )
-        self.magical_effects_select.grid(
+        self.base_knuts_entry.grid(
             row=1,
             column=3,
             sticky="ew",
@@ -188,40 +192,6 @@ class GeneralItemForm(tk.Frame):
             self.last_updated_label,
             background="SURFACE",
             foreground="TEXT_MUTED",
-        )
-
-        self.extraction_panel = tk.Frame(self.identity_panel, bg=SURFACE)
-        self.extraction_panel.grid_columnconfigure(1, weight=1)
-        bind_theme(self.extraction_panel, background="SURFACE")
-        self.extraction_label = tk.Label(
-            self.extraction_panel,
-            text="Extraction",
-            bg=SURFACE,
-            fg=TEXT_DARK,
-            font=app_font(9),
-            anchor="w",
-        )
-        self.extraction_label.grid(row=0, column=0, sticky="w", padx=(0, 6))
-        bind_theme(
-            self.extraction_label,
-            background="SURFACE",
-            foreground="TEXT_DARK",
-        )
-        self.extraction_method_value = tk.StringVar()
-        self.extraction_method_value.trace_add(
-            "write", self.handle_extraction_method_change
-        )
-        self.extraction_method_select = RoundedSelect(
-            self.extraction_panel,
-            variable=self.extraction_method_value,
-            values=tuple(self.extraction_method_by_name),
-            background=SURFACE,
-            height=30,
-            font=app_font(9),
-            placeholder="Select method",
-        )
-        self.extraction_method_select.grid(
-            row=0, column=1, sticky="ew"
         )
 
         self.flight_panel = tk.Frame(self.identity_panel, bg=SURFACE)
@@ -256,6 +226,42 @@ class GeneralItemForm(tk.Frame):
         )
         self.flight_threshold_entry.grid(row=0, column=1, sticky="ew")
 
+        self.searching_method_panel = tk.Frame(
+            self.identity_panel, bg=SURFACE
+        )
+        self.searching_method_panel.grid_columnconfigure(1, weight=1)
+        bind_theme(self.searching_method_panel, background="SURFACE")
+        self.searching_method_label = tk.Label(
+            self.searching_method_panel,
+            text="Searching Method",
+            bg=SURFACE,
+            fg=TEXT_DARK,
+            font=app_font(9),
+            anchor="w",
+        )
+        self.searching_method_label.grid(
+            row=0, column=0, sticky="w", padx=(0, 6)
+        )
+        bind_theme(
+            self.searching_method_label,
+            background="SURFACE",
+            foreground="TEXT_DARK",
+        )
+        self.searching_method_value = tk.StringVar()
+        self.searching_method_value.trace_add(
+            "write", self.handle_searching_method_change
+        )
+        self.searching_method_select = RoundedSelect(
+            self.searching_method_panel,
+            variable=self.searching_method_value,
+            values=tuple(self.searching_method_id_by_name),
+            background=SURFACE,
+            height=30,
+            font=app_font(9),
+            placeholder="Choose method",
+        )
+        self.searching_method_select.grid(row=0, column=1, sticky="ew")
+
         self.image_asset_field = ItemImageAssetField(
             self.identity_panel,
             change_command=self.handle_field_change,
@@ -281,11 +287,13 @@ class GeneralItemForm(tk.Frame):
             pady=(0, 10),
         )
 
-        self.bonus_editor = BonusEditor(
+        self.dbnotes_field = MultilineField(
             self,
-            change_command=self.handle_field_change,
+            "DB Notes",
+            self.handle_field_change,
+            height=9,
         )
-        self.bonus_editor.grid(
+        self.dbnotes_field.grid(
             row=1,
             column=1,
             sticky="nsew",
@@ -293,43 +301,58 @@ class GeneralItemForm(tk.Frame):
             pady=(0, 10),
         )
 
-        self.dbnotes_field = MultilineField(
-            self,
-            "DB Notes",
-            self.handle_field_change,
-            height=7,
+        self.tags_field = TagEditor(self, self.handle_field_change)
+        self.tags_field.grid(
+            row=1, column=2, sticky="nsew", padx=(10, 0), pady=(0, 10)
         )
-        self.dbnotes_field.grid(
+
+        self.bonus_editor = BonusEditor(
+            self,
+            change_command=self.handle_field_change,
+        )
+        self.bonus_editor.grid(
             row=2,
             column=0,
             columnspan=2,
             sticky="nsew",
         )
+        self.bonus_editor.grid_configure(columnspan=3)
+
+        self.effect_editor = ItemEffectEditor(
+            self,
+            database=self.database,
+            change_command=self.handle_field_change,
+        )
+        self.effect_editor.grid(
+            row=3,
+            column=0,
+            columnspan=2,
+            sticky="nsew",
+            pady=(10, 0),
+        )
+        self.effect_editor.grid_configure(columnspan=3)
 
     def set_record(self, record):
         self.loading_record = True
 
         self.name_value.set(record.get("name", ""))
         self.type_value.set(record.get("type", "Other"))
-        self.magical_effects_value.set(
-            record.get("has_magical_effects", "")
-        )
-        extraction_method_id = str(
-            record.get("extraction_method_id", "")
-            or next(iter(record.get("gathering_method_ids", []) or []), "")
-        )
-        self.extraction_method_value.set(
-            self.extraction_method_name_by_id.get(
-                extraction_method_id, extraction_method_id
-            )
-        )
+        self.base_knuts_value.set(str(record.get("base_knuts", 0)))
         self.flight_threshold_value.set(
             str(record.get("flight_threshold", "") or "")
+        )
+        self.searching_method_value.set(
+            self.searching_method_name_by_id.get(
+                str(record.get("searching_method_id", "") or ""),
+                "",
+            )
         )
         self.update_special_fields_visibility()
         self.description_field.set_value(record.get("description", ""))
         self.bonus_editor.set_bonuses(record.get("bonuses", []))
+        self.effect_editor.set_actions(record.get("actions", []))
         self.dbnotes_field.set_value(record.get("dbnotes", ""))
+        self.tags_field.set_tags(record.get("tags", []))
         self.image_asset_field.set_value(record.get("image_asset", ""))
 
         last_updated = record.get("last_updated", "")
@@ -348,26 +371,36 @@ class GeneralItemForm(tk.Frame):
         self.name_entry.focus_set()
 
     def get_values(self):
-        return {
+        base_knuts_text = self.base_knuts_value.get().strip()
+        if not base_knuts_text:
+            raise ValueError("Base Knuts is required.")
+        try:
+            base_knuts = int(base_knuts_text)
+        except ValueError as error:
+            raise ValueError("Base Knuts must be a whole number.") from error
+        if base_knuts < 0:
+            raise ValueError("Base Knuts cannot be negative.")
+        values = {
             "name": self.name_value.get().strip(),
             "type": self.type_value.get().strip(),
-            "has_magical_effects": self.magical_effects_value.get().strip(),
+            "base_knuts": base_knuts,
             "description": self.description_field.get_value(),
             "bonuses": self.bonus_editor.get_bonuses(),
+            "actions": self.effect_editor.get_actions(),
             "dbnotes": self.dbnotes_field.get_value(),
+            "tags": self.tags_field.get_tags(),
             "image_asset": self.image_asset_field.get_value(),
-            "extraction_method_id": self.extraction_method_by_name.get(
-                self.extraction_method_value.get().strip(),
-                self.extraction_method_value.get().strip(),
-            ),
             "flight_threshold": self.flight_threshold_value.get().strip(),
         }
+        if values["type"] == "Raw Material":
+            values["searching_method_id"] = (
+                self.searching_method_id_by_name.get(
+                    self.searching_method_value.get(), ""
+                )
+            )
+        return values
 
     def handle_name_change(self, *arguments):
-        if not self.loading_record:
-            self.change_command()
-
-    def handle_magical_effects_change(self, *arguments):
         if not self.loading_record:
             self.change_command()
 
@@ -376,7 +409,7 @@ class GeneralItemForm(tk.Frame):
         if not self.loading_record:
             self.change_command()
 
-    def handle_extraction_method_change(self, *arguments):
+    def handle_base_knuts_change(self, *arguments):
         if not self.loading_record:
             self.change_command()
 
@@ -384,29 +417,32 @@ class GeneralItemForm(tk.Frame):
         if not self.loading_record:
             self.change_command()
 
+    def handle_searching_method_change(self, *arguments):
+        if not self.loading_record:
+            self.change_command()
+
     def update_special_fields_visibility(self):
-        if self.type_value.get().strip() == "Alchemical":
-            self.extraction_panel.grid(
-                row=2,
-                column=2,
-                columnspan=2,
-                sticky="ew",
-                padx=(10, 0),
-                pady=(4, 0),
-            )
-        else:
-            self.extraction_panel.grid_remove()
         if self.type_value.get().strip() in {"Broom", "Flyable"}:
             self.flight_panel.grid(
                 row=2,
                 column=2,
-                columnspan=2,
                 sticky="ew",
                 padx=(10, 0),
                 pady=(4, 0),
             )
         else:
             self.flight_panel.grid_remove()
+        if self.type_value.get().strip() == "Raw Material":
+            self.searching_method_panel.grid(
+                row=2,
+                column=2,
+                columnspan=2,
+                sticky="ew",
+                padx=(10, 0),
+                pady=(4, 0),
+            )
+        else:
+            self.searching_method_panel.grid_remove()
 
     def handle_field_change(self):
         if not self.loading_record:

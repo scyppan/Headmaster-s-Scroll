@@ -3,7 +3,9 @@ from datetime import date
 
 
 DATE_PART_FIELDS = ("year", "month", "day")
-PARTIAL_DATE_PATTERN = re.compile(r"^(\d{1,4})(?:-(\d{1,2})(?:-(\d{1,2}))?)?$")
+PARTIAL_DATE_PATTERN = re.compile(
+    r"^(-?\d{1,5})(?:-(\d{1,2})(?:-(\d{1,2}))?)?$"
+)
 CALENDAR_ADOPTION_NOTE = (
     "Note: When the Romans switched from the Julian to the Gregorian "
     "Calendar, the days October 5 to October 14 were skipped. Other "
@@ -492,7 +494,12 @@ def format_date_parts(year, month, day, unknown="nd."):
     if year in (None, ""):
         return unknown
 
-    formatted = str(year).zfill(4)
+    normalized_year = normalize_historical_year(year)
+    formatted = (
+        f"-{abs(normalized_year):04d}"
+        if normalized_year < 0
+        else str(normalized_year).zfill(4)
+    )
 
     if month not in (None, ""):
         formatted += f"-{int(month):02d}"
@@ -611,13 +618,17 @@ def normalize_partial_date(value, label="Date"):
     if match is None:
         raise ValueError(f"{label} must use YYYY, YYYY-MM, or YYYY-MM-DD.")
 
-    year, month, day = normalize_date_parts(
+    year, month, day = normalize_historical_date_parts(
         match.group(1),
         match.group(2),
         match.group(3),
         label,
     )
-    normalized = str(year).zfill(4)
+    normalized = (
+        f"-{abs(year):04d}"
+        if year < 0
+        else str(year).zfill(4)
+    )
 
     if month is not None:
         normalized += f"-{month:02d}"
@@ -634,9 +645,9 @@ def split_partial_date(value, label="Date"):
     if not normalized:
         return "", "", ""
 
-    parts = normalized.split("-")
+    match = PARTIAL_DATE_PATTERN.fullmatch(normalized)
     return (
-        parts[0],
-        parts[1] if len(parts) > 1 else "",
-        parts[2] if len(parts) > 2 else "",
+        match.group(1),
+        match.group(2) or "",
+        match.group(3) or "",
     )

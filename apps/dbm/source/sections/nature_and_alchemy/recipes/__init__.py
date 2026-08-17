@@ -1,0 +1,1 @@
+"""Recipe catalog editing."""

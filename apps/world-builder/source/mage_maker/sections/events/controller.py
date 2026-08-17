@@ -145,6 +145,8 @@ class EventController:
         self._people_options_cache = None
         self._people_options_by_id_cache = {}
         self._people_options_cache_revision = None
+        self._organization_records_cache = None
+        self._organization_records_cache_revision = None
 
     def character_control_link_options(self, event_type):
         """Searchable stable-ID choices for teaching and creature events."""
@@ -270,10 +272,9 @@ class EventController:
 
     def get_event(self, record_id):
         selected_id = str(record_id or "").strip()
-        database_revision = getattr(self.database, "revision", None)
         record_reader = getattr(self.database, "read_record", None)
 
-        if not isinstance(database_revision, int) and callable(record_reader):
+        if callable(record_reader):
             selected_event = record_reader("events", selected_id)
 
             if selected_event is not None:
@@ -1250,7 +1251,11 @@ class EventController:
             self.database,
             eminence_updates,
         )
-        self.synchronize_location_extinction_state()
+        if any(
+            canonical_event_type(event.get("event_type")) == "extinction"
+            for event in (*replaced_events, created)
+        ):
+            self.synchronize_location_extinction_state()
         self.remember_associations(created)
 
         item_ownership_may_have_changed = created.get("item_ids") or any(
@@ -1359,7 +1364,16 @@ class EventController:
             self.database,
             eminence_updates,
         )
-        self.synchronize_location_extinction_state()
+        if any(
+            canonical_event_type(event.get("event_type")) == "extinction"
+            for event in (
+                current,
+                updated,
+                *replaced_events,
+                *retained_replacement_events,
+            )
+        ):
+            self.synchronize_location_extinction_state()
         self.remember_associations(updated)
 
         death_state_may_have_changed = (
@@ -1418,7 +1432,10 @@ class EventController:
             self.database,
             eminence_updates,
         )
-        self.synchronize_location_extinction_state()
+        if canonical_event_type(
+            current.get("event_type")
+        ) == "extinction":
+            self.synchronize_location_extinction_state()
 
         if current.get("item_ids"):
             self.synchronize_item_ownership_from_events()
@@ -2632,6 +2649,39 @@ class EventController:
 
     def events_for_person(self, person_id):
         normalized_person_id = str(person_id or "").strip()
+        if not normalized_person_id:
+            return []
+        linked_reader = getattr(
+            self.database,
+            "get_linked_records",
+            None,
+        )
+        if callable(linked_reader):
+            person_reader = getattr(self.database, "read_person", None)
+            person = (
+                person_reader(normalized_person_id)
+                if callable(person_reader)
+                else None
+            )
+            eligible_ids = (
+                {normalized_person_id}
+                if isinstance(person, dict)
+                and not bool(person.get("non_magical"))
+                else set()
+            )
+            matching_events = [
+                self.with_eligible_eminence(
+                    self.apply_title_rules(event),
+                    eligible_ids,
+                )
+                for event in linked_reader(
+                    "events",
+                    normalized_person_id,
+                    "people",
+                )
+            ]
+            matching_events.sort(key=world_event_sort_key)
+            return deepcopy(matching_events)
         self.ensure_event_cache()
         return deepcopy(
             self._events_by_person_id.get(normalized_person_id, [])
@@ -2643,6 +2693,13 @@ class EventController:
         if not normalized_person_id:
             return 0
 
+        if self._event_cache is None:
+            return sum(
+                1
+                for event in self.events_for_person(normalized_person_id)
+                if normalized_person_id
+                in event.get("eminence_person_ids", [])
+            )
         self.ensure_event_cache()
         return self._eminence_points_by_person_id.get(
             normalized_person_id,
@@ -3124,13 +3181,24 @@ class EventController:
         return bool(state.get("foundation_event_id"))
 
     def organization_records(self):
-        return [
+        database_revision = getattr(self.database, "revision", None)
+        if (
+            self._organization_records_cache is not None
+            and database_revision
+            == self._organization_records_cache_revision
+        ):
+            return deepcopy(self._organization_records_cache)
+
+        organizations = [
             normalize_organization_record(organization)
             for organization in self.database.list_records(
                 "organizations"
             )
             if isinstance(organization, dict)
         ]
+        self._organization_records_cache = organizations
+        self._organization_records_cache_revision = database_revision
+        return deepcopy(organizations)
 
     def organization_options(self):
         organizations = self.organization_records()
@@ -3642,37 +3710,66 @@ class EventController:
                 f"A {event_label} event needs at least two people."
             )
 
+        linked_person_ids = event_linked_person_ids(event)
+        raw_item_new_owners = event.get("item_new_owners", {})
+        referenced_person_ids = {
+            *linked_person_ids,
+            *(
+                str(owner.get("person_id", "") or "").strip()
+                for owner in (
+                    raw_item_new_owners.values()
+                    if isinstance(raw_item_new_owners, dict)
+                    else ()
+                )
+                if isinstance(owner, dict)
+                and str(owner.get("person_id", "") or "").strip()
+            ),
+        }
+        people = self.people_summaries() if referenced_person_ids else []
         known_person_ids = {
             str(person.get("record_id", "") or "")
-            for person in self.people_provider()
+            for person in people
         }
         person_names_by_id = {
             str(person.get("record_id", "") or ""): str(
                 person.get("displayed_name", "") or "Unnamed person"
             ).strip()
-            for person in self.people_provider()
+            for person in people
             if str(person.get("record_id", "") or "")
         }
-        known_period_names = {
-            str(period.get("name", "") or "")
-            for period in self.period_provider()
-        }
-        known_location_ids = {
-            str(location.get("record_id", "") or "")
-            for location in self.location_provider()
-        }
+        known_period_names = (
+            {
+                str(period.get("name", "") or "")
+                for period in self.period_provider()
+            }
+            if event.get("period_names")
+            else set()
+        )
+        known_location_ids = (
+            {
+                str(location.get("record_id", "") or "")
+                for location in self.location_provider()
+            }
+            if event.get("location_ids")
+            else set()
+        )
+        organizations = (
+            self.organization_records()
+            if event.get("organization_id")
+            else []
+        )
         known_organization_ids = {
             str(organization.get("record_id", "") or "")
-            for organization in (
-                self.database.list_records("organizations")
-                if self.database is not None
-                else []
-            )
+            for organization in organizations
         }
-        known_item_ids = {
-            str(item.get("record_id", "") or "")
-            for item in self.item_records()
-        }
+        known_item_ids = (
+            {
+                str(item.get("record_id", "") or "")
+                for item in self.item_records()
+            }
+            if event.get("item_ids")
+            else set()
+        )
         if event.get("event_type") != "murder":
             event_role_ids = [
                 *event.get("person_ids", []),
@@ -3687,7 +3784,7 @@ class EventController:
 
         missing_people = [
             person_id
-            for person_id in event_linked_person_ids(event)
+            for person_id in linked_person_ids
             if person_id not in known_person_ids
         ]
         missing_periods = [
@@ -3785,9 +3882,7 @@ class EventController:
             organization = next(
                 (
                     item
-                    for item in self.database.list_records(
-                        "organizations"
-                    )
+                    for item in organizations
                     if str(item.get("record_id", "") or "")
                     == str(event.get("organization_id", "") or "")
                 ),
@@ -4043,13 +4138,28 @@ class EventController:
         allow_death_replacement=False,
         deleting=False,
     ):
+        prospective_event_type = canonical_event_type(
+            (event or {}).get("event_type")
+        )
+        current_event_type = canonical_event_type(
+            (current_event or {}).get("event_type")
+        )
+        relevant_event_types = {
+            GHOST_EVENT_TYPE,
+            "died",
+            "murder",
+        }
+
+        if (
+            prospective_event_type not in relevant_event_types
+            and current_event_type not in relevant_event_types
+        ):
+            return
+
         stored_events = (
             self.database.list_records("events")
             if self.database is not None
             else []
-        )
-        prospective_event_type = canonical_event_type(
-            (event or {}).get("event_type")
         )
         has_stored_ghost_event = any(
             canonical_event_type(stored_event.get("event_type"))

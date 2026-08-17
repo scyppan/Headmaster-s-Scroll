@@ -463,6 +463,53 @@ class PeopleControllerTests(unittest.TestCase):
             ],
         )
 
+    def test_creation_keeps_bce_birth_dates_in_profile_and_events(self):
+        created = self.controller.create_person(
+            {
+                "displayed_name": "Ancient Person",
+                "birth_year": -5,
+                "birth_month": 3,
+                "birth_day": 14,
+                "name_details": {
+                    "entries": [
+                        {
+                            "name_type": "birth name",
+                            "name_entry": "Ancient Person",
+                            "date": "-5-3-14",
+                        }
+                    ]
+                },
+                "starting_location": "Rome",
+                "starting_location_id": "rome",
+            }
+        )
+
+        self.assertEqual(-5, created["birth_year"])
+        self.assertEqual(
+            "-0005-03-14",
+            created["name_details"]["entries"][0]["date"],
+        )
+        life_start_dates = {
+            event["event_type"]: event["date"]
+            for event in created["timeline_events"]
+            if event.get("automatic_source") == "life_start"
+        }
+        self.assertEqual(
+            {
+                "starting_location": "-0005-03-14",
+                "born": "-0005-03-14",
+                "birth_name": "-0005-03-14",
+            },
+            life_start_dates,
+        )
+        birth_event = next(
+            event
+            for event in self.controller.database.list_records("events")
+            if event.get("event_type") == "born"
+            and created["record_id"] in event.get("baby_person_ids", [])
+        )
+        self.assertEqual("-5-03-14", birth_event["date"])
+
     def test_assigning_same_location_parents_updates_child_starting_location(self):
         birthing_parent = self.controller.create_person(
             {

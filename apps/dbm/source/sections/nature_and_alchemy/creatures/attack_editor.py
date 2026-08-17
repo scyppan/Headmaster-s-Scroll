@@ -1,5 +1,6 @@
 import tkinter as tk
 from copy import deepcopy
+from uuid import uuid4
 
 from runtime_theme import bind_theme
 from sections.nature_and_alchemy.creatures.damage_editor import DamageEditor
@@ -235,16 +236,10 @@ class AttackEditor(tk.LabelFrame):
 
             normalized_names.add(normalized_name)
             roll = attack.get("roll", {})
-            roll_low = (
-                None
-                if str(roll.get("low", "")).strip() == ""
-                else int(roll.get("low"))
-            )
-            roll_high = (
-                None
-                if str(roll.get("high", "")).strip() == ""
-                else int(roll.get("high"))
-            )
+            raw_low = roll.get("low")
+            raw_high = roll.get("high")
+            roll_low = None if raw_low in (None, "") else int(raw_low)
+            roll_high = None if raw_high in (None, "") else int(raw_high)
             immediate_damage = []
 
             for damage_entry in attack.get("immediate_damage", []):
@@ -287,20 +282,16 @@ class AttackEditor(tk.LabelFrame):
                     }
                 )
 
-            converted_attacks.append(
-                {
-                    "name": attack_name,
-                    "roll": {
-                        "low": roll_low,
-                        "high": roll_high,
-                    },
-                    "description": str(
-                        attack.get("description", "")
-                    ).strip(),
-                    "immediate_damage": immediate_damage,
-                    "damage_over_time": damage_over_time,
-                }
-            )
+            converted = deepcopy(attack)
+            converted.update({
+                "record_id": str(attack.get("record_id", "") or uuid4()),
+                "name": attack_name,
+                "roll": {"low": roll_low, "high": roll_high},
+                "description": str(attack.get("description", "")).strip(),
+                "immediate_damage": immediate_damage,
+                "damage_over_time": damage_over_time,
+            })
+            converted_attacks.append(converted)
 
         return converted_attacks
 
@@ -310,6 +301,7 @@ class AttackEditor(tk.LabelFrame):
 
         self.attacks.append(
             {
+                "record_id": str(uuid4()),
                 "name": "New Attack",
                 "roll": {"low": None, "high": None},
                 "description": "",

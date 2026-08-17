@@ -193,7 +193,7 @@ class GameBoardService:
             # rules catalog.  The rest of the Headmaster state must still load.
             database = {
                 "spells": [], "proficiencies": [], "potions": [],
-                "preparations": [], "foods_and_drinks": [],
+                "preparations": [], "foods_and_drinks": [], "recipes": [],
             }
         result: dict[str, list[dict[str, str]]] = {
             "spell": [], "proficiency": [], "recipe": [],
@@ -201,7 +201,7 @@ class GameBoardService:
         for kind, collections in (
             ("spell", ("spells",)),
             ("proficiency", ("proficiencies",)),
-            ("recipe", ("potions", "preparations", "foods_and_drinks")),
+            ("recipe", ("recipes", "potions", "preparations", "foods_and_drinks")),
         ):
             for collection in collections:
                 for item in database.get(collection, []) or []:
@@ -256,7 +256,7 @@ class GameBoardService:
         except FileNotFoundError:
             database = {
                 "schools": [], "spells": [], "proficiencies": [],
-                "potions": [], "preparations": [], "foods_and_drinks": [],
+                "potions": [], "preparations": [], "foods_and_drinks": [], "recipes": [],
                 "creatures": [], "books": [],
             }
         return build_character_sheet(person, document, database, campaign)
@@ -1591,29 +1591,10 @@ class GameBoardService:
                 }
                 if player_active in visible_ids:
                     snapshot["active_map_id"] = player_active
-                viewer_character_id = str((viewer or {}).get("character_id", "") or "")
-                viewer_person = next(
-                    (
-                        person for person in document.get("people", [])
-                        if str(person.get("record_id", "")) == viewer_character_id
-                    ),
-                    None,
-                )
-                if viewer_person is not None:
-                    try:
-                        rules_database = self.shared_store.load("db.json").data
-                    except FileNotFoundError:
-                        rules_database = {"schools": []}
-                    sheet = build_character_sheet(
-                        viewer_person, document, rules_database, campaign
-                    )
-                    snapshot["character_sheet"] = sheet
-                    # Retained for one release so already-published web clients
-                    # can still show Attributes while the CDN version changes.
-                    snapshot["character_attributes"] = sheet["attributes"]
-                else:
-                    snapshot["character_sheet"] = None
-                    snapshot["character_attributes"] = None
+                # Character sheets travel on their own private channel.  They
+                # must never be rebuilt and embedded in a board update: a
+                # one-pixel token move otherwise retransmits books, inventory,
+                # relationships, and every known action.
             campaign_maps = campaign["game_state"].get("maps", {})
             for map_record in snapshot.get("maps", []):
                 map_id = str(map_record.get("record_id", "") or "")
@@ -2616,6 +2597,15 @@ class GameBoardService:
             for ingredient in recipe.get("ingredients", []) or []
             if isinstance(ingredient, dict) and str(ingredient.get("name", "") or "").strip()
         }
+        known_ingredient_names.update({
+            str(alternative.get("name", "") or "").strip().casefold()
+            for recipe in known_recipe_records
+            for group in recipe.get("ingredient_requirements", []) or []
+            if isinstance(group, dict)
+            for alternative in group.get("alternatives", []) or []
+            if isinstance(alternative, dict)
+            and str(alternative.get("name", "") or "").strip()
+        })
         result: list[dict[str, Any]] = []
         for entry in region.get("contents", []) or []:
             if str(mode.get("record_id")) not in {
@@ -2627,14 +2617,20 @@ class GameBoardService:
                 record = self._catalog_record(database, reference)
             except KeyError:
                 continue
-            methods = {str(value) for value in record.get("gathering_method_ids", []) or []}
-            is_alchemical_item = (
-                str(reference.get("collection", "")) == "general_items"
-                and str(record.get("type", "")) == "Alchemical"
+            methods = {
+                str(value)
+                for value in record.get("gathering_method_ids", []) or []
+            }
+            is_raw_material = (
+                str(reference.get("collection", "")) == "raw_materials"
+                or (
+                    str(reference.get("collection", "")) == "general_items"
+                    and str(record.get("type", "")) == "Raw Material"
+                )
             )
-            if is_alchemical_item:
+            if is_raw_material:
                 item_extraction_method = str(
-                    record.get("extraction_method_id", "") or ""
+                    record.get("searching_method_id", "") or ""
                 )
                 if not item_extraction_method and len(methods) == 1:
                     item_extraction_method = next(iter(methods))
@@ -2701,16 +2697,20 @@ class GameBoardService:
             }:
                 continue
             reference = entry.get("reference", {}) or {}
-            if str(reference.get("collection", "")) != "general_items":
-                continue
             try:
                 record = self._catalog_record(database, reference)
             except KeyError:
                 continue
-            if str(record.get("type", "")) != "Alchemical":
+            if not (
+                str(reference.get("collection", "")) == "raw_materials"
+                or (
+                    str(reference.get("collection", "")) == "general_items"
+                    and str(record.get("type", "")) == "Raw Material"
+                )
+            ):
                 continue
             extraction_method_id = str(
-                record.get("extraction_method_id", "") or ""
+                record.get("searching_method_id", "") or ""
             )
             legacy_methods = {
                 str(value)
@@ -2812,14 +2812,14 @@ class GameBoardService:
             extraction_method_id = str(extraction_method_id or "")
             if extraction_method_ids and not extraction_method_id:
                 raise ValueError(
-                    "Select an extraction method before searching."
+                    "Select a Searching Method before searching."
                 )
             if (
                 extraction_method_id
                 and extraction_method_id not in extraction_method_ids
             ):
                 raise ValueError(
-                    "That extraction method is not available here."
+                    "That Searching Method is not available here."
                 )
             entries = self._competency_entries(
                 region,
@@ -3187,11 +3187,65 @@ class GameBoardService:
             # therefore uses the same ingredients as a successful one.
             if consumption:
                 self.campaign_repository.update_game_state(campaign_id, consume)
-            result = perform_character_roll(sheet, "recipe", target_id)
+            required_spell_rolls = []
+            for spell_group in requirements.get("spells", []) or []:
+                spell_id = str(spell_group.get("selected_record_id", "") or "")
+                if not spell_id:
+                    continue
+                required_spell_rolls.append(
+                    perform_character_roll(sheet, "spell", spell_id)
+                )
+            failed_spell = next(
+                (roll for roll in required_spell_rolls if roll.get("success") is False),
+                None,
+            )
+            if failed_spell is None:
+                result = perform_character_roll(sheet, "recipe", target_id)
+            else:
+                result = deepcopy(failed_spell)
+                result.update({
+                    "action_type": "recipe",
+                    "target_id": target_id,
+                    "target_name": str(recipe.get("name") or "Recipe"),
+                    "text": (
+                        f"{sheet.get('character_name', 'The character')} attempts "
+                        f"{recipe.get('name', 'a recipe')}, but the required "
+                        f"{failed_spell.get('target_name', 'spell')} fails."
+                    ),
+                })
+            result["required_spell_rolls"] = required_spell_rolls
             result["consumed_ingredients"] = deepcopy(
                 requirements.get("ingredients", []) or []
             )
             result["required_vessel"] = deepcopy(requirements.get("vessel"))
+            result["required_vessels"] = deepcopy(
+                requirements.get("vessels", []) or []
+            )
+            result["required_proficiencies"] = deepcopy(
+                requirements.get("proficiencies", []) or []
+            )
+            result["required_spells"] = deepcopy(
+                requirements.get("spells", []) or []
+            )
+            output_item = requirements.get("output_item")
+            output_quantity = int(requirements.get("output_quantity", 1) or 1)
+            if result.get("success") is True and isinstance(output_item, dict):
+                def award(state: dict[str, Any]) -> None:
+                    person_state = state.setdefault("people", {}).setdefault(
+                        character_id, {}
+                    )
+                    self._inventory_add(
+                        person_state,
+                        output_item,
+                        output_item,
+                        output_quantity,
+                        source=str(recipe.get("name") or "Recipe"),
+                    )
+
+                self.campaign_repository.update_game_state(campaign_id, award)
+                result["recipe_output"] = {
+                    **deepcopy(output_item), "quantity": output_quantity,
+                }
             return result
 
     def update_character_equipment(
@@ -3327,8 +3381,10 @@ class GameBoardService:
             if action is None:
                 raise PermissionError("That item has no such structured action")
             action_type = str(action.get("action_type", "") or "").casefold()
-            if action_type not in {"roll", "message", "consume"}:
+            if action_type not in {"roll", "message", "consume", "potion"}:
                 raise ValueError("That item action is not supported")
+            if str(action.get("activation_mode", "click") or "click").casefold() != "click":
+                raise PermissionError("That item effect is passive and cannot be clicked")
             result: dict[str, Any] = {
                 "activity_type": "item_action", "item_id": item_id,
                 "item_name": str(item.get("name") or "Item"),
@@ -3339,8 +3395,77 @@ class GameBoardService:
                 target_id = str(action.get("target_id") or action.get("target") or "")
                 if not target_id:
                     raise ValueError("This item roll is missing its target")
-                result["roll"] = perform_character_roll(sheet, roll_type, target_id)
+                roll_sheet = sheet
+                if roll_type in {"spell", "proficiency"}:
+                    sheet_collection = (
+                        "spells" if roll_type == "spell" else "proficiencies"
+                    )
+                    known = any(
+                        str(entry.get("record_id", "")) == target_id
+                        for entry in sheet.get(sheet_collection, []) or []
+                        if isinstance(entry, dict)
+                    )
+                    if not known:
+                        database = self.shared_store.load("db.json").data
+                        source = next(
+                            (
+                                entry
+                                for entry in database.get(sheet_collection, []) or []
+                                if isinstance(entry, dict)
+                                and str(entry.get("record_id", "")) == target_id
+                            ),
+                            None,
+                        )
+                        if source is None:
+                            raise KeyError("That linked item effect no longer exists")
+                        roll_sheet = deepcopy(sheet)
+                        roll_sheet.setdefault(sheet_collection, []).append(
+                            deepcopy(source)
+                        )
+                result["roll"] = perform_character_roll(
+                    roll_sheet, roll_type, target_id
+                )
                 result["text"] = str(result["roll"].get("text") or "An item action was rolled.")
+            elif action_type == "potion":
+                target_id = str(action.get("target_id", "") or "")
+                collection = str(
+                    action.get("target_collection", "potions") or "potions"
+                )
+                if collection not in {"potions", "preparations"} or not target_id:
+                    raise ValueError("This item potion effect is incomplete")
+                database = self.shared_store.load("db.json").data
+                potion = next(
+                    (
+                        entry for entry in database.get(collection, []) or []
+                        if isinstance(entry, dict)
+                        and str(entry.get("record_id", "")) == target_id
+                    ),
+                    None,
+                )
+                if potion is None:
+                    raise KeyError("That linked potion effect no longer exists")
+                effect_text = str(
+                    potion.get("raw_effect")
+                    or potion.get("effect")
+                    or potion.get("description")
+                    or "The potion takes effect."
+                )[:4000]
+                character_name = str(sheet.get("character_name") or "A character")
+                result["effect"] = {
+                    "record_id": target_id,
+                    "collection": collection,
+                    "name": str(potion.get("name") or action.get("name") or "Potion"),
+                    "description": effect_text,
+                    "target_scope": str(
+                        action.get("target_scope")
+                        or potion.get("target_scope")
+                        or "self"
+                    ),
+                }
+                result["text"] = (
+                    f"{character_name} uses {item.get('name', 'an item')}. "
+                    f"{effect_text}"
+                )
             else:
                 result["text"] = str(
                     action.get("message")
@@ -3373,7 +3498,7 @@ class GameBoardService:
         self, session_id: str, contact_id: str, collection: str,
         target_record_id: str, name: str,
     ) -> dict[str, Any]:
-        allowed = {"spells", "proficiencies", "potions", "preparations", "foods_and_drinks"}
+        allowed = {"spells", "proficiencies", "recipes", "potions", "preparations", "foods_and_drinks"}
         collection = str(collection or "").strip()
         target_record_id = str(target_record_id or "").strip()
         shown_name = re.sub(r"\s+", " ", str(name or "").strip())[:100]
@@ -4602,13 +4727,18 @@ class GameBoardService:
             if contact_id
             else self.board_snapshot(session_id, for_players=True)
         )
-        sheet = snapshot.get("character_sheet")
-        authorized_cover_ids = {
-            str(book.get("cover_asset_id") or "")
-            for book in (sheet or {}).get("books", []) or []
-            if isinstance(book, dict)
-        }
+        # A test/legacy snapshot may still carry a sheet. Production player
+        # snapshots no longer do, so build it lazily only for assets whose
+        # authorization genuinely depends on private character knowledge.
+        sheet: dict[str, Any] | None = snapshot.get("character_sheet")
         if asset_id.startswith("book-cover:"):
+            if sheet is None and contact_id:
+                sheet = self.character_sheet_for(session_id, str(contact_id))
+            authorized_cover_ids = {
+                str(book.get("cover_asset_id") or "")
+                for book in (sheet or {}).get("books", []) or []
+                if isinstance(book, dict)
+            }
             if asset_id not in authorized_cover_ids:
                 raise PermissionError("That book cover is not available to this session")
             slug = asset_id.removeprefix("book-cover:")
@@ -4644,6 +4774,8 @@ class GameBoardService:
                     return self.world_board.assets.resolve(asset_id, portrait), str(
                         portrait.get("mime_type", "application/octet-stream")
                     )
+        if sheet is None:
+            sheet = self.character_sheet_for(session_id, str(contact_id or ""))
         portrait_id = str(
             ((sheet or {}).get("overview") or {}).get("portrait_asset_id", "")
             or ""

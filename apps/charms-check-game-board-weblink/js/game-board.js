@@ -61,6 +61,10 @@
       this.assetUrls = new Map();
       this.assetRequests = new Map();
       this.assetEpoch = 0;
+      this.cacheDatabase = this.openCacheDatabase();
+      this.cacheSaveTimer = 0;
+      this.receivedFreshBoard = false;
+      this.receivedFreshSheet = false;
       this.mapCameraStates = new Map();
       this.mapCameraSaveTimers = new Map();
       this.mapCameraDrag = null;
@@ -415,6 +419,8 @@
       const wsBase = this.apiBase.replace(/^http/i, 'ws');
       this.intentionalClose = false;
       this.hydratedCampaignId = '';
+      this.receivedFreshBoard = false;
+      this.receivedFreshSheet = false;
       this.socket = new WebSocket(`${wsBase}/v1/session?ticket=${encodeURIComponent(ticket)}`);
       const connectionTimer = setTimeout(() => {
         if (this.socket && this.socket.readyState === WebSocket.CONNECTING) this.socket.close();
@@ -451,13 +457,17 @@
       if (message.type === 'connection_accepted') {
         this.playerId = message.player_id || '';
         this.characterId = message.character_id || '';
-        if (Object.prototype.hasOwnProperty.call(message, 'character_attributes')) {
+        if (message.character_attributes) {
           this.board.character_attributes = message.character_attributes;
         }
         if (Object.prototype.hasOwnProperty.call(message, 'character_sheet')) {
           this.characterSheet = message.character_sheet;
         }
         this.assetCredential = message.asset_credential || '';
+        this.currentCampaignId = String(message.campaign_id || this.currentCampaignId || '');
+        this.hydrateCachedState(
+          this.currentCampaignId, this.playerId, this.characterId
+        );
         this.element('player').textContent = message.player || 'Player';
         this.element('detail-player').textContent = message.player || 'Player';
         this.element('session').textContent = message.session || '';
@@ -497,9 +507,11 @@
         this.element('detail-player').textContent = player;
         this.updatePlayerIdentity(player);
         this.releaseAssets(false);
+        // The private sheet update follows separately. Avoid rebuilding a
+        // large panel with stale data between the two messages.
         if (this.activeSection === 'board') this.renderBoardView();
-        else this.openSection(this.activeSection);
       } else if (message.type === 'board_snapshot' && message.board) {
+        this.receivedFreshBoard = true;
         const previousAttributes = this.board && this.board.character_attributes;
         const previousSheet = this.characterSheet;
         this.board = message.board;
@@ -532,13 +544,17 @@
         }
         this.hydratedCampaignId = campaignId;
         this.saveViewState();
+        this.scheduleStateCache();
         if (this.activeSection === 'board') this.renderBoardView();
-        else this.openSection(this.activeSection);
+      } else if (message.type === 'board_patch' && message.patch) {
+        this.applyBoardPatch(message.patch);
       } else if ((message.type === 'character_sheet_snapshot' || message.type === 'character_sheet_updated') && message.character_sheet) {
+        this.receivedFreshSheet = true;
         this.characterSheet = message.character_sheet;
         this.restoreKnowledgeLibraryStates();
         this.board.character_attributes = message.character_sheet.attributes;
         this.updatePlayerIdentity();
+        this.scheduleStateCache();
         if (this.activeSection !== 'board') this.openSection(this.activeSection);
       } else if (message.type === 'request_submitted') {
         this.showChatNotice(message.message || 'Request sent to the Headmaster.');
@@ -876,6 +892,130 @@
       this.search(this.element('search').value);
     }
 
+    applyBoardPatch(patch) {
+      const scalars = patch.scalars && typeof patch.scalars === 'object'
+        ? patch.scalars : {};
+      Object.assign(this.board, scalars);
+      const removedMaps = new Set(patch.map_ids_removed || []);
+      const removedActors = new Set(patch.actor_ids_removed || []);
+      const mapUpserts = Array.isArray(patch.maps_upsert) ? patch.maps_upsert : [];
+      const actorUpserts = Array.isArray(patch.actors_upsert) ? patch.actors_upsert : [];
+      const maps = new Map((this.board.maps || []).map(item => [String(item.record_id), item]));
+      const actors = new Map((this.board.actors || []).map(item => [String(item.actor_id), item]));
+      removedMaps.forEach(id => maps.delete(String(id)));
+      removedActors.forEach(id => actors.delete(String(id)));
+      mapUpserts.forEach(item => maps.set(String(item.record_id), item));
+
+      let actorStructureChanged = removedActors.size > 0;
+      actorUpserts.forEach(item => {
+        const id = String(item.actor_id);
+        const previous = actors.get(id);
+        if (!previous) actorStructureChanged = true;
+        else {
+          const visualKeys = [
+            'map_id', 'display_mode', 'portrait_asset_id', 'portrait_asset_version',
+            'name', 'name_revealed', 'faction_revealed', 'faction_color',
+            'group_color', 'plaque_background', 'plaque_border',
+            'nameplate_scale', 'label_offset', 'life_state',
+          ];
+          if (visualKeys.some(key => JSON.stringify(previous[key]) !== JSON.stringify(item[key]))) {
+            actorStructureChanged = true;
+          }
+        }
+        actors.set(id, item);
+      });
+      this.board.maps = [...maps.values()];
+      this.board.actors = [...actors.values()];
+      const mapStructureChanged = removedMaps.size > 0 || mapUpserts.length > 0;
+      const boardPresentationChanged = [
+        'controlled_character_ids', 'active_map_id', 'loaded_map_ids'
+      ].some(key => Object.prototype.hasOwnProperty.call(scalars, key));
+      const validMapIds = new Set(this.board.maps.map(item => String(item.record_id)));
+      if (!validMapIds.has(this.activeMapId)) {
+        this.activeMapId = String(this.board.active_map_id || this.board.maps[0]?.record_id || '');
+      }
+      this.scheduleStateCache();
+      if (this.activeSection !== 'board') return;
+      if (mapStructureChanged || actorStructureChanged || boardPresentationChanged) this.renderBoardView();
+      else if (actorUpserts.length) this.positionBoardActors();
+    }
+
+    openCacheDatabase() {
+      if (!('indexedDB' in window)) return Promise.resolve(null);
+      return new Promise(resolve => {
+        const request = indexedDB.open('charms-check-game-board-cache', 1);
+        request.onupgradeneeded = () => {
+          const database = request.result;
+          if (!database.objectStoreNames.contains('entries')) {
+            database.createObjectStore('entries');
+          }
+        };
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => resolve(null);
+        request.onblocked = () => resolve(null);
+      });
+    }
+
+    async cacheRead(key) {
+      const database = await this.cacheDatabase;
+      if (!database) return null;
+      return new Promise(resolve => {
+        const request = database.transaction('entries', 'readonly')
+          .objectStore('entries').get(key);
+        request.onsuccess = () => resolve(request.result ?? null);
+        request.onerror = () => resolve(null);
+      });
+    }
+
+    async cacheWrite(key, value) {
+      const database = await this.cacheDatabase;
+      if (!database) return;
+      await new Promise(resolve => {
+        const request = database.transaction('entries', 'readwrite')
+          .objectStore('entries').put(value, key);
+        request.onsuccess = request.onerror = () => resolve();
+      });
+    }
+
+    stateCacheKey(campaignId = this.currentCampaignId, playerId = this.playerId) {
+      return `state|${campaignId || 'session'}|${playerId || 'player'}`;
+    }
+
+    async hydrateCachedState(campaignId, playerId, characterId) {
+      if (!campaignId || !playerId) return;
+      const cached = await this.cacheRead(this.stateCacheKey(campaignId, playerId));
+      if (!cached || cached.characterId !== characterId) return;
+      if (Date.now() - Number(cached.savedAt || 0) > 30 * 86400000) return;
+      if (!this.receivedFreshBoard && cached.board) {
+        this.board = cached.board;
+        this.currentCampaignId = campaignId;
+        this.activeMapId = this.activeMapId || String(this.board.active_map_id || '');
+      }
+      if (!this.receivedFreshSheet && cached.characterSheet) {
+        this.characterSheet = cached.characterSheet;
+        this.board.character_attributes = cached.characterSheet.attributes;
+        this.updatePlayerIdentity();
+      }
+      if (!this.receivedFreshBoard || !this.receivedFreshSheet) {
+        this.openSection(this.activeSection);
+      }
+    }
+
+    scheduleStateCache() {
+      clearTimeout(this.cacheSaveTimer);
+      this.cacheSaveTimer = setTimeout(() => {
+        const value = {
+          savedAt: Date.now(),
+          characterId: this.characterId,
+          board: this.board,
+          characterSheet: this.characterSheet,
+        };
+        const write = () => this.cacheWrite(this.stateCacheKey(), value);
+        if ('requestIdleCallback' in window) requestIdleCallback(write, { timeout: 1500 });
+        else write();
+      }, 250);
+    }
+
     escapeHtml(value) {
       return String(value ?? '')
         .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
@@ -928,10 +1068,14 @@
           </dl></div>
         </section>
         <section class="ccgb-sheet-card"><h2>Biography</h2><p>${this.escapeHtml(overview.narrative || 'No narrative recorded.')}</p></section>`;
-      if (overview.portrait_asset_id) this.assetUrl(overview.portrait_asset_id).then(url => {
+      if (overview.portrait_asset_id) {
         const holder = content.querySelector('[data-sheet-portrait]');
-        if (holder && url) holder.innerHTML = `<img src="${url}" alt="Portrait of ${this.escapeHtml(overview.name)}">`;
-      }).catch(() => {});
+        this.loadPrivateImage(
+          holder, overview.portrait_asset_id,
+          `Portrait of ${overview.name || 'character'}`,
+          overview.portrait_asset_version || ''
+        );
+      }
     }
 
     renderKnowledgePanel(content, collection) {
@@ -1750,8 +1894,10 @@
             const controls = equippedSlot
               ? `<button data-equip-slot="${equippedSlot}" data-equip-item="" title="Unequip ${this.escapeHtml(item.name)}">−</button>`
               : slots.map((slot, index) => `<button data-equip-slot="${slot}" data-equip-item="${this.escapeHtml(item.record_id)}" title="${slot === 'flyable' ? `Attempt to fly (threshold ${this.escapeHtml(item.flight_threshold ?? '?')})` : `Equip in ${slot === 'focus' ? 'wand or focus' : `accessory slot ${index + 1}`}`}">${slot === 'flyable' ? 'Fly' : slot === 'focus' ? 'Equip' : `A${index + 1}`}</button>`).join('');
-            const itemActions = (item.actions || []).filter(action => action?.record_id && ['roll', 'message', 'consume'].includes(String(action.action_type || '').toLowerCase())).map(action => `<button data-item-action="${this.escapeHtml(action.record_id)}" data-item-id="${this.escapeHtml(item.record_id)}" title="${this.escapeHtml(action.description || action.name || 'Use item')}">${this.escapeHtml(action.name || 'Use')}</button>`).join('');
-            return `<article class="ccgb-inventory-row"><div><strong>${this.escapeHtml(item.name)}</strong><span>${this.escapeHtml(item.category)} · ×${this.escapeHtml(item.quantity ?? 1)}</span><small>${this.escapeHtml(item.description || '')}</small></div><div class="ccgb-inventory-actions">${controls}${itemActions}</div></article>`;
+            const actions = item.actions || [];
+            const passiveEffects = actions.filter(action => String(action?.activation_mode || '').toLowerCase() === 'passive').map(action => action.description || action.message || action.name).filter(Boolean);
+            const itemActions = actions.filter(action => action?.record_id && String(action.activation_mode || 'click').toLowerCase() === 'click' && ['roll', 'message', 'consume', 'potion'].includes(String(action.action_type || '').toLowerCase())).map(action => `<button data-item-action="${this.escapeHtml(action.record_id)}" data-item-id="${this.escapeHtml(item.record_id)}" title="${this.escapeHtml(action.description || action.name || 'Use item')}">${this.escapeHtml(action.name || 'Use')}</button>`).join('');
+            return `<article class="ccgb-inventory-row"><div><strong>${this.escapeHtml(item.name)}</strong><span>${this.escapeHtml(item.category)} · ×${this.escapeHtml(item.quantity ?? 1)}</span><small>${this.escapeHtml(item.description || '')}</small>${passiveEffects.length ? `<small><strong>Passive:</strong> ${this.escapeHtml(passiveEffects.join(' · '))}</small>` : ''}</div><div class="ccgb-inventory-actions">${controls}${itemActions}</div></article>`;
           }).join('')}</div></section>`;
         }).join('') || '<p class="ccgb-empty-result">No matching inventory.</p>';
         holder.querySelectorAll('[data-equip-slot]').forEach(button => button.addEventListener('click', () => {
@@ -1901,51 +2047,67 @@
       this.bindRollButtons(content);
     }
 
-    async assetUrl(assetId) {
+    async assetUrl(assetId, quality = 'full', version = '') {
       if (!assetId || !this.assetCredential) return '';
-      if (this.assetUrls.has(assetId)) return this.assetUrls.get(assetId);
-      if (this.assetRequests.has(assetId)) return this.assetRequests.get(assetId);
+      const cacheId = `${assetId}|${version || 'current'}|${quality}`;
+      if (this.assetUrls.has(cacheId)) return this.assetUrls.get(cacheId);
+      if (this.assetRequests.has(cacheId)) return this.assetRequests.get(cacheId);
       const credential = this.assetCredential;
       const epoch = this.assetEpoch;
       const request = (async () => {
-        const response = await fetch(
-          `${this.apiBase}/v1/assets/${encodeURIComponent(assetId)}`,
-          { headers: { Authorization: `Bearer ${credential}` } }
-        );
-        if (!response.ok) throw new Error(`Private board image returned ${response.status}.`);
-        const url = URL.createObjectURL(await response.blob());
+        const blobCacheKey = `asset|${this.playerId}|${cacheId}`;
+        let blob = await this.cacheRead(blobCacheKey);
+        if (!(blob instanceof Blob)) {
+          const params = new URLSearchParams({ quality });
+          if (version) params.set('v', version);
+          const response = await fetch(
+            `${this.apiBase}/v1/assets/${encodeURIComponent(assetId)}?${params}`,
+            { headers: { Authorization: `Bearer ${credential}` }, cache: 'no-store' }
+          );
+          if (!response.ok) throw new Error(`Private board image returned ${response.status}.`);
+          blob = await response.blob();
+          this.cacheWrite(blobCacheKey, blob);
+        }
+        const url = URL.createObjectURL(blob);
         if (epoch !== this.assetEpoch || credential !== this.assetCredential) {
           URL.revokeObjectURL(url);
           throw new Error('The private image connection changed while loading.');
         }
-        this.assetUrls.set(assetId, url);
+        this.assetUrls.set(cacheId, url);
         return url;
       })();
-      this.assetRequests.set(assetId, request);
+      this.assetRequests.set(cacheId, request);
       try {
         return await request;
       } finally {
-        if (this.assetRequests.get(assetId) === request) this.assetRequests.delete(assetId);
+        if (this.assetRequests.get(cacheId) === request) this.assetRequests.delete(cacheId);
       }
     }
 
-    loadPrivateImage(holder, assetId, altText) {
+    idle(callback) {
+      if ('requestIdleCallback' in window) requestIdleCallback(callback, { timeout: 2500 });
+      else setTimeout(callback, 300);
+    }
+
+    progressiveImage(image, assetId, version = '') {
+      if (!image || !assetId) return;
+      const epoch = this.assetEpoch;
+      this.assetUrl(assetId, 'preview', version).then(url => {
+        if (image.isConnected && epoch === this.assetEpoch) image.src = url;
+      }).catch(error => { if (image.isConnected) image.title = error.message; });
+      const connection = navigator.connection || {};
+      if (connection.saveData || /(^|-)2g$/.test(String(connection.effectiveType || ''))) return;
+      this.idle(() => this.assetUrl(assetId, 'full', version).then(url => {
+        if (image.isConnected && epoch === this.assetEpoch) image.src = url;
+      }).catch(() => {}));
+    }
+
+    loadPrivateImage(holder, assetId, altText, version = '') {
       if (!holder || !assetId) return;
-      const load = allowRetry => this.assetUrl(assetId).then(url => {
-        if (!url || !holder.isConnected) return;
-        const image = document.createElement('img');
-        image.alt = altText || '';
-        image.addEventListener('error', () => {
-          if (!allowRetry) return;
-          const cached = this.assetUrls.get(assetId);
-          if (cached) URL.revokeObjectURL(cached);
-          this.assetUrls.delete(assetId);
-          load(false);
-        }, { once: true });
-        image.src = url;
-        holder.replaceChildren(image);
-      }).catch(error => { if (holder.isConnected) holder.title = error.message; });
-      load(true);
+      const image = document.createElement('img');
+      image.alt = altText || '';
+      holder.replaceChildren(image);
+      this.progressiveImage(image, assetId, version);
     }
 
     releaseAssets(clearCredential = true) {
@@ -2011,9 +2173,7 @@
         const image = document.createElement('img');
         image.alt = map.name || 'Game map';
         image.draggable = false;
-        this.assetUrl(metadata.asset_id)
-          .then(url => { if (stage.isConnected) image.src = url; })
-          .catch(error => this.showChatNotice(error.message));
+        this.progressiveImage(image, metadata.asset_id, metadata.asset_version || '');
         stage.appendChild(image);
       } else {
         const empty = document.createElement('p');
@@ -2188,8 +2348,8 @@
           let extraction = null;
           if (extractionMethods.length) {
             extraction = document.createElement('select');
-            extraction.setAttribute('aria-label', 'Extraction method');
-            extraction.innerHTML = `<option value="">Extraction method…</option>${extractionMethods.map(method => `<option value="${this.escapeHtml(method.record_id || '')}">${this.escapeHtml(method.name || 'Method')}</option>`).join('')}`;
+            extraction.setAttribute('aria-label', 'Searching Method');
+            extraction.innerHTML = `<option value="">Searching Method…</option>${extractionMethods.map(method => `<option value="${this.escapeHtml(method.record_id || '')}">${this.escapeHtml(method.name || 'Method')}</option>`).join('')}`;
             extraction.disabled = Boolean(mode.attempted_today);
           }
           button.addEventListener('click', () => {
@@ -2860,9 +3020,9 @@
         const image = document.createElement('img');
         image.alt = '';
         image.draggable = false;
-        this.assetUrl(actor.portrait_asset_id)
-          .then(url => { if (piece.isConnected) image.src = url; })
-          .catch(error => this.showChatNotice(error.message));
+        this.progressiveImage(
+          image, actor.portrait_asset_id, actor.portrait_asset_version || ''
+        );
         piece.appendChild(image);
       } else if (actor.display_mode === 'nameplate') {
         const plate = document.createElement('span');

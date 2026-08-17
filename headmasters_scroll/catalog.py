@@ -232,7 +232,7 @@ def enrich_catalog(document: dict[str, Any]) -> tuple[dict[str, Any], dict[str, 
             category_changes.append({"record_id": book["record_id"], "name": book.get("name", ""), "before": before, "after": after})
 
     tag_changes = []
-    for collection in ("spells", "proficiencies", "potions", "preparations", "foods_and_drinks"):
+    for collection in ("spells", "proficiencies", "recipes", "potions", "preparations", "foods_and_drinks"):
         for record in result.get(collection, []) or []:
             before = list(record.get("tags", []) or [])
             after = infer_tags(record, collection)
@@ -334,7 +334,7 @@ def enrich_catalog(document: dict[str, Any]) -> tuple[dict[str, Any], dict[str, 
         "book_category_changes": category_changes,
         "tagged_counts": {
             collection: len(result.get(collection, []) or [])
-            for collection in ("spells", "proficiencies", "potions", "preparations", "foods_and_drinks")
+            for collection in ("spells", "proficiencies", "recipes", "potions", "preparations", "foods_and_drinks")
         },
         "tag_changes": tag_changes,
         "item_behavior_changes": item_behavior_changes,
@@ -346,7 +346,7 @@ def enrich_catalog(document: dict[str, Any]) -> tuple[dict[str, Any], dict[str, 
                 collection: sum(
                     1 for item in result.get(collection, []) or [] if not item.get("tags")
                 )
-                for collection in ("spells", "proficiencies", "potions", "preparations", "foods_and_drinks")
+                for collection in ("spells", "proficiencies", "recipes", "potions", "preparations", "foods_and_drinks")
             },
         },
         "category_totals": dict(sorted(Counter(
@@ -372,10 +372,11 @@ def validate_catalog(document: dict[str, Any]) -> None:
         categories = book.get("categories", []) or []
         if not categories or any(value not in valid_categories for value in categories):
             raise ValueError(f"Book {book.get('record_id')} has invalid categories")
-    for collection in ("spells", "proficiencies", "potions", "preparations", "foods_and_drinks"):
+    for collection in ("spells", "proficiencies", "recipes", "potions", "preparations", "foods_and_drinks"):
         for record in document.get(collection, []) or []:
-            if not record.get("tags"):
-                raise ValueError(f"{collection} {record.get('record_id')} requires at least one tag")
+            tags = record.get("tags", [])
+            if tags is not None and not isinstance(tags, list):
+                raise ValueError(f"{collection} {record.get('record_id')} tags must be a list")
             if any(tag_id not in tag_ids for tag_id in record.get("tag_ids", []) or []):
                 raise ValueError(f"{collection} {record.get('record_id')} references an unknown tag")
             if (

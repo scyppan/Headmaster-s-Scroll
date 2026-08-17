@@ -8,6 +8,7 @@ from shared.widgets.fields import MultilineField
 from shared.widgets.effect_fields import TargetScopeField
 from shared.widgets.bonus_editor import BonusEditor, BonusRow
 from shared.widgets.item_image_asset import ItemImageAssetField
+from shared.widgets.item_effect_editor import ItemEffectEditor
 from shared.widgets.name_checklist import NameChecklist
 from shared.widgets.record_list import SearchableRecordList
 from shared.widgets.record_toolbar import RecordToolbar
@@ -22,6 +23,7 @@ __all__ = (
     "BonusEditor",
     "BonusRow",
     "ItemImageAssetField",
+    "ItemEffectEditor",
     "NameChecklist",
     "RecordToolbar",
     "RoundedEntry",

@@ -52,7 +52,11 @@ class WandController:
             self.collection_name,
             prepared_values,
         )
-        self.database.save()
+        try:
+            self.database.save()
+        except Exception:
+            self.database.discard_unsaved_changes()
+            raise
 
         return created_record
 
@@ -69,7 +73,11 @@ class WandController:
             record_id,
             prepared_values,
         )
-        self.database.save()
+        try:
+            self.database.save()
+        except Exception:
+            self.database.discard_unsaved_changes()
+            raise
 
         return updated_record
 
@@ -78,7 +86,11 @@ class WandController:
             self.collection_name,
             record_id,
         )
-        self.database.save()
+        try:
+            self.database.save()
+        except Exception:
+            self.database.discard_unsaved_changes()
+            raise
 
         return deleted_record
 
@@ -88,6 +100,8 @@ class WandController:
             "image_asset": normalize_item_image_reference(
                 record_values.get("image_asset")
             ),
+            "activation_mode": "equipped",
+            "equipment_slot_type": "focus",
         }
 
         for field_name, collection_name, collection_label in self.reference_fields:

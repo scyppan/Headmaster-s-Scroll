@@ -24,6 +24,7 @@ class RecordToolbar(tk.Frame):
         delete_command,
         revert_command,
         save_command,
+        duplicate_command=None,
     ):
         super().__init__(parent, bg=PRIMARY_LIGHT, height=64)
         bind_theme(self, background="PRIMARY_LIGHT")
@@ -98,9 +99,25 @@ class RecordToolbar(tk.Frame):
         )
         self.new_button.pack(side="right", padx=4, pady=12)
 
+        self.duplicate_button = None
+        if duplicate_command is not None:
+            self.duplicate_button = SoftButton(
+                self,
+                text="Duplicate",
+                command=duplicate_command,
+                background=PRIMARY_LIGHT,
+                fill=BUTTON_SOFT,
+                hover_fill=BUTTON_SOFT_HOVER,
+                background_role="PRIMARY_LIGHT",
+                width=96,
+            )
+            self.duplicate_button.pack(side="right", padx=4, pady=12)
+
         self.set_record_state(dirty=False, has_record=False)
 
     def set_record_state(self, dirty, has_record):
         self.save_button.set_enabled(dirty)
         self.revert_button.set_enabled(dirty)
         self.delete_button.set_enabled(has_record)
+        if self.duplicate_button is not None:
+            self.duplicate_button.set_enabled(has_record)

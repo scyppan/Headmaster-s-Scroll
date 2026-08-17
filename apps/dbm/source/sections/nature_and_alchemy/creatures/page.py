@@ -190,7 +190,7 @@ class CreaturesPage(tk.Frame):
     def save_record(self):
         try:
             record_values = self.record_form.get_values()
-        except ValueError as error:
+        except (TypeError, ValueError) as error:
             messagebox.showerror(
                 "Invalid value",
                 str(error),
@@ -214,10 +214,10 @@ class CreaturesPage(tk.Frame):
                     self.current_record_id,
                     record_values,
                 )
-        except (TypeError, ValueError) as error:
+        except Exception as error:
             messagebox.showerror(
                 "Cannot save creature",
-                str(error),
+                f"{error}\n\nYour creature-part changes are still in the form. Please try Save again.",
                 parent=self,
             )
             return False

@@ -21,7 +21,9 @@ class JsonDatabaseTests(unittest.TestCase):
         self.assertTrue(database.has_container("accessories"))
 
         metadata = database.get_database_metadata()
-        self.assertEqual(metadata["schema_version"], 4)
+        self.assertEqual(metadata["schema_version"], 8)
+        self.assertTrue(database.has_container("raw_materials"))
+        self.assertTrue(database.has_container("recipes"))
         self.assertEqual(metadata["database_version"], "1.0")
 
     def test_food_and_drink_conversion_preserves_every_source_record(self):
@@ -125,10 +127,58 @@ class JsonDatabaseTests(unittest.TestCase):
             database = JsonDatabase(database_path)
             database.load()
             self.assertTrue(database.dirty)
-            self.assertEqual(database.get_database_metadata()["schema_version"], 4)
+            self.assertEqual(database.get_database_metadata()["schema_version"], 8)
             self.assertEqual(
                 database.get_collection("books")[0]["publication_date"],
                 "1900-01-01",
+            )
+
+    def test_schema_five_adds_item_prices_actions_and_natural_types(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            database_path = Path(temporary_directory) / "test_database.json"
+            database_path.write_text(
+                '{"_database": {"schema_version": 4}, '
+                '"general_items": ['
+                '{"record_id": "a", "name": "Quartz", "type": "Alchemical"},'
+                '{"record_id": "r", "name": "Charm", "type": "Ritual Item"},'
+                '{"record_id": "d", "name": "Glass", "type": "Divination"}'
+                '], "accessories": [{"record_id": "x", "name": "Ring"}], '
+                '"holdable_items": [{"record_id": "h", "name": "Focus"}]}',
+                encoding="utf-8",
+            )
+            database = JsonDatabase(database_path)
+            database.load()
+            items = {
+                record["record_id"]: record
+                for record in database.get_collection("general_items")
+            }
+            self.assertEqual(items["a"]["type"], "Alchemical Item")
+            self.assertEqual(items["r"]["type"], "General Item")
+            self.assertEqual(items["d"]["type"], "Divinatory Item")
+            for collection in ("general_items", "accessories", "holdable_items"):
+                for record in database.get_collection(collection):
+                    self.assertEqual(record["base_knuts"], 0)
+                    self.assertEqual(record["actions"], [])
+
+    def test_schema_six_adds_recipe_catalogs_and_moves_searching_off_items(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            database_path = Path(temporary_directory) / "test_database.json"
+            database_path.write_text(
+                '{"_database": {"schema_version": 5}, '
+                '"general_items": [{"record_id": "item", "name": "Cup", '
+                '"searching_method_id": "search", '
+                '"gathering_method_ids": ["search"]}]}',
+                encoding="utf-8",
+            )
+            database = JsonDatabase(database_path)
+            database.load()
+            item = database.get_collection("general_items")[0]
+            self.assertNotIn("searching_method_id", item)
+            self.assertNotIn("gathering_method_ids", item)
+            self.assertEqual(database.get_collection("raw_materials"), [])
+            self.assertEqual(database.get_collection("recipes"), [])
+            self.assertEqual(
+                database.get_database_metadata()["schema_version"], 8
             )
 
 

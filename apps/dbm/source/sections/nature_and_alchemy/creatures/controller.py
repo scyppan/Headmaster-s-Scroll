@@ -42,7 +42,11 @@ class CreatureController:
             self.collection_name,
             record_values,
         )
-        self.database.save()
+        try:
+            self.database.save()
+        except Exception:
+            self.database.discard_unsaved_changes()
+            raise
 
         return created_record
 
@@ -62,7 +66,11 @@ class CreatureController:
             record_id,
             record_values,
         )
-        self.database.save()
+        try:
+            self.database.save()
+        except Exception:
+            self.database.discard_unsaved_changes()
+            raise
 
         return updated_record
 
@@ -71,7 +79,11 @@ class CreatureController:
             self.collection_name,
             record_id,
         )
-        self.database.save()
+        try:
+            self.database.save()
+        except Exception:
+            self.database.discard_unsaved_changes()
+            raise
 
         return deleted_record
 

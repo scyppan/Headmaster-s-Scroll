@@ -4,6 +4,7 @@ from mage_maker.core.dates import (
     format_date_parts,
     is_at_least_age,
     normalize_date_parts,
+    normalize_historical_date_parts,
 )
 from mage_maker.sections.development.models import (
     DEVELOPMENT_ASSIGNMENT_SETTING_KEY,
@@ -152,15 +153,36 @@ class PeopleController:
         return people
 
     def list_people_summaries(self):
-        stored_people = self.database.data.get("people", [])
-        summaries = [
-            {
-                field_name: deepcopy(person.get(field_name))
-                for field_name in self.summary_fields
-            }
-            for person in stored_people
-            if isinstance(person, dict)
-        ]
+        provider = getattr(self.database, "list_people_list_summaries", None)
+        if callable(provider):
+            summaries = provider()
+            # Index format 2 installations created before the expanded family
+            # summary omit relationship fields.  Once the canonical document
+            # is available, supply those fields only for relationship-heavy
+            # views until the disposable index is next rebuilt.
+            if (
+                getattr(self.database, "fully_loaded", True)
+                and summaries
+                and "spouse_relationships" not in summaries[0]
+            ):
+                summaries = [
+                    {
+                        field_name: deepcopy(person.get(field_name))
+                        for field_name in self.summary_fields
+                    }
+                    for person in self.database.data.get("people", [])
+                    if isinstance(person, dict)
+                ]
+        else:
+            stored_people = self.database.data.get("people", [])
+            summaries = [
+                {
+                    field_name: deepcopy(person.get(field_name))
+                    for field_name in self.summary_fields
+                }
+                for person in stored_people
+                if isinstance(person, dict)
+            ]
         summaries.sort(key=self.person_sort_key)
         return summaries
 
@@ -404,11 +426,12 @@ class PeopleController:
                 )
             )
 
-        normalize_date_parts(
+        normalize_historical_date_parts(
             normalized.get("birth_year"),
             normalized.get("birth_month"),
             normalized.get("birth_day"),
             "Birth",
+            required_year=False,
         )
         normalized = self.synchronize_life_start_timeline(
             normalized,
@@ -532,11 +555,12 @@ class PeopleController:
                 )
             )
 
-        normalize_date_parts(
+        normalize_historical_date_parts(
             prospective_person.get("birth_year"),
             prospective_person.get("birth_month"),
             prospective_person.get("birth_day"),
             "Birth",
+            required_year=False,
         )
         current_death_signature = (
             bool(current_person.get("deceased")),
@@ -669,12 +693,10 @@ class PeopleController:
         current_person = self.database.read_person(record_id)
         old_parent_ids = self.parent_ids_from_person(current_person)
         deleted_person = self.database.delete_person(record_id)
-        synchronize_people_death_records(self.database.data)
 
         for parent_id in old_parent_ids:
             self.reconcile_child_timeline_events_for_parent(parent_id)
 
-        synchronize_birth_events_from_people(self.database.data)
         self.database.save()
         return deleted_person
 
@@ -872,17 +894,19 @@ class PeopleController:
         if not values.get("displayed_name", "").strip():
             raise ValueError("A magician must have a displayed name.")
 
-        normalize_date_parts(
+        normalize_historical_date_parts(
             values.get("birth_year"),
             values.get("birth_month"),
             values.get("birth_day"),
             "Birth",
+            required_year=False,
         )
-        normalize_date_parts(
+        normalize_historical_date_parts(
             values.get("death_year"),
             values.get("death_month"),
             values.get("death_day"),
             "Death",
+            required_year=False,
         )
         normalize_development_plan(values.get("development_plan"))
         normalize_parental_values(values.get("parental_values"))

@@ -1,11 +1,16 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
+import os
 import time
 from collections import defaultdict, deque
 from contextlib import asynccontextmanager
+from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from pathlib import Path
 from secrets import token_urlsafe
 from typing import Any
 from uuid import uuid4
@@ -17,6 +22,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from ..campaigns import CampaignRepository
+from ..paths import RUNTIME_DIRECTORY
 from .gmail import GmailSender, GmailUnavailable
 from .service import (
     GameBoardService,
@@ -29,6 +35,43 @@ from .storage import GameBoardRepository
 
 
 MAX_MESSAGE_BYTES = 16_384
+PLAYER_PREVIEW_DIRECTORY = RUNTIME_DIRECTORY / "game-board-image-previews"
+
+
+def _json_signature(value: Any) -> str:
+    encoded = json.dumps(
+        value, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _preview_image(path: Path, asset_id: str) -> tuple[Path, str]:
+    """Return a small disposable WebP for the browser's first paint."""
+
+    from PIL import Image, ImageOps
+
+    source = Path(path)
+    stat = source.stat()
+    cache_key = hashlib.sha256(
+        f"{asset_id}:{stat.st_size}:{stat.st_mtime_ns}:v1".encode("utf-8")
+    ).hexdigest()
+    PLAYER_PREVIEW_DIRECTORY.mkdir(parents=True, exist_ok=True)
+    destination = PLAYER_PREVIEW_DIRECTORY / f"{cache_key}.webp"
+    if destination.is_file() and destination.stat().st_size:
+        return destination, "image/webp"
+    temporary = destination.with_suffix(
+        f".webp.{os.getpid()}.{uuid4().hex}.tmp"
+    )
+    try:
+        with Image.open(source) as opened:
+            image = ImageOps.exif_transpose(opened).convert("RGB")
+            maximum = 1280 if max(image.size) > 1024 else 256
+            image.thumbnail((maximum, maximum), Image.Resampling.LANCZOS)
+            image.save(temporary, format="WEBP", quality=68, method=4)
+        os.replace(temporary, destination)
+    finally:
+        temporary.unlink(missing_ok=True)
+    return destination, "image/webp"
 
 
 class ContactBody(BaseModel):
@@ -317,6 +360,8 @@ class PlayerConnection:
     chat_events: deque[float] = field(default_factory=deque)
     move_events: deque[float] = field(default_factory=deque)
     roll_events: deque[float] = field(default_factory=deque)
+    board_state: dict[str, Any] | None = None
+    character_sheet_signature: str = ""
 
     def public(self, service: GameBoardService) -> dict[str, Any]:
         return {
@@ -489,6 +534,8 @@ class GameBoardRuntime:
         self, sender_id: str, sender_name: str, sender_role: str, text: str,
         session_id: str | None = None,
         activity: dict[str, Any] | None = None,
+        *,
+        notify_admins: bool = True,
     ) -> dict[str, Any]:
         chat = self.service.post_chat(
             sender_id, sender_name, sender_role, text, session_id, activity
@@ -518,14 +565,18 @@ class GameBoardRuntime:
             ),
             return_exceptions=True,
         )
-        await self.notify_admins()
+        if notify_admins:
+            await self.notify_admins()
         return chat
 
     async def send_board_snapshot(
         self,
         connection: PlayerConnection,
+        *,
+        force: bool = False,
     ) -> None:
-        snapshot = self.service.board_snapshot(
+        snapshot = await asyncio.to_thread(
+            self.service.board_snapshot,
             connection.session_id,
             for_players=True,
             contact_id=connection.contact_id,
@@ -536,8 +587,55 @@ class GameBoardRuntime:
                 connection.contact_id,
             )
         )
+        previous = connection.board_state
+        connection.board_state = deepcopy(snapshot)
+        if force or previous is None:
+            await connection.websocket.send_json(
+                {"v": 1, "type": "board_snapshot", "board": snapshot}
+            )
+            return
+
+        previous_maps = {
+            str(item.get("record_id", "")): item
+            for item in previous.get("maps", []) or []
+        }
+        current_maps = {
+            str(item.get("record_id", "")): item
+            for item in snapshot.get("maps", []) or []
+        }
+        previous_actors = {
+            str(item.get("actor_id", "")): item
+            for item in previous.get("actors", []) or []
+        }
+        current_actors = {
+            str(item.get("actor_id", "")): item
+            for item in snapshot.get("actors", []) or []
+        }
+        scalars = {
+            key: deepcopy(value)
+            for key, value in snapshot.items()
+            if key not in {"maps", "actors"} and previous.get(key) != value
+        }
+        patch = {
+            "scalars": scalars,
+            "maps_upsert": [
+                deepcopy(value) for key, value in current_maps.items()
+                if previous_maps.get(key) != value
+            ],
+            "map_ids_removed": sorted(set(previous_maps) - set(current_maps)),
+            "actors_upsert": [
+                deepcopy(value) for key, value in current_actors.items()
+                if previous_actors.get(key) != value
+            ],
+            "actor_ids_removed": sorted(set(previous_actors) - set(current_actors)),
+        }
+        if not any((
+            scalars, patch["maps_upsert"], patch["map_ids_removed"],
+            patch["actors_upsert"], patch["actor_ids_removed"],
+        )):
+            return
         await connection.websocket.send_json(
-            {"v": 1, "type": "board_snapshot", "board": snapshot}
+            {"v": 1, "type": "board_patch", "patch": patch}
         )
 
     async def broadcast_board(self, session_id: str) -> None:
@@ -552,20 +650,33 @@ class GameBoardRuntime:
         await self.notify_admins()
 
     async def broadcast_character_sheets(self, session_id: str) -> None:
-        await asyncio.gather(
-            *(
-                connection.websocket.send_json({
-                    "v": 1,
-                    "type": "character_sheet_updated",
-                    "character_sheet": self.service.character_sheet_for(
-                        connection.session_id, connection.contact_id
-                    ),
-                })
-                for connection in list(self.connections.values())
-                if connection.session_id == session_id
-            ),
-            return_exceptions=True,
+        await asyncio.gather(*(
+            self.send_character_sheet(connection, "character_sheet_updated")
+            for connection in list(self.connections.values())
+            if connection.session_id == session_id
+        ), return_exceptions=True)
+
+    async def send_character_sheet(
+        self,
+        connection: PlayerConnection,
+        message_type: str = "character_sheet_snapshot",
+        *,
+        force: bool = False,
+    ) -> None:
+        sheet = await asyncio.to_thread(
+            self.service.character_sheet_for,
+            connection.session_id,
+            connection.contact_id,
         )
+        signature = _json_signature(sheet)
+        if not force and signature == connection.character_sheet_signature:
+            return
+        connection.character_sheet_signature = signature
+        await connection.websocket.send_json({
+            "v": 1,
+            "type": message_type,
+            "character_sheet": sheet,
+        })
 
     async def focus_players(
         self,
@@ -780,6 +891,8 @@ def create_apps(
         for connection in connections:
             connection.name = result["display_name"]
             connection.character_id = result.get("character_id")
+            connection.character_sheet_signature = ""
+            connection.board_state = None
             if connection.character_id:
                 service.activate_player_character_map(
                     connection.session_id,
@@ -793,13 +906,10 @@ def create_apps(
                     "type": "identity_updated",
                     "player": result["display_name"],
                     "character_id": result.get("character_id"),
-                    "character_attributes": service.character_attributes_for(
-                        connection.session_id, contact_id
-                    ),
-                    "character_sheet": service.character_sheet_for(
-                        connection.session_id, contact_id
-                    ),
                 })
+                await runtime.send_character_sheet(
+                    connection, "character_sheet_updated", force=True
+                )
             except Exception:
                 pass
         await runtime.notify_admins()
@@ -1568,6 +1678,7 @@ def create_apps(
         asset_id: str,
         request: Request,
         authorization: str = Header(default=""),
+        quality: str = Query(default="full", pattern="^(preview|full)$"),
     ):
         try:
             require_origin(request.headers.get("origin", ""))
@@ -1583,10 +1694,25 @@ def create_apps(
                 asset_id,
                 connection.contact_id,
             )
+            if quality == "preview":
+                path, media_type = await asyncio.to_thread(
+                    _preview_image, Path(path), asset_id
+                )
+            stat = Path(path).stat()
+            etag = hashlib.sha256(
+                f"{asset_id}:{quality}:{stat.st_size}:{stat.st_mtime_ns}".encode("utf-8")
+            ).hexdigest()
             return FileResponse(
                 path,
                 media_type=media_type,
-                headers={"Cache-Control": "private, no-store"},
+                headers={
+                    # Network caching must not outlive the connection-scoped
+                    # credential. The client keeps an explicitly player-
+                    # scoped IndexedDB copy instead, after authorization.
+                    "Cache-Control": "private, no-store",
+                    "ETag": f'"{etag}"',
+                    "Vary": "Authorization, Origin",
+                },
             )
         except FileNotFoundError as error:
             raise HTTPException(status_code=404, detail="Asset not found") from error
@@ -1618,46 +1744,49 @@ def create_apps(
         connection_key = f"{identity['session_id']}:{identity['contact_id']}"
         runtime.connections[connection_key] = connection
         runtime.asset_credentials[asset_credential_hash] = connection_key
-        character_sheet = service.character_sheet_for(
-            identity["session_id"], identity["contact_id"]
-        )
+        session = service.session_view(identity["session_id"])
         await websocket.send_json({
             "v": 1, "type": "connection_accepted", "player": identity["name"],
             "player_id": identity["contact_id"], "session": identity["session_title"],
             "character_id": identity.get("character_id"),
-            "character_attributes": service.character_attributes_for(
-                identity["session_id"], identity["contact_id"]
-            ),
-            "character_sheet": character_sheet,
+            "campaign_id": str((session or {}).get("campaign_id", "") or ""),
+            # Kept as a protocol key for older published clients. The
+            # authoritative value follows in the single sheet snapshot.
+            "character_attributes": None,
             "asset_credential": asset_credential,
         })
-        await websocket.send_json({
-            "v": 1,
-            "type": "character_sheet_snapshot",
-            "character_sheet": character_sheet,
-        })
-        session = service.session_view(identity["session_id"])
-        await websocket.send_json({
-            "v": 1,
-            "type": "chat_history",
-            "messages": [
-                service.chat_message_for_viewer(
-                    item, identity["session_id"], identity["contact_id"]
-                )
-                for item in list((session or {}).get("chat", []))[-100:]
-            ],
-        })
-        await runtime.chat(
-            "system",
-            "Game Board",
-            "system",
-            f"{identity['name']} is here!",
-            identity["session_id"],
-        )
-        await runtime.send_board_snapshot(connection)
-        await runtime.notify_admins()
+
+        async def bootstrap_connection() -> None:
+            # The receive loop starts immediately, so a disconnect revokes the
+            # credential even while a large private sheet is being prepared.
+            await runtime.send_character_sheet(connection, force=True)
+            await websocket.send_json({
+                "v": 1,
+                "type": "chat_history",
+                "messages": [
+                    service.chat_message_for_viewer(
+                        item, identity["session_id"], identity["contact_id"]
+                    )
+                    for item in list((session or {}).get("chat", []))[-100:]
+                ],
+            })
+            await runtime.chat(
+                "system",
+                "Game Board",
+                "system",
+                f"{identity['name']} is here!",
+                identity["session_id"],
+                notify_admins=False,
+            )
+            await runtime.send_board_snapshot(connection)
+            await runtime.notify_admins()
+
+        bootstrap_task = asyncio.create_task(bootstrap_connection())
 
         async def heartbeat_loop():
+            # Keep the deterministic bootstrap message order while the
+            # receive loop remains active for immediate disconnect handling.
+            await bootstrap_task
             while True:
                 await asyncio.sleep(5)
                 if connection.heartbeats:
@@ -2079,6 +2208,7 @@ def create_apps(
             pass
         finally:
             heartbeat_task.cancel()
+            bootstrap_task.cancel()
             runtime.connections.pop(connection_key, None)
             runtime.asset_credentials.pop(asset_credential_hash, None)
             if not connection.persisted:

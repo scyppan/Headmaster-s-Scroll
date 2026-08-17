@@ -4794,7 +4794,7 @@ class GameBoardWindow(tk.Tk):
         extraction_row.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(0, 8))
         extraction_row.columnconfigure(1, weight=1)
         extraction_label = ttk.Label(
-            extraction_row, text="Extraction", style="Card.TLabel"
+            extraction_row, text="Searching Method", style="Card.TLabel"
         )
         extraction_var = tk.StringVar()
         extraction_box = ttk.Combobox(
@@ -4877,7 +4877,7 @@ class GameBoardWindow(tk.Tk):
             method_id = extraction_by_name.get(extraction_var.get(), "")
             if extraction_by_name and not method_id:
                 messagebox.showinfo(
-                    "Search area", "Choose an extraction method.", parent=dialog
+                    "Search area", "Choose a Searching Method.", parent=dialog
                 )
                 extraction_box.focus_set()
                 return

@@ -17,6 +17,7 @@ from mage_maker.core.world_index import (
     read_indexed_record,
     scan_record_locations,
 )
+from mage_maker.sections.events.controller import EventController
 
 
 def indexed_world():
@@ -79,6 +80,42 @@ def test_index_reads_one_record_and_keeps_summaries_compact(tmp_path):
     ]
 
 
+def test_index_fast_scan_with_known_record_order_reads_exact_records(tmp_path):
+    source = tmp_path / "world.json"
+    data = indexed_world()
+    data["people"].append(
+        {
+            "record_id": "person-two",
+            "displayed_name": "Second Indexed Magician",
+            "nested": {"text": "closing braces remain inside the record"},
+        }
+    )
+    source.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    known_ids = {
+        collection: [
+            str(
+                record.get("record_id")
+                or record.get("event_id")
+                or record.get("reading_id")
+                or ""
+            )
+            for record in records
+        ]
+        for collection, records in data.items()
+        if isinstance(records, list)
+    }
+
+    locations = scan_record_locations(source, known_ids)
+    payload = {"record_locations": locations}
+
+    assert read_indexed_record(
+        source, payload, "people", "person-one"
+    )["displayed_name"] == "Indexed Magician"
+    assert read_indexed_record(
+        source, payload, "people", "person-two"
+    )["nested"]["text"] == "closing braces remain inside the record"
+
+
 def test_index_rejects_stale_and_corrupt_caches(tmp_path):
     source = tmp_path / "world.json"
     source.write_text(json.dumps(indexed_world()), encoding="utf-8")
@@ -119,3 +156,88 @@ def test_private_preferences_do_not_dirty_or_modify_world_data(tmp_path):
     assert database.get_preference("_recent_people") == ["person-one"]
     assert database.dirty is False
     assert source.read_bytes() == before
+
+
+def test_configured_shared_directory_scopes_the_shared_store(
+    tmp_path,
+    monkeypatch,
+):
+    source = tmp_path / "world.json"
+    monkeypatch.setenv("HEADMASTERS_SCROLL_DATA_DIRECTORY", str(tmp_path))
+    database = JsonDatabase(source)
+
+    assert database.shared_store.data_directory == tmp_path
+    assert database.shared_store._path("world.json") == source
+
+
+def test_index_only_load_keeps_collections_unparsed_and_reads_one_person(tmp_path):
+    source = tmp_path / "data" / "world.json"
+    source.parent.mkdir()
+    source.write_text(json.dumps(indexed_world(), indent=2), encoding="utf-8")
+    cache_path = tmp_path / "runtime" / "index.json"
+    cache = WorldIndexCache(source, cache_path)
+    cache.build(indexed_world(), scan_record_locations(source))
+    cache.write()
+
+    database = JsonDatabase(source)
+    database.world_index = WorldIndexCache(source, cache_path)
+
+    assert database.load_index_only() is True
+    assert database.fully_loaded is False
+    assert database.data["people"] == []
+    assert database.list_people_list_summaries()[0]["displayed_name"] == (
+        "Indexed Magician"
+    )
+    assert database.read_person("person-one")["development_plan"] == {
+        "very_large": [1, 2, 3]
+    }
+
+
+def test_full_load_record_reads_prefer_migrated_memory_over_saved_byte_ranges(
+    tmp_path,
+):
+    source = tmp_path / "world.json"
+    data = indexed_world()
+    data["_database"]["schema_version"] = 1
+    data["people"][0] = {
+        "record_id": "person-one",
+        "name": "Legacy Magician",
+    }
+    source.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+    database = JsonDatabase(source)
+    database.load()
+
+    assert database.fully_loaded is True
+    assert database.read_person("person-one")["displayed_name"] == (
+        "Legacy Magician"
+    )
+
+
+def test_basic_profile_events_use_person_links_without_listing_all_events(
+    tmp_path,
+):
+    source = tmp_path / "data" / "world.json"
+    source.parent.mkdir()
+    source.write_text(json.dumps(indexed_world(), indent=2), encoding="utf-8")
+    cache_path = tmp_path / "runtime" / "index.json"
+    cache = WorldIndexCache(source, cache_path)
+    cache.build(indexed_world(), scan_record_locations(source))
+    cache.write()
+    database = JsonDatabase(source)
+    database.world_index = WorldIndexCache(source, cache_path)
+    assert database.load_index_only() is True
+
+    def full_collection_was_requested():
+        raise AssertionError("basic profile requested a full collection")
+
+    controller = EventController(
+        database,
+        full_collection_was_requested,
+        full_collection_was_requested,
+        full_collection_was_requested,
+        people_summary_provider=full_collection_was_requested,
+    )
+
+    events = controller.events_for_person("person-one")
+    assert [event["record_id"] for event in events] == ["event-one"]

@@ -45,7 +45,7 @@ RELATIONSHIP_TYPES = {
     "family": "Family",
     "relationship": "Other",
 }
-RECIPE_COLLECTIONS = ("potions", "preparations", "foods_and_drinks")
+RECIPE_COLLECTIONS = ("recipes", "potions", "preparations", "foods_and_drinks")
 BOOK_COVER_SUBJECTS = {
     "alchemy", "arithmancy", "artificing", "astronomy", "charms", "creatures",
     "dark-arts", "defense", "divination", "flying", "herbology",
@@ -316,6 +316,7 @@ def _book_contents(book: dict[str, Any]) -> Iterable[tuple[str, str, str, str]]:
         ("proficiencies", "proficiency", "proficiencies"),
         ("potions", "recipe", "potions"),
         ("preparations", "recipe", "preparations"),
+        ("recipes", "recipe", "recipes"),
     ):
         for item in book.get(key, []) or []:
             if isinstance(item, dict):
@@ -550,7 +551,7 @@ def _inventory(
     database = database or {}
     definition_collections = (
         "wands", "holdable_items", "accessories", "general_items", "plants",
-        "potions", "preparations", "foods_and_drinks", "books",
+        "raw_materials", "potions", "preparations", "foods_and_drinks", "books",
     )
     by_id = {
         str(record.get("record_id", "")): (collection, record)
@@ -657,10 +658,12 @@ def _inventory_roll_modifiers(inventory: list[dict[str, Any]]) -> dict[str, Any]
         active = mode == "passive" or (mode == "equipped" and item.get("equipped"))
         if not active:
             continue
+        # Flyable bonuses use the existing Passive ledger row, but only enter
+        # the ledger while that item is mounted (the ``active`` check above).
+        # This preserves the established fixed roll-detail schema while making
+        # ownership alone insufficient to receive the bonus.
         source_name = "accessories" if item.get("equipment_slot_type") == "accessory" else (
-            "wand" if item.get("equipment_slot_type") == "focus" else (
-                "flyable" if item.get("equipment_slot_type") == "flyable" else "passive"
-            )
+            "wand" if item.get("equipment_slot_type") == "focus" else "passive"
         )
         for bonus in item.get("bonuses", []) or []:
             if not isinstance(bonus, dict):
@@ -691,104 +694,296 @@ def _inventory_roll_modifiers(inventory: list[dict[str, Any]]) -> dict[str, Any]
 
 def recipe_requirements(
     recipe: dict[str, Any], inventory: list[dict[str, Any]],
+    known_proficiency_ids: set[str] | None = None,
+    known_spell_ids: set[str] | None = None,
 ) -> dict[str, Any]:
-    """Calculate recipe readiness and an authoritative item-consumption plan."""
+    """Calculate AND/OR requirements and an authoritative consumption plan.
+
+    Each requirement group is mandatory.  The alternatives inside a group are
+    interchangeable, so ``Alembic OR Retort`` is one vessel requirement rather
+    than two.  Legacy flat ingredient/vessel fields remain supported.
+    """
+
+    formulations = recipe.get("formulations")
+    if isinstance(formulations, list) and formulations:
+        evaluated = []
+        for formulation in formulations:
+            if not isinstance(formulation, dict):
+                continue
+            candidate = deepcopy(recipe)
+            candidate.pop("formulations", None)
+            for field in (
+                "output_item", "output_quantity", "ingredient_requirements",
+                "vessel_requirements", "proficiency_requirements",
+                "spell_requirements",
+            ):
+                candidate[field] = deepcopy(formulation.get(field))
+            result = recipe_requirements(
+                candidate, inventory, known_proficiency_ids, known_spell_ids
+            )
+            result["formulation_id"] = str(formulation.get("record_id", ""))
+            result["formulation_name"] = str(formulation.get("name", "") or "Formulation")
+            evaluated.append(result)
+        selected = next((item for item in evaluated if item.get("ready")), None)
+        if selected is None and evaluated:
+            selected = evaluated[0]
+        if selected is None:
+            return {"ready": False, "missing": ["valid formulation"], "formulations": []}
+        result = deepcopy(selected)
+        result["formulations"] = evaluated
+        return result
 
     available_items = [item for item in inventory if isinstance(item, dict)]
-    ingredient_rows: list[dict[str, Any]] = []
+    known_proficiency_ids = {
+        str(value) for value in (known_proficiency_ids or set()) if str(value)
+    }
+    known_spell_ids = {
+        str(value) for value in (known_spell_ids or set()) if str(value)
+    }
     missing: list[str] = []
     consumption: dict[str, float] = {}
 
-    for raw in recipe.get("ingredients", []) or []:
-        ingredient = raw if isinstance(raw, dict) else {"name": str(raw)}
-        name = str(ingredient.get("name") or ingredient.get("title") or "").strip()
-        item_id = str(
-            ingredient.get("item_id") or ingredient.get("record_id") or ""
-        ).strip()
-        if not name and not item_id:
-            continue
+    def number(value: Any, default: float = 1.0) -> float:
         try:
-            required = max(0.0, float(ingredient.get("quantity", 1) or 1))
+            return max(0.0, float(value))
         except (TypeError, ValueError):
-            required = 1.0
-        candidates = [
-            item for item in available_items
-            if (
-                item_id and item_id in {
-                    str(item.get("record_id", "")),
-                    str(item.get("item_id", "")),
-                    str(item.get("part_id", "")),
-                }
-            ) or (
-                not item_id and name
-                and str(item.get("name", "")).strip().casefold() == name.casefold()
-            )
-        ]
-        available = 0.0
-        for item in candidates:
-            try:
-                available += max(0.0, float(item.get("quantity", 1) or 0))
-            except (TypeError, ValueError):
-                available += 1.0
-        shortfall = max(0.0, required - available)
-        display_name = name or next(
-            (str(item.get("name") or "Item") for item in candidates), "Item"
+            return default
+
+    def clean_number(value: float) -> int | float:
+        return int(value) if value.is_integer() else value
+
+    def matches(item: dict[str, Any], requirement: dict[str, Any]) -> bool:
+        requirement_id = str(
+            requirement.get("record_id") or requirement.get("item_id") or ""
+        ).strip()
+        requirement_collection = str(requirement.get("collection") or "").strip()
+        item_ids = {
+            str(item.get("record_id", "")),
+            str(item.get("definition_record_id", "")),
+            str(item.get("item_id", "")),
+            str(item.get("part_id", "")),
+        }
+        if requirement_id:
+            if requirement_id not in item_ids:
+                return False
+            item_collection = str(item.get("definition_collection") or "").strip()
+            if requirement_collection and item_collection:
+                return requirement_collection == item_collection
+            return True
+        requirement_name = str(
+            requirement.get("name") or requirement.get("title") or ""
+        ).strip().casefold()
+        return bool(
+            requirement_name
+            and str(item.get("name", "")).strip().casefold() == requirement_name
         )
+
+    def candidates(
+        requirement: dict[str, Any], *, allow_name_fragment: bool = False,
+    ) -> list[dict[str, Any]]:
+        matched = [item for item in available_items if matches(item, requirement)]
+        if matched or not allow_name_fragment:
+            return matched
+        if requirement.get("record_id") or requirement.get("item_id"):
+            return matched
+        name = str(
+            requirement.get("name") or requirement.get("title") or ""
+        ).strip().casefold()
+        if not name:
+            return matched
+        return [
+            item for item in available_items
+            if name in str(item.get("name", "")).strip().casefold()
+        ]
+
+    def remaining_quantity(item: dict[str, Any]) -> float:
+        stack_id = str(item.get("record_id", "")).strip()
+        return max(
+            0.0,
+            number(item.get("quantity", 1), 1.0)
+            - number(consumption.get(stack_id, 0), 0.0),
+        )
+
+    raw_ingredient_groups = recipe.get("ingredient_requirements")
+    if not isinstance(raw_ingredient_groups, list):
+        raw_ingredient_groups = [
+            {
+                "record_id": f"legacy-ingredient-{index}",
+                "alternatives": [
+                    raw if isinstance(raw, dict) else {"name": str(raw)}
+                ],
+            }
+            for index, raw in enumerate(recipe.get("ingredients", []) or [])
+        ]
+
+    ingredient_rows: list[dict[str, Any]] = []
+    for group in raw_ingredient_groups:
+        alternatives = [
+            value for value in (group.get("alternatives", []) or [])
+            if isinstance(value, dict)
+        ] if isinstance(group, dict) else []
+        evaluated: list[dict[str, Any]] = []
+        selected: tuple[dict[str, Any], list[dict[str, Any]], float] | None = None
+        for alternative in alternatives:
+            required = max(1.0, number(alternative.get("quantity", 1), 1.0))
+            matching = candidates(alternative)
+            available = sum(remaining_quantity(item) for item in matching)
+            name = str(alternative.get("name") or "Item").strip() or "Item"
+            row = {
+                "name": name,
+                "required": clean_number(required),
+                "available": clean_number(available),
+                "missing": clean_number(max(0.0, required - available)),
+                "collection": str(alternative.get("collection") or ""),
+                "record_id": str(alternative.get("record_id") or ""),
+            }
+            evaluated.append(row)
+            if selected is None and available >= required:
+                selected = (alternative, matching, required)
+
         ingredient_rows.append({
-            "name": display_name,
-            "required": int(required) if required.is_integer() else required,
-            "available": int(available) if available.is_integer() else available,
-            "missing": int(shortfall) if shortfall.is_integer() else shortfall,
+            "record_id": str(group.get("record_id") or "") if isinstance(group, dict) else "",
+            "alternatives": evaluated,
+            "selected": str(selected[0].get("name") or "") if selected else "",
+            "available": selected is not None,
+            "output_item": deepcopy(selected[0].get("output_item")) if selected else None,
+            "output_quantity_modifier": int(selected[0].get("output_quantity_modifier", 0) or 0) if selected else 0,
         })
-        if shortfall:
-            amount = int(shortfall) if shortfall.is_integer() else shortfall
-            missing.append(f"{amount} {display_name}")
+        if selected is None:
+            label = " OR ".join(
+                f"{row['missing']} {row['name']}" for row in evaluated
+            ) or "ingredient"
+            missing.append(label)
             continue
+        _alternative, matching, required = selected
         remaining = required
-        for item in candidates:
+        for item in matching:
             if remaining <= 0:
                 break
-            try:
-                quantity = max(0.0, float(item.get("quantity", 1) or 0))
-            except (TypeError, ValueError):
-                quantity = 1.0
+            stack_id = str(item.get("record_id", "")).strip()
+            quantity = remaining_quantity(item)
             used = min(remaining, quantity)
-            record_id = str(item.get("record_id", "")).strip()
-            if record_id and used:
-                consumption[record_id] = consumption.get(record_id, 0.0) + used
+            if stack_id and used:
+                consumption[stack_id] = consumption.get(stack_id, 0.0) + used
             remaining -= used
 
-    raw_vessel = recipe.get("required_vessel") or recipe.get("vessel")
-    vessel: dict[str, Any] | None = None
-    if raw_vessel:
-        vessel_value = raw_vessel if isinstance(raw_vessel, dict) else {"name": raw_vessel}
-        vessel_name = str(vessel_value.get("name") or vessel_value.get("title") or "Vessel").strip()
-        vessel_id = str(vessel_value.get("item_id") or vessel_value.get("record_id") or "").strip()
-        vessel_key = vessel_name.casefold()
-        vessel_available = any(
-            (vessel_id and vessel_id in {
-                str(item.get("record_id", "")),
-                str(item.get("item_id", "")),
-                str(item.get("part_id", "")),
-            })
-            or (
-                not vessel_id
-                and vessel_key
-                and vessel_key in str(item.get("name", "")).strip().casefold()
+    raw_vessel_groups = recipe.get("vessel_requirements")
+    if not isinstance(raw_vessel_groups, list):
+        raw_vessel = recipe.get("required_vessel") or recipe.get("vessel")
+        raw_vessel_groups = [] if not raw_vessel else [{
+            "record_id": "legacy-vessel",
+            "alternatives": [
+                raw_vessel if isinstance(raw_vessel, dict) else {"name": raw_vessel}
+            ],
+        }]
+    vessel_rows: list[dict[str, Any]] = []
+    for group in raw_vessel_groups:
+        alternatives = [
+            value for value in (group.get("alternatives", []) or [])
+            if isinstance(value, dict)
+        ] if isinstance(group, dict) else []
+        evaluated = [
+            {
+                "name": str(value.get("name") or "Vessel"),
+                "available": bool(candidates(value, allow_name_fragment=True)),
+                "collection": str(value.get("collection") or ""),
+                "record_id": str(value.get("record_id") or ""),
+                "output_item": deepcopy(value.get("output_item")),
+                "output_quantity_modifier": int(value.get("output_quantity_modifier", 0) or 0),
+            }
+            for value in alternatives
+        ]
+        selected = next((row for row in evaluated if row["available"]), None)
+        vessel_rows.append({
+            "record_id": str(group.get("record_id") or "") if isinstance(group, dict) else "",
+            "alternatives": evaluated,
+            "selected": selected["name"] if selected else "",
+            "available": selected is not None,
+            "output_item": deepcopy(selected.get("output_item")) if selected else None,
+            "output_quantity_modifier": int(selected.get("output_quantity_modifier", 0) or 0) if selected else 0,
+        })
+        if selected is None:
+            missing.append(
+                "vessel: " + (" OR ".join(row["name"] for row in evaluated) or "unspecified")
             )
-            for item in available_items
-        )
-        vessel = {"name": vessel_name, "available": vessel_available}
-        if not vessel_available:
-            missing.append(f"vessel: {vessel_name}")
+
+    proficiency_rows: list[dict[str, Any]] = []
+    for group in recipe.get("proficiency_requirements", []) or []:
+        alternatives = [
+            value for value in (group.get("alternatives", []) or [])
+            if isinstance(value, dict)
+        ] if isinstance(group, dict) else []
+        evaluated = [
+            {
+                "name": str(value.get("name") or "Proficiency"),
+                "record_id": str(value.get("record_id") or ""),
+                "known": str(value.get("record_id") or "") in known_proficiency_ids,
+            }
+            for value in alternatives
+        ]
+        selected = next((row for row in evaluated if row["known"]), None)
+        proficiency_rows.append({
+            "record_id": str(group.get("record_id") or "") if isinstance(group, dict) else "",
+            "alternatives": evaluated,
+            "selected": selected["name"] if selected else "",
+            "available": selected is not None,
+        })
+        if selected is None:
+            missing.append(
+                "proficiency: "
+                + (" OR ".join(row["name"] for row in evaluated) or "unspecified")
+            )
+
+    spell_rows: list[dict[str, Any]] = []
+    for group in recipe.get("spell_requirements", []) or []:
+        alternatives = [
+            value for value in (group.get("alternatives", []) or [])
+            if isinstance(value, dict)
+        ] if isinstance(group, dict) else []
+        evaluated = [{
+            "name": str(value.get("name") or "Spell"),
+            "record_id": str(value.get("record_id") or ""),
+            "known": str(value.get("record_id") or "") in known_spell_ids,
+        } for value in alternatives]
+        selected = next((row for row in evaluated if row["known"]), None)
+        spell_rows.append({
+            "record_id": str(group.get("record_id") or "") if isinstance(group, dict) else "",
+            "alternatives": evaluated,
+            "selected": selected["name"] if selected else "",
+            "selected_record_id": selected["record_id"] if selected else "",
+            "available": selected is not None,
+        })
+        if selected is None:
+            missing.append(
+                "spell: " + (" OR ".join(row["name"] for row in evaluated) or "unspecified")
+            )
+
+    output_item = deepcopy(recipe.get("output_item"))
+    output_quantity = max(1, int(number(recipe.get("output_quantity", 1), 1.0)))
+    for row in ingredient_rows + vessel_rows:
+        if row.get("output_item"):
+            output_item = deepcopy(row["output_item"])
+        output_quantity += int(row.get("output_quantity_modifier", 0) or 0)
+    output_quantity = max(1, output_quantity)
 
     return {
         "ready": not missing,
         "ingredients": ingredient_rows,
-        "vessel": vessel,
+        "vessels": vessel_rows,
+        "vessel": next(
+            (
+                {"name": row["selected"], "available": True}
+                for row in vessel_rows if row["selected"]
+            ),
+            None,
+        ),
+        "proficiencies": proficiency_rows,
+        "spells": spell_rows,
+        "output_item": output_item,
+        "output_quantity": output_quantity,
         "missing": missing,
         "consumption": {
-            item_id: int(quantity) if quantity.is_integer() else quantity
+            item_id: clean_number(quantity)
             for item_id, quantity in consumption.items()
         },
     }
@@ -882,8 +1077,20 @@ def build_character_sheet(
     attributes = calculate_character_attributes(
         person, effective_world, database, game_datetime, effective_campaign_person
     )
+    known_proficiency_ids = {
+        str(record.get("record_id", ""))
+        for record in knowledge["proficiencies"]
+        if isinstance(record, dict) and record.get("record_id")
+    }
+    known_spell_ids = {
+        str(record.get("record_id", ""))
+        for record in knowledge["spells"]
+        if isinstance(record, dict) and record.get("record_id")
+    }
     for recipe in knowledge["recipes"]:
-        recipe["requirements"] = recipe_requirements(recipe, inventory)
+        recipe["requirements"] = recipe_requirements(
+            recipe, inventory, known_proficiency_ids, known_spell_ids
+        )
     birth_parts = [person.get("birth_year"), person.get("birth_month"), person.get("birth_day")]
     try:
         birth_display = (
@@ -901,6 +1108,7 @@ def build_character_sheet(
         "overview": {
             "name": str(person.get("displayed_name") or ""),
             "portrait_asset_id": str(portrait.get("asset_id") or ""),
+            "portrait_asset_version": str(portrait.get("sha256") or ""),
             "birth": birth_display,
             "age": _age_at(person, current),
             "school": str(person.get("school") or ""),

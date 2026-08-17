@@ -35,7 +35,11 @@ class SharedJsonStore:
         data = self._read(path)
         validate_document(filename, data)
         revision = data["_headmasters_scroll"]["revision_id"]
-        return DataSession(filename, path, deepcopy(data), deepcopy(data), revision)
+        # ``data`` is already a newly decoded object.  Use it as the immutable
+        # merge base and create only the editable working copy.  The previous
+        # implementation retained two additional whole-document copies, which
+        # is especially costly for the large World Builder file.
+        return DataSession(filename, path, data, deepcopy(data), revision)
 
     def save(self, session: DataSession, app_id: str) -> SaveOutcome:
         self._validate_app_id(app_id)
@@ -44,7 +48,10 @@ class SharedJsonStore:
             validate_document(session.filename, disk)
             disk_revision = disk["_headmasters_scroll"]["revision_id"]
             if disk_revision == session.loaded_revision:
-                candidate = deepcopy(session.data)
+                # The file revision proves no three-way merge is required.
+                # Committing the session's isolated working document directly
+                # avoids copying a large world merely to serialize it.
+                candidate = session.data
             else:
                 merge = merge_documents(session.filename, session.base_data, session.data, disk)
                 if merge.conflicts:

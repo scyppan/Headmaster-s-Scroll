@@ -228,6 +228,108 @@ class CharacterSheetTests(unittest.TestCase):
             ["1 Tea leaves", "1 Honey", "vessel: Cauldron"],
         )
 
+    def test_recipe_requirements_support_or_vessels_and_proficiencies(self):
+        requirements = recipe_requirements(
+            {
+                "ingredient_requirements": [
+                    {
+                        "record_id": "salt-line",
+                        "alternatives": [{
+                            "collection": "raw_materials",
+                            "record_id": "saltpeter",
+                            "name": "Saltpeter",
+                            "quantity": 1,
+                        }],
+                    },
+                    {
+                        "record_id": "vitriol-line",
+                        "alternatives": [{
+                            "collection": "raw_materials",
+                            "record_id": "vitriol",
+                            "name": "Vitriol",
+                            "quantity": 1,
+                        }],
+                    },
+                ],
+                "vessel_requirements": [{
+                    "record_id": "vessel-line",
+                    "alternatives": [
+                        {
+                            "collection": "general_items",
+                            "record_id": "alembic",
+                            "name": "Alembic",
+                        },
+                        {
+                            "collection": "general_items",
+                            "record_id": "retort",
+                            "name": "Retort",
+                        },
+                    ],
+                }],
+                "proficiency_requirements": [{
+                    "record_id": "proficiency-line",
+                    "alternatives": [{
+                        "collection": "proficiencies",
+                        "record_id": "acid-work",
+                        "name": "Acid Work",
+                    }],
+                }],
+            },
+            [
+                {
+                    "record_id": "salt-stack",
+                    "definition_collection": "raw_materials",
+                    "definition_record_id": "saltpeter",
+                    "name": "Saltpeter",
+                    "quantity": 1,
+                },
+                {
+                    "record_id": "vitriol-stack",
+                    "definition_collection": "raw_materials",
+                    "definition_record_id": "vitriol",
+                    "name": "Vitriol",
+                    "quantity": 1,
+                },
+                {
+                    "record_id": "retort-stack",
+                    "definition_collection": "general_items",
+                    "definition_record_id": "retort",
+                    "name": "Glass Retort",
+                    "quantity": 1,
+                },
+            ],
+            {"acid-work"},
+        )
+        self.assertTrue(requirements["ready"])
+        self.assertEqual(
+            requirements["consumption"],
+            {"salt-stack": 1, "vitriol-stack": 1},
+        )
+        self.assertEqual(requirements["vessels"][0]["selected"], "Retort")
+        self.assertEqual(
+            requirements["proficiencies"][0]["selected"], "Acid Work"
+        )
+
+    def test_recipe_requirement_groups_do_not_reuse_the_same_stack(self):
+        requirements = recipe_requirements(
+            {
+                "ingredient_requirements": [
+                    {
+                        "record_id": "line-1",
+                        "alternatives": [{"name": "Salt", "quantity": 1}],
+                    },
+                    {
+                        "record_id": "line-2",
+                        "alternatives": [{"name": "Salt", "quantity": 1}],
+                    },
+                ],
+            },
+            [{"record_id": "salt-stack", "name": "Salt", "quantity": 1}],
+        )
+        self.assertFalse(requirements["ready"])
+        self.assertEqual(requirements["consumption"], {"salt-stack": 1})
+        self.assertEqual(requirements["missing"], ["1 Salt"])
+
     def test_owned_passive_and_equipped_items_feed_roll_ledgers(self):
         self.world["items"] = [
             {
@@ -298,7 +400,7 @@ class CharacterSheetTests(unittest.TestCase):
         flying = next(item for item in mounted["attributes"]["skills"] if item["name"] == "Flying")
         self.assertEqual(flying["total"], 4)
         self.assertTrue(mounted["airborne"])
-        self.assertEqual(flying["breakdown"]["flyable"], 4)
+        self.assertEqual(flying["breakdown"]["passive"], 4)
 
     def test_natural_ten_does_not_bypass_an_unreachable_threshold(self):
         sheet = build_character_sheet(

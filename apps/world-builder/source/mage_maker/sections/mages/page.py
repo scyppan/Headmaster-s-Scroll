@@ -186,6 +186,7 @@ class MagesPage(tk.Frame):
                 else self.controller.list_people
             ),
             save_person_command=self.save_person,
+            person_record_provider=self.controller.get_person,
         )
         self.person_form.grid(
             row=1,
@@ -436,17 +437,20 @@ class MagesPage(tk.Frame):
         if self.current_record_id is None:
             return False
 
-        if self.person_form.specialty_school_is_blank():
-            messagebox.showerror(
-                "Specialty school required",
-                "Enter the specialty school name.",
-                parent=self,
-            )
-            return False
-
-        values = self.person_form.get_values()
-
+        root = self.winfo_toplevel()
+        self.save_button.set_enabled(False)
+        self.save_button.set_text("Saving...")
+        self.status_command("Saving magician...")
         try:
+            root.configure(cursor="wait")
+            self.update_idletasks()
+        except tk.TclError:
+            pass
+        try:
+            if self.person_form.specialty_school_is_blank():
+                raise ValueError("Enter the specialty school name.")
+
+            values = self.person_form.get_values()
             saved_person = self.controller.update_person(
                 self.current_record_id,
                 values,
@@ -462,24 +466,36 @@ class MagesPage(tk.Frame):
                     self.current_record_id,
                     values,
                 )
-            except (TypeError, ValueError) as retry_error:
+            except Exception as retry_error:
                 messagebox.showerror(
                     "Cannot save magician",
                     str(retry_error),
                     parent=self,
                 )
                 return False
-        except (TypeError, ValueError) as error:
+        except Exception as error:
             messagebox.showerror(
                 "Cannot save magician",
                 str(error),
                 parent=self,
             )
             return False
+        finally:
+            self.save_button.set_text("Save")
+            self.save_button.set_enabled(
+                self.current_record_id is not None
+            )
+            try:
+                root.configure(cursor="")
+            except tk.TclError:
+                pass
 
         self.refresh_people(saved_person["record_id"])
         self.load_person(saved_person["record_id"])
-        self.records_changed_command()
+        self.records_changed_command(
+            "people",
+            (saved_person["record_id"],),
+        )
         self.status_command(f"Saved {saved_person['displayed_name']}")
         return True
 
@@ -523,7 +539,10 @@ class MagesPage(tk.Frame):
         else:
             self.set_editor_state(False)
 
-        self.records_changed_command()
+        self.records_changed_command(
+            "people",
+            (person.get("record_id", ""),),
+        )
         self.status_command(f"Deleted {person_name}")
 
     def revert_person(self):
@@ -550,7 +569,7 @@ class MagesPage(tk.Frame):
 
     def set_editor_state(self, has_person):
         self.delete_button.set_enabled(has_person)
-        self.save_button.set_enabled(False)
+        self.save_button.set_enabled(has_person)
         self.revert_button.set_enabled(False)
 
         if not has_person:

@@ -1,5 +1,6 @@
 import tkinter as tk
 from copy import deepcopy
+from uuid import uuid4
 
 from runtime_theme import bind_theme
 from sections.nature_and_alchemy.creatures.constants import (
@@ -203,21 +204,26 @@ class PartsEditor(tk.Frame):
                 part.get("required_proficiency", "No")
             ).strip() or "No"
 
-            converted_parts.append(
-                {
-                    "name": part_name,
-                    "required_proficiency": required_proficiency,
-                    "description": str(
-                        part.get("description", "")
-                    ).strip(),
-                    "raw_effects": str(
-                        part.get("raw_effects", "")
-                    ).strip(),
-                    "effect_in_potions": str(
-                        part.get("effect_in_potions", "")
-                    ).strip(),
+            converted = deepcopy(part)
+            converted.update({
+                "record_id": str(part.get("record_id", "") or uuid4()),
+                "name": part_name,
+                "required_proficiency": required_proficiency,
+                "description": str(part.get("description", "")).strip(),
+                "raw_effects": str(part.get("raw_effects", "")).strip(),
+                "effect_in_potions": str(part.get("effect_in_potions", "")).strip(),
+            })
+            raw_yield = part.get("yield")
+            if not isinstance(raw_yield, dict):
+                converted["yield"] = {"low": 1, "high": 1}
+            else:
+                converted["yield"] = {
+                    "low": max(1, min(10, int(raw_yield.get("low", 1) or 1))),
+                    "high": max(1, min(10, int(raw_yield.get("high", raw_yield.get("low", 1)) or 1))),
                 }
-            )
+                if converted["yield"]["high"] < converted["yield"]["low"]:
+                    converted["yield"]["high"] = converted["yield"]["low"]
+            converted_parts.append(converted)
 
         return converted_parts
 
@@ -227,11 +233,13 @@ class PartsEditor(tk.Frame):
 
         self.parts.append(
             {
+                "record_id": str(uuid4()),
                 "name": "New Creature Part",
                 "required_proficiency": "No",
                 "description": "",
                 "raw_effects": "",
                 "effect_in_potions": "",
+                "yield": {"low": 1, "high": 1},
             }
         )
         self.selected_index = len(self.parts) - 1

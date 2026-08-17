@@ -15,7 +15,10 @@ class DataSession:
     loaded_revision: str
 
     def reset_to(self, value: dict[str, Any], revision: str) -> None:
-        self.base_data = deepcopy(value)
+        # ``value`` is the committed document and is no longer mutated by the
+        # store. Retain it as the immutable merge base and make only the next
+        # editable working copy.
+        self.base_data = value
         self.data = deepcopy(value)
         self.loaded_revision = revision
 

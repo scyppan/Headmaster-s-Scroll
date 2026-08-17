@@ -40,6 +40,42 @@ class JsonDatabaseTests(unittest.TestCase):
         self.assertEqual("Updated Magician", deleted["displayed_name"])
         self.assertIsNone(self.database.read_person(created["record_id"]))
 
+    def test_delete_repairs_only_linked_people_and_recent_events(self):
+        parent = self.database.create_person(
+            {"displayed_name": "Deleted Parent"}
+        )
+        child = self.database.create_person(
+            {
+                "displayed_name": "Linked Child",
+                "biological_mother_id": parent["record_id"],
+            }
+        )
+        unrelated = self.database.create_person(
+            {"displayed_name": "Unrelated Person"}
+        )
+        event = self.database.create_record(
+            "events",
+            {
+                "title": "Recently added event",
+                "event_type": "custom",
+                "person_ids": [parent["record_id"], child["record_id"]],
+            },
+        )
+
+        self.database.delete_person(parent["record_id"])
+
+        saved_child = self.database.read_person(child["record_id"])
+        saved_event = self.database.read_record("events", event["record_id"])
+        self.assertEqual("", saved_child["biological_mother_id"])
+        self.assertEqual("unknown", saved_child["biological_mother_status"])
+        self.assertEqual([child["record_id"]], saved_event["person_ids"])
+        self.assertEqual(
+            "Unrelated Person",
+            self.database.read_person(unrelated["record_id"])[
+                "displayed_name"
+            ],
+        )
+
     def test_save_is_atomic_and_creates_backup(self):
         self.database.create_person({"displayed_name": "Backup Test"})
         self.database.save()

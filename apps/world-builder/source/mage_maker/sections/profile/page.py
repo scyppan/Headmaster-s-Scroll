@@ -124,6 +124,7 @@ class PersonForm(tk.Frame):
         status_command=None,
         people_summary_provider=None,
         save_person_command=None,
+        person_record_provider=None,
     ):
         super().__init__(parent, bg=SURFACE)
         self.change_command = change_command
@@ -150,6 +151,11 @@ class PersonForm(tk.Frame):
         self.book_controller = book_controller
         self.status_command = status_command
         self.save_person_command = save_person_command
+        self.person_record_provider = person_record_provider
+        self.create_person_command = create_person_command
+        self.update_person_command = update_person_command
+        self.refresh_people_command = refresh_people_command
+        self.navigate_command = navigate_command
         self.autosave_job = None
         self.loading = False
         self.variables = {}
@@ -215,21 +221,37 @@ class PersonForm(tk.Frame):
         self.content.grid_rowconfigure(0, weight=1)
 
         self.build_profile_page()
-        self.build_family_tree_page(
-            create_person_command,
-            update_person_command,
-            refresh_people_command,
-            navigate_command,
-        )
-        self.build_relationships_page()
-        self.build_timeline_page(navigate_command)
-        self.build_jobs_page()
-        self.build_development_page()
-        self.build_items_page()
-        self.build_books_page()
-        self.build_ledger_page()
         self.update_person_navigation()
         self.show_page("profile")
+
+    def ensure_page_built(self, page_name):
+        """Construct a secondary profile page only when it is first opened."""
+        if page_name in self.pages:
+            return True
+        if page_name == "family_tree":
+            self.build_family_tree_page(
+                self.create_person_command,
+                self.update_person_command,
+                self.refresh_people_command,
+                self.navigate_command,
+            )
+        elif page_name == "relationships":
+            self.build_relationships_page()
+        elif page_name == "timeline":
+            self.build_timeline_page(self.navigate_command)
+        elif page_name == "jobs":
+            self.build_jobs_page()
+        elif page_name == "development":
+            self.build_development_page()
+        elif page_name == "items":
+            self.build_items_page()
+        elif page_name == "books":
+            self.build_books_page()
+        elif page_name == "ledger":
+            self.build_ledger_page()
+        else:
+            return False
+        return page_name in self.pages
 
     def build_navigation(self):
         navigation = tk.Frame(self, bg=SURFACE)
@@ -614,25 +636,6 @@ class PersonForm(tk.Frame):
             start_row=1,
         )
 
-        self.imported_count_value = tk.StringVar(value="")
-        imported_label = tk.Label(
-            classifications_panel.content,
-            textvariable=self.imported_count_value,
-            bg=SURFACE_MUTED,
-            fg=TEXT_MUTED,
-            font=app_font(9),
-            anchor="w",
-            justify="left",
-            wraplength=500,
-        )
-        imported_label.grid(
-            row=5,
-            column=0,
-            columnspan=2,
-            sticky="ew",
-            pady=(8, 0),
-        )
-
         connections_panel = SectionPanel(
             overview,
             "Connections",
@@ -858,7 +861,7 @@ class PersonForm(tk.Frame):
             self.content,
             self.game_database,
             self.development_changed,
-            self.people_provider,
+            self.people_summary_provider,
             self.organization_provider,
             self.settings_provider,
             self.apply_development_mortality,
@@ -926,7 +929,7 @@ class PersonForm(tk.Frame):
             self.content,
             people_provider=self.people_summary_provider,
             event_controller=self.event_controller,
-            navigate_command=self.family_tree.navigate_command,
+            navigate_command=self.navigate_command,
         )
         page.grid(row=0, column=0, sticky="nsew")
         self.relationships = page
@@ -1272,6 +1275,9 @@ class PersonForm(tk.Frame):
         if not self.variables["non_magical"].get() and page_name == "jobs":
             page_name = "profile"
 
+        if page_name not in self.pages and not defer_loading:
+            self.ensure_page_built(page_name)
+
         if page_name not in self.pages:
             return False
 
@@ -1295,10 +1301,10 @@ class PersonForm(tk.Frame):
             return True
 
         if page_name == "profile":
-            self.ensure_family_context(draw_graph=False)
-            self.update_can_give_birth_control()
-            self.update_does_not_have_children_control()
-            self.update_famous_connections()
+            # The top-level profile intentionally contains only the selected
+            # record. Family-wide scans wait until Family Tree is requested.
+            self.update_birth_date_display()
+            self.update_death_overview()
 
         if page_name == "family_tree":
             self.ensure_family_context(draw_graph=True)
@@ -1446,7 +1452,7 @@ class PersonForm(tk.Frame):
         )
 
     def refresh_books_and_ledger(self):
-        if not hasattr(self, "books") or not hasattr(self, "ledger"):
+        if not hasattr(self, "books") and not hasattr(self, "ledger"):
             return
 
         if self.variables["non_magical"].get():
@@ -1463,26 +1469,28 @@ class PersonForm(tk.Frame):
             self.variables["birth_day"].get(),
             school_attended=school_attended,
         )
-        self.books.set_person(self.current_record_id)
-        self.books.set_development_records(
-            plan.get("school_years", []),
-            plan.get("adult_years", []),
-            academic_start_year,
-            school_attended=school_attended,
-        )
-        self.ledger.set_context(
-            plan.get("ledger_entries", []),
-            development_year_pages(
-                plan,
+        if hasattr(self, "books"):
+            self.books.set_person(self.current_record_id)
+            self.books.set_development_records(
+                plan.get("school_years", []),
+                plan.get("adult_years", []),
                 academic_start_year,
-                self.variables["birth_year"].get(),
-                self.variables["birth_month"].get(),
-                self.variables["birth_day"].get(),
                 school_attended=school_attended,
-            ),
-            academic_start_year,
-            self.current_record_id,
-        )
+            )
+        if hasattr(self, "ledger"):
+            self.ledger.set_context(
+                plan.get("ledger_entries", []),
+                development_year_pages(
+                    plan,
+                    academic_start_year,
+                    self.variables["birth_year"].get(),
+                    self.variables["birth_month"].get(),
+                    self.variables["birth_day"].get(),
+                    school_attended=school_attended,
+                ),
+                academic_start_year,
+                self.current_record_id,
+            )
 
     def open_name_details(self):
         NameDetailsDialog(
@@ -1974,20 +1982,6 @@ class PersonForm(tk.Frame):
             if isinstance(name_details, dict)
             else {"entries": []}
         )
-        imported_fields = person_values.get("imported_fields", {})
-        imported_count = (
-            len(imported_fields)
-            if isinstance(imported_fields, dict)
-            else 0
-        )
-        self.imported_count_value.set(
-            (
-                f"{imported_count} original Formidable fields are preserved with this record. "
-                "Additional sections can expose them as Mage Maker develops."
-            )
-            if imported_count
-            else ""
-        )
         self.famous_connections.set_connections([])
         can_give_birth_control = self.boolean_widgets.get(
             "can_give_birth"
@@ -2292,14 +2286,18 @@ class PersonForm(tk.Frame):
                 self.linked_events_snapshot
             )
 
-        current_person = next(
-            (
-                person
-                for person in self.people_provider()
-                if str(person.get("record_id", "") or "")
-                == str(self.current_record_id or "")
-            ),
-            None,
+        current_person = (
+            self.person_record_provider(self.current_record_id)
+            if callable(self.person_record_provider)
+            else next(
+                (
+                    person
+                    for person in self.people_provider()
+                    if str(person.get("record_id", "") or "")
+                    == str(self.current_record_id or "")
+                ),
+                None,
+            )
         )
 
         if current_person is not None:

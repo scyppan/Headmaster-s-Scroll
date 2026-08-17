@@ -20,6 +20,7 @@ from theme import (
 
 
 CATALOG_COLLECTIONS = (
+    ("Raw Material", "raw_materials"),
     ("Preparation", "preparations"),
     ("Potion", "potions"),
     ("Food/Drink", "foods_and_drinks"),
@@ -27,16 +28,18 @@ CATALOG_COLLECTIONS = (
 )
 
 CATALOG_TYPE_ORDER = {
-    "Plant Part": 0,
-    "Creature Part": 1,
-    "Preparation": 2,
-    "Potion": 3,
-    "Food/Drink": 4,
-    "General Item": 5,
+    "Raw Material": 0,
+    "Plant Part": 1,
+    "Creature Part": 2,
+    "Preparation": 3,
+    "Potion": 4,
+    "Food/Drink": 5,
+    "General Item": 6,
 }
 
 INGREDIENT_FILTERS = (
     ("All Ingredients", None, 112),
+    ("Raw Materials", "Raw Material", 104),
     ("Creature Parts", "Creature Part", 112),
     ("Plant Parts", "Plant Part", 94),
     ("Food/Drink", "Food/Drink", 92),
@@ -107,10 +110,16 @@ class IngredientCatalog:
                 continue
 
             for record in self.database.get_collection(collection_name):
+                display_type = (
+                    "Raw Material"
+                    if collection_name == "general_items"
+                    and str(record.get("type", "")) == "Raw Material"
+                    else ingredient_type
+                )
                 self.add_entry(
                     record.get("name", ""),
-                    ingredient_type,
-                    ingredient_type,
+                    display_type,
+                    display_type,
                 )
 
         for collection_name in ("potions", "preparations"):

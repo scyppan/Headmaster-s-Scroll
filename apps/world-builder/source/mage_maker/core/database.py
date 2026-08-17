@@ -2,6 +2,7 @@ import json
 import os
 import shutil
 import uuid
+from collections import OrderedDict
 from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
@@ -136,10 +137,18 @@ class JsonDatabase:
         )
         self.preferences = self.load_preferences()
         self.record_indexes = {}
+        self.person_reference_index = {}
+        self.event_person_reference_index = {}
+        self.record_cache = OrderedDict()
+        self.record_cache_limit = 96
         self.index_dirty = False
+        self.fully_loaded = False
         self.change_subscribers = []
         if shared_directory and self.database_path.resolve() == (Path(shared_directory) / "world.json").resolve():
-            self.shared_store = SharedJsonStore()
+            # Honor the configured directory in the store itself.  Merely
+            # using it for the equality check allowed custom/test data paths
+            # to fall back to the project's canonical directory on save.
+            self.shared_store = SharedJsonStore(Path(shared_directory))
 
     def load_preferences(self):
         try:
@@ -199,6 +208,8 @@ class JsonDatabase:
         collections_added = self.ensure_application_collections(loaded_data)
         self.validate_database(loaded_data)
         self.data = loaded_data
+        self.fully_loaded = True
+        self.record_cache.clear()
         self.dirty = migrated or collections_added
         self.revision += 1
         self.rebuild_record_indexes()
@@ -207,8 +218,62 @@ class JsonDatabase:
         elif not cached_index_is_current:
             self.index_dirty = True
 
+    def load_index_only(self):
+        """Open the disposable read index without decoding ``world.json``.
+
+        This mode is deliberately read-only.  It lets the shell, People list,
+        and one selected basic profile become interactive while a complete
+        editable database loads on a worker thread.
+        """
+        if not self.world_index.load():
+            return False
+        payload = self.world_index.payload
+        self.data = {
+            "_database": {
+                "schema_version": payload.get("schema_version"),
+            },
+            "_headmasters_scroll": {
+                "revision_id": payload.get("revision_id", ""),
+            },
+            "_application_settings": deepcopy(
+                payload.get("application_settings", {})
+            ),
+        }
+        for collection_name in payload.get("counts", {}):
+            self.data.setdefault(collection_name, [])
+        self.shared_session = None
+        self.record_indexes = {}
+        self.record_cache.clear()
+        self.dirty = False
+        self.index_dirty = False
+        self.fully_loaded = False
+        self.revision += 1
+        return True
+
+    def adopt_loaded_database(self, loaded_database):
+        """Adopt a worker-loaded database while retaining subscribers."""
+        next_revision = self.revision + 1
+        self.data = loaded_database.data
+        self.shared_store = loaded_database.shared_store
+        self.shared_session = loaded_database.shared_session
+        self.world_index = loaded_database.world_index
+        self.record_indexes = loaded_database.record_indexes
+        self.person_reference_index = (
+            loaded_database.person_reference_index
+        )
+        self.event_person_reference_index = (
+            loaded_database.event_person_reference_index
+        )
+        self.index_dirty = loaded_database.index_dirty
+        self.dirty = loaded_database.dirty
+        self.fully_loaded = True
+        self.record_cache.clear()
+        self.revision = next_revision
+
     def rebuild_record_indexes(self):
         indexes = {}
+        person_references = {}
+        event_person_references = {}
         for collection_name, records in self.data.items():
             if not isinstance(records, list):
                 continue
@@ -224,13 +289,62 @@ class JsonDatabase:
                 ).strip()
                 if record_id:
                     collection_index[record_id] = record
+                    if collection_name == "people":
+                        referenced_ids = {
+                            str(record.get("biological_mother_id", "") or "").strip(),
+                            str(record.get("biological_father_id", "") or "").strip(),
+                            *(
+                                str(value or "").strip()
+                                for value in record.get("mate_ids", []) or []
+                            ),
+                            *(
+                                str(relationship.get("person_id", "") or "").strip()
+                                for relationship in record.get(
+                                    "spouse_relationships", []
+                                ) or []
+                                if isinstance(relationship, dict)
+                            ),
+                        }
+                        referenced_ids.discard("")
+                        for referenced_id in referenced_ids:
+                            person_references.setdefault(
+                                referenced_id, set()
+                            ).add(record_id)
+                    elif collection_name == "events":
+                        for person_id in event_linked_person_ids(record):
+                            event_person_references.setdefault(
+                                person_id, set()
+                            ).add(record_id)
             indexes[collection_name] = collection_index
         self.record_indexes = indexes
+        self.person_reference_index = person_references
+        self.event_person_reference_index = event_person_references
+        self.record_cache.clear()
         return indexes
 
     def rebuild_world_index(self):
         try:
-            locations = scan_record_locations(self.database_path)
+            record_ids_by_collection = {
+                collection_name: [
+                    (
+                        str(
+                            record.get("record_id")
+                            or record.get("event_id")
+                            or record.get("reading_id")
+                            or ""
+                        ).strip()
+                        if isinstance(record, dict)
+                        else ""
+                    )
+                    for record in records
+                ]
+                for collection_name, records in self.data.items()
+                if isinstance(records, list)
+            }
+            locations = scan_record_locations(
+                self.database_path,
+                record_ids_by_collection,
+            )
             self.world_index.build(self.data, locations)
             self.world_index.write()
             self.index_dirty = False
@@ -305,6 +419,20 @@ class JsonDatabase:
         return summaries[start : start + max(1, int(page_size or 100))]
 
     def get_record(self, collection_name, record_id):
+        normalized_id = str(record_id or "")
+        cache_key = (str(collection_name or ""), normalized_id)
+        cached = self.record_cache.get(cache_key)
+        if cached is not None:
+            self.record_cache.move_to_end(cache_key)
+            return deepcopy(cached)
+        # Once canonical data is loaded, its in-memory record is newer than
+        # byte ranges taken from the last saved file (notably after a migration
+        # or an unsaved edit).  Indexed byte reads are for index-first mode.
+        if self.fully_loaded:
+            record = self.record_indexes.get(collection_name, {}).get(
+                normalized_id
+            )
+            return deepcopy(record) if record is not None else None
         if not self.index_dirty and self.world_index.is_current():
             indexed = read_indexed_record(
                 self.database_path,
@@ -313,11 +441,12 @@ class JsonDatabase:
                 record_id,
             )
             if indexed is not None:
-                return indexed
-        record = self.record_indexes.get(collection_name, {}).get(
-            str(record_id or "")
-        )
-        return deepcopy(record) if record is not None else None
+                self.record_cache[cache_key] = indexed
+                self.record_cache.move_to_end(cache_key)
+                while len(self.record_cache) > self.record_cache_limit:
+                    self.record_cache.popitem(last=False)
+                return deepcopy(indexed)
+        return None
 
     def get_linked_records(self, collection_name, record_id, relationship):
         if collection_name != "events":
@@ -377,6 +506,13 @@ class JsonDatabase:
         return saved
 
     def linked_event_ids(self, relationship, record_id):
+        if self.fully_loaded and str(relationship or "") == "people":
+            return tuple(
+                self.event_person_reference_index.get(
+                    str(record_id or "").strip(),
+                    (),
+                )
+            )
         return self.world_index.linked_event_ids(relationship, record_id)
 
     def subscribe(self, callback):
@@ -2939,13 +3075,14 @@ class JsonDatabase:
                 )
 
     def list_people(self):
+        if not self.fully_loaded:
+            raise RuntimeError(
+                "World data is still loading; use indexed People summaries."
+            )
         return deepcopy(self.data["people"])
 
     def read_person(self, record_id):
-        person = self.record_indexes.get("people", {}).get(
-            str(record_id or "")
-        )
-        return deepcopy(person) if person is not None else None
+        return self.get_record("people", record_id)
 
     def create_person(self, values):
         if not isinstance(values, dict):
@@ -3187,6 +3324,361 @@ class JsonDatabase:
                 )
 
     def delete_person(self, record_id):
+        """Delete one person without reconciling the entire world.
+
+        Large worlds made the original implementation disproportionately
+        expensive: it normalized every other person and then performed global
+        birth and death synchronizations.  The reverse indexes built at load
+        time let deletion repair only records that actually reference this
+        person.
+        """
+        normalized_id = str(record_id or "").strip()
+        deleted_person = self.record_indexes.get("people", {}).get(
+            normalized_id
+        )
+        if deleted_person is None:
+            raise KeyError(f"Unknown person record_id: {record_id}")
+
+        deleted_person_name = str(
+            deleted_person.get("displayed_name", "") or "Unnamed person"
+        ).strip()
+        related_person_ids = set(
+            self.person_reference_index.get(normalized_id, ())
+        )
+        # Include relationships edited since the most recent complete index
+        # rebuild. This is one inexpensive linear pass, not the former
+        # people-by-events global reconciliation.
+        for candidate in self.data.get("people", []):
+            if not isinstance(candidate, dict):
+                continue
+            candidate_id = str(candidate.get("record_id", "") or "").strip()
+            if not candidate_id or candidate_id == normalized_id:
+                continue
+            candidate_references = {
+                str(candidate.get("biological_mother_id", "") or "").strip(),
+                str(candidate.get("biological_father_id", "") or "").strip(),
+                *(
+                    str(value or "").strip()
+                    for value in candidate.get("mate_ids", []) or []
+                ),
+                *(
+                    str(relationship.get("person_id", "") or "").strip()
+                    for relationship in candidate.get(
+                        "spouse_relationships", []
+                    )
+                    or []
+                    if isinstance(relationship, dict)
+                ),
+            }
+            if normalized_id in candidate_references:
+                related_person_ids.add(candidate_id)
+        related_people = self.record_indexes.get("people", {})
+        self.data["people"] = [
+            person
+            for person in self.data.get("people", [])
+            if person.get("record_id") != normalized_id
+        ]
+
+        for related_id in related_person_ids:
+            related_person = related_people.get(related_id)
+            if not isinstance(related_person, dict):
+                continue
+            if related_person.get("biological_mother_id") == normalized_id:
+                related_person["biological_mother_id"] = ""
+                related_person["biological_mother_status"] = "unknown"
+            if related_person.get("biological_father_id") == normalized_id:
+                related_person["biological_father_id"] = ""
+                related_person["biological_father_status"] = "unknown"
+            related_person["mate_ids"] = [
+                mate_id
+                for mate_id in related_person.get("mate_ids", [])
+                if mate_id != normalized_id
+            ]
+            related_person["spouse_relationships"] = [
+                relationship
+                for relationship in normalize_spouse_relationships(
+                    related_person.get("spouse_relationships", [])
+                )
+                if relationship["person_id"] != normalized_id
+            ]
+
+        affected_event_ids = set(
+            self.event_person_reference_index.get(normalized_id, ())
+        )
+        for candidate in self.data.get("events", []):
+            if (
+                isinstance(candidate, dict)
+                and normalized_id in event_linked_person_ids(candidate)
+            ):
+                candidate_id = str(
+                    candidate.get("record_id")
+                    or candidate.get("event_id")
+                    or ""
+                ).strip()
+                if candidate_id:
+                    affected_event_ids.add(candidate_id)
+        event_index = self.record_indexes.get("events", {})
+        removed_event_ids = set()
+        affected_death_people = set()
+
+        for event_id in affected_event_ids:
+            event = event_index.get(event_id)
+            if not isinstance(event, dict):
+                continue
+            affected_death_people.update(event_linked_person_ids(event))
+            event_type = str(event.get("event_type", "") or "")
+            perpetrator_ids = [
+                value
+                for value in event.get("perpetrator_person_ids", [])
+                if value != normalized_id
+            ]
+            victim_ids = [
+                value
+                for value in event.get("victim_person_ids", [])
+                if value != normalized_id
+            ]
+            witness_ids = [
+                value
+                for value in event.get("witness_person_ids", [])
+                if value != normalized_id
+            ]
+            affected_ids = [
+                value
+                for value in event.get("affected_person_ids", [])
+                if value != normalized_id
+            ]
+
+            if event_type == BIRTH_EVENT_TYPE:
+                baby_ids = [
+                    value
+                    for value in event.get("baby_person_ids", [])
+                    if value != normalized_id
+                ]
+                if not baby_ids:
+                    removed_event_ids.add(event_id)
+                    continue
+                birthing_parent_ids = [
+                    value
+                    for value in event.get("birthing_parent_person_ids", [])
+                    if value != normalized_id
+                ]
+                non_birthing_parent_ids = [
+                    value
+                    for value in event.get(
+                        "non_birthing_parent_person_ids", []
+                    )
+                    if value != normalized_id
+                ]
+                event["baby_person_ids"] = baby_ids
+                event["birthing_parent_person_ids"] = birthing_parent_ids
+                event["non_birthing_parent_person_ids"] = (
+                    non_birthing_parent_ids
+                )
+                event["person_ids"] = list(
+                    dict.fromkeys(
+                        [
+                            *baby_ids,
+                            *birthing_parent_ids,
+                            *non_birthing_parent_ids,
+                        ]
+                    )
+                )
+                event["eminence_person_ids"] = []
+                event["eminence_skills"] = {}
+            elif event_type == "murder":
+                if not perpetrator_ids or not victim_ids:
+                    removed_event_ids.add(event_id)
+                    continue
+                event["perpetrator_person_ids"] = perpetrator_ids
+                event["victim_person_ids"] = victim_ids
+                event["witness_person_ids"] = witness_ids
+                event["affected_person_ids"] = affected_ids
+                event["person_ids"] = list(
+                    dict.fromkeys(
+                        [
+                            *perpetrator_ids,
+                            *victim_ids,
+                            *witness_ids,
+                            *affected_ids,
+                        ]
+                    )
+                )
+            else:
+                event["person_ids"] = [
+                    value
+                    for value in event.get("person_ids", [])
+                    if value != normalized_id
+                ]
+                if event_type in {"died", GHOST_EVENT_TYPE} and not event[
+                    "person_ids"
+                ]:
+                    removed_event_ids.add(event_id)
+                    continue
+
+            if "witness_person_ids" in event:
+                event["witness_person_ids"] = witness_ids
+            if "affected_person_ids" in event:
+                event["affected_person_ids"] = affected_ids
+            event["eminence_person_ids"] = [
+                value
+                for value in event.get("eminence_person_ids", [])
+                if value != normalized_id
+            ]
+            event["eminence_skills"] = {
+                person_id: skill
+                for person_id, skill in (
+                    event.get("eminence_skills", {})
+                    if isinstance(event.get("eminence_skills", {}), dict)
+                    else {}
+                ).items()
+                if person_id != normalized_id
+            }
+            item_new_owners = dict(event.get("item_new_owners", {}) or {})
+            for item_id, owner in item_new_owners.items():
+                if (
+                    isinstance(owner, dict)
+                    and owner.get("person_id") == normalized_id
+                ):
+                    item_new_owners[item_id] = {
+                        "person_id": "",
+                        "person_name": owner.get("person_name")
+                        or deleted_person_name,
+                    }
+            event["item_new_owners"] = item_new_owners
+
+        if removed_event_ids:
+            self.data["events"] = [
+                event
+                for event in self.data.get("events", [])
+                if str(
+                    event.get("record_id")
+                    or event.get("event_id")
+                    or ""
+                ).strip()
+                not in removed_event_ids
+            ]
+
+        affected_death_people.discard(normalized_id)
+        if affected_death_people:
+            synchronize_people_death_records(
+                self.data,
+                tuple(affected_death_people),
+            )
+
+        # These collections are small compared with People and Events, but can
+        # contain legacy embedded person references that are not represented
+        # in the event reverse index.
+        for organization in self.data.get("organizations", []):
+            if not isinstance(organization, dict):
+                continue
+            organization["events"] = normalize_organization_events(
+                [
+                    {
+                        **organization_event,
+                        "person_ids": [
+                            value
+                            for value in organization_event.get(
+                                "person_ids", []
+                            )
+                            if value != normalized_id
+                        ],
+                        "eminence_person_ids": [
+                            value
+                            for value in organization_event.get(
+                                "eminence_person_ids", []
+                            )
+                            if value != normalized_id
+                        ],
+                        "eminence_skills": {
+                            person_id: skill
+                            for person_id, skill in (
+                                organization_event.get(
+                                    "eminence_skills", {}
+                                )
+                                if isinstance(
+                                    organization_event.get(
+                                        "eminence_skills", {}
+                                    ),
+                                    dict,
+                                )
+                                else {}
+                            ).items()
+                            if person_id != normalized_id
+                        },
+                    }
+                    for organization_event in normalize_organization_events(
+                        organization.get("events", [])
+                    )
+                ]
+            )
+            for organization_event in organization["events"]:
+                owners = dict(
+                    organization_event.get("item_new_owners", {}) or {}
+                )
+                for item_id, owner in owners.items():
+                    if (
+                        isinstance(owner, dict)
+                        and owner.get("person_id") == normalized_id
+                    ):
+                        owners[item_id] = {
+                            "person_id": "",
+                            "person_name": owner.get("person_name")
+                            or deleted_person_name,
+                        }
+                organization_event["item_new_owners"] = owners
+
+        repaired_items = []
+        for stored_item in self.data.get("items", []):
+            item = normalize_item_record(stored_item)
+            for passage in item["passage_history"]:
+                if passage["person_id"] == normalized_id:
+                    passage["person_id"] = ""
+                    passage["person_name"] = (
+                        passage["person_name"] or deleted_person_name
+                    )
+            repaired_items.append(normalize_item_record(item))
+        self.data["items"] = repaired_items
+
+        repaired_books = []
+        for stored_book in self.data.get("books", []):
+            book = normalize_book_record(stored_book)
+            if book["author_person_id"] == normalized_id:
+                book["author_person_id"] = ""
+                book["author_name"] = book["author_name"] or deleted_person_name
+            for holding in book["holdings"]:
+                if (
+                    holding["holder_type"] == "Private owner"
+                    and holding["person_id"] == normalized_id
+                ):
+                    holding["person_id"] = ""
+                    holding["holder_name"] = (
+                        holding["holder_name"] or deleted_person_name
+                    )
+            repaired_books.append(normalize_book_record(book))
+        self.data["books"] = repaired_books
+        self.data["book_readings"] = [
+            normalize_book_reading(
+                {
+                    **reading,
+                    "source_person_id": (
+                        ""
+                        if reading.get("source_person_id") == normalized_id
+                        else reading.get("source_person_id", "")
+                    ),
+                }
+            )
+            for reading in self.data.get("book_readings", [])
+            if reading.get("person_id") != normalized_id
+        ]
+
+        self.dirty = True
+        self.revision += 1
+        self.rebuild_record_indexes()
+        self.index_dirty = True
+        self.notify_changed("people", (normalized_id,))
+        return deepcopy(deleted_person)
+
+    def _delete_person_legacy(self, record_id):
         for index, person in enumerate(self.data["people"]):
             if person.get("record_id") != record_id:
                 continue
@@ -3562,6 +4054,10 @@ class JsonDatabase:
         ):
             raise KeyError(f"Unknown application collection: {collection_name}")
 
+        if not self.fully_loaded:
+            raise RuntimeError(
+                f"World data is still loading; use indexed {collection_name} summaries."
+            )
         return deepcopy(self.data[collection_name])
 
     def read_record(self, collection_name, record_id):
@@ -3581,10 +4077,7 @@ class JsonDatabase:
                 f"Unknown application collection: {collection_name}"
             )
 
-        record = self.record_indexes.get(collection_name, {}).get(
-            str(record_id or "")
-        )
-        return deepcopy(record) if record is not None else None
+        return self.get_record(collection_name, record_id)
 
     def create_record(self, collection_name, values):
         if not isinstance(values, dict):
@@ -3607,6 +4100,12 @@ class JsonDatabase:
         self.record_indexes.setdefault(collection_name, {})[
             record["record_id"]
         ] = record
+        if collection_name == "events":
+            for person_id in event_linked_person_ids(record):
+                self.event_person_reference_index.setdefault(
+                    person_id,
+                    set(),
+                ).add(record["record_id"])
         self.index_dirty = True
         self.notify_changed(collection_name, (record["record_id"],))
         return deepcopy(record)
@@ -3622,8 +4121,31 @@ class JsonDatabase:
             if record.get("record_id") != record_id:
                 continue
 
+            previous_person_ids = (
+                set(event_linked_person_ids(record))
+                if collection_name == "events"
+                else set()
+            )
             record.update(deepcopy(values))
             record["last_updated"] = datetime.now(timezone.utc).isoformat()
+            if collection_name == "events":
+                current_person_ids = set(event_linked_person_ids(record))
+                for person_id in previous_person_ids - current_person_ids:
+                    references = self.event_person_reference_index.get(
+                        person_id
+                    )
+                    if references is not None:
+                        references.discard(record_id)
+                        if not references:
+                            self.event_person_reference_index.pop(
+                                person_id,
+                                None,
+                            )
+                for person_id in current_person_ids:
+                    self.event_person_reference_index.setdefault(
+                        person_id,
+                        set(),
+                    ).add(record_id)
             self.dirty = True
             self.revision += 1
             self.index_dirty = True
@@ -3638,6 +4160,18 @@ class JsonDatabase:
                 continue
 
             deleted_record = self.data[collection_name].pop(index)
+            if collection_name == "events":
+                for person_id in event_linked_person_ids(deleted_record):
+                    references = self.event_person_reference_index.get(
+                        person_id
+                    )
+                    if references is not None:
+                        references.discard(record_id)
+                        if not references:
+                            self.event_person_reference_index.pop(
+                                person_id,
+                                None,
+                            )
             self.dirty = True
             self.revision += 1
             self.record_indexes.get(collection_name, {}).pop(
@@ -3775,7 +4309,10 @@ class JsonDatabase:
                 continue
 
     def save(self):
-        self.validate_database(self.data)
+        if not self.fully_loaded:
+            raise RuntimeError(
+                "World data is still loading and cannot be saved yet."
+            )
         if self.shared_store and self.shared_session:
             self.data["_database"]["last_saved"] = datetime.now(
                 timezone.utc
@@ -3792,6 +4329,7 @@ class JsonDatabase:
             self.rebuild_record_indexes()
             self.rebuild_world_index()
             return
+        self.validate_database(self.data)
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
 
         if self.database_path.exists():

@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from unittest.mock import patch
 
 from headmasters_scroll.campaigns import CampaignRepository
 from headmasters_scroll.game_board.service import GameBoardService, iso_utc, utc_now
@@ -150,6 +151,57 @@ class GameBoardServiceTests(unittest.TestCase):
         self.assertEqual(person_state["consumed_inventory"], {"leaves": 2})
         self.assertNotIn("cauldron", person_state["consumed_inventory"])
         self.assertEqual(result["required_vessel"]["name"], "Cauldron")
+
+    def test_flyable_mount_requires_flying_roll_and_failure_preserves_flight(self):
+        session = {
+            "id": "session", "campaign_id": self.campaign_id,
+            "roster": [{
+                "contact_id": self.alice["id"], "character_id": "person-1",
+            }],
+        }
+        sheet = {
+            "character_name": "Alice",
+            "inventory": [{
+                "record_id": "broom", "name": "Training Broom",
+                "equipment_slot_type": "flyable", "flight_threshold": 9,
+            }],
+        }
+        self.service._active = lambda *_args: ({}, session)
+        self.service.character_sheet_for = lambda *_args: sheet
+
+        with patch(
+            "headmasters_scroll.game_board.service.perform_character_roll",
+            return_value={"dice": [7], "total": 11, "components": []},
+        ):
+            result = self.service.update_character_equipment(
+                "session", self.alice["id"], "flyable", "broom"
+            )
+        self.assertEqual(result["status"], "equipped")
+        self.assertTrue(result["airborne"])
+        person = self.service.campaign_repository.get(
+            self.campaign_id
+        )["game_state"]["people"]["person-1"]
+        self.assertEqual(person["equipment"]["flyable"], "broom")
+        self.assertTrue(person["airborne"])
+
+        sheet["inventory"][0].update({
+            "record_id": "carpet", "name": "Difficult Carpet",
+            "flight_threshold": 30,
+        })
+        with patch(
+            "headmasters_scroll.game_board.service.perform_character_roll",
+            return_value={"dice": [4], "total": 8, "components": []},
+        ):
+            failed = self.service.update_character_equipment(
+                "session", self.alice["id"], "flyable", "carpet"
+            )
+        self.assertEqual(failed["status"], "failed")
+        self.assertTrue(failed["airborne"])
+        person = self.service.campaign_repository.get(
+            self.campaign_id
+        )["game_state"]["people"]["person-1"]
+        self.assertEqual(person["equipment"]["flyable"], "broom")
+        self.assertTrue(person["airborne"])
 
     def test_character_link_becomes_the_player_identity_everywhere(self):
         character = self.service.list_characters()[0]

@@ -69,6 +69,15 @@ class CatalogEnrichmentTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Flying threshold"):
             validate_catalog(enriched)
 
+    def test_catalog_tags_are_optional_but_supplied_ids_still_validate(self):
+        enriched, _audit = enrich_catalog(self.document())
+        enriched["spells"][0]["tags"] = []
+        enriched["spells"][0]["tag_ids"] = []
+        validate_catalog(enriched)
+        enriched["spells"][0]["tag_ids"] = ["missing-tag"]
+        with self.assertRaisesRegex(ValueError, "unknown tag"):
+            validate_catalog(enriched)
+
 
 if __name__ == "__main__":
     unittest.main()

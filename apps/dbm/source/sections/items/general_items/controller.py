@@ -4,6 +4,7 @@ from sections.items.general_items.constants import (
     GENERAL_ITEM_TYPES_BY_NORMALIZED_NAME,
 )
 from shared.item_assets import normalize_item_image_reference
+from shared.item_actions import normalize_item_actions, validate_item_actions
 from shared.bonus_records import (
     normalize_bonus_record_values,
     validate_bonus_record_values,
@@ -25,16 +26,6 @@ class GeneralItemController:
     def get_record(self, record_id):
         return self.database.read(self.collection_name, record_id)
 
-    def extraction_methods(self):
-        return [
-            {
-                "record_id": str(record.get("record_id", "")),
-                "name": str(record.get("name", "") or ""),
-            }
-            for record in self.database.get_collection("gathering_methods")
-            if record.get("record_id") and record.get("name")
-        ]
-
     def create_record(self, record_values):
         normalized_values = self.normalize_record_values(record_values)
         self.validate_record_values(normalized_values)
@@ -47,7 +38,15 @@ class GeneralItemController:
             self.collection_name,
             normalized_values,
         )
-        self.database.save()
+        try:
+            self.database.save()
+        except Exception:
+            # A shared-file conflict, transient Windows lock, or failed atomic
+            # replacement must not leave a record that only exists in memory.
+            # Reloading also refreshes the shared-data base revision so the
+            # unchanged form can be saved again immediately.
+            self.database.discard_unsaved_changes()
+            raise
 
         return created_record
 
@@ -75,7 +74,11 @@ class GeneralItemController:
             record_id,
             normalized_values,
         )
-        self.database.save()
+        try:
+            self.database.save()
+        except Exception:
+            self.database.discard_unsaved_changes()
+            raise
 
         return updated_record
 
@@ -84,12 +87,26 @@ class GeneralItemController:
             self.collection_name,
             record_id,
         )
-        self.database.save()
+        try:
+            self.database.save()
+        except Exception:
+            self.database.discard_unsaved_changes()
+            raise
 
         return deleted_record
 
     def normalize_record_values(self, record_values):
         normalized_values = normalize_bonus_record_values(record_values)
+        normalized_values.pop("extraction_method_id", None)
+        normalized_values.setdefault("base_knuts", 0)
+        normalized_values.setdefault("actions", [])
+        normalized_values.setdefault("activation_mode", "passive")
+        normalized_values.setdefault("equipment_slot_type", "")
+        normalized_values["tags"] = [
+            " ".join(str(tag).split())
+            for tag in normalized_values.get("tags", []) or []
+            if str(tag).strip()
+        ]
 
         if "name" in normalized_values:
             normalized_values["name"] = " ".join(
@@ -112,13 +129,9 @@ class GeneralItemController:
                 normalized_values.get("image_asset")
             )
 
-        if "extraction_method_id" in normalized_values:
-            method_id = str(
-                normalized_values.get("extraction_method_id", "") or ""
-            ).strip()
-            normalized_values["extraction_method_id"] = method_id
-            normalized_values["gathering_method_ids"] = (
-                [method_id] if method_id else []
+        if "actions" in normalized_values:
+            normalized_values["actions"] = normalize_item_actions(
+                normalized_values.get("actions")
             )
 
         if "flight_threshold" in normalized_values:
@@ -127,9 +140,28 @@ class GeneralItemController:
                 int(raw_threshold) if str(raw_threshold).strip() else None
             )
 
+        if "base_knuts" in normalized_values:
+            raw_base_knuts = normalized_values.get("base_knuts", "")
+            try:
+                normalized_values["base_knuts"] = int(raw_base_knuts)
+            except (TypeError, ValueError) as error:
+                raise ValueError("Base Knuts must be a whole number.") from error
+
         if normalized_values.get("type") in {"Broom", "Flyable"}:
             normalized_values["activation_mode"] = "equipped"
             normalized_values["equipment_slot_type"] = "flyable"
+
+        if normalized_values.get("type") == "Raw Material":
+            method_id = str(
+                normalized_values.get("searching_method_id", "") or ""
+            ).strip()
+            normalized_values["searching_method_id"] = method_id
+            normalized_values["gathering_method_ids"] = (
+                [method_id] if method_id else []
+            )
+        else:
+            normalized_values.pop("searching_method_id", None)
+            normalized_values.pop("gathering_method_ids", None)
 
         return normalized_values
 
@@ -140,24 +172,11 @@ class GeneralItemController:
         if record_values.get("type", "") not in GENERAL_ITEM_TYPES:
             raise ValueError("A general item must use a defined type.")
 
-        extraction_method_id = str(
-            record_values.get("extraction_method_id", "") or ""
-        ).strip()
-        if record_values.get("type") == "Alchemical":
-            if not extraction_method_id:
-                raise ValueError(
-                    "An alchemical item must select an extraction method."
-                )
-            known_method_ids = {
-                str(record.get("record_id", ""))
-                for record in self.database.get_collection(
-                    "gathering_methods"
-                )
-            }
-            if extraction_method_id not in known_method_ids:
-                raise ValueError(
-                    "The selected extraction method no longer exists."
-                )
+        base_knuts = record_values.get("base_knuts", 0)
+        if not isinstance(base_knuts, int) or isinstance(base_knuts, bool):
+            raise ValueError("Base Knuts must be a whole number.")
+        if base_knuts < 0:
+            raise ValueError("Base Knuts cannot be negative.")
 
         if record_values.get("type") in {"Broom", "Flyable"}:
             try:
@@ -171,7 +190,25 @@ class GeneralItemController:
                     "A flyable item's Flying threshold must be between 1 and 100."
                 )
 
+        if record_values.get("type") == "Raw Material":
+            method_id = str(
+                record_values.get("searching_method_id", "") or ""
+            ).strip()
+            if not method_id:
+                raise ValueError("A Raw Material must select a Searching Method.")
+            valid_method_ids = {
+                str(record.get("record_id", ""))
+                for record in self.database.get_collection("gathering_methods")
+                if isinstance(record, dict)
+            }
+            if method_id not in valid_method_ids:
+                raise ValueError("The selected Searching Method no longer exists.")
+
         validate_bonus_record_values(record_values)
+        validate_item_actions(record_values.get("actions", []), self.database)
+        tags = record_values.get("tags", [])
+        if not isinstance(tags, list) or any(not isinstance(tag, str) for tag in tags):
+            raise ValueError("General item tags must be a list of text values.")
 
     def record_sort_key(self, record):
         return (

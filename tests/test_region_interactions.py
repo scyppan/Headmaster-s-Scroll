@@ -183,7 +183,7 @@ class RegionInteractionTests(unittest.TestCase):
             ["bat-entry", "mint-entry"],
         )
 
-    def test_alchemical_loot_is_filtered_by_selected_extraction_method(self):
+    def test_raw_material_loot_is_filtered_by_selected_searching_method(self):
         database = {
             "gathering_methods": [
                 {"record_id": "prospect", "name": "Prospect"},
@@ -192,11 +192,13 @@ class RegionInteractionTests(unittest.TestCase):
             "general_items": [
                 {
                     "record_id": "quartz", "name": "Quartz",
-                    "type": "Alchemical", "extraction_method_id": "prospect",
+                    "type": "Raw Material",
+                    "searching_method_id": "prospect",
                 },
                 {
                     "record_id": "pearl", "name": "Pearl",
-                    "type": "Alchemical", "extraction_method_id": "dive",
+                    "type": "Raw Material",
+                    "searching_method_id": "dive",
                 },
                 {
                     "record_id": "rope", "name": "Rope",
@@ -256,17 +258,17 @@ class RegionInteractionTests(unittest.TestCase):
             ["rope-entry"],
         )
 
-    def test_gathering_validation_rejects_unknown_extraction_method(self):
+    def test_gathering_validation_rejects_unknown_searching_method(self):
         database = {
             "_database": {"schema_version": 4},
             "gathering_methods": [{"record_id": "search", "name": "Search"}],
             "general_items": [{
-                "record_id": "quartz", "name": "Quartz", "type": "Alchemical",
-                "extraction_method_id": "missing",
+                "record_id": "quartz", "name": "Quartz", "type": "Raw Material",
+                "searching_method_id": "missing",
             }],
             "creatures": [], "plants": [],
         }
-        with self.assertRaisesRegex(ValueError, "unknown extraction method"):
+        with self.assertRaisesRegex(ValueError, "unknown Searching Method"):
             validate_gathering_database(database)
 
     def test_campaign_interaction_ledgers_normalize(self):

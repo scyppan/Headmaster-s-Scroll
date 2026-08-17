@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import messagebox
 
+from headmasters_scroll.errors import SharedDataError
 from runtime_theme import bind_theme
 from sections.items.general_items.controller import GeneralItemController
 from sections.items.general_items.record_form import GeneralItemForm
@@ -95,7 +96,7 @@ class GeneralItemsPage(tk.Frame):
         self.record_form = GeneralItemForm(
             self.form_card,
             change_command=self.mark_form_dirty,
-            extraction_methods=self.controller.extraction_methods(),
+            database=self.database,
         )
         self.record_form.grid(
             row=0,
@@ -204,14 +205,6 @@ class GeneralItemsPage(tk.Frame):
             )
             return False
 
-        if record_values["has_magical_effects"] not in ("", "Yes", "No"):
-            messagebox.showerror(
-                "Invalid magical effects value",
-                "Has Magical Effects must be Yes, No, or unspecified.",
-                parent=self,
-            )
-            return False
-
         for bonus in record_values["bonuses"]:
             if not bonus["type"]:
                 messagebox.showerror(
@@ -243,10 +236,12 @@ class GeneralItemsPage(tk.Frame):
                     self.current_record_id,
                     record_values,
                 )
-        except (TypeError, ValueError) as error:
+        except (
+            KeyError, OSError, RuntimeError, SharedDataError, TypeError, ValueError
+        ) as error:
             messagebox.showerror(
                 "Cannot save general item",
-                str(error),
+                f"{error}\n\nYour entries are still in the form. Please try Save again.",
                 parent=self,
             )
             return False

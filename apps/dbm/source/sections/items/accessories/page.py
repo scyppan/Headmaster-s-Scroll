@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import messagebox
 
+from headmasters_scroll.errors import SharedDataError
 from sections.items.accessories.controller import AccessoryController
 from sections.items.accessories.record_form import AccessoryForm
 from sections.items.accessories.record_list import AccessoryList
@@ -95,6 +96,7 @@ class AccessoriesPage(tk.Frame):
         self.record_form = AccessoryForm(
             self.form_card,
             change_command=self.mark_form_dirty,
+            database=self.database,
         )
         self.record_form.grid(
             row=0,
@@ -234,7 +236,9 @@ class AccessoriesPage(tk.Frame):
                     self.current_record_id,
                     record_values,
                 )
-        except (TypeError, ValueError) as error:
+        except (
+            KeyError, OSError, RuntimeError, SharedDataError, TypeError, ValueError
+        ) as error:
             messagebox.showerror(
                 "Cannot save accessory",
                 str(error),

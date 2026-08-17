@@ -90,9 +90,11 @@ class MageMakerApp(tk.Tk):
             pass
 
         self.database = JsonDatabase(resolved_database_path)
-        # A missing/stale disposable index must not keep the application shell
-        # from appearing.  The app starts its rebuild after the UI exists.
-        self.database.load(rebuild_index=False)
+        # A current disposable index can open the shell, People list, and one
+        # basic profile without decoding the complete canonical world first.
+        self._index_first_startup = self.database.load_index_only()
+        if not self._index_first_startup:
+            self.database.load(rebuild_index=False)
         self.game_database = GameDatabase(resolved_game_database_directory)
 
         try:
@@ -124,15 +126,16 @@ class MageMakerApp(tk.Tk):
             self.game_database,
         )
 
-        ownership_changed = (
-            self.event_controller.synchronize_item_ownership_from_events()
-        )
-        retained_events_changed = (
-            self.event_controller.synchronize_retained_item_events_for_deaths()
-        )
+        if self.database.fully_loaded:
+            ownership_changed = (
+                self.event_controller.synchronize_item_ownership_from_events()
+            )
+            retained_events_changed = (
+                self.event_controller.synchronize_retained_item_events_for_deaths()
+            )
 
-        if retained_events_changed or ownership_changed:
-            self.database.save()
+            if retained_events_changed or ownership_changed:
+                self.database.save()
 
         self.organization_controller = OrganizationController(
             self.database,
@@ -165,7 +168,12 @@ class MageMakerApp(tk.Tk):
         self._close_save_error = None
         self._close_save_thread = None
         self._cross_page_refresh_after_id = None
+        self._pending_cross_page_collections = set()
         self._world_watch_after_id = None
+        self._initial_load_thread = None
+        self._initial_load_database = None
+        self._initial_load_error = None
+        self._initial_widget_states = []
         self._external_reload_thread = None
         self._external_reload_database = None
         self._external_reload_error = None
@@ -202,15 +210,149 @@ class MageMakerApp(tk.Tk):
                     continue
 
         self.protocol("WM_DELETE_WINDOW", self.close_application)
-        if self.database.index_dirty:
+        if self._index_first_startup:
+            self.set_initial_loading_enabled(False)
+            self.set_status(
+                "Basic profiles ready; loading editable profile sections..."
+            )
+            self.after_idle(self.start_background_initial_load)
+        elif self.database.index_dirty:
             self.after_idle(self.start_background_index_rebuild)
+        else:
+            self._world_watch_after_id = self.after(
+                2000,
+                self.monitor_external_world_save,
+            )
+
+        if self.game_database.error:
+            self.set_status(self.game_database.error)
+
+    def set_initial_loading_enabled(self, enabled):
+        """Keep indexed browsing live while all mutation controls are locked."""
+        for page_name, button in self.navigation_buttons.items():
+            if page_name != "mages":
+                button.set_enabled(enabled)
+        mages_page = self.pages.get("mages")
+        if mages_page is None:
+            return
+        for button_name in (
+            "new_button",
+            "delete_button",
+            "revert_button",
+            "save_button",
+        ):
+            button = getattr(mages_page, button_name, None)
+            if button is not None:
+                button.set_enabled(enabled)
+        people_list = getattr(mages_page, "people_list", None)
+        for button_name in ("create_button", "generation_move_button"):
+            button = getattr(people_list, button_name, None)
+            if button is not None:
+                button.set_enabled(enabled)
+
+        if enabled:
+            for widget, previous_state, custom_state in self._initial_widget_states:
+                try:
+                    if custom_state:
+                        widget.set_enabled(previous_state)
+                    else:
+                        widget.configure(state=previous_state)
+                except (tk.TclError, AttributeError):
+                    pass
+            self._initial_widget_states = []
+            return
+
+        self._initial_widget_states = []
+        person_form = getattr(mages_page, "person_form", None)
+        stack = [person_form] if person_form is not None else []
+        while stack:
+            widget = stack.pop()
+            try:
+                stack.extend(widget.winfo_children())
+            except tk.TclError:
+                pass
+            custom_toggle = getattr(widget, "set_enabled", None)
+            if callable(custom_toggle) and hasattr(widget, "is_enabled"):
+                previous_enabled = bool(widget.is_enabled)
+                if previous_enabled:
+                    custom_toggle(False)
+                    self._initial_widget_states.append(
+                        (widget, previous_enabled, True)
+                    )
+                continue
+            try:
+                previous_state = str(widget.cget("state"))
+            except tk.TclError:
+                continue
+            if previous_state in ("disabled", "readonly"):
+                continue
+            try:
+                widget.configure(state="disabled")
+            except tk.TclError:
+                continue
+            self._initial_widget_states.append(
+                (widget, previous_state, False)
+            )
+
+    def start_background_initial_load(self):
+        if self._closing or self._initial_load_thread is not None:
+            return
+        self._initial_load_database = None
+        self._initial_load_error = None
+        self._initial_load_thread = Thread(
+            target=self.initial_load_worker,
+            name="world-builder-canonical-load",
+            daemon=True,
+        )
+        self._initial_load_thread.start()
+        self.after(50, self.poll_background_initial_load)
+
+    def initial_load_worker(self):
+        try:
+            refreshed = JsonDatabase(self.database.database_path)
+            refreshed.load(rebuild_index=False)
+            self._initial_load_database = refreshed
+        except Exception as error:
+            self._initial_load_error = error
+
+    def poll_background_initial_load(self):
+        worker = self._initial_load_thread
+        if worker is not None and worker.is_alive():
+            self.after(50, self.poll_background_initial_load)
+            return
+        self._initial_load_thread = None
+        if self._closing:
+            self.finish_close()
+            return
+        refreshed = self._initial_load_database
+        if self._initial_load_error is not None or refreshed is None:
+            self.set_status(
+                "Could not load editable world data; indexed profiles remain read-only: "
+                f"{self._initial_load_error}"
+            )
+            return
+
+        self.database.adopt_loaded_database(refreshed)
+        self.event_controller.invalidate_event_cache()
+        self.location_controller.invalidate_caches(include_people_sync=True)
+        self._observed_world_fingerprint = source_fingerprint(
+            self.database.database_path
+        )
+        self.set_initial_loading_enabled(True)
+        current_id = self.pages["mages"].current_record_id
+        self.pages["mages"].refresh_people(current_id)
+        if current_id:
+            self.pages["mages"].load_person(current_id)
+        self.page_refresh_revisions["mages"] = self.database.revision
+        self._initial_load_database = None
+        if self.database.index_dirty:
+            self.start_background_index_rebuild()
+        else:
+            self.set_status("World data ready")
         self._world_watch_after_id = self.after(
             2000,
             self.monitor_external_world_save,
         )
-
-        if self.game_database.error:
-            self.set_status(self.game_database.error)
 
     def start_background_index_rebuild(self):
         if self._closing or self._index_rebuild_thread is not None:
@@ -742,15 +884,9 @@ class MageMakerApp(tk.Tk):
                 f"Could not refresh externally changed world data: {self._external_reload_error}"
             )
         elif refreshed is not None and not self.database.dirty:
-            next_revision = self.database.revision + 1
-            self.database.data = refreshed.data
-            self.database.shared_store = refreshed.shared_store
-            self.database.shared_session = refreshed.shared_session
-            self.database.world_index = refreshed.world_index
-            self.database.record_indexes = refreshed.record_indexes
-            self.database.index_dirty = refreshed.index_dirty
-            self.database.dirty = refreshed.dirty
-            self.database.revision = next_revision
+            self.database.adopt_loaded_database(refreshed)
+            self.event_controller.invalidate_event_cache()
+            self.location_controller.invalidate_caches(include_people_sync=True)
             self._observed_world_fingerprint = source_fingerprint(
                 self.database.database_path
             )
@@ -986,12 +1122,16 @@ class MageMakerApp(tk.Tk):
         if self._closing:
             return
         if collection_name:
+            self._pending_cross_page_collections.add(
+                str(collection_name)
+            )
             self.database_changed(
                 collection_name,
                 record_ids,
                 self.database.revision,
             )
         else:
+            self._pending_cross_page_collections.add("*")
             self.invalidated_pages.update(self.pages)
 
         if self._cross_page_refresh_after_id is not None:
@@ -1008,16 +1148,30 @@ class MageMakerApp(tk.Tk):
         self._cross_page_refresh_after_id = None
         if self._closing:
             return
+        changed_collections = set(self._pending_cross_page_collections)
+        self._pending_cross_page_collections.clear()
+        needs_ownership_sync = bool(
+            changed_collections.intersection({"*", "events", "items"})
+        )
+        needs_retained_sync = bool(
+            changed_collections.intersection(
+                {"*", "events", "items", "people"}
+            )
+        )
         ownership_changed = (
             self.event_controller.synchronize_item_ownership_from_events()
+            if needs_ownership_sync
+            else False
         )
         retained_events_changed = (
             self.event_controller.synchronize_retained_item_events_for_deaths()
+            if needs_retained_sync
+            else False
         )
 
         if retained_events_changed or ownership_changed:
             self.database.save()
-        self.refresh_page_if_needed(self.active_page_name, force=True)
+        self.refresh_page_if_needed(self.active_page_name)
 
     def refresh_mage_group_data(self):
         mages_page = self.pages.get("mages")
@@ -1207,6 +1361,7 @@ class MageMakerApp(tk.Tk):
 
     def finish_close(self):
         active_workers = (
+            self._initial_load_thread,
             self._index_rebuild_thread,
             self._external_reload_thread,
         )

@@ -1,7 +1,10 @@
 import tkinter as tk
 
 from runtime_theme import bind_theme
-from sections.items.general_items.bonus_editor import BonusEditor
+from sections.items.general_items.bonus_editor import (
+    BonusEditor,
+    InFlightEffectEditor,
+)
 from sections.items.general_items.constants import GENERAL_ITEM_TYPES
 from sections.nature_and_alchemy.creatures.tag_editor import TagEditor
 from shared.widgets import (
@@ -318,6 +321,17 @@ class GeneralItemForm(tk.Frame):
         )
         self.bonus_editor.grid_configure(columnspan=3)
 
+        self.in_flight_effect_editor = InFlightEffectEditor(
+            self,
+            change_command=self.handle_field_change,
+        )
+        self.in_flight_effect_editor.grid(
+            row=2,
+            column=0,
+            columnspan=3,
+            sticky="nsew",
+        )
+
         self.effect_editor = ItemEffectEditor(
             self,
             database=self.database,
@@ -350,6 +364,13 @@ class GeneralItemForm(tk.Frame):
         self.update_special_fields_visibility()
         self.description_field.set_value(record.get("description", ""))
         self.bonus_editor.set_bonuses(record.get("bonuses", []))
+        in_flight_effects = record.get("in_flight_effects")
+        if in_flight_effects is None and self.is_flyable_type():
+            # Schema-eight Flyables stored these modifiers as ordinary
+            # bonuses.  Show them in the dedicated editor until the record is
+            # saved through the schema-nine migration.
+            in_flight_effects = record.get("bonuses", [])
+        self.in_flight_effect_editor.set_effects(in_flight_effects or [])
         self.effect_editor.set_actions(record.get("actions", []))
         self.dbnotes_field.set_value(record.get("dbnotes", ""))
         self.tags_field.set_tags(record.get("tags", []))
@@ -380,13 +401,18 @@ class GeneralItemForm(tk.Frame):
             raise ValueError("Base Knuts must be a whole number.") from error
         if base_knuts < 0:
             raise ValueError("Base Knuts cannot be negative.")
+        flyable = self.is_flyable_type()
         values = {
             "name": self.name_value.get().strip(),
             "type": self.type_value.get().strip(),
             "base_knuts": base_knuts,
             "description": self.description_field.get_value(),
-            "bonuses": self.bonus_editor.get_bonuses(),
-            "actions": self.effect_editor.get_actions(),
+            "bonuses": [] if flyable else self.bonus_editor.get_bonuses(),
+            "actions": [] if flyable else self.effect_editor.get_actions(),
+            "in_flight_effects": (
+                self.in_flight_effect_editor.get_effects()
+                if flyable else []
+            ),
             "dbnotes": self.dbnotes_field.get_value(),
             "tags": self.tags_field.get_tags(),
             "image_asset": self.image_asset_field.get_value(),
@@ -422,7 +448,7 @@ class GeneralItemForm(tk.Frame):
             self.change_command()
 
     def update_special_fields_visibility(self):
-        if self.type_value.get().strip() in {"Broom", "Flyable"}:
+        if self.is_flyable_type():
             self.flight_panel.grid(
                 row=2,
                 column=2,
@@ -443,6 +469,18 @@ class GeneralItemForm(tk.Frame):
             )
         else:
             self.searching_method_panel.grid_remove()
+
+        if self.is_flyable_type():
+            self.bonus_editor.grid_remove()
+            self.effect_editor.grid_remove()
+            self.in_flight_effect_editor.grid()
+        else:
+            self.in_flight_effect_editor.grid_remove()
+            self.bonus_editor.grid()
+            self.effect_editor.grid()
+
+    def is_flyable_type(self):
+        return self.type_value.get().strip() in {"Broom", "Flyable"}
 
     def handle_field_change(self):
         if not self.loading_record:

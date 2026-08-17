@@ -1,5 +1,6 @@
 import tkinter as tk
 from copy import deepcopy
+from uuid import uuid4
 
 from runtime_theme import bind_theme
 from sections.nature_and_alchemy.creatures.constants import (
@@ -10,6 +11,10 @@ from sections.nature_and_alchemy.creatures.form_fields import (
     LabeledSelect,
 )
 from shared.widgets import MultilineField, SoftButton, StripedListbox
+from shared.part_item_behavior import (
+    PartItemBehaviorDialog,
+    normalize_part_item_behavior,
+)
 from theme import (
     BORDER_SOFT,
     FIELD_BACKGROUND,
@@ -173,6 +178,16 @@ class PlantPartsEditor(tk.Frame):
             pady=(12, 0),
         )
 
+        self.item_properties_button = SoftButton(
+            self.detail,
+            text="Item properties…",
+            command=self.edit_item_properties,
+            height=34,
+        )
+        self.item_properties_button.grid(
+            row=3, column=0, columnspan=2, sticky="ew", pady=(10, 0)
+        )
+
         self.set_detail_enabled(False)
 
     def set_parts(self, parts):
@@ -203,8 +218,9 @@ class PlantPartsEditor(tk.Frame):
             required_proficiency = str(
                 part.get("required_proficiency", "No")
             ).strip() or "No"
-            converted_parts.append(
-                {
+            converted = deepcopy(part)
+            converted.update({
+                    "record_id": str(part.get("record_id", "") or uuid4()),
                     "name": part_name,
                     "required_proficiency": required_proficiency,
                     "description": str(
@@ -216,8 +232,8 @@ class PlantPartsEditor(tk.Frame):
                     "effect_in_potions": str(
                         part.get("effect_in_potions", "")
                     ).strip(),
-                }
-            )
+                })
+            converted_parts.append(normalize_part_item_behavior(converted))
 
         return converted_parts
 
@@ -227,11 +243,17 @@ class PlantPartsEditor(tk.Frame):
 
         self.parts.append(
             {
+                "record_id": str(uuid4()),
                 "name": "New Plant Part",
                 "required_proficiency": "No",
                 "description": "",
                 "raw_effects": "",
                 "effect_in_potions": "",
+                "image_asset": "",
+                "base_knuts": 0,
+                "tags": [],
+                "bonuses": [],
+                "actions": [],
             }
         )
         self.selected_index = len(self.parts) - 1
@@ -305,6 +327,7 @@ class PlantPartsEditor(tk.Frame):
             part.get("effect_in_potions", "")
         )
         self.set_detail_enabled(detail_enabled)
+        self.refresh_item_properties_label(part)
         self.loading_part = False
 
     def save_selected_part(self):
@@ -317,6 +340,29 @@ class PlantPartsEditor(tk.Frame):
         part["description"] = self.description_field.get_value()
         part["raw_effects"] = self.raw_effects_field.get_value()
         part["effect_in_potions"] = self.potion_effects_field.get_value()
+
+    def edit_item_properties(self):
+        if self.selected_index is None:
+            return
+        self.save_selected_part()
+        part = self.parts[self.selected_index]
+        dialog = PartItemBehaviorDialog(
+            self, self.database, part,
+            title=f"{part.get('name', 'Plant part')} · Item properties",
+        )
+        self.wait_window(dialog)
+        if dialog.result is None:
+            return
+        self.parts[self.selected_index] = dialog.result
+        self.refresh_item_properties_label(dialog.result)
+        self.change_command()
+
+    def refresh_item_properties_label(self, part):
+        count = len(part.get("bonuses", []) or []) + len(part.get("actions", []) or [])
+        image = "image" if part.get("image_asset") else "no image"
+        self.item_properties_button.set_text(
+            f"Item properties…  ·  {image}  ·  {count} effect{'s' if count != 1 else ''}"
+        )
 
     def handle_field_change(self, *arguments):
         if self.loading_part or self.selected_index is None:
@@ -336,6 +382,7 @@ class PlantPartsEditor(tk.Frame):
         self.description_field.text.configure(state=text_state)
         self.raw_effects_field.text.configure(state=text_state)
         self.potion_effects_field.text.configure(state=text_state)
+        self.item_properties_button.set_enabled(enabled)
 
     def get_proficiency_options(self):
         proficiency_names = sorted(

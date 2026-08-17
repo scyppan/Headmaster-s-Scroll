@@ -82,7 +82,7 @@ class RecipesPage(tk.Frame):
         formulation.grid(row=2, column=0, sticky="ew", padx=18, pady=(0, 10))
         formulation.grid_columnconfigure(1, weight=2)
         formulation.grid_columnconfigure(4, weight=3)
-        tk.Label(formulation, text="Formulation", bg=SURFACE, fg=TEXT_DARK, font=app_font(10)).grid(row=0, column=0, sticky="w", padx=(8, 4), pady=8)
+        tk.Label(formulation, text="Variant", bg=SURFACE, fg=TEXT_DARK, font=app_font(10)).grid(row=0, column=0, sticky="w", padx=(8, 4), pady=8)
         self.formulation_choice = tk.StringVar()
         self.formulation_combo = ttk.Combobox(formulation, textvariable=self.formulation_choice, state="readonly", width=22)
         self.formulation_combo.grid(row=0, column=1, sticky="ew", padx=4, pady=8)
@@ -90,17 +90,21 @@ class RecipesPage(tk.Frame):
         ttk.Button(formulation, text="+", width=3, command=self.add_formulation).grid(row=0, column=2, padx=2)
         ttk.Button(formulation, text="⧉", width=3, command=self.duplicate_formulation).grid(row=0, column=3, padx=2)
         self.formulation_name = tk.StringVar()
-        self.formulation_name.trace_add("write", self.mark_dirty)
-        RoundedEntry(formulation, textvariable=self.formulation_name, background=SURFACE, height=36, font=app_font(9)).grid(row=0, column=4, sticky="ew", padx=4, pady=8)
+        self.formulation_name.trace_add("write", self.handle_formulation_name_change)
+        name_box = tk.Frame(formulation, bg=SURFACE)
+        name_box.grid(row=0, column=4, sticky="ew", padx=4, pady=8)
+        name_box.grid_columnconfigure(1, weight=1)
+        tk.Label(name_box, text="Name", bg=SURFACE, fg=TEXT_DARK, font=app_font(9)).grid(row=0, column=0, padx=(0, 5))
+        RoundedEntry(name_box, textvariable=self.formulation_name, background=SURFACE, height=36, font=app_font(9)).grid(row=0, column=1, sticky="ew")
         ttk.Button(formulation, text="−", width=3, command=self.delete_formulation).grid(row=0, column=5, padx=(2, 8))
-        tk.Label(formulation, text="Output", bg=SURFACE, fg=TEXT_DARK, font=app_font(9)).grid(row=1, column=0, sticky="w", padx=(8, 4), pady=(0, 8))
+        tk.Label(formulation, text="Output item", bg=SURFACE, fg=TEXT_DARK, font=app_font(9)).grid(row=1, column=0, sticky="w", padx=(8, 4), pady=(0, 8))
         self.output_button = tk.Button(
             formulation, text="Choose output item…", command=self.choose_output,
             anchor="w", relief="solid", bd=1, bg=APP_BACKGROUND,
             fg=TEXT_DARK, font=app_font(9),
         )
         self.output_button.grid(row=1, column=1, columnspan=3, sticky="ew", padx=4, pady=(0, 8))
-        tk.Label(formulation, text="Quantity", bg=SURFACE, fg=TEXT_DARK, font=app_font(9)).grid(row=1, column=4, sticky="e", padx=4, pady=(0, 8))
+        tk.Label(formulation, text="Output quantity", bg=SURFACE, fg=TEXT_DARK, font=app_font(9)).grid(row=1, column=4, sticky="e", padx=4, pady=(0, 8))
         self.output_quantity = tk.StringVar(value="1")
         self.output_quantity.trace_add("write", self.mark_dirty)
         ttk.Spinbox(formulation, textvariable=self.output_quantity, from_=1, to=100000, width=9).grid(row=1, column=5, sticky="w", padx=(2, 8), pady=(0, 8))
@@ -235,6 +239,15 @@ class RecipesPage(tk.Frame):
         self.formulation_combo.configure(values=names)
         if names:
             self.formulation_choice.set(names[min(self.current_formulation_index, len(names) - 1)])
+
+    def handle_formulation_name_change(self, *_args):
+        if self.loading or not self.formulations:
+            return
+        index = min(self.current_formulation_index, len(self.formulations) - 1)
+        name = self.formulation_name.get().strip() or f"Formulation {index + 1}"
+        self.formulations[index]["name"] = name
+        self.refresh_formulation_choices()
+        self.mark_dirty()
 
     def commit_current_formulation(self):
         if self.loading or not self.formulations:

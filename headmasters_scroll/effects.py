@@ -47,6 +47,13 @@ BONUS_TARGETS = {
     ),
 }
 
+IN_FLIGHT_EFFECT_TARGETS = {
+    "Flying": "Skill",
+    "Perception": "Skill",
+    "Strength": "Characteristic",
+    "Agility": "Characteristic",
+}
+
 BONUS_ACTIVATION_MODES = ("passive", "click")
 TARGET_SCOPES = ("self", "group", "other", "none")
 TARGET_SCOPE_LABELS = {
@@ -168,3 +175,47 @@ def validate_bonuses(values: Any) -> None:
         raise TypeError("Bonuses must be a list.")
     for value in values:
         validate_bonus(value)
+
+
+def normalize_in_flight_effect(effect: Any) -> Any:
+    """Normalize a passive modifier that exists only while airborne."""
+    if not isinstance(effect, dict):
+        return effect
+    normalized = normalize_bonus(effect)
+    target = " ".join(str(normalized.get("target", "") or "").split())
+    canonical = {
+        value.casefold(): value for value in IN_FLIGHT_EFFECT_TARGETS
+    }.get(target.casefold(), target)
+    normalized.update({
+        "type": IN_FLIGHT_EFFECT_TARGETS.get(canonical, ""),
+        "target": canonical,
+        "activation_mode": "passive",
+        "target_scope": "self",
+        "depletable": False,
+    })
+    return normalized
+
+
+def normalize_in_flight_effects(values: Any) -> Any:
+    if not isinstance(values, list):
+        return values
+    return [normalize_in_flight_effect(value) for value in values]
+
+
+def validate_in_flight_effects(values: Any) -> None:
+    if not isinstance(values, list):
+        raise TypeError("In-flight effects must be a list.")
+    for value in values:
+        normalized = normalize_in_flight_effect(value)
+        if not isinstance(normalized, dict):
+            raise TypeError("Every in-flight effect must be structured.")
+        target = normalized.get("target", "")
+        if target not in IN_FLIGHT_EFFECT_TARGETS:
+            raise ValueError(
+                "In-flight effects may affect only Flying, Perception, "
+                "Strength, or Agility."
+            )
+        amount = normalized.get("amount")
+        if isinstance(amount, bool) or not isinstance(amount, int):
+            raise TypeError("Every in-flight effect must use a whole number.")
+        validate_bonus(normalized)

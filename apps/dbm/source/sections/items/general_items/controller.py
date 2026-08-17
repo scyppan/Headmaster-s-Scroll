@@ -1,4 +1,8 @@
 from database.name_links import ensure_unique_record_name
+from headmasters_scroll.effects import (
+    normalize_in_flight_effects,
+    validate_in_flight_effects,
+)
 from sections.items.general_items.constants import (
     GENERAL_ITEM_TYPES,
     GENERAL_ITEM_TYPES_BY_NORMALIZED_NAME,
@@ -51,23 +55,22 @@ class GeneralItemController:
         return created_record
 
     def update_record(self, record_id, record_values):
-        normalized_values = self.normalize_record_values(record_values)
         current_record = self.get_record(record_id)
 
         if current_record is None:
             raise KeyError(f"Unknown general item record ID: {record_id}")
 
         prospective_record = dict(current_record)
-        prospective_record.update(normalized_values)
-        self.validate_record_values(prospective_record)
+        prospective_record.update(record_values)
+        normalized_values = self.normalize_record_values(prospective_record)
+        self.validate_record_values(normalized_values)
 
-        if "name" in normalized_values:
-            ensure_unique_record_name(
-                self.database.get_collection(self.collection_name),
-                normalized_values["name"],
-                record_id=record_id,
-                record_label="general item",
-            )
+        ensure_unique_record_name(
+            self.database.get_collection(self.collection_name),
+            normalized_values["name"],
+            record_id=record_id,
+            record_label="general item",
+        )
 
         updated_record = self.database.update(
             self.collection_name,
@@ -150,6 +153,18 @@ class GeneralItemController:
         if normalized_values.get("type") in {"Broom", "Flyable"}:
             normalized_values["activation_mode"] = "equipped"
             normalized_values["equipment_slot_type"] = "flyable"
+            legacy_effects = normalized_values.get("bonuses", []) or []
+            effects = normalized_values.get("in_flight_effects")
+            if effects is None:
+                effects = legacy_effects
+            normalized_values["in_flight_effects"] = (
+                normalize_in_flight_effects(effects)
+            )
+            # Flyables never use the ordinary item bonus/action channels.
+            normalized_values["bonuses"] = []
+            normalized_values["actions"] = []
+        else:
+            normalized_values["in_flight_effects"] = []
 
         if normalized_values.get("type") == "Raw Material":
             method_id = str(
@@ -189,6 +204,14 @@ class GeneralItemController:
                 raise ValueError(
                     "A flyable item's Flying threshold must be between 1 and 100."
                 )
+            validate_in_flight_effects(
+                record_values.get("in_flight_effects", [])
+            )
+            if record_values.get("bonuses") or record_values.get("actions"):
+                raise ValueError(
+                    "Flyables use only In-flight effects, not regular bonuses "
+                    "or item effects."
+                )
 
         if record_values.get("type") == "Raw Material":
             method_id = str(
@@ -204,8 +227,9 @@ class GeneralItemController:
             if method_id not in valid_method_ids:
                 raise ValueError("The selected Searching Method no longer exists.")
 
-        validate_bonus_record_values(record_values)
-        validate_item_actions(record_values.get("actions", []), self.database)
+        if record_values.get("type") not in {"Broom", "Flyable"}:
+            validate_bonus_record_values(record_values)
+            validate_item_actions(record_values.get("actions", []), self.database)
         tags = record_values.get("tags", [])
         if not isinstance(tags, list) or any(not isinstance(tag, str) for tag in tags):
             raise ValueError("General item tags must be a list of text values.")

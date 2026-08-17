@@ -147,6 +147,8 @@ class EventController:
         self._people_options_cache_revision = None
         self._organization_records_cache = None
         self._organization_records_cache_revision = None
+        self._eminence_eligible_ids_cache = None
+        self._eminence_eligible_ids_cache_revision = None
 
     def character_control_link_options(self, event_type):
         """Searchable stable-ID choices for teaching and creature events."""
@@ -198,6 +200,8 @@ class EventController:
         self._events_by_location_id = {}
         self._events_by_item_id = {}
         self._eminence_points_by_person_id = {}
+        self._eminence_eligible_ids_cache = None
+        self._eminence_eligible_ids_cache_revision = None
 
     def ensure_event_cache(self):
         database_revision = getattr(self.database, "revision", None)
@@ -2657,16 +2661,9 @@ class EventController:
             None,
         )
         if callable(linked_reader):
-            person_reader = getattr(self.database, "read_person", None)
-            person = (
-                person_reader(normalized_person_id)
-                if callable(person_reader)
-                else None
-            )
             eligible_ids = (
                 {normalized_person_id}
-                if isinstance(person, dict)
-                and not bool(person.get("non_magical"))
+                if self.person_can_earn_eminence(normalized_person_id)
                 else set()
             )
             matching_events = [
@@ -2825,13 +2822,29 @@ class EventController:
         return selected_person_id in self.eminence_eligible_person_ids()
 
     def eminence_eligible_person_ids(self):
-        return {
+        database_revision = getattr(self.database, "revision", None)
+
+        if (
+            self._eminence_eligible_ids_cache is not None
+            and isinstance(database_revision, int)
+            and database_revision
+            == self._eminence_eligible_ids_cache_revision
+        ):
+            return set(self._eminence_eligible_ids_cache)
+
+        eligible_ids = {
             str(person.get("record_id", "") or "").strip()
             for person in self.people_summaries()
             if isinstance(person, dict)
             and str(person.get("record_id", "") or "").strip()
             and not bool(person.get("non_magical"))
         }
+
+        if isinstance(database_revision, int):
+            self._eminence_eligible_ids_cache = set(eligible_ids)
+            self._eminence_eligible_ids_cache_revision = database_revision
+
+        return eligible_ids
 
     def with_eligible_eminence(
         self,

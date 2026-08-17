@@ -1141,6 +1141,72 @@ class PersonForm(tk.Frame):
         person.update(self.current_relationship_values())
         return person
 
+    def person_for_timeline_load(self):
+        """Return only the fields used to synchronize Timeline events.
+
+        A development plan can contain years of assignments, books, and
+        calculations. Timeline only needs school attendance boundaries, so it
+        must not deep-copy the complete profile merely to draw an event list.
+        """
+        person = self.person_snapshot
+
+        if self.section_is_current("development"):
+            development_values = self.development.get_values()
+        elif (
+            self.variables["non_magical"].get()
+            and self.section_is_current("jobs")
+        ):
+            development_values = {
+                "school": "",
+                "development_plan": self.jobs.get_development_plan(),
+            }
+        else:
+            development_values = {
+                "school": person.get("school", ""),
+                "development_plan": person.get("development_plan", {}),
+            }
+
+        development_plan = development_values.get(
+            "development_plan",
+            {},
+        )
+        development_plan = (
+            development_plan
+            if isinstance(development_plan, dict)
+            else {}
+        )
+        school_years = development_plan.get("school_years", [])
+        compact_school_years = [
+            {
+                "year": school_year.get("year"),
+                "skipped": bool(school_year.get("skipped", False)),
+            }
+            for school_year in school_years
+            if isinstance(school_year, dict)
+        ]
+
+        return {
+            "record_id": self.current_record_id,
+            "displayed_name": self.variables["displayed_name"].get(),
+            "birth_year": self.variables["birth_year"].get(),
+            "birth_month": self.variables["birth_month"].get(),
+            "birth_day": self.variables["birth_day"].get(),
+            "deceased": self.variables["deceased"].get(),
+            "death_year": self.variables["death_year"].get(),
+            "death_month": self.variables["death_month"].get(),
+            "death_day": self.variables["death_day"].get(),
+            "non_magical": self.variables["non_magical"].get(),
+            "school": str(development_values.get("school", "") or ""),
+            "development_plan": {
+                "school_started": bool(
+                    development_plan.get("school_started", False)
+                ),
+                "school_years": compact_school_years,
+            },
+            "name_details": deepcopy(self.name_details),
+            "timeline_events": self.current_timeline_events(),
+        }
+
     def cancel_deferred_load(self):
         if self.deferred_load_job is None:
             return
@@ -1221,9 +1287,7 @@ class PersonForm(tk.Frame):
         ):
             return
 
-        timeline_person = self.person_for_deferred_load()
-        timeline_person["name_details"] = deepcopy(self.name_details)
-        timeline_person["timeline_events"] = self.current_timeline_events()
+        timeline_person = self.person_for_timeline_load()
         synchronized_events = synchronize_name_change_events(
             self.name_details,
             ensure_life_start_events(timeline_person),
@@ -1933,11 +1997,7 @@ class PersonForm(tk.Frame):
         self.loading = True
         self.current_record_id = person_values.get("record_id")
         if hasattr(self, "timeline"):
-            self.timeline.draft_event = None
-            self.timeline.selected_event_id = None
-            self.timeline.set_events([], refresh=False)
-            self.timeline.set_linked_events([], refresh=False)
-            self.timeline.filter_events()
+            self.timeline.reset_for_person_change()
         self.person_snapshot = person_values
         self.board_state = normalize_person_board(
             person_values.get("board")

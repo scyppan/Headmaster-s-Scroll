@@ -1,8 +1,8 @@
 {
   "_database": {
-    "schema_version": 8,
+    "schema_version": 9,
     "database_version": "26.7.22.001",
-    "last_saved": "2026-08-17T06:19:57.078332+00:00"
+    "last_saved": "2026-08-17T13:04:21.923919+00:00"
   },
   "wand_woods": [
     {
@@ -4328,7 +4328,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_19746",
@@ -4342,7 +4343,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_19747",
@@ -4356,7 +4358,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_19748",
@@ -4370,7 +4373,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_19749",
@@ -4384,7 +4388,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_19750",
@@ -4398,7 +4403,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_22631",
@@ -4412,7 +4418,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_1384",
@@ -4426,7 +4433,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_22632",
@@ -4440,7 +4448,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_22633",
@@ -4454,7 +4463,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_22634",
@@ -4468,7 +4478,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_23153",
@@ -4482,7 +4493,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_22647",
@@ -4496,7 +4508,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_22713",
@@ -4510,7 +4523,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_20173",
@@ -4524,7 +4538,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_11482",
@@ -4534,11 +4549,15 @@
       "description": "These figurines, when buried at a threshold, can guard against evil spirits entering. Set value 15.",
       "bonuses": [],
       "dbnotes": "",
-      "last_updated": "2023-01-27T01:14:29",
+      "last_updated": "2026-08-17T10:18:15.959040+00:00",
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 879,
+      "in_flight_effects": [],
+      "tags": [],
+      "image_asset": "assets/items/generics/clay figure.png",
+      "flight_threshold": null
     },
     {
       "record_id": "general_item_11483",
@@ -4552,7 +4571,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_11485",
@@ -4566,7 +4586,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_20196",
@@ -4580,7 +4601,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_11496",
@@ -4594,7 +4616,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_23319",
@@ -4608,7 +4631,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_23155",
@@ -4624,7 +4648,8 @@
       "actions": [],
       "image_asset": "assets/items/generics/crystals.png",
       "flight_threshold": null,
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_23157",
@@ -4638,7 +4663,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_23159",
@@ -4652,7 +4678,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_23161",
@@ -4666,7 +4693,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_23163",
@@ -4680,7 +4708,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_23165",
@@ -4694,7 +4723,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_23167",
@@ -4708,7 +4738,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_23182",
@@ -4722,7 +4753,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_23189",
@@ -4736,7 +4768,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_23198",
@@ -4746,11 +4779,15 @@
       "description": "A common Alchemical rock.",
       "bonuses": [],
       "dbnotes": "",
-      "last_updated": "2024-01-14T19:22:44",
+      "last_updated": "2026-08-17T10:17:52.575954+00:00",
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": [],
+      "tags": [],
+      "image_asset": "assets/items/generics/dark rock.png",
+      "flight_threshold": null
     },
     {
       "record_id": "general_item_23205",
@@ -4764,7 +4801,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_23218",
@@ -4778,7 +4816,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_23227",
@@ -4792,7 +4831,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_23237",
@@ -4806,7 +4846,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_23243",
@@ -4820,7 +4861,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_23278",
@@ -4834,7 +4876,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_23285",
@@ -4848,7 +4891,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_23292",
@@ -4862,7 +4906,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_23294",
@@ -4876,7 +4921,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_24834",
@@ -4890,7 +4936,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_24843",
@@ -4904,7 +4951,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_24853",
@@ -4918,7 +4966,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_23321",
@@ -4932,7 +4981,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_23325",
@@ -4949,7 +4999,8 @@
       "base_knuts": 0,
       "tags": [],
       "image_asset": "assets/items/generics/potion in bottle (blue).png",
-      "flight_threshold": null
+      "flight_threshold": null,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_24862",
@@ -4963,7 +5014,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_24866",
@@ -4977,7 +5029,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_24784",
@@ -4991,7 +5044,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_24788",
@@ -5005,7 +5059,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_24792",
@@ -5019,7 +5074,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_24795",
@@ -5044,7 +5100,8 @@
       "actions": [],
       "image_asset": "assets/items/generics/abacus.png",
       "base_knuts": 2154,
-      "flight_threshold": null
+      "flight_threshold": null,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_24798",
@@ -5058,7 +5115,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_24800",
@@ -5072,7 +5130,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_24805",
@@ -5097,7 +5156,8 @@
       "actions": [],
       "image_asset": "assets/items/generics/runic item.png",
       "flight_threshold": null,
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_24809",
@@ -5111,7 +5171,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_24811",
@@ -5125,7 +5186,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_24817",
@@ -5139,7 +5201,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_24819",
@@ -5153,7 +5216,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_24823",
@@ -5161,13 +5225,26 @@
       "type": "Divinatory Item",
       "has_magical_effects": "Yes",
       "description": "An intricate device used for solving problems relating to time and the position of the stars and planets, symbolizing the link between the celestial and terrestrial.",
-      "bonuses": [],
+      "bonuses": [
+        {
+          "type": "Skill",
+          "target": "Astronomy",
+          "amount": 2,
+          "activation_mode": "passive",
+          "target_scope": "self",
+          "depletable": false
+        }
+      ],
       "dbnotes": "",
-      "last_updated": "2025-02-19T17:22:14",
+      "last_updated": "2026-08-17T07:45:26.708274+00:00",
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 1547,
+      "tags": [],
+      "image_asset": "assets/items/generics/astrolabe.png",
+      "flight_threshold": null,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_24827",
@@ -5184,7 +5261,8 @@
       "image_asset": "assets/items/generics/Amulet.png",
       "flight_threshold": null,
       "base_knuts": 0,
-      "tags": []
+      "tags": [],
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_24869",
@@ -5198,7 +5276,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_24874",
@@ -5212,7 +5291,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_24881",
@@ -5232,7 +5312,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_24885",
@@ -5242,11 +5323,30 @@
       "description": "This magical dime wards off evil influences",
       "bonuses": [],
       "dbnotes": "",
-      "last_updated": "2025-02-20T15:53:40",
+      "last_updated": "2026-08-17T07:17:47.432648+00:00",
       "activation_mode": "passive",
       "equipment_slot_type": "",
-      "actions": [],
-      "base_knuts": 0
+      "actions": [
+        {
+          "effect_type": "Spell",
+          "record_id": "a51cad86-1f36-4f35-9d7b-705ac6c124e4",
+          "name": "Knockback Jinx",
+          "description": "Knocks the target back (can be cast on humans and beasts. Unless the target lands on a very soft surface (like a cushion or pillow or water from a low height), the force of the fall will cause at least 2 light wounds of damage. Additional damage depends on how far the target flies and what they hit (headmaster's discretion). Target typically flies about 10 feet.",
+          "target_id": "spell_19090",
+          "target_collection": "spells",
+          "activation_mode": "click",
+          "target_scope": "self",
+          "depletable": false,
+          "consume_quantity": 0,
+          "action_type": "roll",
+          "roll_type": "spell"
+        }
+      ],
+      "base_knuts": 2942,
+      "tags": [],
+      "image_asset": "assets/items/generics/coin.png",
+      "flight_threshold": null,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_24888",
@@ -5260,7 +5360,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_24891",
@@ -5274,7 +5375,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_24895",
@@ -5288,7 +5390,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_24902",
@@ -5302,7 +5405,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_24905",
@@ -5312,11 +5416,15 @@
       "description": "A part of the cerebrum that has been removed and encased in amber.",
       "bonuses": [],
       "dbnotes": "",
-      "last_updated": "2025-02-20T16:08:29",
+      "last_updated": "2026-08-17T07:10:33.960802+00:00",
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "tags": [],
+      "image_asset": "assets/items/generics/Amulet.png",
+      "flight_threshold": null,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_24908",
@@ -5330,7 +5438,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_24911",
@@ -5346,7 +5455,8 @@
       "actions": [],
       "image_asset": "assets/items/generics/bristles.png",
       "base_knuts": 3,
-      "flight_threshold": null
+      "flight_threshold": null,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_24914",
@@ -5360,7 +5470,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_24917",
@@ -5374,7 +5485,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_24921",
@@ -5388,7 +5500,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_24924",
@@ -5408,7 +5521,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_24928",
@@ -5422,7 +5536,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_24931",
@@ -5436,7 +5551,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_24935",
@@ -5450,7 +5566,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_24941",
@@ -5464,7 +5581,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_24945",
@@ -5478,7 +5596,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_24974",
@@ -5492,7 +5611,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_24975",
@@ -5506,7 +5626,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_24976",
@@ -5520,7 +5641,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_24977",
@@ -5534,7 +5656,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_24978",
@@ -5548,7 +5671,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_24980",
@@ -5562,7 +5686,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_24989",
@@ -5576,7 +5701,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_24996",
@@ -5590,7 +5716,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_24998",
@@ -5604,7 +5731,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_25000",
@@ -5618,7 +5746,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_25003",
@@ -5632,7 +5761,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_25005",
@@ -5646,7 +5776,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_25009",
@@ -5660,7 +5791,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_25011",
@@ -5674,35 +5806,66 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_25019",
-      "name": "Bluebottle Broom",
+      "name": "Bluebottle",
       "type": "Broom",
       "has_magical_effects": "No",
       "description": "",
       "bonuses": [],
       "dbnotes": "",
-      "last_updated": "2025-02-23T20:30:29",
-      "activation_mode": "passive",
-      "equipment_slot_type": "",
+      "last_updated": "2026-08-17T10:46:14.725249+00:00",
+      "activation_mode": "equipped",
+      "equipment_slot_type": "flyable",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 406,
+      "in_flight_effects": [
+        {
+          "target": "Flying",
+          "amount": -4,
+          "type": "Skill",
+          "activation_mode": "passive",
+          "target_scope": "self",
+          "depletable": false
+        }
+      ],
+      "flight_threshold": 10,
+      "tags": [
+        "broom"
+      ],
+      "image_asset": "assets/items/brooms/base brooms.png"
     },
     {
       "record_id": "general_item_25021",
-      "name": "Australian Flyabout Broom",
+      "name": "Australian Flyabout",
       "type": "Broom",
       "has_magical_effects": "Yes",
       "description": "",
       "bonuses": [],
       "dbnotes": "",
-      "last_updated": "2025-02-23T20:30:29",
-      "activation_mode": "passive",
-      "equipment_slot_type": "",
+      "last_updated": "2026-08-17T10:46:00.841252+00:00",
+      "activation_mode": "equipped",
+      "equipment_slot_type": "flyable",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 468,
+      "tags": [
+        "broom"
+      ],
+      "image_asset": "assets/items/brooms/base brooms.png",
+      "flight_threshold": 10,
+      "in_flight_effects": [
+        {
+          "target": "Flying",
+          "amount": -3,
+          "type": "Skill",
+          "activation_mode": "passive",
+          "target_scope": "self",
+          "depletable": false
+        }
+      ]
     },
     {
       "record_id": "general_item_25023",
@@ -5713,10 +5876,12 @@
       "bonuses": [],
       "dbnotes": "",
       "last_updated": "2025-02-23T20:30:29",
-      "activation_mode": "passive",
-      "equipment_slot_type": "",
+      "activation_mode": "equipped",
+      "equipment_slot_type": "flyable",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": [],
+      "flight_threshold": 7
     },
     {
       "record_id": "general_item_25025",
@@ -5727,10 +5892,12 @@
       "bonuses": [],
       "dbnotes": "",
       "last_updated": "2025-02-23T20:30:29",
-      "activation_mode": "passive",
-      "equipment_slot_type": "",
+      "activation_mode": "equipped",
+      "equipment_slot_type": "flyable",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": [],
+      "flight_threshold": 7
     },
     {
       "record_id": "general_item_25028",
@@ -5741,10 +5908,12 @@
       "bonuses": [],
       "dbnotes": "",
       "last_updated": "2025-02-23T20:30:29",
-      "activation_mode": "passive",
-      "equipment_slot_type": "",
+      "activation_mode": "equipped",
+      "equipment_slot_type": "flyable",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": [],
+      "flight_threshold": 7
     },
     {
       "record_id": "general_item_25030",
@@ -5755,10 +5924,12 @@
       "bonuses": [],
       "dbnotes": "",
       "last_updated": "2025-02-23T20:30:29",
-      "activation_mode": "passive",
-      "equipment_slot_type": "",
+      "activation_mode": "equipped",
+      "equipment_slot_type": "flyable",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": [],
+      "flight_threshold": 7
     },
     {
       "record_id": "general_item_25033",
@@ -5769,10 +5940,12 @@
       "bonuses": [],
       "dbnotes": "",
       "last_updated": "2025-02-23T20:30:29",
-      "activation_mode": "passive",
-      "equipment_slot_type": "",
+      "activation_mode": "equipped",
+      "equipment_slot_type": "flyable",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": [],
+      "flight_threshold": 7
     },
     {
       "record_id": "general_item_25036",
@@ -5783,36 +5956,41 @@
       "bonuses": [],
       "dbnotes": "",
       "last_updated": "2025-02-23T20:30:29",
-      "activation_mode": "passive",
-      "equipment_slot_type": "",
+      "activation_mode": "equipped",
+      "equipment_slot_type": "flyable",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": [],
+      "flight_threshold": 7
     },
     {
       "record_id": "general_item_25038",
-      "name": "Air Wave Gold Broom",
+      "name": "Air Wave Gold",
       "type": "Broom",
       "has_magical_effects": "Yes",
       "description": "",
-      "bonuses": [
-        {
-          "type": "Characteristic",
-          "target": "Agility",
-          "amount": 4,
-          "activation_mode": "passive",
-          "target_scope": "self",
-          "depletable": false
-        }
-      ],
+      "bonuses": [],
       "dbnotes": "",
-      "last_updated": "2026-08-17T05:14:49.642525+00:00",
+      "last_updated": "2026-08-17T10:44:26.474232+00:00",
       "activation_mode": "equipped",
       "equipment_slot_type": "flyable",
       "actions": [],
       "image_asset": "assets/items/generics/broom.png",
-      "base_knuts": 0,
-      "tags": [],
-      "flight_threshold": 10
+      "base_knuts": 11841,
+      "tags": [
+        "broom"
+      ],
+      "flight_threshold": 10,
+      "in_flight_effects": [
+        {
+          "target": "Agility",
+          "amount": 4,
+          "type": "Characteristic",
+          "activation_mode": "passive",
+          "target_scope": "self",
+          "depletable": false
+        }
+      ]
     },
     {
       "record_id": "general_item_25040",
@@ -5823,10 +6001,12 @@
       "bonuses": [],
       "dbnotes": "",
       "last_updated": "2025-02-23T20:30:29",
-      "activation_mode": "passive",
-      "equipment_slot_type": "",
+      "activation_mode": "equipped",
+      "equipment_slot_type": "flyable",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": [],
+      "flight_threshold": 7
     },
     {
       "record_id": "general_item_25043",
@@ -5837,10 +6017,12 @@
       "bonuses": [],
       "dbnotes": "",
       "last_updated": "2025-02-23T20:30:29",
-      "activation_mode": "passive",
-      "equipment_slot_type": "",
+      "activation_mode": "equipped",
+      "equipment_slot_type": "flyable",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": [],
+      "flight_threshold": 7
     },
     {
       "record_id": "general_item_25046",
@@ -5851,10 +6033,12 @@
       "bonuses": [],
       "dbnotes": "",
       "last_updated": "2025-02-23T20:30:29",
-      "activation_mode": "passive",
-      "equipment_slot_type": "",
+      "activation_mode": "equipped",
+      "equipment_slot_type": "flyable",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": [],
+      "flight_threshold": 7
     },
     {
       "record_id": "general_item_25048",
@@ -5865,10 +6049,12 @@
       "bonuses": [],
       "dbnotes": "",
       "last_updated": "2025-02-23T20:30:29",
-      "activation_mode": "passive",
-      "equipment_slot_type": "",
+      "activation_mode": "equipped",
+      "equipment_slot_type": "flyable",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": [],
+      "flight_threshold": 7
     },
     {
       "record_id": "general_item_25051",
@@ -5879,10 +6065,12 @@
       "bonuses": [],
       "dbnotes": "",
       "last_updated": "2025-02-23T20:30:29",
-      "activation_mode": "passive",
-      "equipment_slot_type": "",
+      "activation_mode": "equipped",
+      "equipment_slot_type": "flyable",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": [],
+      "flight_threshold": 7
     },
     {
       "record_id": "general_item_25054",
@@ -5893,10 +6081,12 @@
       "bonuses": [],
       "dbnotes": "",
       "last_updated": "2025-02-23T20:30:29",
-      "activation_mode": "passive",
-      "equipment_slot_type": "",
+      "activation_mode": "equipped",
+      "equipment_slot_type": "flyable",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": [],
+      "flight_threshold": 7
     },
     {
       "record_id": "general_item_25057",
@@ -5907,10 +6097,12 @@
       "bonuses": [],
       "dbnotes": "",
       "last_updated": "2025-02-23T20:30:29",
-      "activation_mode": "passive",
-      "equipment_slot_type": "",
+      "activation_mode": "equipped",
+      "equipment_slot_type": "flyable",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": [],
+      "flight_threshold": 7
     },
     {
       "record_id": "general_item_25059",
@@ -5921,10 +6113,12 @@
       "bonuses": [],
       "dbnotes": "",
       "last_updated": "2025-02-23T20:30:30",
-      "activation_mode": "passive",
-      "equipment_slot_type": "",
+      "activation_mode": "equipped",
+      "equipment_slot_type": "flyable",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": [],
+      "flight_threshold": 7
     },
     {
       "record_id": "general_item_25062",
@@ -5935,10 +6129,12 @@
       "bonuses": [],
       "dbnotes": "",
       "last_updated": "2025-02-23T20:30:30",
-      "activation_mode": "passive",
-      "equipment_slot_type": "",
+      "activation_mode": "equipped",
+      "equipment_slot_type": "flyable",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": [],
+      "flight_threshold": 7
     },
     {
       "record_id": "general_item_25065",
@@ -5949,10 +6145,12 @@
       "bonuses": [],
       "dbnotes": "",
       "last_updated": "2025-02-23T20:30:30",
-      "activation_mode": "passive",
-      "equipment_slot_type": "",
+      "activation_mode": "equipped",
+      "equipment_slot_type": "flyable",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": [],
+      "flight_threshold": 7
     },
     {
       "record_id": "general_item_25068",
@@ -5963,10 +6161,12 @@
       "bonuses": [],
       "dbnotes": "",
       "last_updated": "2025-02-23T20:30:30",
-      "activation_mode": "passive",
-      "equipment_slot_type": "",
+      "activation_mode": "equipped",
+      "equipment_slot_type": "flyable",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": [],
+      "flight_threshold": 7
     },
     {
       "record_id": "general_item_25070",
@@ -5977,10 +6177,12 @@
       "bonuses": [],
       "dbnotes": "",
       "last_updated": "2025-02-23T20:30:30",
-      "activation_mode": "passive",
-      "equipment_slot_type": "",
+      "activation_mode": "equipped",
+      "equipment_slot_type": "flyable",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": [],
+      "flight_threshold": 7
     },
     {
       "record_id": "general_item_25073",
@@ -5991,10 +6193,12 @@
       "bonuses": [],
       "dbnotes": "",
       "last_updated": "2025-02-23T20:30:30",
-      "activation_mode": "passive",
-      "equipment_slot_type": "",
+      "activation_mode": "equipped",
+      "equipment_slot_type": "flyable",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": [],
+      "flight_threshold": 7
     },
     {
       "record_id": "general_item_25076",
@@ -6005,10 +6209,12 @@
       "bonuses": [],
       "dbnotes": "",
       "last_updated": "2025-02-23T20:30:30",
-      "activation_mode": "passive",
-      "equipment_slot_type": "",
+      "activation_mode": "equipped",
+      "equipment_slot_type": "flyable",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": [],
+      "flight_threshold": 7
     },
     {
       "record_id": "general_item_25079",
@@ -6019,10 +6225,12 @@
       "bonuses": [],
       "dbnotes": "",
       "last_updated": "2025-02-23T20:37:57",
-      "activation_mode": "passive",
-      "equipment_slot_type": "",
+      "activation_mode": "equipped",
+      "equipment_slot_type": "flyable",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": [],
+      "flight_threshold": 7
     },
     {
       "record_id": "general_item_25081",
@@ -6033,10 +6241,12 @@
       "bonuses": [],
       "dbnotes": "",
       "last_updated": "2025-02-23T20:30:30",
-      "activation_mode": "passive",
-      "equipment_slot_type": "",
+      "activation_mode": "equipped",
+      "equipment_slot_type": "flyable",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": [],
+      "flight_threshold": 7
     },
     {
       "record_id": "general_item_25090",
@@ -6047,10 +6257,12 @@
       "bonuses": [],
       "dbnotes": "",
       "last_updated": "2025-02-23T20:30:30",
-      "activation_mode": "passive",
-      "equipment_slot_type": "",
+      "activation_mode": "equipped",
+      "equipment_slot_type": "flyable",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": [],
+      "flight_threshold": 7
     },
     {
       "record_id": "general_item_25093",
@@ -6061,10 +6273,12 @@
       "bonuses": [],
       "dbnotes": "",
       "last_updated": "2025-02-23T20:36:22",
-      "activation_mode": "passive",
-      "equipment_slot_type": "",
+      "activation_mode": "equipped",
+      "equipment_slot_type": "flyable",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": [],
+      "flight_threshold": 7
     },
     {
       "record_id": "general_item_25096",
@@ -6075,10 +6289,12 @@
       "bonuses": [],
       "dbnotes": "",
       "last_updated": "2025-02-23T20:30:30",
-      "activation_mode": "passive",
-      "equipment_slot_type": "",
+      "activation_mode": "equipped",
+      "equipment_slot_type": "flyable",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": [],
+      "flight_threshold": 7
     },
     {
       "record_id": "general_item_25098",
@@ -6089,10 +6305,12 @@
       "bonuses": [],
       "dbnotes": "",
       "last_updated": "2025-02-23T20:30:30",
-      "activation_mode": "passive",
-      "equipment_slot_type": "",
+      "activation_mode": "equipped",
+      "equipment_slot_type": "flyable",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": [],
+      "flight_threshold": 7
     },
     {
       "record_id": "general_item_25101",
@@ -6103,10 +6321,12 @@
       "bonuses": [],
       "dbnotes": "",
       "last_updated": "2025-02-23T20:30:30",
-      "activation_mode": "passive",
-      "equipment_slot_type": "",
+      "activation_mode": "equipped",
+      "equipment_slot_type": "flyable",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": [],
+      "flight_threshold": 7
     },
     {
       "record_id": "general_item_25104",
@@ -6117,10 +6337,12 @@
       "bonuses": [],
       "dbnotes": "",
       "last_updated": "2025-02-23T20:30:30",
-      "activation_mode": "passive",
-      "equipment_slot_type": "",
+      "activation_mode": "equipped",
+      "equipment_slot_type": "flyable",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": [],
+      "flight_threshold": 7
     },
     {
       "record_id": "general_item_25107",
@@ -6131,10 +6353,12 @@
       "bonuses": [],
       "dbnotes": "",
       "last_updated": "2025-02-23T20:30:31",
-      "activation_mode": "passive",
-      "equipment_slot_type": "",
+      "activation_mode": "equipped",
+      "equipment_slot_type": "flyable",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": [],
+      "flight_threshold": 7
     },
     {
       "record_id": "general_item_25109",
@@ -6145,10 +6369,12 @@
       "bonuses": [],
       "dbnotes": "",
       "last_updated": "2025-02-23T20:30:31",
-      "activation_mode": "passive",
-      "equipment_slot_type": "",
+      "activation_mode": "equipped",
+      "equipment_slot_type": "flyable",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": [],
+      "flight_threshold": 7
     },
     {
       "record_id": "general_item_25112",
@@ -6159,10 +6385,12 @@
       "bonuses": [],
       "dbnotes": "",
       "last_updated": "2025-02-23T20:30:31",
-      "activation_mode": "passive",
-      "equipment_slot_type": "",
+      "activation_mode": "equipped",
+      "equipment_slot_type": "flyable",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": [],
+      "flight_threshold": 7
     },
     {
       "record_id": "general_item_25115",
@@ -6173,10 +6401,12 @@
       "bonuses": [],
       "dbnotes": "",
       "last_updated": "2025-02-23T20:30:31",
-      "activation_mode": "passive",
-      "equipment_slot_type": "",
+      "activation_mode": "equipped",
+      "equipment_slot_type": "flyable",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": [],
+      "flight_threshold": 7
     },
     {
       "record_id": "general_item_25118",
@@ -6187,10 +6417,12 @@
       "bonuses": [],
       "dbnotes": "",
       "last_updated": "2025-02-23T20:35:38",
-      "activation_mode": "passive",
-      "equipment_slot_type": "",
+      "activation_mode": "equipped",
+      "equipment_slot_type": "flyable",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": [],
+      "flight_threshold": 7
     },
     {
       "record_id": "general_item_25121",
@@ -6201,10 +6433,12 @@
       "bonuses": [],
       "dbnotes": "",
       "last_updated": "2025-02-23T20:30:31",
-      "activation_mode": "passive",
-      "equipment_slot_type": "",
+      "activation_mode": "equipped",
+      "equipment_slot_type": "flyable",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": [],
+      "flight_threshold": 7
     },
     {
       "record_id": "general_item_25124",
@@ -6215,10 +6449,12 @@
       "bonuses": [],
       "dbnotes": "",
       "last_updated": "2025-02-23T20:30:31",
-      "activation_mode": "passive",
-      "equipment_slot_type": "",
+      "activation_mode": "equipped",
+      "equipment_slot_type": "flyable",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": [],
+      "flight_threshold": 7
     },
     {
       "record_id": "general_item_25127",
@@ -6229,10 +6465,12 @@
       "bonuses": [],
       "dbnotes": "",
       "last_updated": "2025-02-23T20:30:31",
-      "activation_mode": "passive",
-      "equipment_slot_type": "",
+      "activation_mode": "equipped",
+      "equipment_slot_type": "flyable",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": [],
+      "flight_threshold": 7
     },
     {
       "record_id": "general_item_25130",
@@ -6243,10 +6481,12 @@
       "bonuses": [],
       "dbnotes": "",
       "last_updated": "2025-02-23T20:30:31",
-      "activation_mode": "passive",
-      "equipment_slot_type": "",
+      "activation_mode": "equipped",
+      "equipment_slot_type": "flyable",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": [],
+      "flight_threshold": 7
     },
     {
       "record_id": "general_item_25133",
@@ -6257,10 +6497,12 @@
       "bonuses": [],
       "dbnotes": "",
       "last_updated": "2025-02-23T20:30:31",
-      "activation_mode": "passive",
-      "equipment_slot_type": "",
+      "activation_mode": "equipped",
+      "equipment_slot_type": "flyable",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": [],
+      "flight_threshold": 7
     },
     {
       "record_id": "general_item_25135",
@@ -6271,10 +6513,12 @@
       "bonuses": [],
       "dbnotes": "",
       "last_updated": "2025-02-23T20:30:31",
-      "activation_mode": "passive",
-      "equipment_slot_type": "",
+      "activation_mode": "equipped",
+      "equipment_slot_type": "flyable",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": [],
+      "flight_threshold": 7
     },
     {
       "record_id": "general_item_25138",
@@ -6285,10 +6529,12 @@
       "bonuses": [],
       "dbnotes": "",
       "last_updated": "2025-02-23T20:30:31",
-      "activation_mode": "passive",
-      "equipment_slot_type": "",
+      "activation_mode": "equipped",
+      "equipment_slot_type": "flyable",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": [],
+      "flight_threshold": 7
     },
     {
       "record_id": "general_item_25084",
@@ -6299,10 +6545,12 @@
       "bonuses": [],
       "dbnotes": "",
       "last_updated": "2025-02-23T20:30:30",
-      "activation_mode": "passive",
-      "equipment_slot_type": "",
+      "activation_mode": "equipped",
+      "equipment_slot_type": "flyable",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": [],
+      "flight_threshold": 7
     },
     {
       "record_id": "general_item_25087",
@@ -6313,10 +6561,12 @@
       "bonuses": [],
       "dbnotes": "",
       "last_updated": "2025-02-23T20:30:30",
-      "activation_mode": "passive",
-      "equipment_slot_type": "",
+      "activation_mode": "equipped",
+      "equipment_slot_type": "flyable",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": [],
+      "flight_threshold": 7
     },
     {
       "record_id": "general_item_25141",
@@ -6327,10 +6577,12 @@
       "bonuses": [],
       "dbnotes": "",
       "last_updated": "2025-02-23T20:30:31",
-      "activation_mode": "passive",
-      "equipment_slot_type": "",
+      "activation_mode": "equipped",
+      "equipment_slot_type": "flyable",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": [],
+      "flight_threshold": 7
     },
     {
       "record_id": "general_item_25145",
@@ -6338,19 +6590,24 @@
       "type": "Broom",
       "has_magical_effects": "Yes",
       "description": ".",
-      "bonuses": [
+      "bonuses": [],
+      "dbnotes": "",
+      "last_updated": "2025-02-23T20:34:10",
+      "activation_mode": "equipped",
+      "equipment_slot_type": "flyable",
+      "actions": [],
+      "base_knuts": 0,
+      "in_flight_effects": [
         {
           "type": "Skill",
           "target": "Perception",
-          "amount": 2
+          "amount": 2,
+          "activation_mode": "passive",
+          "target_scope": "self",
+          "depletable": false
         }
       ],
-      "dbnotes": "",
-      "last_updated": "2025-02-23T20:34:10",
-      "activation_mode": "passive",
-      "equipment_slot_type": "",
-      "actions": [],
-      "base_knuts": 0
+      "flight_threshold": 7
     },
     {
       "record_id": "general_item_25148",
@@ -6361,10 +6618,12 @@
       "bonuses": [],
       "dbnotes": "",
       "last_updated": "2025-02-23T20:30:31",
-      "activation_mode": "passive",
-      "equipment_slot_type": "",
+      "activation_mode": "equipped",
+      "equipment_slot_type": "flyable",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": [],
+      "flight_threshold": 7
     },
     {
       "record_id": "general_item_28988",
@@ -6378,7 +6637,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_25151",
@@ -6389,10 +6649,12 @@
       "bonuses": [],
       "dbnotes": "",
       "last_updated": "2025-02-23T20:30:31",
-      "activation_mode": "passive",
-      "equipment_slot_type": "",
+      "activation_mode": "equipped",
+      "equipment_slot_type": "flyable",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": [],
+      "flight_threshold": 7
     },
     {
       "record_id": "general_item_25155",
@@ -6400,19 +6662,24 @@
       "type": "Broom",
       "has_magical_effects": "Yes",
       "description": "..",
-      "bonuses": [
+      "bonuses": [],
+      "dbnotes": "",
+      "last_updated": "2025-02-23T20:33:28",
+      "activation_mode": "equipped",
+      "equipment_slot_type": "flyable",
+      "actions": [],
+      "base_knuts": 0,
+      "in_flight_effects": [
         {
           "type": "Skill",
           "target": "Perception",
-          "amount": 2
+          "amount": 2,
+          "activation_mode": "passive",
+          "target_scope": "self",
+          "depletable": false
         }
       ],
-      "dbnotes": "",
-      "last_updated": "2025-02-23T20:33:28",
-      "activation_mode": "passive",
-      "equipment_slot_type": "",
-      "actions": [],
-      "base_knuts": 0
+      "flight_threshold": 7
     },
     {
       "record_id": "general_item_25159",
@@ -6420,19 +6687,24 @@
       "type": "Broom",
       "has_magical_effects": "Yes",
       "description": "",
-      "bonuses": [
+      "bonuses": [],
+      "dbnotes": "",
+      "last_updated": "2025-02-23T20:30:31",
+      "activation_mode": "equipped",
+      "equipment_slot_type": "flyable",
+      "actions": [],
+      "base_knuts": 0,
+      "in_flight_effects": [
         {
           "type": "Characteristic",
           "target": "Agility",
-          "amount": 1
+          "amount": 1,
+          "activation_mode": "passive",
+          "target_scope": "self",
+          "depletable": false
         }
       ],
-      "dbnotes": "",
-      "last_updated": "2025-02-23T20:30:31",
-      "activation_mode": "passive",
-      "equipment_slot_type": "",
-      "actions": [],
-      "base_knuts": 0
+      "flight_threshold": 7
     },
     {
       "record_id": "general_item_25162",
@@ -6443,10 +6715,12 @@
       "bonuses": [],
       "dbnotes": "",
       "last_updated": "2025-02-23T20:30:31",
-      "activation_mode": "passive",
-      "equipment_slot_type": "",
+      "activation_mode": "equipped",
+      "equipment_slot_type": "flyable",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": [],
+      "flight_threshold": 7
     },
     {
       "record_id": "general_item_25166",
@@ -6454,19 +6728,24 @@
       "type": "Broom",
       "has_magical_effects": "Yes",
       "description": "",
-      "bonuses": [
+      "bonuses": [],
+      "dbnotes": "",
+      "last_updated": "2025-02-23T20:30:32",
+      "activation_mode": "equipped",
+      "equipment_slot_type": "flyable",
+      "actions": [],
+      "base_knuts": 0,
+      "in_flight_effects": [
         {
           "type": "Characteristic",
           "target": "Agility",
-          "amount": 2
+          "amount": 2,
+          "activation_mode": "passive",
+          "target_scope": "self",
+          "depletable": false
         }
       ],
-      "dbnotes": "",
-      "last_updated": "2025-02-23T20:30:32",
-      "activation_mode": "passive",
-      "equipment_slot_type": "",
-      "actions": [],
-      "base_knuts": 0
+      "flight_threshold": 7
     },
     {
       "record_id": "general_item_25170",
@@ -6474,19 +6753,24 @@
       "type": "Broom",
       "has_magical_effects": "Yes",
       "description": "Widely considered the best broom ever crafted, its maker is unknown.",
-      "bonuses": [
+      "bonuses": [],
+      "dbnotes": "",
+      "last_updated": "2025-02-23T20:38:43",
+      "activation_mode": "equipped",
+      "equipment_slot_type": "flyable",
+      "actions": [],
+      "base_knuts": 0,
+      "in_flight_effects": [
         {
           "type": "Characteristic",
           "target": "Agility",
-          "amount": 3
+          "amount": 3,
+          "activation_mode": "passive",
+          "target_scope": "self",
+          "depletable": false
         }
       ],
-      "dbnotes": "",
-      "last_updated": "2025-02-23T20:38:43",
-      "activation_mode": "passive",
-      "equipment_slot_type": "",
-      "actions": [],
-      "base_knuts": 0
+      "flight_threshold": 7
     },
     {
       "record_id": "general_item_29013",
@@ -6500,7 +6784,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29023",
@@ -6514,7 +6799,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29037",
@@ -6528,7 +6814,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29047",
@@ -6542,7 +6829,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29054",
@@ -6556,7 +6844,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29056",
@@ -6570,7 +6859,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_25235",
@@ -6584,7 +6874,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_25238",
@@ -6598,7 +6889,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_25241",
@@ -6612,7 +6904,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_25244",
@@ -6626,7 +6919,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29697",
@@ -6640,7 +6934,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29699",
@@ -6654,7 +6949,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29701",
@@ -6668,7 +6964,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29703",
@@ -6682,7 +6979,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29705",
@@ -6696,7 +6994,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29707",
@@ -6706,11 +7005,15 @@
       "description": "Represents a pebble",
       "bonuses": [],
       "dbnotes": "",
-      "last_updated": "2025-09-02T03:00:19",
+      "last_updated": "2026-08-17T10:41:12.370144+00:00",
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 1214,
+      "in_flight_effects": [],
+      "tags": [],
+      "image_asset": "assets/items/generics/black stone.png",
+      "flight_threshold": null
     },
     {
       "record_id": "general_item_29249",
@@ -6724,7 +7027,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29671",
@@ -6738,7 +7042,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29673",
@@ -6752,7 +7057,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29675",
@@ -6766,7 +7072,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29677",
@@ -6786,7 +7093,8 @@
       "searching_method_id": "prospect",
       "gathering_method_ids": [
         "prospect"
-      ]
+      ],
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29679",
@@ -6800,7 +7108,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29681",
@@ -6814,7 +7123,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29683",
@@ -6828,7 +7138,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29685",
@@ -6838,11 +7149,15 @@
       "description": "A single mass",
       "bonuses": [],
       "dbnotes": "",
-      "last_updated": "2025-09-02T02:42:11",
+      "last_updated": "2026-08-17T10:40:41.017855+00:00",
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 791,
+      "in_flight_effects": [],
+      "tags": [],
+      "image_asset": "assets/items/generics/black stone.png",
+      "flight_threshold": null
     },
     {
       "record_id": "general_item_29687",
@@ -6856,7 +7171,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29689",
@@ -6870,7 +7186,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29691",
@@ -6884,7 +7201,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29693",
@@ -6898,7 +7216,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29695",
@@ -6912,7 +7231,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29709",
@@ -6926,7 +7246,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29711",
@@ -6940,7 +7261,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29713",
@@ -6955,7 +7277,8 @@
       "equipment_slot_type": "",
       "actions": [],
       "image_asset": "assets/items/generics/gemstone.png",
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29715",
@@ -6969,7 +7292,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29717",
@@ -6983,7 +7307,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29719",
@@ -6997,7 +7322,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29721",
@@ -7011,7 +7337,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29723",
@@ -7025,7 +7352,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29727",
@@ -7039,7 +7367,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29729",
@@ -7053,7 +7382,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29731",
@@ -7067,7 +7397,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29733",
@@ -7081,7 +7412,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29735",
@@ -7095,7 +7427,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29737",
@@ -7109,7 +7442,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29739",
@@ -7123,7 +7457,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29741",
@@ -7137,7 +7472,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29743",
@@ -7152,7 +7488,8 @@
       "equipment_slot_type": "",
       "actions": [],
       "image_asset": "",
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29745",
@@ -7166,7 +7503,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29747",
@@ -7180,7 +7518,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29752",
@@ -7194,7 +7533,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29754",
@@ -7208,7 +7548,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29756",
@@ -7222,7 +7563,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29758",
@@ -7236,7 +7578,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29760",
@@ -7250,7 +7593,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29762",
@@ -7264,7 +7608,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29764",
@@ -7278,7 +7623,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29766",
@@ -7292,7 +7638,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29768",
@@ -7306,7 +7653,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29770",
@@ -7326,7 +7674,8 @@
       "searching_method_id": "search",
       "gathering_method_ids": [
         "search"
-      ]
+      ],
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29772",
@@ -7340,7 +7689,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29774",
@@ -7354,7 +7704,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29776",
@@ -7368,7 +7719,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29778",
@@ -7382,7 +7734,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29780",
@@ -7396,7 +7749,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29782",
@@ -7410,7 +7764,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29784",
@@ -7424,7 +7779,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29786",
@@ -7438,7 +7794,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29788",
@@ -7452,7 +7809,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29790",
@@ -7466,7 +7824,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29792",
@@ -7480,7 +7839,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29794",
@@ -7515,7 +7875,8 @@
       "searching_method_id": "e8cf12de-6e72-4b33-87d1-8068c8faf804",
       "gathering_method_ids": [
         "e8cf12de-6e72-4b33-87d1-8068c8faf804"
-      ]
+      ],
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29796",
@@ -7532,7 +7893,8 @@
       "image_asset": "assets/items/generics/softer metal.png",
       "flight_threshold": null,
       "base_knuts": 0,
-      "tags": []
+      "tags": [],
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29798",
@@ -7542,11 +7904,15 @@
       "description": "Represents one stone",
       "bonuses": [],
       "dbnotes": "",
-      "last_updated": "2025-09-02T15:03:55",
+      "last_updated": "2026-08-17T07:38:50.938505+00:00",
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "tags": [],
+      "image_asset": "assets/items/generics/artsakhstones.png",
+      "flight_threshold": null,
+      "in_flight_effects": []
     },
     {
       "record_id": "general_item_29800",
@@ -7560,7 +7926,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "in_flight_effects": []
     },
     {
       "name": "Alembic",
@@ -7576,7 +7943,8 @@
       "equipment_slot_type": "",
       "record_id": "2fd6e36d-70e4-4ed9-8c43-f4428ade754d",
       "last_updated": "2026-08-17T06:17:55.842767+00:00",
-      "tags": []
+      "tags": [],
+      "in_flight_effects": []
     },
     {
       "name": "Size 1 Pewter Cauldron",
@@ -7594,7 +7962,8 @@
       "last_updated": "2026-08-17T04:08:19.990216+00:00",
       "tags": [
         "Cauldron"
-      ]
+      ],
+      "in_flight_effects": []
     },
     {
       "name": "Size 2 Pewter Cauldron",
@@ -7612,7 +7981,8 @@
       "last_updated": "2026-08-17T04:08:54.116586+00:00",
       "tags": [
         "Cauldron"
-      ]
+      ],
+      "in_flight_effects": []
     },
     {
       "name": "Size 1 Brass Cauldron",
@@ -7630,7 +8000,8 @@
       "last_updated": "2026-08-17T04:07:49.441639+00:00",
       "tags": [
         "Cauldron"
-      ]
+      ],
+      "in_flight_effects": []
     },
     {
       "name": "Size 1 Copper Cauldron",
@@ -7648,7 +8019,8 @@
       "last_updated": "2026-08-17T04:08:00.262147+00:00",
       "tags": [
         "Cauldron"
-      ]
+      ],
+      "in_flight_effects": []
     },
     {
       "name": "Size 2 Copper Cauldron",
@@ -7666,7 +8038,8 @@
       "last_updated": "2026-08-17T04:08:32.756435+00:00",
       "tags": [
         "Cauldron"
-      ]
+      ],
+      "in_flight_effects": []
     },
     {
       "name": "Size 1 Silver Cauldron",
@@ -7684,7 +8057,8 @@
       "last_updated": "2026-08-17T04:08:26.436110+00:00",
       "tags": [
         "Cauldron"
-      ]
+      ],
+      "in_flight_effects": []
     },
     {
       "name": "Size 3 Pewter Cauldron",
@@ -7702,7 +8076,8 @@
       "last_updated": "2026-08-17T04:09:05.720879+00:00",
       "tags": [
         "Cauldron"
-      ]
+      ],
+      "in_flight_effects": []
     },
     {
       "name": "Size 1 Gilded Cauldron",
@@ -7720,7 +8095,8 @@
       "last_updated": "2026-08-17T04:08:05.853807+00:00",
       "tags": [
         "Cauldron"
-      ]
+      ],
+      "in_flight_effects": []
     },
     {
       "name": "Size 1 Iron Cauldron",
@@ -7738,7 +8114,8 @@
       "last_updated": "2026-08-17T04:08:12.197877+00:00",
       "tags": [
         "Cauldron"
-      ]
+      ],
+      "in_flight_effects": []
     },
     {
       "name": "Size 2 Iron Cauldron",
@@ -7756,7 +8133,8 @@
       "last_updated": "2026-08-17T04:08:47.904610+00:00",
       "tags": [
         "Cauldron"
-      ]
+      ],
+      "in_flight_effects": []
     },
     {
       "name": "Size 3 Iron Cauldron",
@@ -7774,7 +8152,8 @@
       "last_updated": "2026-08-17T04:08:59.980538+00:00",
       "tags": [
         "Cauldron"
-      ]
+      ],
+      "in_flight_effects": []
     },
     {
       "name": "Silvered Unicorn Horn",
@@ -7790,7 +8169,8 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "record_id": "d0830350-1309-4570-8426-2ce43196dc87",
-      "last_updated": "2026-08-17T04:14:07.225867+00:00"
+      "last_updated": "2026-08-17T04:14:07.225867+00:00",
+      "in_flight_effects": []
     },
     {
       "name": "Retort",
@@ -7806,7 +8186,42 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "record_id": "6569d91f-94d6-4a02-8b60-5d4e5f3f779b",
-      "last_updated": "2026-08-17T06:18:10.608367+00:00"
+      "last_updated": "2026-08-17T06:18:10.608367+00:00",
+      "in_flight_effects": []
+    },
+    {
+      "name": "Pickled Caterpillars",
+      "type": "Other",
+      "base_knuts": 55,
+      "description": "",
+      "bonuses": [],
+      "actions": [],
+      "in_flight_effects": [],
+      "dbnotes": "",
+      "tags": [],
+      "image_asset": "",
+      "flight_threshold": null,
+      "activation_mode": "passive",
+      "equipment_slot_type": "",
+      "record_id": "cb6a3dc8-43b8-4a73-afad-3c10de7400fa",
+      "last_updated": "2026-08-17T12:55:47.768281+00:00"
+    },
+    {
+      "name": "Stewed Horned Slugs",
+      "type": "Potioning Item",
+      "base_knuts": 62,
+      "description": "",
+      "bonuses": [],
+      "actions": [],
+      "in_flight_effects": [],
+      "dbnotes": "",
+      "tags": [],
+      "image_asset": "",
+      "flight_threshold": null,
+      "activation_mode": "passive",
+      "equipment_slot_type": "",
+      "record_id": "656e9e41-14a7-424c-bb8f-4b050a8c0210",
+      "last_updated": "2026-08-17T13:04:21.923902+00:00"
     }
   ],
   "creatures": [
@@ -34439,20 +34854,25 @@
         {
           "name": "Dead Caterpillar",
           "required_proficiency": "No",
-          "description": "Sliced Caterpillars help to improve the potency of particular potions.",
+          "description": "",
           "raw_effects": ".",
           "effect_in_potions": ".",
           "record_id": "creature-part-54084ec4-6aca-595b-8f43-73dd1bfa9bde",
           "yield": {
             "low": 1,
             "high": 1
-          }
+          },
+          "image_asset": "",
+          "base_knuts": 0,
+          "tags": [],
+          "actions": [],
+          "activation_mode": "passive"
         }
       ],
       "tags": [],
       "description": "Caterpillars are non-magical worm-like creatures that can transform into butterflies.",
       "dbnotes": "",
-      "last_updated": "2026-01-09T23:58:38",
+      "last_updated": "2026-08-17T12:59:54.461247+00:00",
       "in_situ_instinct": {
         "stance": [],
         "intention": []
@@ -53472,21 +53892,6 @@
       ]
     },
     {
-      "record_id": "food_drink_7193",
-      "name": "Alcohol",
-      "description": "",
-      "raw_effects": "",
-      "effects_in_potions": "",
-      "dbnotes": "",
-      "last_updated": "2022-12-13T15:43:17",
-      "tags": [
-        "Cooking"
-      ],
-      "tag_ids": [
-        "catalog-tag-8fe11856-8c07-569a-880b-419078906033"
-      ]
-    },
-    {
       "record_id": "food_drink_7194",
       "name": "Rotted Dirty Cheese Curds",
       "description": "",
@@ -53549,21 +53954,6 @@
     {
       "record_id": "food_drink_7198",
       "name": "Ice Pop",
-      "description": "",
-      "raw_effects": "",
-      "effects_in_potions": "",
-      "dbnotes": "",
-      "last_updated": "2022-12-13T15:43:17",
-      "tags": [
-        "Cooking"
-      ],
-      "tag_ids": [
-        "catalog-tag-8fe11856-8c07-569a-880b-419078906033"
-      ]
-    },
-    {
-      "record_id": "food_drink_7199",
-      "name": "Pumpkin Juice",
       "description": "",
       "raw_effects": "",
       "effects_in_potions": "",
@@ -55095,21 +55485,6 @@
       "tag_ids": [
         "catalog-tag-8fe11856-8c07-569a-880b-419078906033",
         "catalog-tag-461be722-776a-55b1-b46e-ed0453a5457e"
-      ]
-    },
-    {
-      "record_id": "food_drink_7301",
-      "name": "Coffee",
-      "description": "",
-      "raw_effects": "",
-      "effects_in_potions": "",
-      "dbnotes": "",
-      "last_updated": "2022-12-13T15:43:18",
-      "tags": [
-        "Cooking"
-      ],
-      "tag_ids": [
-        "catalog-tag-8fe11856-8c07-569a-880b-419078906033"
       ]
     },
     {
@@ -76772,7 +77147,7 @@
       "name": "Legilimency",
       "tradition": "British",
       "skill": "Arithmancy",
-      "threshold": 38,
+      "threshold": 18,
       "required_materials": [],
       "description": "Allows the practitioner to look into the mind of the target. This is resistable using fortitude, but the resistance roll must be greater than the casters roll. Ties go to the defender.\nThe use of this practice is generally considered highly illegal and immoral with strict penalties.\nSee Legal Note: British Ministries Legislation Banning the Use of Legilimency",
       "history": "",
@@ -76780,10 +77155,11 @@
         "Mental"
       ],
       "dbnotes": "",
-      "last_updated": "2025-05-14T17:25:37",
+      "last_updated": "2026-08-17T07:25:56.388280+00:00",
       "tag_ids": [
         "catalog-tag-4b0be543-0520-5965-bb3e-a242f361a735"
-      ]
+      ],
+      "target_scope": "none"
     },
     {
       "record_id": "proficiency_16136",
@@ -93465,7 +93841,7 @@
       "history": "",
       "rationale": "",
       "dbnotes": "",
-      "last_updated": "2024-01-01T18:24:05",
+      "last_updated": "2026-08-17T07:17:26.321160+00:00",
       "tags": [
         "Banishing",
         "Creature Care",
@@ -93477,7 +93853,8 @@
         "catalog-tag-80b12cd5-50b4-5a00-a0db-411c125ae76a",
         "catalog-tag-0cc2cce4-7429-573f-9e5e-2b81c383f137",
         "catalog-tag-461be722-776a-55b1-b46e-ed0453a5457e"
-      ]
+      ],
+      "target_scope": "other"
     },
     {
       "record_id": "spell_18972",
@@ -98116,6 +98493,22 @@
       "tag_ids": [
         "catalog-tag-1e82eaf0-80a1-5505-b7b5-7058fc1af587"
       ]
+    },
+    {
+      "name": "Animagus",
+      "incantation": "Animagi",
+      "tradition": "British",
+      "skill": "Transfiguration",
+      "subtype": "Concealing",
+      "threshold": 38,
+      "target_scope": "self",
+      "description": "",
+      "history": "",
+      "rationale": "",
+      "tags": [],
+      "dbnotes": "",
+      "record_id": "01617fef-4358-45a2-a729-e16f8193eb42",
+      "last_updated": "2026-08-17T09:40:15.864156+00:00"
     }
   ],
   "schools": [
@@ -108509,8 +108902,8 @@
     }
   ],
   "_headmasters_scroll": {
-    "revision_id": "0feb6ee1-2f2e-4b60-835c-7707e7873e4a",
-    "last_modified_at": "2026-08-17T06:19:57.136056Z",
+    "revision_id": "92d4f3af-6935-48dd-b26a-c33c1745eb01",
+    "last_modified_at": "2026-08-17T13:04:21.970019Z",
     "last_modified_by": "dbm"
   },
   "tag_catalog": [
@@ -109018,6 +109411,373 @@
       "spell_requirements": [],
       "record_id": "13a3cc46-a613-465b-8bd4-688167f7636a",
       "last_updated": "2026-08-17T06:19:14.482425+00:00"
+    },
+    {
+      "name": "Draught of Living Death",
+      "skill": "Potions",
+      "threshold": 40,
+      "description": "",
+      "tags": [],
+      "dbnotes": "",
+      "formulations": [
+        {
+          "record_id": "fd5dc06b-70b1-4a20-a6a3-945e49c0afde",
+          "name": "Default",
+          "output_item": {
+            "collection": "potions",
+            "record_id": "potion_21705",
+            "name": "Draught of Living Death"
+          },
+          "output_quantity": 1,
+          "ingredient_requirements": [
+            {
+              "record_id": "29a596de-4e46-4651-9b9c-cf03c1adaf8a",
+              "alternatives": [
+                {
+                  "collection": "preparations",
+                  "record_id": "preparation_12091",
+                  "name": "Powdered Root of Asphodel",
+                  "quantity": 15
+                }
+              ]
+            },
+            {
+              "record_id": "b7ed5903-fbd0-470a-a0c1-ad7022beda25",
+              "alternatives": [
+                {
+                  "collection": "preparations",
+                  "record_id": "preparation_12095",
+                  "name": "Infusion of Wormwood",
+                  "quantity": 1
+                }
+              ]
+            },
+            {
+              "record_id": "2508b81d-bc51-49dd-8c05-00dc5f39b28f",
+              "alternatives": [
+                {
+                  "collection": "preparations",
+                  "record_id": "preparation_20214",
+                  "name": "Standard Potioning Water",
+                  "quantity": 6
+                }
+              ]
+            }
+          ],
+          "vessel_requirements": [
+            {
+              "record_id": "ed4c4e9c-210c-408d-a7a7-0014c972cd21",
+              "alternatives": [
+                {
+                  "collection": "general_items",
+                  "record_id": "f38d69e3-8055-4906-9dd7-bb7bba9c66c4",
+                  "name": "Size 2 Pewter Cauldron"
+                },
+                {
+                  "collection": "general_items",
+                  "record_id": "0bed557d-fefd-4189-8689-31e61103ad55",
+                  "name": "Size 2 Copper Cauldron"
+                },
+                {
+                  "collection": "general_items",
+                  "record_id": "ee672d86-a396-49d0-a0bc-26f290785812",
+                  "name": "Size 2 Iron Cauldron"
+                }
+              ]
+            }
+          ],
+          "proficiency_requirements": [],
+          "spell_requirements": []
+        },
+        {
+          "record_id": "097672b3-ac06-487d-8099-eaf20ea60890",
+          "name": "Higher Yield",
+          "output_item": {
+            "collection": "potions",
+            "record_id": "potion_21705",
+            "name": "Draught of Living Death"
+          },
+          "output_quantity": 3,
+          "ingredient_requirements": [
+            {
+              "record_id": "29a596de-4e46-4651-9b9c-cf03c1adaf8a",
+              "alternatives": [
+                {
+                  "collection": "preparations",
+                  "record_id": "preparation_12091",
+                  "name": "Powdered Root of Asphodel",
+                  "quantity": 35
+                }
+              ]
+            },
+            {
+              "record_id": "b7ed5903-fbd0-470a-a0c1-ad7022beda25",
+              "alternatives": [
+                {
+                  "collection": "preparations",
+                  "record_id": "preparation_12095",
+                  "name": "Infusion of Wormwood",
+                  "quantity": 3
+                }
+              ]
+            },
+            {
+              "record_id": "2508b81d-bc51-49dd-8c05-00dc5f39b28f",
+              "alternatives": [
+                {
+                  "collection": "preparations",
+                  "record_id": "preparation_20214",
+                  "name": "Standard Potioning Water",
+                  "quantity": 12
+                }
+              ]
+            }
+          ],
+          "vessel_requirements": [
+            {
+              "record_id": "00fd72b7-1c96-4128-9267-b3f6305f1d15",
+              "alternatives": [
+                {
+                  "collection": "general_items",
+                  "record_id": "a6761caa-0d72-4b75-beda-604478e4a589",
+                  "name": "Size 3 Pewter Cauldron"
+                },
+                {
+                  "collection": "general_items",
+                  "record_id": "bcc869ce-a6a8-40e1-9f58-ae28dcc5e2b3",
+                  "name": "Size 3 Iron Cauldron"
+                }
+              ]
+            }
+          ],
+          "proficiency_requirements": [
+            {
+              "record_id": "52afebf4-ac9d-4d79-8e11-2bbe67a26994",
+              "alternatives": [
+                {
+                  "collection": "proficiencies",
+                  "record_id": "1d4d2867-002b-44d8-bbf8-af766aaad3f7",
+                  "name": "Draught of Living Death"
+                }
+              ]
+            }
+          ],
+          "spell_requirements": []
+        }
+      ],
+      "output_item": {
+        "collection": "potions",
+        "record_id": "potion_21705",
+        "name": "Draught of Living Death"
+      },
+      "output_quantity": 1,
+      "ingredient_requirements": [
+        {
+          "record_id": "29a596de-4e46-4651-9b9c-cf03c1adaf8a",
+          "alternatives": [
+            {
+              "collection": "preparations",
+              "record_id": "preparation_12091",
+              "name": "Powdered Root of Asphodel",
+              "quantity": 15
+            }
+          ]
+        },
+        {
+          "record_id": "b7ed5903-fbd0-470a-a0c1-ad7022beda25",
+          "alternatives": [
+            {
+              "collection": "preparations",
+              "record_id": "preparation_12095",
+              "name": "Infusion of Wormwood",
+              "quantity": 1
+            }
+          ]
+        },
+        {
+          "record_id": "2508b81d-bc51-49dd-8c05-00dc5f39b28f",
+          "alternatives": [
+            {
+              "collection": "preparations",
+              "record_id": "preparation_20214",
+              "name": "Standard Potioning Water",
+              "quantity": 6
+            }
+          ]
+        }
+      ],
+      "vessel_requirements": [
+        {
+          "record_id": "ed4c4e9c-210c-408d-a7a7-0014c972cd21",
+          "alternatives": [
+            {
+              "collection": "general_items",
+              "record_id": "f38d69e3-8055-4906-9dd7-bb7bba9c66c4",
+              "name": "Size 2 Pewter Cauldron"
+            },
+            {
+              "collection": "general_items",
+              "record_id": "0bed557d-fefd-4189-8689-31e61103ad55",
+              "name": "Size 2 Copper Cauldron"
+            },
+            {
+              "collection": "general_items",
+              "record_id": "ee672d86-a396-49d0-a0bc-26f290785812",
+              "name": "Size 2 Iron Cauldron"
+            }
+          ]
+        }
+      ],
+      "proficiency_requirements": [],
+      "spell_requirements": [],
+      "record_id": "5e964cef-5db3-4ddc-aae4-cc5d8435ef3b",
+      "last_updated": "2026-08-17T13:02:33.414044+00:00"
+    },
+    {
+      "name": "Powdering Asphodel Roots",
+      "skill": "Herbology",
+      "threshold": 10,
+      "description": "",
+      "tags": [],
+      "dbnotes": "",
+      "formulations": [
+        {
+          "record_id": "8e7b6ed6-392d-488d-9149-a26ed8d392ad",
+          "name": "Default",
+          "output_item": {
+            "collection": "preparations",
+            "record_id": "preparation_12091",
+            "name": "Powdered Root of Asphodel"
+          },
+          "output_quantity": 2,
+          "ingredient_requirements": [
+            {
+              "record_id": "8fce67cd-c1dd-4bd3-9939-002543530dc3",
+              "alternatives": [
+                {
+                  "collection": "plant_parts",
+                  "record_id": "plant_part_d5d4ddaa8c5456c18b4b4aaa2437cf9f",
+                  "parent_record_id": "plant_7501",
+                  "name": "Asphodel Roots",
+                  "quantity": 1
+                }
+              ]
+            }
+          ],
+          "vessel_requirements": [],
+          "proficiency_requirements": [],
+          "spell_requirements": []
+        }
+      ],
+      "output_item": {
+        "collection": "preparations",
+        "record_id": "preparation_12091",
+        "name": "Powdered Root of Asphodel"
+      },
+      "output_quantity": 2,
+      "ingredient_requirements": [
+        {
+          "record_id": "8fce67cd-c1dd-4bd3-9939-002543530dc3",
+          "alternatives": [
+            {
+              "collection": "plant_parts",
+              "record_id": "plant_part_d5d4ddaa8c5456c18b4b4aaa2437cf9f",
+              "parent_record_id": "plant_7501",
+              "name": "Asphodel Roots",
+              "quantity": 1
+            }
+          ]
+        }
+      ],
+      "vessel_requirements": [],
+      "proficiency_requirements": [],
+      "spell_requirements": [],
+      "record_id": "2c7ef94e-258a-44af-93d5-774e41f5ffe5",
+      "last_updated": "2026-08-17T12:27:43.441576+00:00"
+    },
+    {
+      "name": "Pickling Caterpillars",
+      "skill": "Potions",
+      "threshold": 5,
+      "description": "",
+      "tags": [],
+      "dbnotes": "",
+      "formulations": [
+        {
+          "record_id": "a382d28e-d2eb-4c81-ac44-3a5b006de6ed",
+          "name": "Default",
+          "output_item": {
+            "collection": "general_items",
+            "record_id": "cb6a3dc8-43b8-4a73-afad-3c10de7400fa",
+            "name": "Pickled Caterpillars"
+          },
+          "output_quantity": 1,
+          "ingredient_requirements": [
+            {
+              "record_id": "35f86b96-88e5-4b13-8b15-705e44f49f92",
+              "alternatives": [
+                {
+                  "collection": "creature_parts",
+                  "record_id": "creature-part-54084ec4-6aca-595b-8f43-73dd1bfa9bde",
+                  "parent_record_id": "creature_1768",
+                  "name": "Dead Caterpillar",
+                  "quantity": 3
+                }
+              ]
+            },
+            {
+              "record_id": "2a49a5e9-beb2-4bb2-a3e0-01691e7dabbd",
+              "alternatives": [
+                {
+                  "collection": "foods_and_drinks",
+                  "record_id": "food_drink_7190",
+                  "name": "Vinegar",
+                  "quantity": 1
+                }
+              ]
+            }
+          ],
+          "vessel_requirements": [],
+          "proficiency_requirements": [],
+          "spell_requirements": []
+        }
+      ],
+      "output_item": {
+        "collection": "general_items",
+        "record_id": "cb6a3dc8-43b8-4a73-afad-3c10de7400fa",
+        "name": "Pickled Caterpillars"
+      },
+      "output_quantity": 1,
+      "ingredient_requirements": [
+        {
+          "record_id": "35f86b96-88e5-4b13-8b15-705e44f49f92",
+          "alternatives": [
+            {
+              "collection": "creature_parts",
+              "record_id": "creature-part-54084ec4-6aca-595b-8f43-73dd1bfa9bde",
+              "parent_record_id": "creature_1768",
+              "name": "Dead Caterpillar",
+              "quantity": 3
+            }
+          ]
+        },
+        {
+          "record_id": "2a49a5e9-beb2-4bb2-a3e0-01691e7dabbd",
+          "alternatives": [
+            {
+              "collection": "foods_and_drinks",
+              "record_id": "food_drink_7190",
+              "name": "Vinegar",
+              "quantity": 1
+            }
+          ]
+        }
+      ],
+      "vessel_requirements": [],
+      "proficiency_requirements": [],
+      "spell_requirements": [],
+      "record_id": "b66fe852-387a-442c-a1ae-a0eb0faae831",
+      "last_updated": "2026-08-17T13:02:22.989744+00:00"
     }
   ]
 }

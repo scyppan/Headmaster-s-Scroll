@@ -28,6 +28,7 @@ from .gmail import GmailSender, GmailUnavailable
 from .service import (
     GameBoardService,
     format_game_datetime_for_people,
+    iso_utc,
     parse_utc,
     token_hash,
     utc_now,
@@ -363,6 +364,7 @@ class PlayerConnection:
     roll_events: deque[float] = field(default_factory=deque)
     board_state: dict[str, Any] | None = None
     character_sheet_signature: str = ""
+    controlled_ids: set[str] = field(default_factory=set)
 
     def public(self, service: GameBoardService) -> dict[str, Any]:
         return {
@@ -408,6 +410,8 @@ class GameBoardRuntime:
         self._state_cache: dict[str, Any] | None = None
         self._state_dirty = True
         self._state_generation = 0
+        self._board_broadcast_generations: dict[str, int] = defaultdict(int)
+        self._board_broadcast_tasks: dict[str, asyncio.Task[Any]] = {}
 
     def world_changed(self) -> bool:
         try:
@@ -424,6 +428,30 @@ class GameBoardRuntime:
         with self._state_lock:
             self._state_dirty = True
             self._state_generation += 1
+
+    def queue_board_broadcast(self, session_id: str, delay: float = 0.075) -> None:
+        """Coalesce expensive per-player board snapshots after rapid moves."""
+
+        session_id = str(session_id or "")
+        if not session_id:
+            return
+        self._board_broadcast_generations[session_id] += 1
+        current = self._board_broadcast_tasks.get(session_id)
+        if current is not None and not current.done():
+            return
+
+        async def publish() -> None:
+            try:
+                while True:
+                    generation = self._board_broadcast_generations[session_id]
+                    await asyncio.sleep(max(0.0, delay))
+                    await self.broadcast_board(session_id)
+                    if generation == self._board_broadcast_generations[session_id]:
+                        return
+            finally:
+                self._board_broadcast_tasks.pop(session_id, None)
+
+        self._board_broadcast_tasks[session_id] = asyncio.create_task(publish())
 
     def state(self) -> dict[str, Any]:
         # Only one worker may assemble the large admin snapshot.  Concurrent
@@ -558,8 +586,9 @@ class GameBoardRuntime:
         *,
         notify_admins: bool = True,
     ) -> dict[str, Any]:
-        chat = self.service.post_chat(
-            sender_id, sender_name, sender_role, text, session_id, activity
+        chat = await asyncio.to_thread(
+            self.service.post_chat,
+            sender_id, sender_name, sender_role, text, session_id, activity,
         )
         creature_activity = isinstance(activity, dict) and activity.get(
             "activity_type"
@@ -602,12 +631,12 @@ class GameBoardRuntime:
             for_players=True,
             contact_id=connection.contact_id,
         )
-        snapshot["controlled_character_ids"] = sorted(
+        connection.controlled_ids = set(
             self.service.controlled_character_ids(
-                connection.session_id,
-                connection.contact_id,
+                connection.session_id, connection.contact_id,
             )
         )
+        snapshot["controlled_character_ids"] = sorted(connection.controlled_ids)
         previous = connection.board_state
         connection.board_state = deepcopy(snapshot)
         if force or previous is None:
@@ -752,10 +781,7 @@ class GameBoardRuntime:
         x: float,
         y: float,
     ) -> None:
-        if person_id not in self.service.controlled_character_ids(
-            connection.session_id,
-            connection.contact_id,
-        ):
+        if person_id not in connection.controlled_ids:
             raise PermissionError("You do not control that token")
         envelope = {
             "v": 1,
@@ -770,6 +796,7 @@ class GameBoardRuntime:
                 item.websocket.send_json(envelope)
                 for item in list(self.connections.values())
                 if item.session_id == connection.session_id
+                and item is not connection
             ),
             return_exceptions=True,
         )
@@ -937,6 +964,11 @@ def create_apps(
         for connection in connections:
             connection.name = result["display_name"]
             connection.character_id = result.get("character_id")
+            connection.controlled_ids = set(
+                service.controlled_character_ids(
+                    connection.session_id, connection.contact_id,
+                )
+            )
             connection.character_sheet_signature = ""
             connection.board_state = None
             if connection.character_id:
@@ -1052,7 +1084,7 @@ def create_apps(
         except RuntimeError as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
         runtime.invalidate_state()
-        asyncio.create_task(runtime.broadcast_board(body.session_id))
+        runtime.queue_board_broadcast(body.session_id)
         return result
 
     @admin_app.post("/api/admin/board/transport", dependencies=[Depends(admin_guard)])
@@ -1463,6 +1495,16 @@ def create_apps(
             body.person_id,
             body.granted,
         )
+        for connection in runtime.connections.values():
+            if (
+                connection.session_id == body.session_id
+                and connection.contact_id == body.contact_id
+            ):
+                connection.controlled_ids = set(
+                    service.controlled_character_ids(
+                        connection.session_id, connection.contact_id,
+                    )
+                )
         await runtime.broadcast_board(body.session_id)
         return result
 
@@ -1798,6 +1840,11 @@ def create_apps(
             character_id=identity.get("character_id"),
             asset_credential_hash=asset_credential_hash,
         )
+        connection.controlled_ids = set(
+            service.controlled_character_ids(
+                identity["session_id"], identity["contact_id"],
+            )
+        )
         connection_key = f"{identity['session_id']}:{identity['contact_id']}"
         runtime.connections[connection_key] = connection
         runtime.asset_credentials[asset_credential_hash] = connection_key
@@ -1912,6 +1959,9 @@ def create_apps(
                 elif message.get("type") in {
                     "character_roll_request", "recipe_attempt_request"
                 }:
+                    client_request_id = str(
+                        message.get("request_id", "") or ""
+                    )[:100]
                     now = time.monotonic()
                     while connection.roll_events and connection.roll_events[0] <= now - 10:
                         connection.roll_events.popleft()
@@ -1925,18 +1975,32 @@ def create_apps(
                     connection.roll_events.append(now)
                     try:
                         if message.get("type") == "recipe_attempt_request":
-                            result = service.attempt_character_recipe(
-                                connection.session_id,
-                                connection.contact_id,
+                            result = await asyncio.to_thread(
+                                service.attempt_character_recipe,
+                                connection.session_id, connection.contact_id,
                                 str(message.get("target_id", ""))[:120],
                             )
                         else:
-                            result = service.roll_character_action(
-                                connection.session_id,
-                                connection.contact_id,
+                            result = await asyncio.to_thread(
+                                service.roll_character_action,
+                                connection.session_id, connection.contact_id,
                                 str(message.get("roll_type", ""))[:30],
                                 str(message.get("target_id", ""))[:120],
                             )
+                        if client_request_id:
+                            result["client_request_id"] = client_request_id
+                        # The server still generates and verifies the roll.
+                        # Give the roller that authoritative result before the
+                        # durable chat write and room/admin fan-out complete.
+                        await websocket.send_json({
+                            "v": 1,
+                            "type": "roll_result_preview",
+                            "request_id": client_request_id,
+                            "result": result,
+                            "sender_id": connection.contact_id,
+                            "sender_name": connection.name,
+                            "sent_at": iso_utc(utc_now()),
+                        })
                         await runtime.chat(
                             connection.contact_id,
                             connection.name,
@@ -1951,7 +2015,12 @@ def create_apps(
                             )
                     except (KeyError, PermissionError, RuntimeError, TypeError, ValueError) as error:
                         await websocket.send_json({
-                            "v": 1, "type": "server_error", "message": str(error),
+                            "v": 1,
+                            # Keep the long-standing error envelope so an
+                            # already-published client still displays it.
+                            "type": "server_error",
+                            "request_id": client_request_id,
+                            "message": str(error),
                         })
                 elif message.get("type") == "teaching_options_request":
                     try:
@@ -2218,19 +2287,37 @@ def create_apps(
                         if len(connection.move_events) >= 30:
                             raise PermissionError("Token movement is arriving too quickly")
                         connection.move_events.append(now)
+                        if person_id not in connection.controlled_ids:
+                            raise PermissionError("You do not control that token")
                         if message["type"] == "board_move_preview":
                             await runtime.preview_move(connection, person_id, map_id, x, y)
                         else:
-                            service.move_person(
-                                connection.session_id,
-                                person_id,
-                                map_id,
-                                x,
-                                y,
-                                contact_id=connection.contact_id,
+                            # Everyone sees the final drop immediately. The
+                            # locked atomic campaign save continues on a worker
+                            # so a 5 MB JSON commit cannot freeze WebSockets.
+                            await runtime.broadcast_move_preview(
+                                connection.session_id, person_id, map_id, x, y,
                             )
-                            await runtime.broadcast_board(connection.session_id)
+                            placement = await asyncio.to_thread(
+                                service.move_person,
+                                connection.session_id, person_id, map_id, x, y,
+                            )
+                            await websocket.send_json({
+                                "v": 1,
+                                "type": "board_move_committed",
+                                "request_id": str(message.get("request_id", ""))[:100],
+                                "person_id": person_id,
+                                "map_id": map_id,
+                                "x": placement["x"],
+                                "y": placement["y"],
+                            })
+                            runtime.queue_board_broadcast(connection.session_id)
                     except (KeyError, PermissionError, RuntimeError, TypeError, ValueError) as error:
+                        if message.get("type") == "board_move_commit":
+                            # A final position may already have been shown as
+                            # an optimistic room preview. Restore every client
+                            # from canonical state if persistence rejected it.
+                            runtime.queue_board_broadcast(connection.session_id, delay=0.0)
                         await websocket.send_json({
                             "v": 1,
                             "type": "server_error",

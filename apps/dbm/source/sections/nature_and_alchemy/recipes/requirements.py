@@ -106,6 +106,11 @@ def requirement_catalog(database, kind):
                             if tag_names_by_id.get(str(value), "").strip()
                         ],
                     }, key=str.casefold),
+                    "description": str(record.get("description", "") or ""),
+                    "skill": str(record.get("skill", "") or ""),
+                    "subtype": str(record.get("subtype", "") or ""),
+                    "tradition": str(record.get("tradition", "") or ""),
+                    "threshold": record.get("threshold"),
                 })
     for parent_collection, label, child_collection in (
         ("plants", "Plant Part", "plant_parts"),
@@ -133,6 +138,8 @@ def clean_catalog_reference(row):
     result = deepcopy(row)
     result.pop("catalog", None)
     result.pop("tags", None)
+    for key in ("description", "skill", "subtype", "tradition", "threshold"):
+        result.pop(key, None)
     return result
 
 
@@ -357,7 +364,15 @@ def fuzzy_rows(rows, query):
     ranked = []
     for row in rows:
         name = row["name"].casefold()
-        text = f"{name} {row['catalog'].casefold()}"
+        text = " ".join((
+            name,
+            row["catalog"].casefold(),
+            str(row.get("description", "")).casefold(),
+            str(row.get("skill", "")).casefold(),
+            str(row.get("subtype", "")).casefold(),
+            str(row.get("tradition", "")).casefold(),
+            " ".join(str(tag).casefold() for tag in row.get("tags", [])),
+        ))
         if query == name:
             score = 0
         elif name.startswith(query):
@@ -393,7 +408,19 @@ class RequirementLineDialog(tk.Toplevel):
         self.grid_columnconfigure(0, weight=1)
         self.query = tk.StringVar()
         self.query.trace_add("write", self.refresh_results)
-        RoundedEntry(self, textvariable=self.query, background=APP_BACKGROUND, height=40, font=app_font(10)).grid(row=0, column=0, sticky="ew", padx=14, pady=(14, 8))
+        self.spell_filters = None
+        search_row = tk.Frame(self, bg=APP_BACKGROUND)
+        search_row.grid(row=0, column=0, sticky="ew", padx=14, pady=(14, 8))
+        search_row.grid_columnconfigure(0, weight=1)
+        RoundedEntry(search_row, textvariable=self.query, background=APP_BACKGROUND, height=40, font=app_font(10)).grid(row=0, column=0, sticky="ew")
+        if kind == "spell":
+            from sections.magic.spells.filter_dialog import EMPTY_SPELL_FILTERS
+            self.spell_filters = dict(EMPTY_SPELL_FILTERS)
+            SoftButton(
+                search_row, text="Advanced filters…",
+                command=self.open_spell_filters,
+                background=APP_BACKGROUND, width=150, height=40,
+            ).grid(row=0, column=1, padx=(8, 0))
         subject = {
             "ingredient": "ingredient",
             "vessel": "vessel",
@@ -474,8 +501,23 @@ class RequirementLineDialog(tk.Toplevel):
             font=app_font(9),
         )
         self.selected.grid(row=1, column=0, sticky="nsew", padx=8)
+        self.selected.bind("<<ListboxSelect>>", self.load_selected_quantity)
         selected_actions = tk.Frame(right, bg=SURFACE)
         selected_actions.grid(row=2, column=0, sticky="ew", padx=8, pady=8)
+        self.selected_quantity = tk.StringVar(value="1")
+        if kind == "ingredient":
+            tk.Label(
+                selected_actions, text="Qty", bg=SURFACE, fg=TEXT_DARK,
+            ).pack(side="left")
+            self.selected_quantity_box = ttk.Spinbox(
+                selected_actions, textvariable=self.selected_quantity,
+                from_=1, to=100000, width=7,
+            )
+            self.selected_quantity_box.pack(side="left", padx=4)
+            ttk.Button(
+                selected_actions, text="Update quantity",
+                command=self.update_selected_quantity,
+            ).pack(side="left", padx=(0, 8))
         if kind not in {"proficiency", "spell"}:
             ttk.Button(
                 selected_actions,
@@ -492,10 +534,28 @@ class RequirementLineDialog(tk.Toplevel):
 
     def refresh_results(self, *_args):
         self.results.delete(*self.results.get_children())
-        for index, row in enumerate(fuzzy_rows(self.catalog, self.query.get())):
+        visible = self.filtered_catalog()
+        for index, row in enumerate(fuzzy_rows(visible, self.query.get())):
             self.results.insert("", "end", iid=str(index), text=row["name"], values=(row["catalog"],), tags=(row["record_id"], row["collection"], str(row.get("parent_record_id", ""))))
             self.results.set(str(index), "catalog", row["catalog"])
-        self.visible_rows = fuzzy_rows(self.catalog, self.query.get())
+        self.visible_rows = fuzzy_rows(visible, self.query.get())
+
+    def filtered_catalog(self):
+        if self.kind != "spell" or not self.spell_filters:
+            return self.catalog
+        from sections.magic.spells.record_list import SpellList
+        return [
+            row for row in self.catalog
+            if SpellList.record_matches_filters(row, self.spell_filters)
+        ]
+
+    def open_spell_filters(self):
+        from sections.magic.spells.filter_dialog import SpellFilterDialog
+        dialog = SpellFilterDialog(self, self.catalog, self.spell_filters)
+        self.wait_window(dialog)
+        if dialog.result is not None:
+            self.spell_filters = dialog.result
+            self.refresh_results()
 
     def add_alternative(self):
         selected = self.results.selection()
@@ -536,6 +596,33 @@ class RequirementLineDialog(tk.Toplevel):
         if selected:
             del self.alternatives[selected[0]]
             self.refresh_selected()
+
+    def load_selected_quantity(self, _event=None):
+        if self.kind != "ingredient":
+            return
+        selected = self.selected.curselection()
+        if selected:
+            self.selected_quantity.set(
+                str(self.alternatives[selected[0]].get("quantity", 1) or 1)
+            )
+
+    def update_selected_quantity(self):
+        if self.kind != "ingredient":
+            return
+        selected = self.selected.curselection()
+        if not selected:
+            return
+        try:
+            quantity = max(1, int(self.selected_quantity.get()))
+        except ValueError:
+            messagebox.showerror(
+                "Invalid quantity", "Quantity must be a whole number.", parent=self
+            )
+            return
+        index = selected[0]
+        self.alternatives[index]["quantity"] = quantity
+        self.refresh_selected()
+        self.selected.selection_set(index)
 
     def edit_output_effect(self):
         selected = self.selected.curselection()

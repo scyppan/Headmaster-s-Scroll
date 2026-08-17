@@ -21,7 +21,7 @@ class JsonDatabaseTests(unittest.TestCase):
         self.assertTrue(database.has_container("accessories"))
 
         metadata = database.get_database_metadata()
-        self.assertEqual(metadata["schema_version"], 8)
+        self.assertEqual(metadata["schema_version"], 9)
         self.assertTrue(database.has_container("raw_materials"))
         self.assertTrue(database.has_container("recipes"))
         self.assertEqual(metadata["database_version"], "1.0")
@@ -127,7 +127,7 @@ class JsonDatabaseTests(unittest.TestCase):
             database = JsonDatabase(database_path)
             database.load()
             self.assertTrue(database.dirty)
-            self.assertEqual(database.get_database_metadata()["schema_version"], 8)
+            self.assertEqual(database.get_database_metadata()["schema_version"], 9)
             self.assertEqual(
                 database.get_collection("books")[0]["publication_date"],
                 "1900-01-01",
@@ -178,7 +178,7 @@ class JsonDatabaseTests(unittest.TestCase):
             self.assertEqual(database.get_collection("raw_materials"), [])
             self.assertEqual(database.get_collection("recipes"), [])
             self.assertEqual(
-                database.get_database_metadata()["schema_version"], 8
+                database.get_database_metadata()["schema_version"], 9
             )
 
 

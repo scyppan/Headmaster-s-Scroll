@@ -205,25 +205,30 @@ class GeneralItemsPage(tk.Frame):
             )
             return False
 
-        for bonus in record_values["bonuses"]:
+        effect_values = (
+            record_values.get("in_flight_effects", [])
+            if record_values.get("type") in {"Broom", "Flyable"}
+            else record_values["bonuses"]
+        )
+        for bonus in effect_values:
             if not bonus["type"]:
                 messagebox.showerror(
-                    "Bonus type required",
-                    "Every non-empty bonus must have a type.",
+                    "Effect required",
+                    "Every non-empty effect must select a value.",
                     parent=self,
                 )
                 return False
             if not bonus.get("target"):
                 messagebox.showerror(
-                    "Bonus selection required",
-                    "Every bonus must select a value from its category.",
+                    "Effect selection required",
+                    "Every effect must select a value.",
                     parent=self,
                 )
                 return False
             if bonus.get("amount") is None:
                 messagebox.showerror(
-                    "Bonus amount required",
-                    "Every bonus must have a whole-number amount.",
+                    "Effect amount required",
+                    "Every effect must have a whole-number amount.",
                     parent=self,
                 )
                 return False

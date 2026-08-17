@@ -7,10 +7,13 @@ from typing import Any, Iterable
 from uuid import NAMESPACE_URL, uuid5
 
 from .effects import (
+    IN_FLIGHT_EFFECT_TARGETS,
     TARGET_SCOPES,
     normalize_bonuses,
+    normalize_in_flight_effects,
     normalize_target_scope,
     validate_bonuses,
+    validate_in_flight_effects,
 )
 
 
@@ -280,6 +283,17 @@ def enrich_catalog(document: dict[str, Any]) -> tuple[dict[str, Any], dict[str, 
                     )
                 except (TypeError, ValueError):
                     record["flight_threshold"] = 7
+                source = record.get("in_flight_effects")
+                if source is None:
+                    source = record.get("bonuses", []) or []
+                record["in_flight_effects"] = [
+                    effect
+                    for effect in normalize_in_flight_effects(source)
+                    if isinstance(effect, dict)
+                    and effect.get("target") in IN_FLIGHT_EFFECT_TARGETS
+                ]
+                record["bonuses"] = []
+                record["actions"] = []
             actions = []
             for index, action in enumerate(record.get("actions", []) or []):
                 if not isinstance(action, dict) or not action.get("action_type"):
@@ -363,6 +377,12 @@ def enrich_catalog(document: dict[str, Any]) -> tuple[dict[str, Any], dict[str, 
 
 
 def validate_catalog(document: dict[str, Any]) -> None:
+    database_metadata = document.get("_database", {})
+    try:
+        schema_version = int(database_metadata.get("schema_version", 0) or 0)
+    except (TypeError, ValueError):
+        schema_version = 0
+    strict_in_flight_effects = schema_version >= 9
     valid_categories = set(BOOK_CATEGORIES)
     catalog = document.get("tag_catalog", []) or []
     tag_ids = {str(item.get("record_id", "")) for item in catalog if isinstance(item, dict)}
@@ -403,6 +423,16 @@ def validate_catalog(document: dict[str, Any]) -> None:
                 if threshold < 1 or threshold > 100:
                     raise ValueError(
                         f"{collection} {record.get('record_id')} has an invalid Flying threshold"
+                    )
+                validate_in_flight_effects(
+                    record.get("in_flight_effects", [])
+                )
+                if strict_in_flight_effects and (
+                    record.get("bonuses") or record.get("actions")
+                ):
+                    raise ValueError(
+                        f"{collection} {record.get('record_id')} must use only "
+                        "in-flight effects"
                     )
             action_ids = [
                 str(action.get("record_id", ""))

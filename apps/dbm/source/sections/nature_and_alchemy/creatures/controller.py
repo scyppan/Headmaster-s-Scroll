@@ -14,6 +14,7 @@ from shared.wounds import (
     WOUND_SEVERITIES,
     WOUND_TYPES,
 )
+from shared.part_item_behavior import validate_part_item_behavior
 
 
 class CreatureController:
@@ -383,6 +384,7 @@ class CreatureController:
                     raise TypeError(
                         f"{part_name} {field_label} must be text"
                     )
+            validate_part_item_behavior(part, self.database)
 
     def validate_tags(self, tags):
         if not isinstance(tags, list):

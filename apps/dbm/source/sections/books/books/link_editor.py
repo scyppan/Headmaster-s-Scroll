@@ -4,6 +4,7 @@ from copy import deepcopy
 from runtime_theme import bind_theme
 from sections.magic.proficiencies.association_editor import AssociationPicker
 from shared.widgets import SoftButton, StripedListbox
+from shared.widgets.spell_reference_picker import SpellReferencePicker
 from theme import (
     BORDER_SOFT,
     FIELD_BACKGROUND,
@@ -221,6 +222,20 @@ class BookLinkEditor(tk.Frame):
         return entries
 
     def add_reference(self):
+        if self.collection_name == "spells":
+            picker = SpellReferencePicker(
+                self, self.get_records(), self.picker_title
+            )
+            self.wait_window(picker)
+            if picker.result is None:
+                return
+            self.references.append({
+                "record_id": str(picker.result.get("record_id", "")),
+                "name": str(picker.result.get("name", "")),
+            })
+            self.refresh_list(len(self.references) - 1)
+            self.change_command()
+            return
         entries = self.get_picker_entries()
         entries_by_label = {entry["label"]: entry for entry in entries}
         picker = AssociationPicker(

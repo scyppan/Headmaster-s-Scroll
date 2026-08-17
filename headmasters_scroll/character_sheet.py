@@ -558,6 +558,19 @@ def _inventory(
         for collection in definition_collections
         for record in database.get(collection, []) or [] if isinstance(record, dict)
     }
+    for parent_collection, part_collection in (
+        ("creatures", "creature_parts"),
+        ("plants", "plant_parts"),
+    ):
+        for parent in database.get(parent_collection, []) or []:
+            if not isinstance(parent, dict):
+                continue
+            for part in parent.get("parts", []) or []:
+                if not isinstance(part, dict):
+                    continue
+                part_id = str(part.get("record_id", "") or "").strip()
+                if part_id:
+                    by_id[part_id] = (part_collection, part)
     by_name: dict[str, tuple[str, dict[str, Any]]] = {}
     for _definition_id, value in by_id.items():
         name = str(value[1].get("name", "") or "").strip().casefold()
@@ -568,7 +581,10 @@ def _inventory(
 
     def enrich(entry: dict[str, Any], source: dict[str, Any]) -> dict[str, Any]:
         definition_id = str(
-            source.get("definition_record_id") or source.get("item_id") or ""
+            source.get("definition_record_id")
+            or source.get("item_id")
+            or source.get("part_id")
+            or ""
         ).strip()
         resolved = by_id.get(definition_id)
         if resolved is None:
@@ -592,8 +608,22 @@ def _inventory(
             "equipment_slot_type": slot_type,
             "equipped": entry["record_id"] in equipped_ids,
             "bonuses": deepcopy(definition.get("bonuses", []) or source.get("bonuses", []) or []),
+            "in_flight_effects": deepcopy(
+                definition.get("in_flight_effects", [])
+                or source.get("in_flight_effects", [])
+                or []
+            ),
             "actions": deepcopy(definition.get("actions", []) or source.get("actions", []) or []),
+            "image_asset": str(
+                definition.get("image_asset", "")
+                or source.get("image_asset", "")
+                or ""
+            ),
+            "base_knuts": int(
+                definition.get("base_knuts", source.get("base_knuts", 0)) or 0
+            ),
             "flight_threshold": definition.get("flight_threshold"),
+            "airborne": bool((campaign_person or {}).get("airborne", False)),
         })
         if not entry.get("description"):
             entry["description"] = str(definition.get("description", "") or "")
@@ -655,17 +685,26 @@ def _inventory_roll_modifiers(inventory: list[dict[str, Any]]) -> dict[str, Any]
     }
     for item in inventory:
         mode = str(item.get("activation_mode", "passive") or "passive").casefold()
-        active = mode == "passive" or (mode == "equipped" and item.get("equipped"))
+        flyable = item.get("equipment_slot_type") == "flyable"
+        active = (
+            bool(item.get("equipped")) and bool(item.get("airborne"))
+            if flyable
+            else mode == "passive" or (mode == "equipped" and item.get("equipped"))
+        )
         if not active:
             continue
-        # Flyable bonuses use the existing Passive ledger row, but only enter
-        # the ledger while that item is mounted (the ``active`` check above).
-        # This preserves the established fixed roll-detail schema while making
-        # ownership alone insufficient to receive the bonus.
         source_name = "accessories" if item.get("equipment_slot_type") == "accessory" else (
             "wand" if item.get("equipment_slot_type") == "focus" else "passive"
         )
-        for bonus in item.get("bonuses", []) or []:
+        effects = (
+            item.get("in_flight_effects", []) or []
+            if flyable else item.get("bonuses", []) or []
+        )
+        # Legacy schema-eight Flyables are accepted until DBM next saves the
+        # migrated catalog. They still receive the stricter target filter.
+        if flyable and not effects:
+            effects = item.get("bonuses", []) or []
+        for bonus in effects:
             if not isinstance(bonus, dict):
                 continue
             bonus_mode = str(
@@ -675,6 +714,10 @@ def _inventory_roll_modifiers(inventory: list[dict[str, Any]]) -> dict[str, Any]
                 continue
             target = str(bonus.get("target", "") or "").strip()
             kind = str(bonus.get("type", "") or "").strip().casefold()
+            if flyable and target not in {
+                "Flying", "Perception", "Strength", "Agility"
+            }:
+                continue
             if target == "Social Skills":
                 target = "Social"
             collection = {

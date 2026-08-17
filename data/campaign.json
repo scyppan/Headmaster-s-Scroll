@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "_headmasters_scroll": {
-    "revision_id": "74bf61c8-c134-4af4-879d-45b38facbf12",
-    "last_modified_at": "2026-08-17T06:27:36.900906Z",
+    "revision_id": "65dd4050-fa53-4256-9309-d31de3f49e83",
+    "last_modified_at": "2026-08-17T13:05:59.084348Z",
     "last_modified_by": "game-board"
   },
   "campaigns": [
@@ -11,7 +11,7 @@
       "created_at": "2026-08-11T08:19:23.069609Z",
       "name": "Test camp",
       "game_world_start_date": "2000-08-27",
-      "last_updated": "2026-08-17T06:27:36.666317Z",
+      "last_updated": "2026-08-17T13:05:58.949507Z",
       "game_state": {
         "initialized": true,
         "current_game_datetime": "2000-08-27T08:00",
@@ -241,15 +241,15 @@
             "token_scale": 0.0055,
             "start_point": null,
             "headmaster_camera": {
-              "zoom": 1.4784188477109286,
-              "center_x": 0.5718382249015934,
-              "center_y": 0.4813171506301108
+              "zoom": 2.9736283754788433,
+              "center_x": 0.798878585582746,
+              "center_y": 0.5139267424240582
             },
             "player_cameras": {
               "6ca9e551-e305-4c3c-a763-d2ff9a13afff": {
-                "zoom": 3.5178762919199196,
-                "center_x": 0.8004097848996825,
-                "center_y": 0.49180238673737614
+                "zoom": 5.350250105473706,
+                "center_x": 0.7082221804261594,
+                "center_y": 0.43741492528766357
               },
               "fcceeb1d-7919-455d-a076-3d45926583af": {
                 "zoom": 1.0,
@@ -690,8 +690,8 @@
             "faction_revealed": false,
             "faction_organization_id": "",
             "label_offset": {
-              "x": 0.008260225231846802,
-              "y": -0.010547952873266995
+              "x": 0.0011092416081222153,
+              "y": -0.02059798391201506
             },
             "nameplate_scale": 1.0,
             "wounds": [],
@@ -1623,11 +1623,11 @@
               "location_id": "38b8b79b-0785-4213-826e-0e65998d3b41",
               "floor_id": "",
               "map_id": "a5a85bd9-e989-4069-936c-8acda64f0fdd",
-              "x": 0.9508622931420111,
-              "y": 0.5509789961194703
+              "x": 0.7709046381996516,
+              "y": 0.4194630795717935
             },
             "visibility": "players",
-            "display_mode": "token",
+            "display_mode": "dot",
             "name_revealed": false,
             "faction_revealed": true,
             "faction_organization_id": "c4cbf003-ab52-4da7-b341-e2cea0e34062",

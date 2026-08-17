@@ -194,6 +194,7 @@ class TimelineView(tk.Frame):
         self.list_rows = []
         self.draft_event = None
         self.selected_event_id = None
+        self.event_editor = None
         self.event_editor_visible = False
         self.loading = False
         self.remove_armed_event_id = ""
@@ -332,20 +333,6 @@ class TimelineView(tk.Frame):
         scrollbar = tk.Scrollbar(list_frame, command=self.listbox.yview)
         scrollbar.grid(row=0, column=1, sticky="ns")
         self.listbox.configure(yscrollcommand=scrollbar.set)
-        self.event_editor = EventEditor(
-            self.workspace,
-            self.event_controller,
-            self.save_editor_event,
-            self.cancel_editor,
-            context="person",
-            background=SURFACE_MUTED,
-        )
-        self.event_editor.grid(
-            row=0,
-            column=1,
-            sticky="nsew",
-            padx=(7, 0),
-        )
         self.name_details_panel = tk.Frame(
             self.workspace,
             bg=SURFACE_MUTED,
@@ -396,7 +383,42 @@ class TimelineView(tk.Frame):
         self.hide_event_editor()
         self.update_button_state()
 
+    def ensure_event_editor(self):
+        """Build the expensive editor only after the user needs it.
+
+        The editor owns several searchable association pickers. Constructing
+        those pickers while merely opening Timeline used to enumerate the
+        complete People collection, which made a list-only view scale with the
+        size of the whole world.
+        """
+        if self.event_editor is not None:
+            return self.event_editor
+
+        self.event_editor = EventEditor(
+            self.workspace,
+            self.event_controller,
+            self.save_editor_event,
+            self.cancel_editor,
+            context="person",
+            background=SURFACE_MUTED,
+        )
+        self.event_editor.grid(
+            row=0,
+            column=1,
+            sticky="nsew",
+            padx=(7, 0),
+        )
+        self.event_editor.grid_remove()
+        return self.event_editor
+
+    def show_editor_error(self, message):
+        event_editor = self.ensure_event_editor()
+        self.show_event_editor()
+        event_editor.show_error(message)
+
     def show_event_editor(self):
+        event_editor = self.ensure_event_editor()
+
         if self.event_editor_visible:
             return
 
@@ -418,7 +440,7 @@ class TimelineView(tk.Frame):
             sticky="nsew",
             padx=(0, 7),
         )
-        self.event_editor.grid(
+        event_editor.grid(
             row=0,
             column=1,
             sticky="nsew",
@@ -427,7 +449,8 @@ class TimelineView(tk.Frame):
         self.event_editor_visible = True
 
     def show_name_details_panel(self):
-        self.event_editor.grid_remove()
+        if self.event_editor is not None:
+            self.event_editor.grid_remove()
         self.workspace.grid_columnconfigure(
             0,
             weight=5,
@@ -457,7 +480,8 @@ class TimelineView(tk.Frame):
         self.event_editor_visible = False
 
     def hide_event_editor(self):
-        self.event_editor.grid_remove()
+        if self.event_editor is not None:
+            self.event_editor.grid_remove()
         self.name_details_panel.grid_remove()
         self.workspace.grid_columnconfigure(
             0,
@@ -683,6 +707,24 @@ class TimelineView(tk.Frame):
         if refresh:
             self.filter_events()
 
+    def reset_for_person_change(self):
+        """Clear stale Timeline state without querying the People index."""
+        self.loading = True
+        self.draft_event = None
+        self.selected_event_id = None
+        self.events = []
+        self.linked_events = []
+        self.visible_events = []
+        self.list_rows = []
+        self.render_people = []
+        self.render_current_person = {}
+        self.render_person_id = ""
+        self.listbox.delete(0, "end")
+        self.hide_event_editor()
+        self.reset_remove_confirmation()
+        self.update_button_state()
+        self.loading = False
+
     def filter_events(self, *arguments):
         unsaved_changes_command = getattr(
             getattr(self, "event_editor", None),
@@ -713,21 +755,6 @@ class TimelineView(tk.Frame):
         )
         people_provider = getattr(self, "people_provider", None)
         self.render_person_id = current_person_id
-        self.render_people = (
-            list(people_provider())
-            if people_provider is not None
-            else []
-        )
-        self.render_current_person = next(
-            (
-                person
-                for person in self.render_people
-                if isinstance(person, dict)
-                and str(person.get("record_id", "") or "").strip()
-                == current_person_id
-            ),
-            {},
-        )
         candidate_events = [deepcopy(event) for event in self.events]
         linked_birth_for_current_person = any(
             linked_event.get("event_type") == "born"
@@ -755,6 +782,57 @@ class TimelineView(tk.Frame):
 
         if self.draft_event is not None:
             candidate_events.append(deepcopy(self.draft_event))
+
+        relevant_person_ids = (
+            {current_person_id} if current_person_id else set()
+        )
+        scalar_person_fields = ("person_id", "related_person_id")
+        list_person_fields = (
+            "person_ids",
+            "baby_person_ids",
+            "birthing_parent_person_ids",
+            "non_birthing_parent_person_ids",
+            "perpetrator_person_ids",
+            "victim_person_ids",
+            "witness_person_ids",
+            "affected_person_ids",
+            "eminence_person_ids",
+        )
+
+        for event in candidate_events:
+            for field_name in scalar_person_fields:
+                person_id = str(event.get(field_name, "") or "").strip()
+
+                if person_id:
+                    relevant_person_ids.add(person_id)
+
+            for field_name in list_person_fields:
+                relevant_person_ids.update(
+                    str(person_id or "").strip()
+                    for person_id in event.get(field_name, [])
+                    if str(person_id or "").strip()
+                )
+
+        self.render_people = (
+            [
+                person
+                for person in people_provider()
+                if isinstance(person, dict)
+                and str(person.get("record_id", "") or "").strip()
+                in relevant_person_ids
+            ]
+            if people_provider is not None
+            else []
+        )
+        self.render_current_person = next(
+            (
+                person
+                for person in self.render_people
+                if str(person.get("record_id", "") or "").strip()
+                == current_person_id
+            ),
+            {},
+        )
 
         self.visible_events = []
 
@@ -806,7 +884,13 @@ class TimelineView(tk.Frame):
                 self.listbox.see(row_index)
 
         if not dated_events:
-            if not preserve_unsaved_editor:
+            if (
+                not preserve_unsaved_editor
+                and (
+                    self.event_editor is not None
+                    or self.draft_event is not None
+                )
+            ):
                 self.refresh_editor()
             self.update_button_state()
             return
@@ -882,7 +966,13 @@ class TimelineView(tk.Frame):
                     self.listbox.selection_set(row_index)
                     self.listbox.see(row_index)
 
-        if not preserve_unsaved_editor:
+        if (
+            not preserve_unsaved_editor
+            and (
+                self.event_editor is not None
+                or self.draft_event is not None
+            )
+        ):
             self.refresh_editor()
         self.update_button_state()
 
@@ -1208,8 +1298,23 @@ class TimelineView(tk.Frame):
         return None
 
     def refresh_editor(self):
+        selected_event = self.selected_event()
+
+        if selected_event is None and self.event_editor is None:
+            self.hide_event_editor()
+            return
+
+        if (
+            selected_event is not None
+            and selected_event.get("automatic_source") == "life_start"
+            and selected_event.get("event_type") == "birth_name"
+        ):
+            self.show_name_details_panel()
+            return
+
+        event_editor = self.ensure_event_editor()
         comparison_command = getattr(
-            self.event_editor,
+            event_editor,
             "set_comparison_events",
             None,
         )
@@ -1217,15 +1322,13 @@ class TimelineView(tk.Frame):
         if callable(comparison_command):
             comparison_command([*self.events, *self.linked_events])
 
-        selected_event = self.selected_event()
-
         if selected_event is None:
-            if self.event_editor.is_new_event():
+            if event_editor.is_new_event():
                 self.show_event_editor()
-                self.event_editor.ensure_new_event_editable()
+                event_editor.ensure_new_event_editable()
                 return
 
-            self.event_editor.clear(
+            event_editor.clear(
                 "Select an event to view it, or click Add event."
             )
             self.hide_event_editor()
@@ -1719,7 +1822,10 @@ class TimelineView(tk.Frame):
     def cancel_editor(self):
         if (
             self.draft_event is not None
-            or self.event_editor.is_new_event()
+            or (
+                self.event_editor is not None
+                and self.event_editor.is_new_event()
+            )
         ):
             self.draft_event = None
             self.selected_event_id = None
@@ -1798,19 +1904,19 @@ class TimelineView(tk.Frame):
                 return False
 
         if selected_event.get("automatic_source"):
-            self.event_editor.show_error(
+            self.show_editor_error(
                 "Automatic events cannot be duplicated."
             )
             return False
 
         if selected_event.get("event_type") in ("died", "murder"):
-            self.event_editor.show_error(
+            self.show_editor_error(
                 "Death and Murder events cannot be duplicated."
             )
             return False
 
         if selected_event.get("organization_event"):
-            self.event_editor.show_error(
+            self.show_editor_error(
                 "Organization-owned events cannot be duplicated here."
             )
             return False
@@ -1824,7 +1930,7 @@ class TimelineView(tk.Frame):
                     selected_event.get("record_id", "")
                 )
             except (KeyError, OSError, TypeError, ValueError) as error:
-                self.event_editor.show_error(str(error))
+                self.show_editor_error(str(error))
                 return False
 
             person_id = self.current_person_id()
@@ -1896,19 +2002,19 @@ class TimelineView(tk.Frame):
             return False
 
         if selected_event.get("automatic_source"):
-            self.event_editor.show_error(
+            self.show_editor_error(
                 "Automatic events cannot be duplicated."
             )
             return False
 
         if selected_event.get("event_type") in ("died", "murder"):
-            self.event_editor.show_error(
+            self.show_editor_error(
                 "Death and Murder events cannot be duplicated."
             )
             return False
 
         if selected_event.get("organization_event"):
-            self.event_editor.show_error(
+            self.show_editor_error(
                 "Organization-owned events cannot be duplicated here."
             )
             return False
@@ -1953,7 +2059,7 @@ class TimelineView(tk.Frame):
                     copy_count,
                 )
             except (KeyError, OSError, TypeError, ValueError) as error:
-                self.event_editor.show_error(str(error))
+                self.show_editor_error(str(error))
                 return False
 
             person_id = self.current_person_id()
@@ -2003,7 +2109,7 @@ class TimelineView(tk.Frame):
         if self.remove_armed_event_id != event_id:
             self.remove_armed_event_id = event_id
             self.remove_button.set_text("Confirm remove")
-            self.event_editor.show_error(
+            self.show_editor_error(
                 "Click Confirm remove again to delete this event."
             )
             return
@@ -2041,9 +2147,10 @@ class TimelineView(tk.Frame):
             timeline_changed = True
 
         self.selected_event_id = None
-        self.event_editor.clear(
-            "Select an event to view it, or click Add event."
-        )
+        if self.event_editor is not None:
+            self.event_editor.clear(
+                "Select an event to view it, or click Add event."
+            )
         self.reset_remove_confirmation()
 
         if timeline_changed and not self.loading:

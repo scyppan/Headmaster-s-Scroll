@@ -366,7 +366,48 @@ class CharacterSheetTests(unittest.TestCase):
         self.assertEqual(charms["breakdown"]["accessories"], 3)
         self.assertTrue(next(item for item in sheet["inventory"] if item["record_id"] == "ring-instance")["equipped"])
 
-    def test_flyable_bonuses_apply_only_while_mounted(self):
+    def test_harvested_nested_part_keeps_its_item_image_and_passive_bonus(self):
+        self.database.update({
+            "wands": [], "holdable_items": [], "accessories": [],
+            "general_items": [], "plants": [],
+            "creatures": [{
+                "record_id": "bat", "name": "Bat", "parts": [{
+                    "record_id": "bat-wing", "name": "Bat Wing",
+                    "image_asset": "assets/items/parts/bat-wing.png",
+                    "base_knuts": 7,
+                    "activation_mode": "passive",
+                    "bonuses": [{
+                        "type": "Skill", "target": "Charms", "amount": 2,
+                        "activation_mode": "passive",
+                    }],
+                }],
+            }],
+        })
+        campaign = self.campaign()
+        campaign["game_state"]["people"] = {"person-1": {
+            "campaign_inventory": [{
+                "record_id": "harvest-stack", "item_id": "bat-wing",
+                "part_id": "bat-wing", "definition_collection": "creature_parts",
+                "name": "Bat Wing", "quantity": 1,
+            }],
+        }}
+        sheet = build_character_sheet(
+            self.person, self.world, self.database, campaign
+        )
+        wing = next(
+            item for item in sheet["inventory"]
+            if item["record_id"] == "harvest-stack"
+        )
+        self.assertEqual(wing["definition_collection"], "creature_parts")
+        self.assertEqual(wing["image_asset"], "assets/items/parts/bat-wing.png")
+        self.assertEqual(wing["base_knuts"], 7)
+        charms = next(
+            item for item in sheet["attributes"]["skills"]
+            if item["name"] == "Charms"
+        )
+        self.assertEqual(charms["breakdown"]["passive"], 2)
+
+    def test_in_flight_effects_apply_only_while_airborne(self):
         self.world["items"] = [{
             "record_id": "broom-instance", "name": "Training Broom",
             "definition_record_id": "broom-definition", "quantity": 1,
@@ -378,7 +419,10 @@ class CharacterSheetTests(unittest.TestCase):
                 "record_id": "broom-definition", "name": "Training Broom",
                 "type": "Flyable", "activation_mode": "equipped",
                 "equipment_slot_type": "flyable", "flight_threshold": 9,
-                "bonuses": [{"type": "Skill", "target": "Flying", "amount": 4}],
+                "bonuses": [{"type": "Skill", "target": "Charms", "amount": 99}],
+                "in_flight_effects": [
+                    {"type": "Skill", "target": "Flying", "amount": 4}
+                ],
             }],
         })
         campaign = self.campaign()
@@ -389,6 +433,26 @@ class CharacterSheetTests(unittest.TestCase):
         self.assertEqual(item["equipment_slot_type"], "flyable")
         self.assertEqual(item["flight_threshold"], 9)
         self.assertFalse(item["equipped"])
+
+        campaign["game_state"]["people"] = {
+            "person-1": {
+                "equipment": {"flyable": "broom-instance"},
+                "airborne": False,
+            }
+        }
+        grounded = build_character_sheet(
+            self.person, self.world, self.database, campaign
+        )
+        grounded_flying = next(
+            item for item in grounded["attributes"]["skills"]
+            if item["name"] == "Flying"
+        )
+        grounded_charms = next(
+            item for item in grounded["attributes"]["skills"]
+            if item["name"] == "Charms"
+        )
+        self.assertEqual(grounded_flying["total"], 0)
+        self.assertNotEqual(grounded_charms["total"], 99)
 
         campaign["game_state"]["people"] = {
             "person-1": {

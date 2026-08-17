@@ -79,6 +79,8 @@
       this.lastMovePreview = 0;
       this.activeSection = 'overview';
       this.chatMessages = [];
+      this.rollRequestSequence = 0;
+      this.moveRequestSequence = 0;
       this.characterSheet = null;
       this.teachingTargetsLoaded = false;
       this.pendingTeachOpen = false;
@@ -493,11 +495,35 @@
         this.chatMessages = Array.isArray(message.messages) ? message.messages.slice(-100) : [];
         this.renderChat();
       } else if (message.type === 'chat_message' && message.message) {
+        const requestId = String(message.message.activity?.client_request_id || '');
+        if (requestId) {
+          this.chatMessages = this.chatMessages.filter(item =>
+            String(item.client_request_id || item.activity?.client_request_id || '') !== requestId
+          );
+        }
         if (!this.chatMessages.some(item => item.id === message.message.id)) {
           this.chatMessages.push(message.message);
           this.chatMessages = this.chatMessages.slice(-100);
           this.renderChat();
         }
+      } else if (message.type === 'roll_result_preview' && message.result) {
+        const requestId = String(message.request_id || message.result.client_request_id || '');
+        this.chatMessages = this.chatMessages.filter(item =>
+          String(item.client_request_id || item.activity?.client_request_id || '') !== requestId
+        );
+        this.chatMessages.push({
+          id: `roll-preview-${requestId || Date.now()}`,
+          client_request_id: requestId,
+          sender_id: message.sender_id || this.playerId,
+          sender_name: message.sender_name || this.characterSheet?.character_name || 'Player',
+          sender_role: 'player',
+          text: message.result.text || 'The roll is complete.',
+          sent_at: message.sent_at || new Date().toISOString(),
+          activity: message.result,
+          optimistic: true,
+        });
+        this.chatMessages = this.chatMessages.slice(-100);
+        this.renderChat();
       } else if (message.type === 'identity_updated') {
         const player = message.player || 'Player';
         this.characterId = message.character_id || '';
@@ -594,7 +620,7 @@
             ? `Harvested ${result.quantity_awarded} ${result.part_name || 'creature part'}.`
             : `The harvest attempt for ${result.part_name || 'that part'} failed.`
         );
-      } else if (message.type === 'board_move_preview') {
+      } else if (message.type === 'board_move_preview' || message.type === 'board_move_committed') {
         const actor = (this.board.actors || []).find(item => item.actor_id === message.person_id);
         if (actor) {
           actor.map_id = message.map_id;
@@ -639,6 +665,13 @@
         this.show('expired', message.message || 'The session has ended.');
       } else if (message.type === 'server_error') {
         this.regionGatePending = false;
+        const requestId = String(message.request_id || '');
+        if (requestId) {
+          this.chatMessages = this.chatMessages.filter(item =>
+            String(item.client_request_id || item.activity?.client_request_id || '') !== requestId
+          );
+          this.renderChat();
+        }
         const errorMessage = message.message || 'The message could not be sent.';
         if (this.activeSection === 'board') this.showBoardNotice(errorMessage);
         else this.showChatNotice(errorMessage);
@@ -715,7 +748,7 @@
         const outcomeClass = ['critical_failure', 'failure', 'success', 'critical_success'].includes(activityOutcome)
           ? `is-roll-${activityOutcome.replace('_', '-')}`
           : '';
-        article.className = `ccgb-chat-message ${message.sender_role === 'headmaster' ? 'is-headmaster' : ''} ${ownMessage ? 'is-own' : ''} ${outcomeClass}`;
+        article.className = `ccgb-chat-message ${message.sender_role === 'headmaster' ? 'is-headmaster' : ''} ${ownMessage ? 'is-own' : ''} ${message.pending ? 'is-pending' : ''} ${outcomeClass}`;
         const heading = document.createElement('div');
         const name = document.createElement('strong');
         name.textContent = message.sender_name || 'Player';
@@ -922,7 +955,22 @@
       const actors = new Map((this.board.actors || []).map(item => [String(item.actor_id), item]));
       removedMaps.forEach(id => maps.delete(String(id)));
       removedActors.forEach(id => actors.delete(String(id)));
-      mapUpserts.forEach(item => maps.set(String(item.record_id), item));
+      let mapStructureChanged = removedMaps.size > 0;
+      mapUpserts.forEach(item => {
+        const id = String(item.record_id);
+        const previous = maps.get(id);
+        // A player's private camera is persisted inside the map snapshot. It
+        // changes frequently, but it does not change the rendered map.
+        const renderable = value => {
+          if (!value || typeof value !== 'object') return value;
+          const { camera, ...rest } = value;
+          return rest;
+        };
+        if (!previous || JSON.stringify(renderable(previous)) !== JSON.stringify(renderable(item))) {
+          mapStructureChanged = true;
+        }
+        maps.set(id, item);
+      });
 
       let actorStructureChanged = removedActors.size > 0;
       actorUpserts.forEach(item => {
@@ -944,7 +992,6 @@
       });
       this.board.maps = [...maps.values()];
       this.board.actors = [...actors.values()];
-      const mapStructureChanged = removedMaps.size > 0 || mapUpserts.length > 0;
       const boardPresentationChanged = [
         'controlled_character_ids', 'active_map_id', 'loaded_map_ids'
       ].some(key => Object.prototype.hasOwnProperty.call(scalars, key));
@@ -1044,25 +1091,64 @@
       content.innerHTML = `<section class="ccgb-sheet-empty"><h2>${this.characterId ? `Loading ${this.escapeHtml(label)}...` : `${this.escapeHtml(label)} unavailable`}</h2><p>${this.characterId ? 'Refreshing your private character sheet.' : 'No World Builder character is linked to this player.'}</p></section>`;
     }
 
-    requestRoll(rollType, targetId) {
+    nextRollRequestId() {
+      this.rollRequestSequence += 1;
+      return `${Date.now().toString(36)}-${this.rollRequestSequence.toString(36)}`;
+    }
+
+    queuePendingRoll(requestId, label) {
+      this.chatMessages.push({
+        id: `roll-pending-${requestId}`,
+        client_request_id: requestId,
+        sender_id: this.playerId,
+        sender_name: this.characterSheet?.character_name || 'Player',
+        sender_role: 'player',
+        text: `Rolling ${String(label || 'the dice').trim()}…`,
+        sent_at: new Date().toISOString(),
+        pending: true,
+      });
+      this.chatMessages = this.chatMessages.slice(-100);
+      this.renderChat();
+    }
+
+    requestRoll(rollType, targetId, label = '') {
       if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
         this.showChatNotice('Rolls are unavailable while disconnected.');
         return;
       }
-      this.send({ v: VERSION, type: 'character_roll_request', roll_type: rollType, target_id: targetId });
+      const requestId = this.nextRollRequestId();
+      this.queuePendingRoll(requestId, label || targetId);
+      this.send({
+        v: VERSION,
+        type: 'character_roll_request',
+        request_id: requestId,
+        roll_type: rollType,
+        target_id: targetId,
+      });
     }
 
-    requestRecipeAttempt(targetId) {
+    requestRecipeAttempt(targetId, label = '') {
       if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
         this.showChatNotice('Recipe attempts are unavailable while disconnected.');
         return;
       }
-      this.send({ v: VERSION, type: 'recipe_attempt_request', target_id: targetId });
+      const requestId = this.nextRollRequestId();
+      this.queuePendingRoll(requestId, label || targetId);
+      this.send({
+        v: VERSION,
+        type: 'recipe_attempt_request',
+        request_id: requestId,
+        target_id: targetId,
+      });
     }
 
     bindRollButtons(content) {
       content.querySelectorAll('[data-roll-type]').forEach(button => button.addEventListener('click', () => {
-        this.requestRoll(button.dataset.rollType, button.dataset.targetId);
+        this.requestRoll(
+          button.dataset.rollType,
+          button.dataset.targetId,
+          button.textContent.replace(/^\s*★\s*/, '').trim(),
+        );
       }));
     }
 
@@ -1412,10 +1498,10 @@
         }
         const ingredients = (requirements.ingredients || []).map(item => `${item.required} ${item.name}`);
         const vessel = requirements.vessel?.name ? `\nRequired vessel (not consumed): ${requirements.vessel.name}` : '';
-        if (window.confirm(`Attempt ${record.name}?\n\nThis will use whether the attempt succeeds or fails:\n${ingredients.join('\n') || 'No consumable ingredients'}${vessel}`)) this.requestRecipeAttempt(record.record_id);
+        if (window.confirm(`Attempt ${record.name}?\n\nThis will use whether the attempt succeeds or fails:\n${ingredients.join('\n') || 'No consumable ingredients'}${vessel}`)) this.requestRecipeAttempt(record.record_id, record.name);
         return;
       }
-      this.requestRoll(collection === 'spells' ? 'spell' : 'proficiency', record.record_id);
+      this.requestRoll(collection === 'spells' ? 'spell' : 'proficiency', record.record_id, record.name);
     }
 
     knowledgeConfidenceBand(record, collection) {
@@ -1763,10 +1849,10 @@
             const ingredients = (requirements.ingredients || []).map(item => `${item.required} ${item.name}`);
             const vessel = requirements.vessel?.name ? `\nRequired vessel (not consumed): ${requirements.vessel.name}` : '';
             const confirmed = window.confirm(`Attempt ${record.name}?\n\nThis will use whether the attempt succeeds or fails:\n${ingredients.join('\n') || 'No consumable ingredients'}${vessel}`);
-            if (confirmed) this.requestRecipeAttempt(record.record_id);
+            if (confirmed) this.requestRecipeAttempt(record.record_id, record.name);
             return;
           }
-          this.requestRoll(singular, record.record_id);
+          this.requestRoll(singular, record.record_id, record.name);
           });
         });
       };
@@ -2114,16 +2200,52 @@
       else setTimeout(callback, 300);
     }
 
+    setProgressiveImageSource(image, url, quality, fallbackUrl = '') {
+      if (!image || !url) return;
+      const fallback = fallbackUrl || image.src || '';
+      const loaded = () => {
+        image.removeEventListener('load', loaded);
+        image.removeEventListener('error', failed);
+      };
+      const failed = () => {
+        image.removeEventListener('load', loaded);
+        image.removeEventListener('error', failed);
+        if (fallback && fallback !== url && image.isConnected) {
+          image.dataset.ccgbAssetQuality = 'preview';
+          image.src = fallback;
+        }
+      };
+      image.addEventListener('load', loaded);
+      image.addEventListener('error', failed);
+      image.dataset.ccgbAssetQuality = quality;
+      image.src = url;
+    }
+
     progressiveImage(image, assetId, version = '') {
       if (!image || !assetId) return;
       const epoch = this.assetEpoch;
+      const cacheKey = quality => `${assetId}|${version || 'current'}|${quality}`;
+      const cachedFull = this.assetUrls.get(cacheKey('full'));
+      const cachedPreview = this.assetUrls.get(cacheKey('preview'));
+      if (cachedFull) {
+        this.setProgressiveImageSource(image, cachedFull, 'full', cachedPreview);
+      } else if (cachedPreview) {
+        this.setProgressiveImageSource(image, cachedPreview, 'preview');
+      }
       this.assetUrl(assetId, 'preview', version).then(url => {
-        if (image.isConnected && epoch === this.assetEpoch) image.src = url;
+        if (
+          image.isConnected && epoch === this.assetEpoch &&
+          image.dataset.ccgbAssetQuality !== 'full'
+        ) {
+          this.setProgressiveImageSource(image, url, 'preview');
+        }
       }).catch(error => { if (image.isConnected) image.title = error.message; });
       const connection = navigator.connection || {};
       if (connection.saveData || /(^|-)2g$/.test(String(connection.effectiveType || ''))) return;
       this.idle(() => this.assetUrl(assetId, 'full', version).then(url => {
-        if (image.isConnected && epoch === this.assetEpoch) image.src = url;
+        if (image.isConnected && epoch === this.assetEpoch) {
+          this.setProgressiveImageSource(image, url, 'full', image.src);
+        }
       }).catch(() => {}));
     }
 
@@ -2505,7 +2627,7 @@
           stage.dataset.tokenSize = String(tokenSize);
           stage.style.setProperty('--map-token-size', `${tokenSize}px`);
           stage.style.setProperty('--map-dot-size', `${tokenSize * 0.9}px`);
-          this.applyMapCamera(viewport, stage, mapId);
+          this.applyMapCamera(viewport, stage, mapId, false);
         });
       };
       this.mapResizeObserver = new ResizeObserver(sizeStage);
@@ -2536,7 +2658,7 @@
           state.y += direction * MAP_PAN_STEP;
         }
         this.syncCameraCenter(state, stage);
-        this.applyMapCamera(viewport, stage, mapId);
+        this.applyMapCamera(viewport, stage, mapId, true);
         this.queueCameraSave(mapId);
       }, { passive: false });
       viewport.addEventListener('pointerdown', event => {
@@ -2553,7 +2675,7 @@
         state.x = this.mapCameraDrag.x + event.clientX - this.mapCameraDrag.startX;
         state.y = this.mapCameraDrag.y + event.clientY - this.mapCameraDrag.startY;
         this.syncCameraCenter(state, stage);
-        this.applyMapCamera(viewport, stage, mapId);
+        this.applyMapCamera(viewport, stage, mapId, true);
       });
       const endPan = event => {
         if (this.mapCameraDrag?.pointerId !== event.pointerId) return;
@@ -2573,7 +2695,7 @@
       });
     }
 
-    applyMapCamera(viewport, stage, mapId) {
+    applyMapCamera(viewport, stage, mapId, commitClampedCenter = false) {
       const state = this.cameraState(mapId);
       const stageScale = this.mapStageScale(stage, state);
       state.x = (0.5 - Number(state.centerX ?? 0.5)) * stage.offsetWidth * stageScale;
@@ -2582,7 +2704,10 @@
       const boundY = Math.max(0, (stage.offsetHeight * stageScale - viewport.clientHeight) / 2);
       state.x = Math.max(-boundX, Math.min(boundX, state.x));
       state.y = Math.max(-boundY, Math.min(boundY, state.y));
-      this.syncCameraCenter(state, stage);
+      // ResizeObserver can fire between responsive layouts. Clamp the
+      // rendered position without converting a transient layout into the
+      // player's permanent camera center.
+      if (commitClampedCenter) this.syncCameraCenter(state, stage);
       const tokenSize = Math.max(1, Number(stage.dataset.tokenSize || 6));
       const tier = this.zoomTier(state);
       const sizeRatio = Math.max(0.35, Math.min(5.5, tokenSize / (MAP_NATIVE_WIDTH * DEFAULT_TOKEN_SCALE)));
@@ -2984,7 +3109,7 @@
       this.mapCameraStates.set(mapId, this.normalizedCamera(null));
       const viewport = this.root.querySelector('.ccgb-map-viewport');
       const stage = this.root.querySelector('.ccgb-map-stage');
-      if (viewport && stage) this.applyMapCamera(viewport, stage, mapId);
+      if (viewport && stage) this.applyMapCamera(viewport, stage, mapId, true);
       this.queueCameraSave(mapId, 100);
     }
 
@@ -3196,9 +3321,11 @@
     endBoardDrag(event) {
       if (!this.dragging) return;
       const point = this.boardPoint(event, this.dragging.stage);
+      this.moveRequestSequence += 1;
       this.send({
         v: VERSION,
         type: 'board_move_commit',
+        request_id: `${Date.now().toString(36)}-move-${this.moveRequestSequence.toString(36)}`,
         person_id: this.dragging.actor.actor_id,
         map_id: this.activeMapId,
         x: point.x,

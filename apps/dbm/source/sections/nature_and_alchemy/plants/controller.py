@@ -2,6 +2,7 @@ from database.name_links import ensure_unique_record_name
 from sections.nature_and_alchemy.creatures.constants import (
     PROFICIENCY_DEFAULTS,
 )
+from shared.part_item_behavior import validate_part_item_behavior
 
 
 class PlantController:
@@ -146,6 +147,7 @@ class PlantController:
                     raise TypeError(
                         f"{part_name} {field_label} must be text"
                     )
+            validate_part_item_behavior(part, self.database)
 
     def validate_tags(self, tags):
         if not isinstance(tags, list):

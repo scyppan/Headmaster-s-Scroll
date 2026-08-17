@@ -1,4 +1,4 @@
-CURRENT_SCHEMA_VERSION = 8
+CURRENT_SCHEMA_VERSION = 9
 
 
 def migrate_database(database_data):
@@ -116,6 +116,38 @@ def migrate_database(database_data):
                 "proficiency_requirements": recipe.get("proficiency_requirements", []) or [],
                 "spell_requirements": recipe.get("spell_requirements", []) or [],
             }]
+
+    if schema_version < 9:
+        from headmasters_scroll.effects import (
+            IN_FLIGHT_EFFECT_TARGETS,
+            normalize_in_flight_effects,
+        )
+
+        for record in database_data.get("general_items", []) or []:
+            if not isinstance(record, dict):
+                continue
+            if str(record.get("type", "") or "") not in {"Broom", "Flyable"}:
+                record.setdefault("in_flight_effects", [])
+                continue
+            source = record.get("in_flight_effects")
+            if source is None:
+                source = record.get("bonuses", []) or []
+            record["in_flight_effects"] = [
+                effect
+                for effect in normalize_in_flight_effects(source)
+                if isinstance(effect, dict)
+                and effect.get("target") in IN_FLIGHT_EFFECT_TARGETS
+            ]
+            record["bonuses"] = []
+            record["actions"] = []
+            record["activation_mode"] = "equipped"
+            record["equipment_slot_type"] = "flyable"
+            try:
+                record["flight_threshold"] = max(
+                    1, min(100, int(record.get("flight_threshold", 7) or 7))
+                )
+            except (TypeError, ValueError):
+                record["flight_threshold"] = 7
 
     database_data["_database"] = {
         **database_metadata,

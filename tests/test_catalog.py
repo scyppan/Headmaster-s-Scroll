@@ -63,6 +63,16 @@ class CatalogEnrichmentTests(unittest.TestCase):
         self.assertEqual(flyable["activation_mode"], "equipped")
         self.assertEqual(flyable["equipment_slot_type"], "flyable")
         self.assertEqual(flyable["flight_threshold"], 7)
+        self.assertEqual(flyable["bonuses"], [])
+        self.assertEqual(flyable["actions"], [])
+        self.assertEqual(
+            flyable["in_flight_effects"],
+            [{
+                "type": "Skill", "target": "Flying", "amount": 2,
+                "activation_mode": "passive", "target_scope": "self",
+                "depletable": False,
+            }],
+        )
         validate_catalog(enriched)
 
         flyable["flight_threshold"] = 0

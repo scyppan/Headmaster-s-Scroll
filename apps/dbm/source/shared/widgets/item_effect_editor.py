@@ -33,11 +33,23 @@ class EffectPicker(tk.Toplevel):
 
         self.query_value = tk.StringVar()
         self.query_value.trace_add("write", self.refresh)
+        self.spell_filters = None
+        search_row = tk.Frame(self, bg=SURFACE)
+        search_row.grid(row=0, column=0, sticky="ew", padx=10, pady=10)
+        search_row.grid_columnconfigure(0, weight=1)
         search = RoundedEntry(
-            self, textvariable=self.query_value, background=SURFACE,
+            search_row, textvariable=self.query_value, background=SURFACE,
             height=36, font=app_font(10),
         )
-        search.grid(row=0, column=0, sticky="ew", padx=10, pady=10)
+        search.grid(row=0, column=0, sticky="ew")
+        if effect_type == "Spell":
+            from sections.magic.spells.filter_dialog import EMPTY_SPELL_FILTERS
+            self.spell_filters = dict(EMPTY_SPELL_FILTERS)
+            SoftButton(
+                search_row, text="Advanced filters…",
+                command=self.open_spell_filters, background=SURFACE,
+                width=150, height=36,
+            ).grid(row=0, column=1, padx=(8, 0))
         self.listbox = StripedListbox(self, font=app_font(10))
         self.listbox.grid(row=1, column=0, sticky="nsew", padx=10)
         self.listbox.bind("<Double-Button-1>", self.choose)
@@ -71,11 +83,27 @@ class EffectPicker(tk.Toplevel):
                 str(value[2].get("skill", "")),
                 str(value[2].get("tags", "")),
             )).casefold() for term in terms)
+            and self.matches_advanced_filters(value[2])
         ]
         self.listbox.delete(0, "end")
         for _collection, label, record in self.visible_records:
             suffix = f" — {label}" if self.effect_type == "Potion" else ""
             self.listbox.insert("end", f"{record.get('name', '')}{suffix}")
+
+    def matches_advanced_filters(self, record):
+        if self.effect_type != "Spell" or not self.spell_filters:
+            return True
+        from sections.magic.spells.record_list import SpellList
+        return SpellList.record_matches_filters(record, self.spell_filters)
+
+    def open_spell_filters(self):
+        from sections.magic.spells.filter_dialog import SpellFilterDialog
+        records = [record for _collection, _label, record in self.records]
+        dialog = SpellFilterDialog(self, records, self.spell_filters)
+        self.wait_window(dialog)
+        if dialog.result is not None:
+            self.spell_filters = dialog.result
+            self.refresh()
 
     def choose(self, event=None):
         selected = self.listbox.curselection()

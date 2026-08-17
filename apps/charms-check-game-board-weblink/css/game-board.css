@@ -1055,6 +1055,11 @@
   border-color: #aa8a55;
 }
 
+#gameboard .ccgb-chat-message.is-pending {
+  opacity: .72;
+  font-style: italic;
+}
+
 #gameboard .ccgb-chat-message.is-roll-critical-failure {
   background: #661a1a;
   border-color: #3b0707;

@@ -4,6 +4,7 @@ from inspect import getsource, signature
 from pathlib import Path
 
 from database import JsonDatabase
+from database.migrations import migrate_database
 from database.paths import DATABASE_PATH
 from sections.items.general_items.constants import GENERAL_ITEM_TYPES
 from sections.items.general_items.controller import GeneralItemController
@@ -12,6 +13,31 @@ from sections.items.general_items.record_form import GeneralItemForm
 
 
 class GeneralItemTests(unittest.TestCase):
+    def test_schema_nine_moves_flyable_bonuses_to_in_flight_effects(self):
+        document = {
+            "_database": {"schema_version": 8},
+            "general_items": [{
+                "record_id": "broom-1", "name": "Test Broom", "type": "Broom",
+                "bonuses": [
+                    {"type": "Skill", "target": "Flying", "amount": 2},
+                    {"type": "Skill", "target": "Charms", "amount": 50},
+                ],
+                "actions": [{"action_type": "custom", "name": "Legacy"}],
+            }],
+        }
+
+        migrated = migrate_database(document)
+        broom = migrated["general_items"][0]
+
+        self.assertEqual(migrated["_database"]["schema_version"], 9)
+        self.assertEqual(broom["bonuses"], [])
+        self.assertEqual(broom["actions"], [])
+        self.assertEqual(broom["flight_threshold"], 7)
+        self.assertEqual(
+            [effect["target"] for effect in broom["in_flight_effects"]],
+            ["Flying"],
+        )
+
     def test_page_accepts_database_from_content_host(self):
         constructor_parameters = tuple(
             signature(GeneralItemsPage.__init__).parameters
@@ -265,13 +291,30 @@ class GeneralItemTests(unittest.TestCase):
             })
 
         values = controller.normalize_record_values({
-            "name": "Flying Carpet", "type": "Flyable", "bonuses": [],
+            "name": "Flying Carpet", "type": "Flyable",
+            "bonuses": [
+                {"type": "Skill", "target": "Flying", "amount": 2}
+            ],
+            "actions": [{"action_type": "custom", "name": "Wrong channel"}],
             "flight_threshold": "12",
         })
         controller.validate_record_values(values)
         self.assertEqual(values["activation_mode"], "equipped")
         self.assertEqual(values["equipment_slot_type"], "flyable")
         self.assertEqual(values["flight_threshold"], 12)
+        self.assertEqual(values["bonuses"], [])
+        self.assertEqual(values["actions"], [])
+        self.assertEqual(values["in_flight_effects"][0]["target"], "Flying")
+
+        invalid = controller.normalize_record_values({
+            "name": "Bad Carpet", "type": "Flyable",
+            "flight_threshold": "12",
+            "in_flight_effects": [
+                {"type": "Skill", "target": "Charms", "amount": 2}
+            ],
+        })
+        with self.assertRaisesRegex(ValueError, "Flying, Perception"):
+            controller.validate_record_values(invalid)
 
 
 if __name__ == "__main__":

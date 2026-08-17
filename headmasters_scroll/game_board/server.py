@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import json
 import os
+import threading
 import time
 from collections import defaultdict, deque
 from contextlib import asynccontextmanager
@@ -401,62 +402,82 @@ class GameBoardRuntime:
         self.rate_limiter = RateLimiter()
         self._announcement_id = 0
         self.asset_credentials: dict[str, str] = {}
-        self._world_revision_id = self.world_revision_id()
-
-    def world_revision_id(self) -> str:
-        try:
-            metadata = self.service.shared_store.load("world.json").data.get(
-                "_headmasters_scroll", {}
-            )
-            return str(metadata.get("revision_id", "") or "")
-        except Exception:
-            return ""
+        self._world_fingerprint = self.service.world_fingerprint()
+        self._state_lock = threading.RLock()
+        self._state_build_lock = threading.Lock()
+        self._state_cache: dict[str, Any] | None = None
+        self._state_dirty = True
+        self._state_generation = 0
 
     def world_changed(self) -> bool:
-        revision_id = self.world_revision_id()
-        if not revision_id or revision_id == self._world_revision_id:
+        try:
+            fingerprint = self.service.world_fingerprint()
+        except OSError:
             return False
-        self._world_revision_id = revision_id
+        if fingerprint == self._world_fingerprint:
+            return False
+        self._world_fingerprint = fingerprint
+        self.invalidate_state()
         return True
 
+    def invalidate_state(self) -> None:
+        with self._state_lock:
+            self._state_dirty = True
+            self._state_generation += 1
+
     def state(self) -> dict[str, Any]:
-        sessions = self.service.sessions_view()
-        archived_sessions = self.service.archived_sessions_view()
-        boards = {}
-        for session in sessions + archived_sessions:
+        # Only one worker may assemble the large admin snapshot.  Concurrent
+        # polls reuse its result instead of multiplying JSON/campaign work.
+        with self._state_build_lock:
+            with self._state_lock:
+                if self._state_cache is not None and not self._state_dirty:
+                    return self._state_cache
+                generation = self._state_generation
+            sessions = self.service.sessions_view()
+            archived_sessions = self.service.archived_sessions_view()
+            boards = {}
+            for session in sessions + archived_sessions:
+                try:
+                    boards[session["id"]] = self.service.board_snapshot(
+                        session["id"],
+                        for_players=False,
+                    )
+                except (KeyError, ValueError):
+                    continue
             try:
-                boards[session["id"]] = self.service.board_snapshot(
-                    session["id"],
-                    for_players=False,
-                )
+                location_maps = self.service.location_maps()
             except (KeyError, ValueError):
-                continue
-        try:
-            location_maps = self.service.location_maps()
-        except (KeyError, ValueError):
-            location_maps = []
-        return {
-            "contacts": self.service.list_contacts(),
-            "characters": self.service.list_characters(),
-            "campaigns": self.service.list_campaigns(),
-            "settings": self.service.settings(),
-            "sessions": sessions,
-            "archived_sessions": archived_sessions,
-            "session": sessions[0] if sessions else None,
-            "connections": [item.public(self.service) for item in self.connections.values()],
-            "boards": boards,
-            "location_maps": location_maps,
-            "gmail": self.gmail().status(),
-            "requests": self.service.pending_campaign_requests(),
-            "teaching_catalog": self.service.teaching_catalog(),
-        }
+                location_maps = []
+            result = {
+                "contacts": self.service.list_contacts(),
+                "characters": self.service.list_characters(),
+                "campaigns": self.service.list_campaigns(),
+                "settings": self.service.settings(),
+                "sessions": sessions,
+                "archived_sessions": archived_sessions,
+                "session": sessions[0] if sessions else None,
+                "connections": [item.public(self.service) for item in self.connections.values()],
+                "boards": boards,
+                "location_maps": location_maps,
+                "gmail": self.gmail().status(),
+                "requests": self.service.pending_campaign_requests(),
+                "teaching_catalog": self.service.teaching_catalog(),
+            }
+            with self._state_lock:
+                self._state_cache = result
+                self._state_dirty = self._state_generation != generation
+            return result
 
     def gmail(self) -> GmailSender:
         settings = self.service.settings(include_private=True)
         return GmailSender(settings["gmail_credentials_path"], settings["gmail_sender"])
 
     async def notify_admins(self) -> None:
-        message = {"v": 1, "type": "state", "data": self.state()}
+        self.invalidate_state()
+        if not self.admin_sockets:
+            return
+        state = await asyncio.to_thread(self.state)
+        message = {"v": 1, "type": "state", "data": state}
         stale = []
         for socket in list(self.admin_sockets):
             try:
@@ -860,7 +881,13 @@ def create_apps(
 
     @admin_app.get("/api/admin/state", dependencies=[Depends(admin_guard)])
     async def admin_state():
-        return runtime.state()
+        return await asyncio.to_thread(runtime.state)
+
+    @admin_app.get("/api/admin/health", dependencies=[Depends(admin_guard)])
+    async def admin_health():
+        # Deliberately performs no canonical-data reads.  Desktop startup must
+        # distinguish a listening service from completion of the first state.
+        return {"service": "game-board", "ready": True}
 
     @admin_app.put("/api/admin/settings", dependencies=[Depends(admin_guard)])
     async def update_settings(body: SettingsBody):
@@ -1623,7 +1650,8 @@ def create_apps(
         await websocket.accept()
         runtime.admin_sockets.add(websocket)
         try:
-            await websocket.send_json({"v": 1, "type": "state", "data": runtime.state()})
+            state = await asyncio.to_thread(runtime.state)
+            await websocket.send_json({"v": 1, "type": "state", "data": state})
             while True:
                 await websocket.receive_text()
         except Exception:

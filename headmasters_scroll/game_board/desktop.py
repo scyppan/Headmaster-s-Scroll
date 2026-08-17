@@ -26,7 +26,7 @@ from PIL import Image, ImageDraw, ImageOps, ImageTk
 from ..assets import AssetStore, MAP_CANVAS_HEIGHT, MAP_CANVAS_WIDTH, MAP_CANVAS_SIZE
 from ..board import WorldBoardRepository
 from ..campaigns import format_game_world_date
-from ..paths import PROJECT_ROOT
+from ..paths import PROJECT_ROOT, RUNTIME_DIRECTORY
 from ..preferences import Preferences
 from ..windowing import GAME_BOARD_ICON, apply_window_icon, configure_windows_app_id, maximize_window
 from .storage import GameBoardRepository
@@ -228,6 +228,9 @@ class AdminClient:
 
     def __init__(self, settings: dict[str, Any]):
         self.base_url = f"http://{settings['admin_host']}:{settings['admin_port']}"
+        self.player_health_url = (
+            f"http://{settings['player_host']}:{settings['player_port']}/health"
+        )
         self.admin_key = settings["admin_key"]
 
     def request(
@@ -259,6 +262,21 @@ class AdminClient:
     def state(self) -> dict[str, Any]:
         return self.request("GET", "/api/admin/state")
 
+    def health(self) -> dict[str, Any]:
+        # The player health route has existed since the first server release,
+        # is localhost-bound, and performs no heavy state assembly.  Checking
+        # it first also lets a newly opened desktop adopt an already-running
+        # service from an earlier release.
+        request = urllib.request.Request(self.player_health_url, method="GET")
+        try:
+            with urllib.request.urlopen(request, timeout=1.0) as response:
+                result = json.loads(response.read().decode("utf-8"))
+            if result.get("service") == "game-board":
+                return result
+        except (urllib.error.URLError, ValueError, json.JSONDecodeError):
+            pass
+        return self.request("GET", "/api/admin/health", timeout=1.0)
+
 
 class LocalServer:
     """Starts the communication engine when the desktop app owns it."""
@@ -266,10 +284,12 @@ class LocalServer:
     def __init__(self, client: AdminClient):
         self.client = client
         self.process: subprocess.Popen | None = None
+        self._log_stream: Any = None
+        self.log_path = RUNTIME_DIRECTORY / "game-board-server.log"
 
     def ready(self) -> bool:
         try:
-            self.client.state()
+            self.client.health()
             return True
         except Exception:
             return False
@@ -278,12 +298,16 @@ class LocalServer:
         if self.ready():
             return
         creation_flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+        self.log_path.parent.mkdir(parents=True, exist_ok=True)
+        self._log_stream = self.log_path.open("a", encoding="utf-8")
+        self._log_stream.write(f"\n--- Game Board start {time.strftime('%Y-%m-%d %H:%M:%S')} ---\n")
+        self._log_stream.flush()
         self.process = subprocess.Popen(
             [sys.executable, "-B", "-m", "headmasters_scroll.game_board.server"],
             cwd=PROJECT_ROOT,
             stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stdout=self._log_stream,
+            stderr=subprocess.STDOUT,
             creationflags=creation_flags,
         )
         deadline = time.monotonic() + timeout
@@ -293,19 +317,36 @@ class LocalServer:
             if self.process.poll() is not None:
                 break
             time.sleep(0.2)
-        raise RuntimeError(
-            "The Game Board communication service could not start. "
-            "Install the optional dependencies with: python -m pip install -e .[game-board]"
-        )
+        detail = ""
+        try:
+            if self._log_stream:
+                self._log_stream.flush()
+            if self.log_path.is_file():
+                lines = self.log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+                detail = next((line.strip() for line in reversed(lines) if line.strip()), "")
+        except OSError:
+            pass
+        message = "The Game Board communication service could not start."
+        if detail:
+            message += f"\n\nServer report: {detail}"
+        else:
+            message += f"\n\nStartup details are saved in {self.log_path}."
+        raise RuntimeError(message)
 
     def stop(self) -> None:
-        if self.process is None or self.process.poll() is not None:
+        if self.process is None:
             return
-        self.process.terminate()
         try:
-            self.process.wait(timeout=4)
-        except subprocess.TimeoutExpired:
-            self.process.kill()
+            if self.process.poll() is None:
+                self.process.terminate()
+                try:
+                    self.process.wait(timeout=4)
+                except subprocess.TimeoutExpired:
+                    self.process.kill()
+        finally:
+            if self._log_stream is not None:
+                self._log_stream.close()
+                self._log_stream = None
 
 
 class CalendarDateField(ttk.Frame):

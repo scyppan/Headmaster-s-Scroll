@@ -25,6 +25,23 @@ class SharedJsonStore:
     def _path(self, filename: str) -> Path:
         return self.data_directory / filename if self.data_directory else data_path(filename)
 
+    def fingerprint(self, filename: str) -> tuple[int, int]:
+        """Return a cheap change token without decoding the JSON document."""
+
+        stat = self._path(filename).stat()
+        return stat.st_mtime_ns, stat.st_size
+
+    def read_document(self, filename: str) -> dict:
+        """Read and validate a document without creating an editable session.
+
+        Read-only consumers should not pay for the immutable merge base and
+        editable working copies that :meth:`load` intentionally creates.
+        """
+
+        data = self._read(self._path(filename))
+        validate_document(filename, data)
+        return data
+
     @staticmethod
     def _read(path: Path) -> dict:
         with path.open("r", encoding="utf-8") as stream:

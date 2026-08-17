@@ -2,7 +2,7 @@
   "_database": {
     "schema_version": 8,
     "database_version": "26.7.22.001",
-    "last_saved": "2026-08-17T05:51:37.409998+00:00"
+    "last_saved": "2026-08-17T06:19:57.078332+00:00"
   },
   "wand_woods": [
     {
@@ -4939,14 +4939,17 @@
       "name": "Aqua Fortis",
       "type": "Alchemical Item",
       "has_magical_effects": "",
-      "description": "AKA Strong water. This powerful acid is used by alchemists in various processes. It can destroy some alchemical metals and may be capable of degrading certain magical barriers.",
+      "description": "AKA Strong water. This powerful acid is used by alchemists in various processes. It can destroy some alchemical metals and may be capable of degrading certain magical barriers.\n\nIt's not explosive on its own.",
       "bonuses": [],
       "dbnotes": "",
-      "last_updated": "2024-01-15T19:18:43",
+      "last_updated": "2026-08-17T06:19:57.078318+00:00",
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "actions": [],
-      "base_knuts": 0
+      "base_knuts": 0,
+      "tags": [],
+      "image_asset": "assets/items/generics/potion in bottle (blue).png",
+      "flight_threshold": null
     },
     {
       "record_id": "general_item_24862",
@@ -7562,7 +7565,7 @@
     {
       "name": "Alembic",
       "type": "Alchemical Item",
-      "base_knuts": 0,
+      "base_knuts": 181,
       "description": "An alchemical vessel used for distillation.",
       "bonuses": [],
       "actions": [],
@@ -7572,7 +7575,7 @@
       "activation_mode": "passive",
       "equipment_slot_type": "",
       "record_id": "2fd6e36d-70e4-4ed9-8c43-f4428ade754d",
-      "last_updated": "2026-08-17T05:51:37.409983+00:00",
+      "last_updated": "2026-08-17T06:17:55.842767+00:00",
       "tags": []
     },
     {
@@ -7788,6 +7791,22 @@
       "equipment_slot_type": "",
       "record_id": "d0830350-1309-4570-8426-2ce43196dc87",
       "last_updated": "2026-08-17T04:14:07.225867+00:00"
+    },
+    {
+      "name": "Retort",
+      "type": "Potioning Item",
+      "base_knuts": 149,
+      "description": "",
+      "bonuses": [],
+      "actions": [],
+      "dbnotes": "",
+      "tags": [],
+      "image_asset": "",
+      "flight_threshold": null,
+      "activation_mode": "passive",
+      "equipment_slot_type": "",
+      "record_id": "6569d91f-94d6-4a02-8b60-5d4e5f3f779b",
+      "last_updated": "2026-08-17T06:18:10.608367+00:00"
     }
   ],
   "creatures": [
@@ -87375,6 +87394,20 @@
       "dbnotes": "",
       "record_id": "c852b7f5-c403-4d98-9738-46401471c002",
       "last_updated": "2026-08-17T04:13:07.591061+00:00"
+    },
+    {
+      "name": "Aqua Fortis",
+      "tradition": "",
+      "skill": "Alchemy",
+      "threshold": 10,
+      "target_scope": "none",
+      "required_materials": [],
+      "description": "",
+      "history": "",
+      "tags": [],
+      "dbnotes": "",
+      "record_id": "4243ab6f-ec21-476b-975b-b25b035b9d5f",
+      "last_updated": "2026-08-17T06:19:03.904641+00:00"
     }
   ],
   "spells": [
@@ -108476,8 +108509,8 @@
     }
   ],
   "_headmasters_scroll": {
-    "revision_id": "8b2b6cc7-24a0-4fe5-a462-cd5ec410579a",
-    "last_modified_at": "2026-08-17T05:51:37.488810Z",
+    "revision_id": "0feb6ee1-2f2e-4b60-835c-7707e7873e4a",
+    "last_modified_at": "2026-08-17T06:19:57.136056Z",
     "last_modified_by": "dbm"
   },
   "tag_catalog": [
@@ -108849,6 +108882,142 @@
       },
       "output_quantity": 1,
       "spell_requirements": []
+    },
+    {
+      "name": "Aqua Fortis",
+      "skill": "Alchemy",
+      "threshold": 20,
+      "description": "",
+      "tags": [],
+      "dbnotes": "",
+      "formulations": [
+        {
+          "record_id": "7cfb2273-80f0-4f23-a5d3-53d2caf47940",
+          "name": "Default",
+          "output_item": {
+            "collection": "general_items",
+            "record_id": "general_item_23325",
+            "name": "Aqua Fortis"
+          },
+          "output_quantity": 3,
+          "ingredient_requirements": [
+            {
+              "record_id": "7e943e7c-4768-4fbb-820c-2031f7b6a954",
+              "alternatives": [
+                {
+                  "collection": "general_items",
+                  "record_id": "general_item_29739",
+                  "name": "Saltpeter",
+                  "quantity": 3
+                }
+              ]
+            },
+            {
+              "record_id": "208f0e76-e3e1-4e06-8f04-5fa775275e40",
+              "alternatives": [
+                {
+                  "collection": "general_items",
+                  "record_id": "general_item_23165",
+                  "name": "Vitriol",
+                  "quantity": 6
+                }
+              ]
+            }
+          ],
+          "vessel_requirements": [
+            {
+              "record_id": "57d59715-2a6e-4c8d-b847-7ac7a70b85b5",
+              "alternatives": [
+                {
+                  "collection": "general_items",
+                  "record_id": "2fd6e36d-70e4-4ed9-8c43-f4428ade754d",
+                  "name": "Alembic"
+                },
+                {
+                  "collection": "general_items",
+                  "record_id": "6569d91f-94d6-4a02-8b60-5d4e5f3f779b",
+                  "name": "Retort"
+                }
+              ]
+            }
+          ],
+          "proficiency_requirements": [
+            {
+              "record_id": "8c9a5d07-61ea-4665-b1c6-0b259fcb09e5",
+              "alternatives": [
+                {
+                  "collection": "proficiencies",
+                  "record_id": "4243ab6f-ec21-476b-975b-b25b035b9d5f",
+                  "name": "Aqua Fortis"
+                }
+              ]
+            }
+          ],
+          "spell_requirements": []
+        }
+      ],
+      "output_item": {
+        "collection": "general_items",
+        "record_id": "general_item_23325",
+        "name": "Aqua Fortis"
+      },
+      "output_quantity": 3,
+      "ingredient_requirements": [
+        {
+          "record_id": "7e943e7c-4768-4fbb-820c-2031f7b6a954",
+          "alternatives": [
+            {
+              "collection": "general_items",
+              "record_id": "general_item_29739",
+              "name": "Saltpeter",
+              "quantity": 3
+            }
+          ]
+        },
+        {
+          "record_id": "208f0e76-e3e1-4e06-8f04-5fa775275e40",
+          "alternatives": [
+            {
+              "collection": "general_items",
+              "record_id": "general_item_23165",
+              "name": "Vitriol",
+              "quantity": 6
+            }
+          ]
+        }
+      ],
+      "vessel_requirements": [
+        {
+          "record_id": "57d59715-2a6e-4c8d-b847-7ac7a70b85b5",
+          "alternatives": [
+            {
+              "collection": "general_items",
+              "record_id": "2fd6e36d-70e4-4ed9-8c43-f4428ade754d",
+              "name": "Alembic"
+            },
+            {
+              "collection": "general_items",
+              "record_id": "6569d91f-94d6-4a02-8b60-5d4e5f3f779b",
+              "name": "Retort"
+            }
+          ]
+        }
+      ],
+      "proficiency_requirements": [
+        {
+          "record_id": "8c9a5d07-61ea-4665-b1c6-0b259fcb09e5",
+          "alternatives": [
+            {
+              "collection": "proficiencies",
+              "record_id": "4243ab6f-ec21-476b-975b-b25b035b9d5f",
+              "name": "Aqua Fortis"
+            }
+          ]
+        }
+      ],
+      "spell_requirements": [],
+      "record_id": "13a3cc46-a613-465b-8bd4-688167f7636a",
+      "last_updated": "2026-08-17T06:19:14.482425+00:00"
     }
   ]
 }

@@ -137,9 +137,37 @@ class GameBoardService:
         self.world_board = WorldBoardRepository(self.shared_store)
         self.campaign_repository = campaign_repository or CampaignRepository()
         self._lock = threading.RLock()
+        self._world_cache_fingerprint: tuple[int, int] | None = None
+        self._world_cache: dict[str, Any] | None = None
         self._tickets: dict[str, dict[str, Any]] = {}
         self._ticket_by_request: dict[str, str] = {}
         self._restore_for_reapproval()
+
+    def world_fingerprint(self) -> tuple[int, int]:
+        """Return the canonical world's cheap filesystem change token."""
+
+        return self.shared_store.fingerprint("world.json")
+
+    def _world_document(self) -> dict[str, Any]:
+        """Return a read-only, revision-aware world snapshot.
+
+        Game Board used to decode and validate the very large world file for
+        every catalog, map, board, and one-second change check.  The cached
+        object is never handed to an editor; mutation paths still open their
+        own revision-aware DataSession.
+        """
+
+        fingerprint = self.world_fingerprint()
+        with self._lock:
+            if (
+                self._world_cache is not None
+                and fingerprint == self._world_cache_fingerprint
+            ):
+                return self._world_cache
+            document = self.shared_store.read_document("world.json")
+            self._world_cache = document
+            self._world_cache_fingerprint = fingerprint
+            return document
 
     def _restore_for_reapproval(self) -> None:
         with self._lock:
@@ -171,7 +199,7 @@ class GameBoardService:
         return contacts
 
     def list_characters(self) -> list[dict[str, str]]:
-        world = self.shared_store.load("world.json").data
+        world = self._world_document()
         characters = []
         for person in world.get("people", []):
             record_id = person.get("record_id")
@@ -767,7 +795,7 @@ class GameBoardService:
         self,
         session: dict[str, Any],
     ) -> tuple[dict[str, Any], dict[str, Any]]:
-        world = deepcopy(self.shared_store.load("world.json").data)
+        world = deepcopy(self._world_document())
         campaign_id = str(session.get("campaign_id", "") or "")
         if not campaign_id:
             raise ValueError("This session is not linked to a campaign")
@@ -1079,7 +1107,7 @@ class GameBoardService:
             raise ValueError("Choose a campaign before creating a session")
         campaign = self.campaign_repository.ensure_game_state(
             campaign_id,
-            self.shared_store.load("world.json").data,
+            self._world_document(),
         )
         cleaned_game_datetime = normalize_game_datetime(
             campaign["game_state"]["current_game_datetime"],
@@ -4233,7 +4261,7 @@ class GameBoardService:
                 session = self._board_context(session_id)
                 _campaign, document = self._campaign_document(session)
                 return self.world_board._location_maps(document)
-        return self.world_board.location_maps()
+        return self.world_board._location_maps(self._world_document())
 
     def set_board_workspace(
         self,

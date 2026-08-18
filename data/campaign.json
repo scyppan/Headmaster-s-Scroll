@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "_headmasters_scroll": {
-    "revision_id": "96de758e-702b-4c96-aa4a-4b5958ea1336",
-    "last_modified_at": "2026-08-17T23:21:33.744034Z",
+    "revision_id": "814dc968-aff4-406d-9c71-15cb663613b3",
+    "last_modified_at": "2026-08-17T23:31:44.596052Z",
     "last_modified_by": "game-board"
   },
   "campaigns": [
@@ -11,7 +11,7 @@
       "created_at": "2026-08-11T08:19:23.069609Z",
       "name": "Test camp",
       "game_world_start_date": "2000-08-27",
-      "last_updated": "2026-08-17T23:21:33.612689Z",
+      "last_updated": "2026-08-17T23:31:44.464088Z",
       "game_state": {
         "initialized": true,
         "current_game_datetime": "2000-08-27T08:00",
@@ -241,15 +241,15 @@
             "token_scale": 0.0055,
             "start_point": null,
             "headmaster_camera": {
-              "zoom": 2.9736283754788433,
-              "center_x": 0.798878585582746,
-              "center_y": 0.5139267424240582
+              "zoom": 1.4784188477109286,
+              "center_x": 0.5954729975516901,
+              "center_y": 0.5513284601990078
             },
             "player_cameras": {
               "6ca9e551-e305-4c3c-a763-d2ff9a13afff": {
-                "zoom": 1.0,
-                "center_x": 0.7709046381996516,
-                "center_y": 0.4194630795717935
+                "zoom": 6.152787621294761,
+                "center_x": 0.7557875821167302,
+                "center_y": 0.47498196155682215
               },
               "fcceeb1d-7919-455d-a076-3d45926583af": {
                 "zoom": 1.0,
@@ -611,7 +611,11 @@
             },
             "nameplate_scale": 1.0,
             "wounds": [],
-            "battle": null,
+            "battle": {
+              "active": true,
+              "name": "Hogsmeade Field",
+              "entered_at": "2026-08-17T23:22:32.979002Z"
+            },
             "character_notes": [],
             "consumed_inventory": {},
             "campaign_inventory": [],
@@ -695,7 +699,11 @@
             },
             "nameplate_scale": 1.0,
             "wounds": [],
-            "battle": null,
+            "battle": {
+              "active": true,
+              "name": "Hogsmeade Field",
+              "entered_at": "2026-08-17T23:22:32.979002Z"
+            },
             "character_notes": [],
             "consumed_inventory": {},
             "campaign_inventory": [],
@@ -1623,8 +1631,8 @@
               "location_id": "38b8b79b-0785-4213-826e-0e65998d3b41",
               "floor_id": "",
               "map_id": "a5a85bd9-e989-4069-936c-8acda64f0fdd",
-              "x": 0.7709046381996516,
-              "y": 0.4194630795717935
+              "x": 0.7714435389057843,
+              "y": 0.4255660108311136
             },
             "visibility": "players",
             "display_mode": "dot",
@@ -1632,12 +1640,16 @@
             "faction_revealed": true,
             "faction_organization_id": "c4cbf003-ab52-4da7-b341-e2cea0e34062",
             "label_offset": {
-              "x": 0.005548238556714394,
-              "y": -0.016211699640262214
+              "x": -0.01118282388775173,
+              "y": -0.01205233141186589
             },
             "nameplate_scale": 0.9,
             "wounds": [],
-            "battle": null,
+            "battle": {
+              "active": true,
+              "name": "Hogsmeade Field",
+              "entered_at": "2026-08-17T23:22:32.979002Z"
+            },
             "character_notes": [],
             "consumed_inventory": {},
             "campaign_inventory": [],
@@ -1669,7 +1681,11 @@
             },
             "nameplate_scale": 1.0,
             "wounds": [],
-            "battle": null,
+            "battle": {
+              "active": true,
+              "name": "Hogsmeade Field",
+              "entered_at": "2026-08-17T23:22:32.979002Z"
+            },
             "character_notes": [],
             "consumed_inventory": {},
             "campaign_inventory": [],
@@ -2845,7 +2861,11 @@
             },
             "nameplate_scale": 1.0,
             "wounds": [],
-            "battle": null,
+            "battle": {
+              "active": true,
+              "name": "Hogsmeade Field",
+              "entered_at": "2026-08-17T23:22:32.979002Z"
+            },
             "character_notes": [],
             "consumed_inventory": {},
             "campaign_inventory": [],
@@ -86942,32 +86962,6 @@
             "airborne": false,
             "currency_knuts": 0
           },
-          "ab57a2a4-a0c3-544f-802e-c013fce19a5e": {
-            "placement": null,
-            "visibility": "players",
-            "display_mode": "dot",
-            "name_revealed": false,
-            "faction_revealed": false,
-            "faction_organization_id": "",
-            "label_offset": {
-              "x": 0.0,
-              "y": 0.0
-            },
-            "nameplate_scale": 1.0,
-            "wounds": [],
-            "battle": null,
-            "character_notes": [],
-            "consumed_inventory": {},
-            "campaign_inventory": [],
-            "equipment": {
-              "focus": "",
-              "accessory_1": "",
-              "accessory_2": "",
-              "flyable": ""
-            },
-            "airborne": false,
-            "currency_knuts": 0
-          },
           "569e4d50-045d-564b-93a1-9f7ab1b293b6": {
             "placement": null,
             "visibility": "players",
@@ -97628,59 +97622,7 @@
             "airborne": false,
             "currency_knuts": 0
           },
-          "4cb33c30-7d09-5dbd-993e-3f6c79d42e2a": {
-            "placement": null,
-            "visibility": "players",
-            "display_mode": "dot",
-            "name_revealed": false,
-            "faction_revealed": false,
-            "faction_organization_id": "",
-            "label_offset": {
-              "x": 0.0,
-              "y": 0.0
-            },
-            "nameplate_scale": 1.0,
-            "wounds": [],
-            "battle": null,
-            "character_notes": [],
-            "consumed_inventory": {},
-            "campaign_inventory": [],
-            "equipment": {
-              "focus": "",
-              "accessory_1": "",
-              "accessory_2": "",
-              "flyable": ""
-            },
-            "airborne": false,
-            "currency_knuts": 0
-          },
           "df687eae-fe2c-56f9-8dad-22376c9d724c": {
-            "placement": null,
-            "visibility": "players",
-            "display_mode": "dot",
-            "name_revealed": false,
-            "faction_revealed": false,
-            "faction_organization_id": "",
-            "label_offset": {
-              "x": 0.0,
-              "y": 0.0
-            },
-            "nameplate_scale": 1.0,
-            "wounds": [],
-            "battle": null,
-            "character_notes": [],
-            "consumed_inventory": {},
-            "campaign_inventory": [],
-            "equipment": {
-              "focus": "",
-              "accessory_1": "",
-              "accessory_2": "",
-              "flyable": ""
-            },
-            "airborne": false,
-            "currency_knuts": 0
-          },
-          "2574ca41-52eb-511c-b1d8-97a72e85d4c2": {
             "placement": null,
             "visibility": "players",
             "display_mode": "dot",
@@ -98460,32 +98402,6 @@
             "airborne": false,
             "currency_knuts": 0
           },
-          "7d330c3c-93b8-5677-a60f-77d7a5d68522": {
-            "placement": null,
-            "visibility": "players",
-            "display_mode": "dot",
-            "name_revealed": false,
-            "faction_revealed": false,
-            "faction_organization_id": "",
-            "label_offset": {
-              "x": 0.0,
-              "y": 0.0
-            },
-            "nameplate_scale": 1.0,
-            "wounds": [],
-            "battle": null,
-            "character_notes": [],
-            "consumed_inventory": {},
-            "campaign_inventory": [],
-            "equipment": {
-              "focus": "",
-              "accessory_1": "",
-              "accessory_2": "",
-              "flyable": ""
-            },
-            "airborne": false,
-            "currency_knuts": 0
-          },
           "1fccf5dd-32ae-57b2-b49a-243a146bd48d": {
             "placement": null,
             "visibility": "players",
@@ -98721,32 +98637,6 @@
             "currency_knuts": 0
           },
           "aede18e1-28b2-5649-a7fb-60947ab86a02": {
-            "placement": null,
-            "visibility": "players",
-            "display_mode": "dot",
-            "name_revealed": false,
-            "faction_revealed": false,
-            "faction_organization_id": "",
-            "label_offset": {
-              "x": 0.0,
-              "y": 0.0
-            },
-            "nameplate_scale": 1.0,
-            "wounds": [],
-            "battle": null,
-            "character_notes": [],
-            "consumed_inventory": {},
-            "campaign_inventory": [],
-            "equipment": {
-              "focus": "",
-              "accessory_1": "",
-              "accessory_2": "",
-              "flyable": ""
-            },
-            "airborne": false,
-            "currency_knuts": 0
-          },
-          "0e160430-ada6-5164-a616-3795e52f8f87": {
             "placement": null,
             "visibility": "players",
             "display_mode": "dot",
@@ -101242,32 +101132,6 @@
             "airborne": false,
             "currency_knuts": 0
           },
-          "1161e704-6bd8-5114-adcc-0b8738eaa54e": {
-            "placement": null,
-            "visibility": "players",
-            "display_mode": "dot",
-            "name_revealed": false,
-            "faction_revealed": false,
-            "faction_organization_id": "",
-            "label_offset": {
-              "x": 0.0,
-              "y": 0.0
-            },
-            "nameplate_scale": 1.0,
-            "wounds": [],
-            "battle": null,
-            "character_notes": [],
-            "consumed_inventory": {},
-            "campaign_inventory": [],
-            "equipment": {
-              "focus": "",
-              "accessory_1": "",
-              "accessory_2": "",
-              "flyable": ""
-            },
-            "airborne": false,
-            "currency_knuts": 0
-          },
           "dc214a06-17b5-5cf7-897e-accfed7e8728": {
             "placement": null,
             "visibility": "players",
@@ -102256,32 +102120,6 @@
             "airborne": false,
             "currency_knuts": 0
           },
-          "9e54307e-66c1-5bd2-b60f-cee803f37405": {
-            "placement": null,
-            "visibility": "players",
-            "display_mode": "dot",
-            "name_revealed": false,
-            "faction_revealed": false,
-            "faction_organization_id": "",
-            "label_offset": {
-              "x": 0.0,
-              "y": 0.0
-            },
-            "nameplate_scale": 1.0,
-            "wounds": [],
-            "battle": null,
-            "character_notes": [],
-            "consumed_inventory": {},
-            "campaign_inventory": [],
-            "equipment": {
-              "focus": "",
-              "accessory_1": "",
-              "accessory_2": "",
-              "flyable": ""
-            },
-            "airborne": false,
-            "currency_knuts": 0
-          },
           "f982283d-4a8b-50d5-946e-83d5661720f6": {
             "placement": null,
             "visibility": "players",
@@ -102516,32 +102354,6 @@
             "airborne": false,
             "currency_knuts": 0
           },
-          "6873ab8b-c472-5531-8fc0-dfcb49496c15": {
-            "placement": null,
-            "visibility": "players",
-            "display_mode": "dot",
-            "name_revealed": false,
-            "faction_revealed": false,
-            "faction_organization_id": "",
-            "label_offset": {
-              "x": 0.0,
-              "y": 0.0
-            },
-            "nameplate_scale": 1.0,
-            "wounds": [],
-            "battle": null,
-            "character_notes": [],
-            "consumed_inventory": {},
-            "campaign_inventory": [],
-            "equipment": {
-              "focus": "",
-              "accessory_1": "",
-              "accessory_2": "",
-              "flyable": ""
-            },
-            "airborne": false,
-            "currency_knuts": 0
-          },
           "addf3b58-5dbe-5938-8965-f2d89a483780": {
             "placement": null,
             "visibility": "players",
@@ -102725,32 +102537,6 @@
             "currency_knuts": 0
           },
           "e8b4a8d7-883a-50ad-a29c-16bab6be736e": {
-            "placement": null,
-            "visibility": "players",
-            "display_mode": "dot",
-            "name_revealed": false,
-            "faction_revealed": false,
-            "faction_organization_id": "",
-            "label_offset": {
-              "x": 0.0,
-              "y": 0.0
-            },
-            "nameplate_scale": 1.0,
-            "wounds": [],
-            "battle": null,
-            "character_notes": [],
-            "consumed_inventory": {},
-            "campaign_inventory": [],
-            "equipment": {
-              "focus": "",
-              "accessory_1": "",
-              "accessory_2": "",
-              "flyable": ""
-            },
-            "airborne": false,
-            "currency_knuts": 0
-          },
-          "d1804d27-7b1e-5b4b-9a8b-19e6a14e6128": {
             "placement": null,
             "visibility": "players",
             "display_mode": "dot",
@@ -133794,58 +133580,6 @@
             "airborne": false,
             "currency_knuts": 0
           },
-          "3437ca5e-9b67-50c5-b119-64c58563a9a6": {
-            "placement": null,
-            "visibility": "players",
-            "display_mode": "dot",
-            "name_revealed": false,
-            "faction_revealed": false,
-            "faction_organization_id": "",
-            "label_offset": {
-              "x": 0.0,
-              "y": 0.0
-            },
-            "nameplate_scale": 1.0,
-            "wounds": [],
-            "battle": null,
-            "character_notes": [],
-            "consumed_inventory": {},
-            "campaign_inventory": [],
-            "equipment": {
-              "focus": "",
-              "accessory_1": "",
-              "accessory_2": "",
-              "flyable": ""
-            },
-            "airborne": false,
-            "currency_knuts": 0
-          },
-          "f7d30d96-4b9d-5d63-beff-a142e55cd3e6": {
-            "placement": null,
-            "visibility": "players",
-            "display_mode": "dot",
-            "name_revealed": false,
-            "faction_revealed": false,
-            "faction_organization_id": "",
-            "label_offset": {
-              "x": 0.0,
-              "y": 0.0
-            },
-            "nameplate_scale": 1.0,
-            "wounds": [],
-            "battle": null,
-            "character_notes": [],
-            "consumed_inventory": {},
-            "campaign_inventory": [],
-            "equipment": {
-              "focus": "",
-              "accessory_1": "",
-              "accessory_2": "",
-              "flyable": ""
-            },
-            "airborne": false,
-            "currency_knuts": 0
-          },
           "ee977b1c-43af-51a3-a853-9dee5f829233": {
             "placement": null,
             "visibility": "players",
@@ -161901,10 +161635,90 @@
             "currency_knuts": 0
           }
         },
-        "creatures": {},
+        "creatures": {
+          "ba5d05fe-1ba9-4b6b-8b28-d8aa7325fefe": {
+            "record_id": "ba5d05fe-1ba9-4b6b-8b28-d8aa7325fefe",
+            "species_record_id": "creature_1755",
+            "species_name": "Bat (general)",
+            "awareness_proficiency_id": "proficiency_creature_awareness_3e4fca1bbc2d21f9",
+            "internal_label": "Bat (general) · 1",
+            "counter": 1,
+            "generated": {
+              "size": 1,
+              "heavy_wound_cap": 1,
+              "magical_resistance": null,
+              "intelligence": 9,
+              "social_skill": null,
+              "movement": {
+                "land": 5,
+                "water": 1,
+                "air": 19
+              }
+            },
+            "actions": [],
+            "placement": {
+              "location_id": "38b8b79b-0785-4213-826e-0e65998d3b41",
+              "floor_id": "",
+              "map_id": "a5a85bd9-e989-4069-936c-8acda64f0fdd",
+              "x": 0.8961804267388533,
+              "y": 0.5510345493363588
+            },
+            "label_offset": {
+              "x": 0.0011985985257727699,
+              "y": -0.03743950902423632
+            },
+            "visibility": "headmaster",
+            "wounds": [],
+            "battle": {
+              "active": true,
+              "record_id": "205c76cf-65dd-44a8-8d7e-544fede8ac69",
+              "name": "Hogsmeade Field",
+              "entered_at": "2026-08-17T23:26:55.857034Z"
+            },
+            "life_state": "alive",
+            "death_override": false,
+            "died_at": null,
+            "harvest_pools": [
+              {
+                "part_id": "creature-part-a17aafaf-12f5-564a-a55e-b73111e9ea32",
+                "name": "Bat Skin",
+                "required_proficiency_id": null,
+                "initial_quantity": 1,
+                "remaining_quantity": 1,
+                "status": "available"
+              },
+              {
+                "part_id": "creature-part-1455adf7-25db-50bd-9e64-acac92e184ec",
+                "name": "Bat Wings",
+                "required_proficiency_id": null,
+                "initial_quantity": 2,
+                "remaining_quantity": 2,
+                "status": "available"
+              },
+              {
+                "part_id": "creature-part-b8e08f08-4579-5e29-bb18-f99abfe5e5b4",
+                "name": "Bat Spleen",
+                "required_proficiency_id": null,
+                "initial_quantity": 1,
+                "remaining_quantity": 1,
+                "status": "available"
+              }
+            ],
+            "harvest_attempts": [],
+            "created_at": "2026-08-17T23:26:49.450383Z",
+            "last_updated": "2026-08-17T23:27:48.814929Z",
+            "name": "",
+            "relationship_state": "",
+            "related_character_id": "",
+            "carried_by_character_id": "",
+            "restrained": false,
+            "relationship_history": []
+          }
+        },
         "creature_counters": {
           "creature_1716": 1,
-          "creature_1389": 1
+          "creature_1389": 1,
+          "creature_1755": 1
         },
         "groups": [
           {
@@ -161942,7 +161756,110 @@
           "purchases": [],
           "natural_one_losses": []
         },
-        "battles": {}
+        "battles": {
+          "205c76cf-65dd-44a8-8d7e-544fede8ac69": {
+            "record_id": "205c76cf-65dd-44a8-8d7e-544fede8ac69",
+            "name": "Hogsmeade Field",
+            "map_id": "a5a85bd9-e989-4069-936c-8acda64f0fdd",
+            "status": "draft",
+            "round": 1,
+            "current_participant_id": "fecd7776-2b5b-40a6-8bba-8e6417552858",
+            "participants": [
+              {
+                "record_id": "38270585-05c5-4580-8218-d1b942aeab14",
+                "actor_type": "person",
+                "actor_id": "dd85b9d7-6917-4176-a997-ea8dd3058b7f",
+                "calculated_rank": 4,
+                "random_key": 0.6467662863002738,
+                "eligible_round": 1,
+                "acted_round": 0,
+                "skipped_round": 0,
+                "action_summary": "",
+                "joined_at": "2026-08-17T23:22:32.979002Z"
+              },
+              {
+                "record_id": "4b20c742-f269-4b7d-b3f4-ee3c25f8dea4",
+                "actor_type": "person",
+                "actor_id": "6882e7fb-529a-4b3e-8929-a795b91b816d",
+                "calculated_rank": 2,
+                "random_key": 0.7918385088208199,
+                "eligible_round": 1,
+                "acted_round": 0,
+                "skipped_round": 0,
+                "action_summary": "",
+                "joined_at": "2026-08-17T23:22:32.979002Z"
+              },
+              {
+                "record_id": "fecd7776-2b5b-40a6-8bba-8e6417552858",
+                "actor_type": "person",
+                "actor_id": "da621804-0d7d-4af5-8cd1-54e535323c8b",
+                "calculated_rank": 0,
+                "random_key": 0.12384284732387829,
+                "eligible_round": 1,
+                "acted_round": 0,
+                "skipped_round": 0,
+                "action_summary": "",
+                "joined_at": "2026-08-17T23:22:32.979002Z"
+              },
+              {
+                "record_id": "34f80276-592e-43b3-8293-b86e70e124d8",
+                "actor_type": "person",
+                "actor_id": "594ad00f-0b79-4118-ba66-a875f7ba9811",
+                "calculated_rank": 1,
+                "random_key": 0.7548883115358521,
+                "eligible_round": 1,
+                "acted_round": 0,
+                "skipped_round": 0,
+                "action_summary": "",
+                "joined_at": "2026-08-17T23:22:32.979002Z"
+              },
+              {
+                "record_id": "c09d6931-b919-4dbb-8108-36e5256cd152",
+                "actor_type": "person",
+                "actor_id": "38a03510-bc09-4620-9f90-6a9ae207d799",
+                "calculated_rank": 3,
+                "random_key": 0.3193321870848672,
+                "eligible_round": 1,
+                "acted_round": 0,
+                "skipped_round": 0,
+                "action_summary": "",
+                "joined_at": "2026-08-17T23:22:32.979002Z"
+              },
+              {
+                "record_id": "16ae7fb0-e96c-4ec4-8f7e-a785e311e8c6",
+                "actor_type": "creature",
+                "actor_id": "ba5d05fe-1ba9-4b6b-8b28-d8aa7325fefe",
+                "calculated_rank": 0,
+                "random_key": 0.8369053293323783,
+                "eligible_round": 1,
+                "acted_round": 0,
+                "skipped_round": 0,
+                "action_summary": "",
+                "joined_at": "2026-08-17T23:26:55.857034Z"
+              }
+            ],
+            "order": [
+              "fecd7776-2b5b-40a6-8bba-8e6417552858",
+              "34f80276-592e-43b3-8293-b86e70e124d8",
+              "4b20c742-f269-4b7d-b3f4-ee3c25f8dea4",
+              "c09d6931-b919-4dbb-8108-36e5256cd152",
+              "38270585-05c5-4580-8218-d1b942aeab14",
+              "16ae7fb0-e96c-4ec4-8f7e-a785e311e8c6"
+            ],
+            "calculated_order": [
+              "fecd7776-2b5b-40a6-8bba-8e6417552858",
+              "34f80276-592e-43b3-8293-b86e70e124d8",
+              "4b20c742-f269-4b7d-b3f4-ee3c25f8dea4",
+              "c09d6931-b919-4dbb-8108-36e5256cd152",
+              "38270585-05c5-4580-8218-d1b942aeab14",
+              "16ae7fb0-e96c-4ec4-8f7e-a785e311e8c6"
+            ],
+            "manual_order": false,
+            "created_at": "2026-08-17T23:22:19.859622Z",
+            "started_at": "",
+            "updated_at": "2026-08-17T23:26:55.857034Z"
+          }
+        }
       },
       "events": [
         {

@@ -390,6 +390,7 @@ class BattleConsequenceBody(BaseModel):
     action: str = Field(min_length=1, max_length=30)
     wound_id: str = Field(default="", max_length=120)
     severity: str = Field(default="", max_length=20)
+    injury_type: str = Field(default="", max_length=120)
     text: str = Field(default="", max_length=4000)
 
 
@@ -1251,6 +1252,20 @@ def create_apps(
             session_id, battle_id, q,
         )
 
+    @admin_app.get(
+        "/api/admin/battle-actor-choices",
+        dependencies=[Depends(admin_guard)],
+    )
+    async def local_battle_actor_choices(
+        session_id: str = Query(min_length=1, max_length=100),
+        map_id: str = Query(min_length=1, max_length=120),
+        q: str = Query(default="", max_length=200),
+    ):
+        return await asyncio.to_thread(
+            admin_result, service.battle_actor_choices,
+            session_id, "", q, map_id=map_id,
+        )
+
     @admin_app.post("/api/admin/battles", dependencies=[Depends(admin_guard)])
     async def create_battle(body: BattleCreateBody):
         result = admin_result(
@@ -1378,7 +1393,8 @@ def create_apps(
         result = admin_result(
             service.update_battle_combatant,
             body.session_id, battle_id, participant_id, body.action,
-            wound_id=body.wound_id, severity=body.severity, text=body.text,
+            wound_id=body.wound_id, severity=body.severity,
+            injury_type=body.injury_type, text=body.text,
         )
         await runtime.broadcast_board(body.session_id)
         await runtime.broadcast_character_sheets(body.session_id)

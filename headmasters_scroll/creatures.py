@@ -400,10 +400,12 @@ def normalize_campaign_creature(value: Any) -> dict[str, Any]:
         wounds.append({
             "record_id": str(raw.get("record_id") or uuid4()),
             "severity": severity,
+            "injury_type": str(raw.get("injury_type", "") or "").strip()[:120],
             "note": str(raw.get("note", "") or "")[:1000],
             "created_at": str(raw.get("created_at") or utc_now()),
         })
     result["wounds"] = wounds
+    result["current_state"] = str(result.get("current_state", "") or "").strip()[:240]
     result["battle"] = deepcopy(result.get("battle"))
     result["life_state"] = str(result.get("life_state", "alive") or "alive")
     if result["life_state"] not in LIFE_STATES:

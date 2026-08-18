@@ -151,6 +151,24 @@ class CampaignTests(unittest.TestCase):
             {"focus", "accessory_1", "accessory_2", "flyable"},
         )
 
+    def test_battle_condition_and_typed_wound_persist(self):
+        campaign = self.repository.save_campaign("Battle state", "2000-01-01")
+
+        def injure(state):
+            person = state.setdefault("people", {}).setdefault("person-1", {})
+            person["current_state"] = "Unconscious"
+            person["wounds"] = [{
+                "record_id": "wound-1", "severity": "heavy",
+                "injury_type": "Blunt force/Crushing",
+                "note": "Struck by falling masonry",
+                "created_at": "2000-01-01T12:00:00Z",
+            }]
+
+        self.repository.update_game_state(campaign["record_id"], injure)
+        person = self.repository.get(campaign["record_id"])["game_state"]["people"]["person-1"]
+        self.assertEqual(person["current_state"], "Unconscious")
+        self.assertEqual(person["wounds"][0]["injury_type"], "Blunt force/Crushing")
+
 
 if __name__ == "__main__":
     unittest.main()

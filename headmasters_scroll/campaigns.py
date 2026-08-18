@@ -239,6 +239,7 @@ def normalize_campaign_game_state(
             wounds.append({
                 "record_id": str(wound.get("record_id", "") or uuid4()),
                 "severity": severity,
+                "injury_type": str(wound.get("injury_type", "") or "").strip()[:120],
                 "note": str(wound.get("note", "") or "").strip()[:1000],
                 "created_at": str(wound.get("created_at", "") or utc_now()),
             })
@@ -287,6 +288,7 @@ def normalize_campaign_game_state(
             "label_offset": deepcopy(board["label_offset"]),
             "nameplate_scale": board["nameplate_scale"],
             "wounds": wounds,
+            "current_state": str(raw_state.get("current_state", "") or "").strip()[:240],
             "battle": normalized_battle,
             "character_notes": notes,
             "consumed_inventory": consumed_inventory,
@@ -664,6 +666,7 @@ class CampaignRepository:
             "label_offset": deepcopy(normalized["label_offset"]),
             "nameplate_scale": normalized["nameplate_scale"],
             "wounds": deepcopy(prior.get("wounds", []) or []),
+            "current_state": str(prior.get("current_state", "") or "").strip()[:240],
             "battle": deepcopy(prior.get("battle")),
             "character_notes": deepcopy(prior.get("character_notes", []) or []),
             "consumed_inventory": deepcopy(prior.get("consumed_inventory", {}) or {}),

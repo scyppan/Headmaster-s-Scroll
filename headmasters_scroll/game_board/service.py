@@ -399,6 +399,7 @@ class GameBoardService:
                 "visibility": str(state.get("visibility", "headmaster") or "headmaster"),
                 "name_revealed": bool(state.get("name_revealed", False)),
                 "wounds": deepcopy(state.get("wounds", []) or []),
+                "current_state": str(state.get("current_state", "") or ""),
                 "battle": deepcopy(state.get("battle")),
             }
         for creature_id, creature in (campaign["game_state"].get("creatures", {}) or {}).items():
@@ -413,6 +414,7 @@ class GameBoardService:
                 "y": (creature.get("placement") or {}).get("y"),
                 "visibility": str(creature.get("visibility", "headmaster") or "headmaster"),
                 "wounds": deepcopy(creature.get("wounds", []) or []),
+                "current_state": str(creature.get("current_state", "") or ""),
                 "life_state": str(creature.get("life_state", "alive") or "alive"),
                 "named_creature_id": str(creature.get("named_creature_id", "") or ""),
             }
@@ -441,6 +443,7 @@ class GameBoardService:
                         "name": str(actor.get("true_name") or actor.get("name") or "Unknown"),
                         "map_id": str(actor.get("map_id", "") or ""),
                         "wounds": deepcopy(actor.get("wounds", []) or []),
+                        "current_state": str(actor.get("current_state", "") or ""),
                         "life_state": str(actor.get("life_state", "alive") or "alive"),
                         "current": participant_id == battle["current_participant_id"],
                         "acted": item["acted_round"] == battle["round"],
@@ -462,13 +465,20 @@ class GameBoardService:
         return {"campaign_id": campaign["record_id"], "battles": visible}
 
     def battle_actor_choices(
-        self, session_id: str, battle_id: str, query: str = "",
+        self, session_id: str, battle_id: str, query: str = "", *, map_id: str = "",
     ) -> dict[str, Any]:
         session = self._board_context(session_id)
         campaign, world = self._campaign_document(session)
-        battle = normalize_battle(
-            (campaign["game_state"].get("battles", {}) or {}).get(battle_id)
-        )
+        raw_battle = (campaign["game_state"].get("battles", {}) or {}).get(battle_id)
+        if raw_battle is None:
+            if not map_id:
+                raise KeyError("Unknown battle")
+            battle = normalize_battle({
+                "record_id": "local-draft", "name": "Local draft",
+                "map_id": map_id, "status": "draft",
+            })
+        else:
+            battle = normalize_battle(raw_battle)
         needle = str(query or "").strip().casefold()
         actors = self._battle_actor_catalog(campaign, world)
         occupied = {
@@ -934,7 +944,8 @@ class GameBoardService:
 
     def update_battle_combatant(
         self, session_id: str, battle_id: str, participant_id: str, action: str,
-        *, wound_id: str = "", severity: str = "", text: str = "",
+        *, wound_id: str = "", severity: str = "", injury_type: str = "",
+        text: str = "",
     ) -> dict[str, Any]:
         """Apply a non-action consequence without consuming the combatant's turn."""
         action = str(action or "").strip().casefold()
@@ -964,6 +975,7 @@ class GameBoardService:
                         raise ValueError("Choose a light, medium, or heavy wound")
                     item = {
                         "record_id": str(uuid4()), "severity": level,
+                        "injury_type": str(injury_type or "").strip()[:120],
                         "note": str(text or "").strip()[:1000],
                         "created_at": iso_utc(utc_now()),
                     }
@@ -977,6 +989,8 @@ class GameBoardService:
                     if level not in {"light", "medium", "heavy"}:
                         raise ValueError("Choose a light, medium, or heavy wound")
                     item["severity"] = level
+                    if injury_type:
+                        item["injury_type"] = str(injury_type).strip()[:120]
                     item["note"] = str(text if text != "" else item.get("note", ""))[:1000]
                     result = deepcopy(item)
                 elif action in {"heal_wound", "remove_wound"}:
@@ -999,6 +1013,9 @@ class GameBoardService:
                     )
                     actor.setdefault(note_collection, []).append(item)
                     result = deepcopy(item)
+                elif action == "set_state":
+                    actor["current_state"] = str(text or "").strip()[:240]
+                    result = {"current_state": actor["current_state"]}
                 else:
                     raise ValueError("Unknown combatant update")
                 actor["last_updated"] = iso_utc(utc_now())

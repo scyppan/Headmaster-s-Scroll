@@ -185,6 +185,14 @@ class MagesPage(tk.Frame):
                 )
                 else self.controller.list_people
             ),
+            people_summary_by_ids_provider=(
+                self.controller.get_people_summaries_by_ids
+                if hasattr(
+                    self.controller,
+                    "get_people_summaries_by_ids",
+                )
+                else None
+            ),
             save_person_command=self.save_person,
             person_record_provider=self.controller.get_person,
         )

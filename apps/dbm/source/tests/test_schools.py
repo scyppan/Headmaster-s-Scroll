@@ -125,7 +125,6 @@ class SchoolTests(unittest.TestCase):
                 "year": 1,
                 "course": "Potions",
                 "record_id": "book_1355",
-                "name": "Magical Drafts and Potions",
             },
         )
         self.assertEqual(len(hogwarts["course_books"]), 89)
@@ -141,8 +140,7 @@ class SchoolTests(unittest.TestCase):
                 selected_courses = set(year_record["core"])
                 selected_courses.update(year_record["electives"])
                 self.assertIn(course_book["course"], selected_courses)
-                linked_book = books_by_id[course_book["record_id"]]
-                self.assertEqual(course_book["name"], linked_book["name"])
+                self.assertIn(course_book["record_id"], books_by_id)
 
         self.assertIn(
             "Creatures",
@@ -201,10 +199,7 @@ class SchoolTests(unittest.TestCase):
             self.assertFalse(created_record["wandless"])
             self.assertEqual(len(created_record["course_books"]), 2)
             self.assertTrue(
-                all(
-                    course_book["name"] == "Test Book"
-                    for course_book in created_record["course_books"]
-                )
+                all("name" not in course_book for course_book in created_record["course_books"])
             )
             controller.update_record(
                 created_record["record_id"],

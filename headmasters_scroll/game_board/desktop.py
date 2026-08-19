@@ -2009,13 +2009,13 @@ class GameBoardWindow(tk.Tk):
             header, text="BATTLES", style="Card.TLabel",
             font=("Segoe UI", 8, "bold"),
         ).pack(side="left")
-        for text, command, tip in (
-            ("+", self.create_board_battle, "Create a battle on an open map"),
-            ("⇧", self.start_selected_battle, "Push the staged lineup and order to players, then start"),
-            ("×", self.end_selected_battle, "End this battle; actor consequences remain"),
+        for text, width, command, tip in (
+            ("+", 3, self.create_board_battle, "Create a battle on an open map"),
+            ("Start", 7, self.start_selected_battle, "Push the staged lineup and order to players, then start"),
+            ("×", 3, self.end_selected_battle, "End this battle; actor consequences remain"),
         ):
             button = ttk.Button(
-                header, text=text, width=3, style="Quiet.TButton", command=command
+                header, text=text, width=width, style="Quiet.TButton", command=command
             )
             button.pack(side="right", padx=(3, 0))
             self._attach_tooltip(button, tip)
@@ -2461,8 +2461,8 @@ class GameBoardWindow(tk.Tk):
             style="Muted.TLabel",
         ).pack(side="right")
         query = tk.StringVar()
-        actor_filter = tk.StringVar(value="All actors")
-        map_filter = tk.StringVar(value="Current map first")
+        actor_filter = tk.StringVar(value="People")
+        map_filter = tk.StringVar(value="Current map only")
         battle_filter = tk.StringVar(value="Available")
         filters = ttk.Frame(body)
         filters.pack(fill="x", pady=(5, 5))

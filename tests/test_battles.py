@@ -34,6 +34,13 @@ def battle_fixture():
 
 
 class BattleStateTests(unittest.TestCase):
+    def test_legacy_admin_snapshot_battle_list_is_migrated(self):
+        battle = battle_fixture()
+        migrated_snapshot = normalize_battles({"battles": [battle]})
+        migrated_list = normalize_battles([battle])
+        self.assertEqual(migrated_snapshot["battle-1"]["name"], "Atrium")
+        self.assertEqual(migrated_list["battle-1"]["map_id"], "map-1")
+
     def test_actor_can_only_appear_in_one_active_battle(self):
         first = battle_fixture()
         second = battle_fixture()

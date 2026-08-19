@@ -2,6 +2,8 @@ import json
 from copy import deepcopy
 from pathlib import Path
 
+from headmasters_scroll.book_catalog import load_legacy_book_catalog
+
 
 STOREROOM_ITEM_COLLECTIONS = (
     ("wands", "Wands"),
@@ -89,6 +91,12 @@ class GameDatabase:
         self.error = str(error or "The game database is unavailable.").strip()
 
     def collection(self, collection_name):
+        if str(collection_name or "") == "books" and self.database_path:
+            world_books = load_legacy_book_catalog(
+                self.database_path.with_name("world.json")
+            )
+            if world_books is not None:
+                return deepcopy(world_books)
         collection = self.data.get(str(collection_name or ""), [])
 
         if not isinstance(collection, list):

@@ -113,6 +113,80 @@ class MapperGeometryTests(unittest.TestCase):
         self.assertEqual(location["floors"][1]["primary_map_id"], "map-1")
         self.assertEqual(maps[0]["floor_id"], "first")
 
+    def test_location_default_map_may_remain_separate_from_all_floors(self):
+        location = {
+            "record_id": "castle",
+            "default_map_id": "map-1",
+            "floors": [
+                {"record_id": "ground", "name": "Ground", "primary_map_id": "map-1"},
+                {"record_id": "first", "name": "First", "primary_map_id": "map-2"},
+            ],
+        }
+        maps = [
+            {"record_id": "map-1", "location_id": "castle", "floor_id": "ground"},
+            {"record_id": "map-2", "location_id": "castle", "floor_id": "first"},
+        ]
+
+        mapper.keep_location_map_separate_from_floors(location, maps)
+
+        self.assertEqual(location["floors"][0]["primary_map_id"], "")
+        self.assertEqual(location["floors"][1]["primary_map_id"], "map-2")
+        self.assertEqual(maps[0]["floor_id"], "")
+        self.assertEqual(maps[1]["floor_id"], "first")
+
+    def test_recent_maps_are_unique_and_most_recent_first(self):
+        recent = mapper.updated_recent_map_ids(
+            ["map-2", "map-1", "map-2"], "map-1", limit=3
+        )
+        self.assertEqual(recent, ["map-1", "map-2"])
+
+    def test_warp_choices_prioritize_nearby_floors_and_fuzzy_search(self):
+        locations = [{
+            "record_id": "hogwarts",
+            "name": "Campus of Hogwarts",
+            "floors": [
+                {"record_id": "ground", "name": "Ground Floor"},
+                {"record_id": "first", "name": "First Floor"},
+            ],
+        }, {
+            "record_id": "hogsmeade",
+            "name": "Hogsmeade Village",
+            "floors": [],
+        }]
+        maps = [{
+            "record_id": "ground-map",
+            "name": "Hogwarts Ground",
+            "location_id": "hogwarts",
+            "floor_id": "ground",
+            "warp_points": [{"record_id": "great-hall", "name": "Great Hall"}],
+        }, {
+            "record_id": "first-map",
+            "name": "Hogwarts First",
+            "location_id": "hogwarts",
+            "floor_id": "first",
+            "warp_points": [{"record_id": "clock-stairs", "name": "Clocktower Stairs"}],
+        }, {
+            "record_id": "village-map",
+            "name": "Village",
+            "location_id": "hogsmeade",
+            "floor_id": "",
+            "warp_points": [{"record_id": "station", "name": "Railway Station"}],
+        }]
+
+        choices = mapper.warp_destination_choices(
+            maps,
+            locations,
+            current_location_id="hogwarts",
+            current_map_id="ground-map",
+            recent_map_ids=["village-map"],
+        )
+
+        self.assertEqual([item["category"] for item in choices], [
+            "nearby", "nearby", "recent"
+        ])
+        fuzzy = mapper.filter_warp_destination_choices(choices, "clok stair")
+        self.assertEqual([item["record_id"] for item in fuzzy], ["clock-stairs"])
+
     def test_map_display_name_tracks_renamed_floor(self):
         location = {
             "name": "Hogwarts",
@@ -143,6 +217,52 @@ class MapperGeometryTests(unittest.TestCase):
         self.assertEqual(len(window.regions), 1)
         self.assertEqual(saves, ["Completed polygon"])
 
+    def test_region_label_drag_uses_normalized_offset_and_saves(self):
+        class Event:
+            x = 140
+            y = 90
+
+        region = {
+            "record_id": "region-1",
+            "name": "Great Hall",
+            "points": deepcopy(self.square),
+            "label_offset": {"x": 0.0, "y": 0.0},
+        }
+        window = mapper.MapperWindow.__new__(mapper.MapperWindow)
+        window.regions = [region]
+        window.drag_state = {
+            "kind": "region-label",
+            "record_id": "region-1",
+            "start_x": 100,
+            "start_y": 50,
+            "offset": {"x": 0.0, "y": 0.0},
+            "changed": False,
+        }
+        window.map_width = 400
+        window.map_height = 200
+        window.scale = 1.0
+        window.editor_dirty = False
+        window.render_canvas = lambda: None
+        window.undo_stack = []
+        saves = []
+        window.autosave_map = lambda reason: saves.append(reason) or True
+
+        window.canvas_drag(Event())
+        window.canvas_release(Event())
+
+        self.assertEqual(region["label_offset"], {"x": 0.1, "y": 0.2})
+        self.assertEqual(saves, ["Moved area label"])
+
+    def test_region_label_offset_is_part_of_canonical_map_metadata(self):
+        region = mapper.normalize_region({
+            "record_id": "region-1",
+            "name": "Great Hall",
+            "behavior_type": "area",
+            "points": deepcopy(self.square),
+            "label_offset": {"x": -0.125, "y": 0.25},
+        })
+        self.assertEqual(region["label_offset"], {"x": -0.125, "y": 0.25})
+
     def test_metadata_pause_flushes_to_automatic_save(self):
         window = mapper.MapperWindow.__new__(mapper.MapperWindow)
         window.metadata_save_after_id = None
@@ -169,6 +289,9 @@ class MapperGeometryTests(unittest.TestCase):
             def get(self):
                 return self.value
 
+            def set(self, value):
+                self.value = value
+
         class HoverText(Value):
             def __init__(self, value):
                 super().__init__(value)
@@ -191,6 +314,7 @@ class MapperGeometryTests(unittest.TestCase):
             "target_location_id": "",
         }
         window.loading_region_properties = False
+        window.metadata_form_dirty = False
         window.metadata_history_pending = False
         window.metadata_save_after_id = None
         window.regions = [region]
@@ -198,6 +322,7 @@ class MapperGeometryTests(unittest.TestCase):
         window.region_name = Value("Library")
         window.region_behavior = Value("Area")
         window.hover_text = HoverText("A quiet reading room ")
+        window.status_value = type("Status", (), {"set": lambda *_args: None})()
         window.target_location_id = ""
         window.selected_region = lambda: region
         window.record_history = lambda: None
@@ -213,10 +338,60 @@ class MapperGeometryTests(unittest.TestCase):
         window.hover_text_changed()
         self.assertEqual(saves, [])
         self.assertEqual(region["hover_text"], "")
+        self.assertTrue(window.metadata_form_dirty)
 
         window.hover_text_focus_out()
         self.assertEqual(saves, ["Region details"])
         self.assertEqual(region["hover_text"], "A quiet reading room")
+        self.assertFalse(window.metadata_form_dirty)
+
+    def test_reselecting_secret_passage_does_not_erase_hover_text_draft(self):
+        window = mapper.MapperWindow.__new__(mapper.MapperWindow)
+        window.selected_region_id = "secret-1"
+        window.metadata_form_dirty = True
+        window.render_target_controls = lambda: None
+        window.render_canvas = lambda: None
+        window.region_name = type("Value", (), {"set": lambda *_args: None})()
+        window.hover_text = type("HoverText", (), {
+            "delete": lambda *_args: self.fail("Draft hover text was replaced"),
+            "insert": lambda *_args: self.fail("Draft hover text was replaced"),
+        })()
+
+        window.select_region("secret-1")
+
+        self.assertTrue(window.metadata_form_dirty)
+
+    def test_inline_address_creates_and_links_one_canonical_record(self):
+        class Value:
+            def __init__(self, value):
+                self.value = value
+
+            def get(self):
+                return self.value
+
+            def set(self, value):
+                self.value = value
+
+        window = mapper.MapperWindow.__new__(mapper.MapperWindow)
+        region = {"record_id": "region-1", "address_id": ""}
+        session = type("Session", (), {"data": {"addresses": []}})()
+        window.region_behavior = Value("Address")
+        window.region_address = Value("93 High Street")
+        window.region_name = Value("Area 1")
+        window.selected_location_id = "castle"
+        window.selected_region = lambda: region
+        window.edit_session = lambda: session
+        window.addresses = []
+        window.metadata_history_pending = False
+        window.editor_dirty = False
+        window.record_history = lambda: None
+
+        self.assertTrue(window.commit_inline_address())
+        self.assertEqual(len(session.data["addresses"]), 1)
+        self.assertEqual(session.data["addresses"][0]["name"], "93 High Street")
+        self.assertEqual(session.data["addresses"][0]["location_id"], "castle")
+        self.assertEqual(region["address_id"], session.data["addresses"][0]["record_id"])
+        self.assertEqual(window.region_name.get(), "93 High Street")
 
     def test_warp_tool_creates_named_point_and_saves_it(self):
         window = mapper.MapperWindow.__new__(mapper.MapperWindow)

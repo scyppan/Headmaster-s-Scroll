@@ -7,4 +7,5 @@ SECTION = SectionDefinition(
     title="Books",
     order=180,
     page_class=BooksPage,
+    visible=False,
 )

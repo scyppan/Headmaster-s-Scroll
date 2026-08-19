@@ -32,8 +32,8 @@ def book_search_text(book):
         return ""
 
     searchable_values = [
-        book.get("name"),
-        book.get("author"),
+        book.get("name") or book.get("title"),
+        book.get("author") or book.get("author_name"),
         book.get("description"),
         *(book.get("categories", []) or []),
     ]
@@ -58,19 +58,20 @@ def book_search_text(book):
 
 
 def book_display_text(book):
-    normalized_book = normalize_school_year_book(book)
-    author = normalized_book["author"]
+    normalize_school_year_book(book)
+    name = str(book.get("name") or book.get("title") or "Unknown book")
+    author = str(book.get("author") or book.get("author_name") or "")
     return (
-        f"{normalized_book['name']} — {author}"
+        f"{name} — {author}"
         if author
-        else normalized_book["name"]
+        else name
     )
 
 
 def book_sort_key(book):
     return (
-        str(book.get("name", "") or "").casefold(),
-        str(book.get("author", "") or "").casefold(),
+        str(book.get("name") or book.get("title") or "").casefold(),
+        str(book.get("author") or book.get("author_name") or "").casefold(),
     )
 
 
@@ -92,11 +93,12 @@ def resolve_selected_books(
             continue
 
         identity = school_year_book_identity(normalized_book)
-        books_by_identity[identity] = normalized_book
+        display_book = deepcopy(book)
+        books_by_identity[identity] = display_book
 
         if normalized_book["record_id"]:
             books_by_id[normalized_book["record_id"]] = (
-                normalized_book
+                display_book
             )
 
     resolved_books = []

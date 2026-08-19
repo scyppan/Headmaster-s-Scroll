@@ -12,6 +12,7 @@ from uuid import NAMESPACE_URL, uuid4, uuid5
 
 SEARCHABLE_REGION_TYPES = {"secret", "library", "storeroom"}
 SHOP_FREQUENCIES = {"always", "frequently", "sometimes", "rarely", "very_rarely"}
+SHOP_OWNER_TYPES = {"person", "organization"}
 SHOP_SCHEDULE_VERSION = "shop-stock-v1"
 GATHERING_METHOD_DEFAULTS = (
     ("forage", "Forage"),
@@ -228,6 +229,20 @@ def normalize_shop_listing(value: Any) -> dict[str, Any]:
     }
 
 
+def normalize_shop_owner(value: Any) -> dict[str, str] | None:
+    """Normalize the person or organization operating one specific shop."""
+
+    if value in (None, "", {}):
+        return None
+    if not isinstance(value, dict):
+        raise ValueError("A shop owner must be a person or organization reference")
+    owner_type = _text(value.get("owner_type"), 30).casefold()
+    record_id = _text(value.get("record_id"), 160)
+    if owner_type not in SHOP_OWNER_TYPES or not record_id:
+        raise ValueError("A shop owner must reference a person or organization")
+    return {"owner_type": owner_type, "record_id": record_id}
+
+
 def normalize_region_interactions(region: dict[str, Any]) -> dict[str, Any]:
     result = deepcopy(region)
     behavior = _text(result.get("behavior_type", "area"), 30).casefold()
@@ -258,6 +273,8 @@ def normalize_region_interactions(region: dict[str, Any]) -> dict[str, Any]:
         "contents": contents if behavior in SEARCHABLE_REGION_TYPES else [],
         "shop_seed": _text(result.get("shop_seed") or result.get("record_id"), 200) if behavior == "shop" else "",
         "shop_listings": listings if behavior == "shop" else [],
+        "address_id": _text(result.get("address_id"), 160) if behavior in {"address", "shop"} else "",
+        "shop_owner": normalize_shop_owner(result.get("shop_owner")) if behavior == "shop" else None,
         "shop_schedule_version": SHOP_SCHEDULE_VERSION if behavior == "shop" else "",
     })
     return result

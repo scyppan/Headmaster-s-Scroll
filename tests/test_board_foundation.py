@@ -553,6 +553,58 @@ class BoardFoundationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_world_board(document)
 
+    def test_addresses_and_shop_owners_are_stable_world_references(self):
+        document = world_document()
+        document["addresses"] = [{
+            "record_id": "address-1",
+            "location_id": "castle",
+            "name": "93 High Street",
+            "notes": "Ground-floor storefront",
+        }]
+        document["events"].append({
+            "record_id": "address-event-1",
+            "event_type": "address_owner_changed",
+            "title": "House Red opened the shop",
+            "date": "2000-02-01",
+            "address_ids": ["address-1"],
+        })
+        document["maps"][0]["regions"] = [{
+            "record_id": "shop-1",
+            "name": "Red Shop",
+            "behavior_type": "shop",
+            "points": [
+                {"x": 0.1, "y": 0.1},
+                {"x": 0.4, "y": 0.1},
+                {"x": 0.2, "y": 0.4},
+            ],
+            "address_id": "address-1",
+            "shop_owner": {
+                "owner_type": "organization",
+                "record_id": "house-red",
+            },
+        }, {
+            "record_id": "address-region-1",
+            "name": "93 High Street",
+            "behavior_type": "address",
+            "points": [
+                {"x": 0.5, "y": 0.5},
+                {"x": 0.7, "y": 0.5},
+                {"x": 0.6, "y": 0.7},
+            ],
+            "address_id": "address-1",
+        }]
+        validate_world_board(document)
+
+        broken = json.loads(json.dumps(document))
+        broken["maps"][0]["regions"][0]["address_id"] = "missing"
+        with self.assertRaisesRegex(ValueError, "unknown address"):
+            validate_world_board(broken)
+
+        missing = json.loads(json.dumps(document))
+        missing["maps"][0]["regions"][1]["address_id"] = ""
+        with self.assertRaisesRegex(ValueError, "must reference an address"):
+            validate_world_board(missing)
+
     def test_groups_require_one_location_and_dissolve_when_member_leaves(self):
         group = self.repository.create_group("Explorers", "castle", ["pc-1", "npc-1"])
         self.assertEqual(len(group["members"]), 2)

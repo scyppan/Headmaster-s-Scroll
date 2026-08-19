@@ -5,6 +5,10 @@ from pathlib import Path
 
 from headmasters_scroll.campaigns import (
     CampaignRepository,
+    compact_campaign_document_for_storage,
+    compact_campaign_person_overlays,
+    default_campaign_person_state,
+    normalize_campaign,
     normalize_board_camera,
     normalize_game_world_date,
 )
@@ -62,6 +66,79 @@ class CampaignTests(unittest.TestCase):
         self.assertEqual(state["people"], {})
         self.assertEqual(state["groups"], [])
         self.assertEqual(state["battles"], {})
+
+    def test_default_person_state_is_implicit_and_round_trips(self):
+        default = default_campaign_person_state()
+        self.assertEqual(compact_campaign_person_overlays({"person-1": default}), {})
+
+        campaign = self.repository.save_campaign("Sparse", "2000-01-01")
+        for field, changed_value in {
+            "visibility": "headmaster",
+            "display_mode": "token",
+            "current_state": "Unconscious",
+            "airborne": True,
+            "currency_knuts": 7,
+        }.items():
+            state = default_campaign_person_state()
+            state[field] = changed_value
+            compacted = compact_campaign_person_overlays({"person-1": state})
+            campaign["game_state"]["people"] = compacted
+            hydrated = normalize_campaign(campaign)["game_state"]["people"]["person-1"]
+            self.assertEqual(hydrated[field], changed_value)
+            self.assertEqual(hydrated["label_offset"], {"x": 0.0, "y": 0.0})
+
+    def test_compaction_preserves_battle_actor_markers_without_mutating_source(self):
+        campaign = self.repository.save_campaign("Battle", "2000-01-01")
+        campaign["game_state"]["people"] = {
+            "person-1": default_campaign_person_state()
+        }
+        campaign["game_state"]["battles"] = {
+            "battle-1": {
+                "record_id": "battle-1",
+                "name": "Test battle",
+                "map_id": "map-1",
+                "participants": [{
+                    "record_id": "participant-1",
+                    "actor_type": "person",
+                    "actor_id": "person-1",
+                }],
+            }
+        }
+        source = {
+            "campaigns": [campaign],
+            "_headmasters_scroll": {"revision_id": "unchanged"},
+        }
+        compacted = compact_campaign_document_for_storage(source)
+        self.assertEqual(compacted["campaigns"][0]["game_state"]["people"], {
+            "person-1": {}
+        })
+        self.assertIn("placement", source["campaigns"][0]["game_state"]["people"]["person-1"])
+        hydrated = normalize_campaign(compacted["campaigns"][0])
+        self.assertIsNone(hydrated["game_state"]["people"]["person-1"]["placement"])
+
+    def test_repository_saves_only_non_default_person_overlays(self):
+        campaign = self.repository.save_campaign("Sparse saves", "2000-01-01")
+
+        def update(state):
+            state["people"] = {
+                "default-person": default_campaign_person_state(),
+                "changed-person": {
+                    **default_campaign_person_state(),
+                    "current_state": "Hidden",
+                },
+            }
+
+        self.repository.update_game_state(campaign["record_id"], update)
+        raw = json.loads(self.path.read_text(encoding="utf-8"))["campaigns"][0]
+        self.assertNotIn("default-person", raw["game_state"]["people"])
+        self.assertEqual(raw["game_state"]["people"]["changed-person"], {
+            "current_state": "Hidden"
+        })
+        hydrated = self.repository.get(campaign["record_id"])
+        self.assertEqual(
+            hydrated["game_state"]["people"]["changed-person"]["visibility"],
+            "players",
+        )
 
     def test_board_cameras_are_resolution_independent_and_validated(self):
         self.assertEqual(

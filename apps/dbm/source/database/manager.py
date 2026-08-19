@@ -13,6 +13,7 @@ from database.validation import (
     validate_database,
     validate_record,
 )
+from headmasters_scroll.book_catalog import load_legacy_book_catalog
 
 
 class JsonDatabase:
@@ -23,6 +24,7 @@ class JsonDatabase:
         shared_directory = os.environ.get("HEADMASTERS_SCROLL_DATA_DIRECTORY")
         self.shared_store = None
         self.shared_session = None
+        self.world_books = None
         if shared_directory and self.database_path.resolve() == (Path(shared_directory) / "db.json").resolve():
             self.shared_store = SharedJsonStore(Path(shared_directory))
 
@@ -42,6 +44,9 @@ class JsonDatabase:
         validate_database(migrated_data)
 
         self.data = migrated_data
+        self.world_books = load_legacy_book_catalog(
+            self.database_path.with_name("world.json")
+        )
         self.dirty = migrated_data != before_migration
 
     def ensure_container(self, container_name, storage_type="collection"):
@@ -67,6 +72,8 @@ class JsonDatabase:
         return deepcopy(self.data[container_name])
 
     def get_collection(self, collection_name):
+        if collection_name == "books" and self.world_books is not None:
+            return deepcopy(self.world_books)
         if collection_name not in self.data:
             raise KeyError(f"Unknown database collection: {collection_name}")
 
@@ -76,6 +83,8 @@ class JsonDatabase:
         return deepcopy(collection)
 
     def create(self, collection_name, record):
+        if collection_name == "books" and self.world_books is not None:
+            raise PermissionError("Books are edited in World Builder.")
         validate_record(record)
         collection = self.data.get(collection_name)
         validate_collection(collection_name, collection)
@@ -107,6 +116,8 @@ class JsonDatabase:
         return None
 
     def update(self, collection_name, record_id, changes):
+        if collection_name == "books" and self.world_books is not None:
+            raise PermissionError("Books are edited in World Builder.")
         validate_record(changes)
         collection = self.data.get(collection_name)
         validate_collection(collection_name, collection)
@@ -127,6 +138,8 @@ class JsonDatabase:
         raise KeyError(f"Unknown record ID: {record_id}")
 
     def delete(self, collection_name, record_id):
+        if collection_name == "books" and self.world_books is not None:
+            raise PermissionError("Books are edited in World Builder.")
         collection = self.data.get(collection_name)
         validate_collection(collection_name, collection)
 

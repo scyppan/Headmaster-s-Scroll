@@ -15,10 +15,11 @@ from pathlib import Path
 from uuid import uuid4
 
 
-INDEX_FORMAT_VERSION = 3
+INDEX_FORMAT_VERSION = 6
 INDEXED_COLLECTIONS = (
     "people",
     "locations",
+    "addresses",
     "organizations",
     "events",
     "items",
@@ -27,6 +28,8 @@ INDEXED_COLLECTIONS = (
     "maps",
     "board_groups",
     "named_creatures",
+    "person_tag_catalog",
+    "legacy_person_imports",
 )
 
 PEOPLE_LIST_FIELDS = (
@@ -87,16 +90,36 @@ def _name_details_text(value) -> str:
     )
 
 
+def _name_entries_text(value) -> str:
+    """Return actual recorded names without provenance notes or dates."""
+    entries = value.get("entries", []) if isinstance(value, dict) else []
+    return " ".join(
+        str(entry.get("name_entry", "") or "")
+        for entry in entries
+        if isinstance(entry, dict)
+    )
+
+
 def people_list_summary(person: dict) -> dict:
     from mage_maker.sections.development.characteristics import (
         initial_values_are_complete,
     )
 
     summary = {field: person.get(field) for field in PEOPLE_LIST_FIELDS}
+    primary_name = str(person.get("displayed_name", "") or "")
+    summary["_primary_name_search_text"] = primary_name.casefold()
+    summary["_name_search_text"] = " ".join(
+        value
+        for value in (
+            primary_name,
+            _name_entries_text(person.get("name_details")),
+        )
+        if value
+    ).casefold()
     summary["_search_text"] = " ".join(
         str(value or "")
         for value in (
-            person.get("displayed_name"),
+            primary_name,
             _name_details_text(person.get("name_details")),
             person.get("school"),
             person.get("birth_year"),
@@ -115,6 +138,7 @@ def record_summary(collection: str, record: dict) -> dict:
         return people_list_summary(record)
     field_names = {
         "locations": ("record_id", "name", "parent_location_id", "has_floors"),
+        "addresses": ("record_id", "name", "location_id"),
         "organizations": (
             "record_id", "name", "organization_type", "parent_organization_id",
             "location_id", "is_faction",
@@ -200,6 +224,7 @@ class WorldIndexCache:
         event_links = {
             "people": defaultdict(list),
             "locations": defaultdict(list),
+            "addresses": defaultdict(list),
             "organizations": defaultdict(list),
             "items": defaultdict(list),
             "types": defaultdict(list),
@@ -215,6 +240,8 @@ class WorldIndexCache:
                 event_links["people"][person_id].append(event_id)
             for location_id in _linked_ids(event, "location_id", "location_ids"):
                 event_links["locations"][location_id].append(event_id)
+            for address_id in _linked_ids(event, "address_id", "address_ids"):
+                event_links["addresses"][address_id].append(event_id)
             for organization_id in _linked_ids(
                 event, "organization_id", "organization_ids"
             ):
@@ -318,6 +345,36 @@ class WorldIndexCache:
             [],
         )
         return [dict(value) for value in values if isinstance(value, dict)]
+
+    def summaries_by_ids(
+        self,
+        collection: str,
+        record_ids,
+    ) -> list[dict]:
+        """Return only requested compact summaries without scanning records.
+
+        The index already records each stable ID's position in its summary
+        array.  Event views use this path so an event involving a handful of
+        people does not materialize the entire People catalogue merely to
+        display their names.
+        """
+        collection_name = str(collection or "")
+        requested_ids = [
+            str(record_id or "").strip()
+            for record_id in record_ids or ()
+            if str(record_id or "").strip()
+        ]
+        positions = self.payload.get("ids", {}).get(collection_name, {})
+        values = self.payload.get("summaries", {}).get(collection_name, [])
+        results = []
+        for record_id in dict.fromkeys(requested_ids):
+            position = positions.get(record_id)
+            if not isinstance(position, int) or not 0 <= position < len(values):
+                continue
+            summary = values[position]
+            if isinstance(summary, dict):
+                results.append(dict(summary))
+        return results
 
     def linked_event_ids(self, relationship: str, record_id: str) -> list[str]:
         values = (

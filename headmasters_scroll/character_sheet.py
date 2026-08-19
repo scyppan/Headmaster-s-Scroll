@@ -361,7 +361,7 @@ def _knowledge(
         public_book = read_books.setdefault(book_id, {
             "record_id": book_id,
             "title": str(book.get("title") or book.get("name") or "Book"),
-            "author": str(book.get("author") or ""),
+            "author": str(book.get("author_name") or book.get("author") or ""),
             "description": str(book.get("description") or ""),
             "categories": [str(item) for item in book.get("categories", []) or []],
             "cover_asset_id": _book_cover_asset_id(book),

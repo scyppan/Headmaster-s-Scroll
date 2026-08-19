@@ -31,7 +31,12 @@ from ..board import (
     normalize_person_board,
     point_in_polygon,
 )
-from ..campaigns import CampaignRepository, normalize_board_camera, normalize_zoom_profile
+from ..campaigns import (
+    CampaignRepository,
+    compact_campaign_person_overlays,
+    normalize_board_camera,
+    normalize_zoom_profile,
+)
 from ..battles import calculated_order, normalize_battle, participant, public_battle
 from ..character_attributes import calculate_character_attributes
 from ..character_sheet import build_character_sheet
@@ -1688,6 +1693,7 @@ class GameBoardService:
             for item in document.get("people", [])
             if isinstance(item, dict) and item.get("record_id")
         }
+        people = compact_campaign_person_overlays(people)
         groups = deepcopy(document.get("board_groups", []) or [])
         creatures = deepcopy(document.get("campaign_creatures", {}) or {})
         creature_counters = deepcopy(

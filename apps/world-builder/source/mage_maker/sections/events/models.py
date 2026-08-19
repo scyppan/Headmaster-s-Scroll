@@ -349,6 +349,26 @@ def normalize_world_event(event):
     normalized["location_ids"] = normalize_association_values(
         normalized.get("location_ids")
     )
+    normalized["address_ids"] = normalize_association_values(
+        normalized.get("address_ids")
+    )
+    owner_reference = normalized.get("owner_reference")
+    if isinstance(owner_reference, dict):
+        owner_type = str(
+            owner_reference.get("owner_type", "") or ""
+        ).strip().lower()
+        owner_record_id = str(
+            owner_reference.get("record_id", "") or ""
+        ).strip()
+        if owner_type in {"person", "organization"} and owner_record_id:
+            normalized["owner_reference"] = {
+                "owner_type": owner_type,
+                "record_id": owner_record_id,
+            }
+        else:
+            normalized.pop("owner_reference", None)
+    else:
+        normalized.pop("owner_reference", None)
     normalized["item_ids"] = normalize_association_values(
         normalized.get("item_ids")
     )

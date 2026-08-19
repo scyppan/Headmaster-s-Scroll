@@ -30,6 +30,7 @@ from mage_maker.ui.widgets import SectionPanel, SoftButton
 def school_year_reading_entries(
     school_year_records,
     academic_start_year=None,
+    books_by_id=None,
 ):
     entries = []
 
@@ -48,12 +49,13 @@ def school_year_reading_entries(
         )
 
         for book in record.get("assigned_books", []):
+            resolved = (books_by_id or {}).get(book.get("record_id"), book)
             entries.append(
                 {
                     "year": year_number,
                     "date": calendar_text,
-                    "name": book["name"],
-                    "author": book["author"],
+                    "name": resolved.get("title") or resolved.get("name") or "Unknown book",
+                    "author": resolved.get("author_name") or resolved.get("author") or "",
                     "source": f"Assigned in Year {year_number}",
                     "source_kind": "assigned",
                     "page_type": "school",
@@ -62,12 +64,13 @@ def school_year_reading_entries(
             )
 
         for book in record.get("books", []):
+            resolved = (books_by_id or {}).get(book.get("record_id"), book)
             entries.append(
                 {
                     "year": year_number,
                     "date": calendar_text,
-                    "name": book["name"],
-                    "author": book["author"],
+                    "name": resolved.get("title") or resolved.get("name") or "Unknown book",
+                    "author": resolved.get("author_name") or resolved.get("author") or "",
                     "source": (
                         f"Intentional study in Year {year_number}"
                     ),
@@ -84,6 +87,7 @@ def adult_year_reading_entries(
     adult_year_records,
     academic_start_year=None,
     school_attended=True,
+    books_by_id=None,
 ):
     entries = []
 
@@ -120,6 +124,7 @@ def adult_year_reading_entries(
         )
 
         for book in record.get("books", []):
+            resolved = (books_by_id or {}).get(book.get("record_id"), book)
             entries.append(
                 {
                     "year": calendar_year,
@@ -128,8 +133,8 @@ def adult_year_reading_entries(
                         if calendar_end_year in (None, calendar_year)
                         else f"{calendar_year} – {calendar_end_year}"
                     ),
-                    "name": book["name"],
-                    "author": book["author"],
+                    "name": resolved.get("title") or resolved.get("name") or "Unknown book",
+                    "author": resolved.get("author_name") or resolved.get("author") or "",
                     "source": (
                         f"Intentional study in {source_year}"
                     ),
@@ -361,15 +366,25 @@ class BooksView(tk.Frame):
         academic_start_year,
         school_attended=True,
     ):
+        books_by_id = {
+            book["record_id"]: book
+            for book in (
+                self.book_controller.list_books()
+                if self.book_controller is not None
+                else []
+            )
+        }
         self.legacy_entries = [
             *school_year_reading_entries(
                 deepcopy(school_year_records),
                 academic_start_year,
+                books_by_id,
             ),
             *adult_year_reading_entries(
                 deepcopy(adult_year_records),
                 academic_start_year,
                 school_attended=school_attended,
+                books_by_id=books_by_id,
             ),
         ]
         self.combine_entries()

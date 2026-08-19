@@ -142,7 +142,7 @@ def normalize_book_content_entry(value):
     ).strip()
     normalized["name"] = normalize_compact_text(normalized.get("name"))
 
-    if not normalized["name"]:
+    if not normalized["record_id"] and not normalized["name"]:
         raise ValueError("A book content entry needs a name.")
 
     return normalized
@@ -169,7 +169,7 @@ def normalize_book_contents(value):
         source_key = (
             entry["content_type"].casefold(),
             entry["collection"],
-            entry["record_id"] or entry["name"].casefold(),
+            entry["record_id"] or entry.get("name", "").casefold(),
         )
 
         if source_key in used_sources:
@@ -463,7 +463,7 @@ def normalize_book_reading(value):
     if not normalized["book_id"]:
         raise ValueError("A book reading needs a book.")
 
-    if not normalized["book_title"]:
+    if not normalized["book_title"] and not normalized["book_id"]:
         raise ValueError("A book reading needs a stored book title.")
 
     return normalized
@@ -498,7 +498,7 @@ def normalize_book_readings(value):
 def book_reading_sort_key(reading):
     return (
         book_date_start_key(reading["date"]),
-        reading["book_title"].casefold(),
+        reading.get("book_title", "").casefold() or reading["book_id"],
         reading["record_id"],
     )
 

@@ -33,6 +33,83 @@ LEGACY_GENERATED_ZOOM_TIERS = {
 }
 
 
+def default_campaign_person_state() -> dict[str, Any]:
+    """Return implicit campaign state for a person without a stored overlay."""
+
+    return {
+        "placement": None,
+        "visibility": "players",
+        "display_mode": "dot",
+        "name_revealed": False,
+        "faction_revealed": False,
+        "faction_organization_id": "",
+        "label_offset": {"x": 0.0, "y": 0.0},
+        "nameplate_scale": 1.0,
+        "wounds": [],
+        "current_state": "",
+        "battle": None,
+        "character_notes": [],
+        "consumed_inventory": {},
+        "campaign_inventory": [],
+        "equipment": {slot: "" for slot in EQUIPMENT_SLOTS},
+        "airborne": False,
+        "currency_knuts": 0,
+    }
+
+
+def compact_campaign_person_overlays(
+    value: Any,
+    *,
+    required_person_ids: set[str] | None = None,
+) -> dict[str, dict[str, Any]]:
+    """Return only person-state values that differ from implicit defaults."""
+
+    source = value if isinstance(value, dict) else {}
+    defaults = default_campaign_person_state()
+    required = required_person_ids or set()
+    compacted: dict[str, dict[str, Any]] = {}
+    for raw_person_id, raw_state in source.items():
+        person_id = str(raw_person_id or "").strip()
+        if not person_id or not isinstance(raw_state, dict):
+            continue
+        overlay = {
+            key: deepcopy(field_value)
+            for key, field_value in raw_state.items()
+            if key not in defaults or field_value != defaults[key]
+        }
+        if overlay or person_id in required:
+            compacted[person_id] = overlay
+    return compacted
+
+
+def compact_campaign_document_for_storage(document: dict[str, Any]) -> dict[str, Any]:
+    """Compact campaign person overlays in a detached document."""
+
+    compacted = deepcopy(document)
+    if not isinstance(compacted, dict):
+        return compacted
+    for campaign in compacted.get("campaigns", []) or []:
+        if not isinstance(campaign, dict):
+            continue
+        game_state = campaign.get("game_state")
+        if isinstance(game_state, dict):
+            required_person_ids = {
+                str(participant.get("actor_id", "") or "").strip()
+                for battle in (game_state.get("battles", {}) or {}).values()
+                if isinstance(battle, dict)
+                for participant in (battle.get("participants", []) or [])
+                if isinstance(participant, dict)
+                and str(participant.get("actor_type", "person") or "person")
+                == "person"
+                and str(participant.get("actor_id", "") or "").strip()
+            }
+            game_state["people"] = compact_campaign_person_overlays(
+                game_state.get("people"),
+                required_person_ids=required_person_ids,
+            )
+    return compacted
+
+
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
@@ -631,6 +708,17 @@ class CampaignRepository:
             store = SharedJsonStore()
         self.store = store
 
+    def _save(self, session: Any, app_id: str):
+        """Persist the normalized campaign document using sparse actor overlays.
+
+        Campaign readers hydrate every stored overlay through ``normalize_campaign``.
+        Default-only actors are implicit; battle participants retain an empty marker
+        so relationship validation can still prove that their actor exists.
+        """
+
+        session.data = compact_campaign_document_for_storage(session.data)
+        return self.store.save(session, app_id)
+
     def list(self) -> list[dict[str, Any]]:
         session = self.store.load("campaign.json")
         return sorted(
@@ -674,6 +762,7 @@ class CampaignRepository:
                 prior.get("campaign_inventory")
             ),
             "equipment": _normalize_equipment(prior.get("equipment")),
+            "airborne": bool(prior.get("airborne", False)),
             "currency_knuts": max(0, int(prior.get("currency_knuts", 0) or 0)),
         }
 
@@ -718,7 +807,9 @@ class CampaignRepository:
             if not isinstance(person, dict) or not person.get("record_id"):
                 continue
             board = normalize_person_board(person.get("board"))
-            people[str(person["record_id"])] = self._person_state(board)
+            person_id = str(person["record_id"])
+            candidate = self._person_state(board)
+            people.update(compact_campaign_person_overlays({person_id: candidate}))
             placement = board.get("placement")
             if placement and placement["map_id"] in assigned_ids:
                 occupied_map_ids.append(placement["map_id"])
@@ -751,7 +842,7 @@ class CampaignRepository:
             state, normalized["game_world_start_date"]
         )
         campaign["last_updated"] = utc_now()
-        outcome = self.store.save(session, "game-board")
+        outcome = self._save(session, "game-board")
         if not outcome.saved:
             raise RuntimeError("The campaign changed elsewhere; reload before saving")
         return normalize_campaign(campaign)
@@ -775,7 +866,7 @@ class CampaignRepository:
             state, normalized["game_world_start_date"]
         )
         campaign["last_updated"] = utc_now()
-        outcome = self.store.save(session, "game-board")
+        outcome = self._save(session, "game-board")
         if not outcome.saved:
             raise RuntimeError("The campaign changed elsewhere; reload before saving")
         return normalize_campaign(campaign)
@@ -801,7 +892,7 @@ class CampaignRepository:
         normalized["last_updated"] = utc_now()
         campaign.clear()
         campaign.update(normalize_campaign(normalized))
-        outcome = self.store.save(session, app_id)
+        outcome = self._save(session, app_id)
         if not outcome.saved:
             raise RuntimeError("The campaign changed elsewhere; reload before saving")
         return normalize_campaign(campaign)
@@ -840,7 +931,7 @@ class CampaignRepository:
         normalized = normalize_campaign(campaign)
         campaign.clear()
         campaign.update(normalized)
-        outcome = self.store.save(session, app_id)
+        outcome = self._save(session, app_id)
         if not outcome.saved:
             raise RuntimeError("The campaign changed elsewhere; reload before saving")
         return deepcopy(event)
@@ -869,7 +960,7 @@ class CampaignRepository:
         normalized = normalize_campaign(campaign)
         campaign.clear()
         campaign.update(normalized)
-        outcome = self.store.save(session, app_id)
+        outcome = self._save(session, app_id)
         if not outcome.saved:
             raise RuntimeError("The campaign changed elsewhere; reload before saving")
         return deepcopy(request)
@@ -923,7 +1014,7 @@ class CampaignRepository:
         normalized = normalize_campaign(campaign)
         campaign.clear()
         campaign.update(normalized)
-        outcome = self.store.save(session, app_id)
+        outcome = self._save(session, app_id)
         if not outcome.saved:
             raise RuntimeError("The campaign changed elsewhere; reload before saving")
         return deepcopy(request)
@@ -969,7 +1060,7 @@ class CampaignRepository:
         normalized = normalize_campaign(campaign)
         campaign.clear()
         campaign.update(normalized)
-        outcome = self.store.save(session, "campaigner")
+        outcome = self._save(session, "campaigner")
         if not outcome.saved:
             raise RuntimeError("The campaign changed elsewhere; reload before saving")
         return deepcopy(campaign)
@@ -984,6 +1075,6 @@ class CampaignRepository:
         ]
         if len(session.data["campaigns"]) == before:
             raise KeyError("Unknown campaign")
-        outcome = self.store.save(session, "campaigner")
+        outcome = self._save(session, "campaigner")
         if not outcome.saved:
             raise RuntimeError("The campaign changed elsewhere; reload before deleting")

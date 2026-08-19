@@ -162,6 +162,7 @@ class TimelineView(tk.Frame):
         parent,
         change_command,
         people_provider=None,
+        people_by_ids_provider=None,
         navigate_command=None,
         name_change_command=None,
         event_controller=None,
@@ -178,6 +179,7 @@ class TimelineView(tk.Frame):
         super().__init__(parent, bg=SURFACE)
         self.change_command = change_command
         self.people_provider = people_provider
+        self.people_by_ids_provider = people_by_ids_provider
         self.navigate_command = navigate_command
         self.name_change_command = name_change_command
         self.event_controller = event_controller
@@ -519,8 +521,16 @@ class TimelineView(tk.Frame):
     def current_person(self):
         person_id = self.current_person_id()
         people_provider = getattr(self, "people_provider", None)
+        people_by_ids_provider = getattr(
+            self,
+            "people_by_ids_provider",
+            None,
+        )
 
-        if not person_id or people_provider is None:
+        if not person_id or (
+            people_provider is None
+            and not callable(people_by_ids_provider)
+        ):
             return {}
 
         if getattr(self, "render_person_id", None) == person_id:
@@ -528,6 +538,20 @@ class TimelineView(tk.Frame):
 
             if isinstance(rendered_person, dict):
                 return rendered_person
+
+        if callable(people_by_ids_provider):
+            targeted_people = people_by_ids_provider((person_id,))
+
+            return next(
+                (
+                    person
+                    for person in targeted_people
+                    if isinstance(person, dict)
+                    and str(person.get("record_id", "") or "").strip()
+                    == person_id
+                ),
+                {},
+            )
 
         return next(
             (
@@ -754,6 +778,11 @@ class TimelineView(tk.Frame):
             else TimelineView.current_person_id(self)
         )
         people_provider = getattr(self, "people_provider", None)
+        people_by_ids_provider = getattr(
+            self,
+            "people_by_ids_provider",
+            None,
+        )
         self.render_person_id = current_person_id
         candidate_events = [deepcopy(event) for event in self.events]
         linked_birth_for_current_person = any(
@@ -813,17 +842,22 @@ class TimelineView(tk.Frame):
                     if str(person_id or "").strip()
                 )
 
-        self.render_people = (
-            [
+        if callable(people_by_ids_provider):
+            self.render_people = [
+                person
+                for person in people_by_ids_provider(relevant_person_ids)
+                if isinstance(person, dict)
+            ]
+        elif people_provider is not None:
+            self.render_people = [
                 person
                 for person in people_provider()
                 if isinstance(person, dict)
                 and str(person.get("record_id", "") or "").strip()
                 in relevant_person_ids
             ]
-            if people_provider is not None
-            else []
-        )
+        else:
+            self.render_people = []
         self.render_current_person = next(
             (
                 person

@@ -323,7 +323,30 @@ class EventAssociationPicker(tk.Frame):
             return
 
         if self.association_kind == "people":
-            self.options = self.controller.people_options()
+            recent_options = (
+                self.controller.recent_people_options(limit=5)
+                if self.include_recent
+                else []
+            )
+            requested_ids = [
+                *self.selected_ids,
+                *self.locked_order,
+                *(
+                    str(option.get("value", "") or "").strip()
+                    for option in recent_options
+                    if isinstance(option, dict)
+                ),
+            ]
+            targeted_provider = getattr(
+                self.controller,
+                "people_options_for_ids",
+                None,
+            )
+            self.options = (
+                targeted_provider(requested_ids)
+                if callable(targeted_provider)
+                else self.controller.people_options()
+            )
         elif self.association_kind == "organizations":
             self.options = self.controller.organization_options()
         else:
@@ -552,6 +575,15 @@ class EventAssociationPicker(tk.Frame):
         )
 
         if self.association_kind == "people":
+            # Opening the chooser is the deliberate point at which the full
+            # searchable People catalogue is needed.  Merely viewing an event
+            # keeps the picker scoped to its linked and recent people.
+            self.options = self.controller.people_options()
+            self.options_by_id = {
+                str(option.get("value", "") or "").strip(): option
+                for option in self.options
+                if str(option.get("value", "") or "").strip()
+            }
             recent_options = [
                 option
                 for option in self.recent_options(limit=12)
@@ -624,7 +656,28 @@ class EventAssociationPicker(tk.Frame):
             return False
 
         if self.association_kind == "people":
-            self.options = self.controller.people_options()
+            targeted_provider = getattr(
+                self.controller,
+                "people_options_for_ids",
+                None,
+            )
+            if callable(targeted_provider):
+                option_by_id = {
+                    str(option.get("value", "") or "").strip(): option
+                    for option in self.options
+                    if str(option.get("value", "") or "").strip()
+                }
+                option_by_id.update(
+                    {
+                        str(option.get("value", "") or "").strip(): option
+                        for option in targeted_provider(
+                            (*self.selected_ids, normalized_id)
+                        )
+                    }
+                )
+                self.options = list(option_by_id.values())
+            else:
+                self.options = self.controller.people_options()
         elif self.association_kind == "organizations":
             self.options = self.controller.organization_options()
         else:
@@ -635,6 +688,12 @@ class EventAssociationPicker(tk.Frame):
                 )
             else:
                 self.options = self.controller.location_options()
+
+        self.options_by_id = {
+            str(option.get("value", "") or "").strip(): option
+            for option in self.options
+            if str(option.get("value", "") or "").strip()
+        }
 
         if self.single_selection:
             self.selected_ids = [

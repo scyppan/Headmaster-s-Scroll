@@ -7,6 +7,7 @@ import tkinter as tk
 import traceback
 from copy import deepcopy
 from datetime import datetime, timezone
+from difflib import SequenceMatcher
 from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog, ttk
 from uuid import uuid4
@@ -30,10 +31,12 @@ from headmasters_scroll.region_interactions import ensure_gathering_catalog
 from headmasters_scroll.windowing import MAPPER_ICON, apply_window_icon, configure_windows_app_id, maximize_window
 from apps.mapper.catalog_cache import MapperCatalogCache, source_fingerprint
 from apps.mapper.region_content_dialog import RegionContentDialog
+from apps.mapper.address_dialogs import AddressManagerDialog
 
 
 BEHAVIOR_LABELS = {
     "area": "Area",
+    "address": "Address",
     "shop": "Shop",
     "travel": "Travel",
     "library": "Library",
@@ -43,6 +46,7 @@ BEHAVIOR_LABELS = {
 }
 BEHAVIOR_COLORS = {
     "area": "#3f729b",
+    "address": "#70543a",
     "shop": "#9a6b20",
     "travel": "#7b3f8c",
     "library": "#3f7853",
@@ -86,6 +90,28 @@ def assign_location_map_to_floor(
     map_record["floor_id"] = str(target.get("record_id", ""))
 
 
+def keep_location_map_separate_from_floors(
+    location: dict, maps: list[dict]
+) -> None:
+    """Remove only the optional floor role from a location's default map."""
+
+    default_map_id = str(location.get("default_map_id", "") or "")
+    if not default_map_id:
+        return
+    for floor in location.get("floors", []) or []:
+        if str(floor.get("primary_map_id", "") or "") == default_map_id:
+            floor["primary_map_id"] = ""
+    map_record = next(
+        (
+            item for item in maps
+            if str(item.get("record_id", "") or "") == default_map_id
+        ),
+        None,
+    )
+    if map_record is not None:
+        map_record["floor_id"] = ""
+
+
 def map_name_for_floor(location: dict, floor_id: str) -> str:
     """Build a display name from the current location and floor names."""
 
@@ -101,6 +127,167 @@ def map_name_for_floor(location: dict, floor_id: str) -> str:
         "Unnamed floor",
     )
     return f"{location_name} — {floor_name}"
+
+
+def updated_recent_map_ids(
+    existing: object, map_id: str, *, limit: int = 12
+) -> list[str]:
+    """Return a unique most-recent-first map history."""
+
+    current = str(map_id or "").strip()
+    values = existing if isinstance(existing, list) else []
+    result = [current] if current else []
+    for value in values:
+        candidate = str(value or "").strip()
+        if candidate and candidate not in result:
+            result.append(candidate)
+        if len(result) >= limit:
+            break
+    return result
+
+
+def _location_path(location_id: str, locations_by_id: dict[str, dict]) -> str:
+    names: list[str] = []
+    seen: set[str] = set()
+    current_id = str(location_id or "")
+    while current_id and current_id not in seen:
+        seen.add(current_id)
+        location = locations_by_id.get(current_id)
+        if not location:
+            break
+        names.append(str(location.get("name", "Unnamed location") or "Unnamed location"))
+        current_id = str(location.get("parent_location_id", "") or "")
+    return " › ".join(reversed(names))
+
+
+def warp_destination_choices(
+    maps: list[dict],
+    locations: list[dict],
+    *,
+    current_location_id: str = "",
+    current_map_id: str = "",
+    recent_map_ids: object = None,
+) -> list[dict]:
+    """Build searchable warp summaries without copying canonical records."""
+
+    locations_by_id = {
+        str(item.get("record_id", "") or ""): item
+        for item in locations
+        if isinstance(item, dict)
+    }
+    recent_order = {
+        map_id: index
+        for index, map_id in enumerate(updated_recent_map_ids(recent_map_ids, ""))
+    }
+    choices: list[dict] = []
+    for map_record in maps:
+        if not isinstance(map_record, dict):
+            continue
+        map_id = str(map_record.get("record_id", "") or "")
+        location_id = str(map_record.get("location_id", "") or "")
+        floor_id = str(map_record.get("floor_id", "") or "")
+        location = locations_by_id.get(location_id, {})
+        floor_name = next(
+            (
+                str(floor.get("name", "Unnamed floor") or "Unnamed floor")
+                for floor in location.get("floors", []) or []
+                if str(floor.get("record_id", "") or "") == floor_id
+            ),
+            "",
+        )
+        location_path = _location_path(location_id, locations_by_id)
+        map_name = str(map_record.get("name", "Map") or "Map")
+        is_current = bool(map_id and map_id == str(current_map_id or ""))
+        is_nearby = bool(location_id and location_id == str(current_location_id or ""))
+        category = "nearby" if is_nearby else "recent" if map_id in recent_order else "all"
+        for point in map_record.get("warp_points", []) or []:
+            if not isinstance(point, dict):
+                continue
+            point_id = str(point.get("record_id", "") or "")
+            if not point_id:
+                continue
+            point_name = str(point.get("name", "Warp point") or "Warp point")
+            choices.append({
+                "record_id": point_id,
+                "name": point_name,
+                "map_id": map_id,
+                "map_name": map_name,
+                "location_id": location_id,
+                "location_path": location_path,
+                "floor_id": floor_id,
+                "floor_name": floor_name,
+                "category": category,
+                "is_current": is_current,
+                "recent_rank": recent_order.get(map_id, 10_000),
+                "player_arrival": bool(point.get("player_arrival", False)),
+                "search_text": " ".join(
+                    value for value in (
+                        point_name,
+                        map_name,
+                        floor_name,
+                        location_path,
+                    ) if value
+                ),
+            })
+    category_order = {"nearby": 0, "recent": 1, "all": 2}
+    choices.sort(key=lambda item: (
+        category_order[item["category"]],
+        0 if item["is_current"] else 1,
+        item["recent_rank"],
+        item["location_path"].casefold(),
+        item["floor_name"].casefold(),
+        item["name"].casefold(),
+    ))
+    return choices
+
+
+def filter_warp_destination_choices(choices: list[dict], query: str) -> list[dict]:
+    """Rank forgiving multi-field warp searches, including minor typos."""
+
+    normalized = " ".join(str(query or "").casefold().split())
+    if not normalized:
+        return list(choices)
+    query_words = normalized.split()
+    ranked: list[tuple[float, dict]] = []
+    for choice in choices:
+        haystack = " ".join(str(choice.get("search_text", "")).casefold().split())
+        words = haystack.replace("›", " ").replace("—", " ").split()
+        if normalized in haystack:
+            score = 3.0 + len(normalized) / max(1, len(haystack))
+        else:
+            word_scores = [
+                max((
+                    max(
+                        SequenceMatcher(None, query_word, word).ratio(),
+                        SequenceMatcher(
+                            None,
+                            query_word,
+                            word[: max(1, len(query_word))],
+                        ).ratio(),
+                        SequenceMatcher(
+                            None,
+                            query_word,
+                            word[: max(1, len(query_word) + 1)],
+                        ).ratio(),
+                    )
+                    for word in words
+                ), default=0.0)
+                for query_word in query_words
+            ]
+            if not word_scores or min(word_scores) < 0.62:
+                continue
+            score = sum(word_scores) / len(word_scores)
+        if choice.get("category") == "nearby":
+            score += 0.12
+        elif choice.get("category") == "recent":
+            score += 0.06
+        ranked.append((score, choice))
+    ranked.sort(key=lambda item: (
+        -item[0],
+        item[1].get("recent_rank", 10_000),
+        str(item[1].get("name", "")).casefold(),
+    ))
+    return [item for _score, item in ranked]
 
 
 def point_in_polygon(x: float, y: float, points: list[dict]) -> bool:
@@ -156,6 +343,7 @@ class MapperWindow(tk.Tk):
     POLYGON_CLOSE_SNAP_RADIUS = 16
 
     def __init__(self) -> None:
+        configure_windows_app_id("Mapper")
         super().__init__()
         self.repository = WorldBoardRepository()
         self.catalog_cache = MapperCatalogCache()
@@ -165,11 +353,15 @@ class MapperWindow(tk.Tk):
         self.world_session = None
         self.maps: list[dict] = []
         self.locations: list[dict] = []
+        self.addresses: list[dict] = []
         self.selected_map_id = str(self.preferences.get("last_map_id", "") or "")
         self.pending_image: Path | None = None
         self.location_options: dict[str, str] = {}
         self.selected_location_id = str(self.preferences.get("last_location_id", "") or "")
         self.selected_floor_id = str(self.preferences.get("last_floor_id", "") or "")
+        self.recent_map_ids = updated_recent_map_ids(
+            self.preferences.get("recent_map_ids", []), ""
+        )
         self.regions: list[dict] = []
         self.warp_points: list[dict] = []
         self.selected_warp_point_id = ""
@@ -182,6 +374,11 @@ class MapperWindow(tk.Tk):
         self.editor_dirty = False
         self.loading_region_properties = False
         self.metadata_history_pending = False
+        # Text widgets do not update the working region until focus leaves the
+        # field.  Track that draft separately so an external world.json save
+        # cannot refresh Mapper and replace text that the Headmaster is still
+        # typing.
+        self.metadata_form_dirty = False
         self.metadata_save_after_id: str | None = None
         self.undo_stack: list[tuple[list[dict], str]] = []
         self.redo_stack: list[tuple[list[dict], str]] = []
@@ -210,6 +407,7 @@ class MapperWindow(tk.Tk):
         self.configure(background=self.PAPER)
         self.protocol("WM_DELETE_WINDOW", self.close_window)
         apply_window_icon(self, MAPPER_ICON)
+        self.after_idle(lambda: apply_window_icon(self, MAPPER_ICON))
         self._configure_style()
         self._build()
         self.refresh()
@@ -271,12 +469,13 @@ class MapperWindow(tk.Tk):
         ttk.Label(details, textvariable=self.floor_value, style="MapperCard.TLabel", font=("Segoe UI", 9, "bold")).pack(anchor="w")
         floor_controls = ttk.Frame(details)
         floor_controls.pack(fill="x", pady=(4, 0))
-        ttk.Checkbutton(
+        self.has_floors_check = ttk.Checkbutton(
             floor_controls,
             text="Has floors",
             variable=self.has_floors_value,
             command=self.has_floors_changed,
-        ).pack(side="left")
+        )
+        self.has_floors_check.pack(side="left")
         self.manage_floors_button = ttk.Button(
             floor_controls,
             text="Floors…",
@@ -284,6 +483,13 @@ class MapperWindow(tk.Tk):
             command=self.manage_floors,
         )
         self.manage_floors_button.pack(side="right")
+        self.manage_addresses_button = ttk.Button(
+            floor_controls,
+            text="Address history…",
+            command=self.manage_addresses,
+        )
+        self.manage_addresses_button.pack(side="right", padx=(0, 4))
+        self.update_floor_control_state()
         ttk.Label(details, textvariable=self.image_value, wraplength=250).pack(anchor="w", pady=(4, 2))
         buttons = ttk.Frame(details)
         buttons.pack(fill="x")
@@ -382,7 +588,24 @@ class MapperWindow(tk.Tk):
         self.behavior_select.pack(fill="x")
         self.behavior_select.bind("<<ComboboxSelected>>", self.region_behavior_changed)
         self.behavior_select.bind("<FocusOut>", self.region_property_focus_out)
-        ttk.Label(props, text="Hover Text").pack(anchor="w", pady=(5, 0))
+        self.region_address = tk.StringVar()
+        self.address_frame = ttk.Frame(props)
+        ttk.Label(self.address_frame, text="Address").pack(anchor="w")
+        address_row = ttk.Frame(self.address_frame)
+        address_row.pack(fill="x")
+        self.address_entry = ttk.Entry(
+            address_row,
+            textvariable=self.region_address,
+        )
+        self.address_entry.pack(side="left", fill="x", expand=True)
+        self.address_entry.bind("<FocusOut>", self.address_focus_out)
+        ttk.Button(
+            address_row,
+            text="History…",
+            command=self.open_selected_address_history,
+        ).pack(side="left", padx=(4, 0))
+        self.hover_heading = ttk.Label(props, text="Hover Text")
+        self.hover_heading.pack(anchor="w", pady=(5, 0))
         self.hover_text = tk.Text(props, height=5, wrap="word", relief="solid", borderwidth=1)
         self.hover_text.pack(fill="x")
         self.hover_text.bind("<<Modified>>", self.hover_text_changed)
@@ -509,14 +732,42 @@ class MapperWindow(tk.Tk):
             "last_map_id": self.selected_map_id,
             "last_location_id": self.selected_location_id,
             "last_floor_id": self.selected_floor_id,
+            "recent_map_ids": list(self.recent_map_ids),
         })
         try:
             self.preferences_store.save(self.preferences)
         except OSError:
             pass
 
+    def remember_recent_map(self, map_id: str) -> None:
+        self.recent_map_ids = updated_recent_map_ids(
+            self.recent_map_ids, map_id
+        )
+
+    def update_floor_control_state(self) -> None:
+        """Keep floor ownership controls on the parent location row only."""
+
+        if not hasattr(self, "has_floors_check"):
+            return
+        parent_selected = bool(self.selected_location_id) and not bool(
+            self.selected_floor_id
+        )
+        if parent_selected:
+            self.has_floors_check.state(["!disabled"])
+            self.manage_floors_button.state(["!disabled"])
+            self.manage_addresses_button.state(["!disabled"])
+        else:
+            self.has_floors_check.state(["disabled"])
+            self.manage_floors_button.state(["disabled"])
+            self.manage_addresses_button.state(["disabled"])
+
     def confirm_discard(self) -> bool:
-        if not self.editor_dirty and not self.draft_points and self.pending_image is None:
+        if (
+            not self.editor_dirty
+            and not self.metadata_form_dirty
+            and not self.draft_points
+            and self.pending_image is None
+        ):
             return True
         return messagebox.askyesno("Unsaved Mapper work", "Discard the unsaved map changes?", parent=self)
 
@@ -539,6 +790,7 @@ class MapperWindow(tk.Tk):
                 cache_status = "Ready"
             self.maps = list(source.get("maps", []))
             self.locations = sorted(source.get("locations", []), key=lambda item: str(item.get("name", "")).casefold())
+            self.addresses = list(source.get("addresses", []))
             self.location_options = {
                 f"{item.get('name', 'Unnamed')}  [{item.get('record_id')}]": str(item.get("record_id"))
                 for item in self.locations
@@ -608,7 +860,12 @@ class MapperWindow(tk.Tk):
                 self._known_world_fingerprint is not None
                 and current != self._known_world_fingerprint
             ):
-                if self.editor_dirty or self.draft_points or self.pending_image:
+                if (
+                    self.editor_dirty
+                    or self.metadata_form_dirty
+                    or self.draft_points
+                    or self.pending_image
+                ):
                     self.status_value.set(
                         "World data changed in another app • finish this edit, "
                         "then reopen Mapper to refresh"
@@ -750,6 +1007,7 @@ class MapperWindow(tk.Tk):
         self.selected_floor_id = floor_id
         self.floor_value.set(next((str(floor.get("name", "Unnamed")) for floor in location.get("floors", []) or [] if str(floor.get("record_id")) == floor_id), "Default location map"))
         self.has_floors_value.set(bool(location.get("has_floors", False)))
+        self.update_floor_control_state()
         map_id = str(location.get("default_map_id", ""))
         if floor_id:
             floor = next((item for item in location.get("floors", []) or [] if str(item.get("record_id")) == floor_id), {})
@@ -781,6 +1039,7 @@ class MapperWindow(tk.Tk):
         )
         self.floor_value.set(next((str(floor.get("name", "Unnamed")) for floor in (location or {}).get("floors", []) or [] if str(floor.get("record_id")) == self.selected_floor_id), "Default location map"))
         self.has_floors_value.set(bool((location or {}).get("has_floors", False)))
+        self.update_floor_control_state()
         self.regions = deepcopy(record.get("regions", []) or [])
         self.warp_points = deepcopy(record.get("warp_points", []) or [])
         self._reset_editor()
@@ -788,6 +1047,7 @@ class MapperWindow(tk.Tk):
         self.image_value.set("Base image ready" if asset else "No image")
         self.load_canvas_image(record)
         self.render_region_list()
+        self.remember_recent_map(self.selected_map_id)
         self.remember_catalog_selection()
         self.after_idle(self.fit_map)
 
@@ -797,6 +1057,7 @@ class MapperWindow(tk.Tk):
         self.selected_vertex = None
         self.draft_points = []
         self.editor_dirty = False
+        self.metadata_form_dirty = False
         self.undo_stack.clear()
         self.redo_stack.clear()
         self.clear_property_fields()
@@ -841,6 +1102,12 @@ class MapperWindow(tk.Tk):
             messagebox.showerror("Cannot import map", str(error), parent=self)
 
     def has_floors_changed(self) -> None:
+        if self.selected_floor_id:
+            self.has_floors_value.set(bool(next((
+                item.get("has_floors", False) for item in self.locations
+                if str(item.get("record_id")) == self.selected_location_id
+            ), False)))
+            return
         location = next((item for item in self.locations if str(item.get("record_id")) == self.selected_location_id), None)
         if location is None:
             self.has_floors_value.set(False)
@@ -875,6 +1142,9 @@ class MapperWindow(tk.Tk):
     def manage_floors(self) -> None:
         """Rename, order, and map stable floor records for one location."""
 
+        if self.selected_floor_id:
+            return
+
         location = next(
             (item for item in self.locations if str(item.get("record_id")) == self.selected_location_id),
             None,
@@ -906,11 +1176,18 @@ class MapperWindow(tk.Tk):
         ttk.Label(
             body,
             text=(
-                "Floors are ordered from lowest to highest. The location map may also "
-                "serve as one named floor, such as Ground Floor."
+                "Floors are ordered from lowest to highest. The parent location owns "
+                "this list and may optionally share its default map with one floor."
             ),
             wraplength=470,
         ).pack(fill="x", pady=(7, 8))
+        default_role = tk.StringVar()
+        ttk.Label(
+            body,
+            textvariable=default_role,
+            font=("Segoe UI", 9, "bold"),
+            wraplength=470,
+        ).pack(fill="x", pady=(0, 6))
         preview = tk.Listbox(body, height=13, exportselection=False)
         preview.pack(fill="both", expand=True)
 
@@ -932,6 +1209,18 @@ class MapperWindow(tk.Tk):
                 )
                 preview.insert("end", f"{floor.get('name', 'Unnamed')}{suffix}")
             count_value.set(f"{len(working)} floor{'s' if len(working) != 1 else ''}")
+            shared_floor = next((
+                str(floor.get("name", "Unnamed floor") or "Unnamed floor")
+                for floor in working
+                if default_map_id
+                and str(floor.get("primary_map_id", "") or "") == default_map_id
+            ), "")
+            if not default_map_id:
+                default_role.set("Default map: none imported yet")
+            elif shared_floor:
+                default_role.set(f"Default map also represents: {shared_floor}")
+            else:
+                default_role.set("Default map is separate from every floor map")
             if working and selected is not None:
                 selected = max(0, min(len(working) - 1, selected))
                 preview.selection_set(selected)
@@ -1024,6 +1313,15 @@ class MapperWindow(tk.Tk):
             working[index]["primary_map_id"] = ""
             render(index)
 
+        def keep_location_map_separate() -> None:
+            if not default_map_id:
+                return
+            working_location = {**location, "floors": working}
+            keep_location_map_separate_from_floors(
+                working_location, deepcopy(self.maps)
+            )
+            render(selected_index())
+
         def save() -> None:
             if not working:
                 messagebox.showerror("Floors", "Add at least one named floor.", parent=dialog)
@@ -1054,12 +1352,9 @@ class MapperWindow(tk.Tk):
                         stored, session.data.get("maps", []), default_floor_id
                     )
                 elif default_map_id:
-                    default_map = next((
-                        item for item in session.data.get("maps", [])
-                        if str(item.get("record_id", "")) == default_map_id
-                    ), None)
-                    if default_map is not None:
-                        default_map["floor_id"] = ""
+                    keep_location_map_separate_from_floors(
+                        stored, session.data.get("maps", [])
+                    )
                 floor_ids = {
                     str(floor.get("record_id", ""))
                     for floor in stored.get("floors", []) or []
@@ -1106,16 +1401,66 @@ class MapperWindow(tk.Tk):
         map_actions = ttk.Frame(body)
         map_actions.pack(fill="x", pady=(6, 0))
         ttk.Button(
-            map_actions, text="Use location map for floor", command=use_location_map
-        ).pack(side="left")
-        ttk.Button(map_actions, text="Clear floor map", command=clear_floor_map).pack(
-            side="left", padx=(5, 0)
+            map_actions, text="Default map = selected floor", command=use_location_map
+        ).pack(side="left", fill="x", expand=True)
+        ttk.Button(
+            map_actions, text="Keep default map separate", command=keep_location_map_separate
+        ).pack(side="left", fill="x", expand=True, padx=(5, 0))
+        ttk.Button(body, text="Clear selected floor's separate map", command=clear_floor_map).pack(
+            fill="x", pady=(5, 0)
         )
         footer = ttk.Frame(body)
         footer.pack(fill="x", pady=(10, 0))
         ttk.Button(footer, text="Cancel", command=dialog.destroy).pack(side="right")
         ttk.Button(footer, text="Apply", command=save).pack(side="right", padx=(0, 5))
         preview.focus_set()
+
+    def manage_addresses(self, selected_address_id: str = "") -> None:
+        """Edit stable addresses and their linked world events for this location."""
+
+        if self.selected_floor_id:
+            return
+        location = next(
+            (
+                item for item in self.locations
+                if str(item.get("record_id", "")) == self.selected_location_id
+            ),
+            None,
+        )
+        if location is None:
+            messagebox.showinfo("Addresses", "Select a location first.", parent=self)
+            return
+        try:
+            session = self.edit_session()
+        except Exception as error:
+            messagebox.showerror("Cannot load addresses", str(error), parent=self)
+            return
+
+        def apply(addresses: list, events: list) -> None:
+            try:
+                session.data["addresses"] = deepcopy(addresses)
+                session.data["events"] = deepcopy(events)
+                saved = self.save_session(session)
+                self.addresses = deepcopy(saved.get("addresses", []) or [])
+                count = sum(
+                    1 for item in self.addresses
+                    if str(item.get("location_id", "")) == self.selected_location_id
+                )
+                self.status_value.set(
+                    f"{count} address{'es' if count != 1 else ''} saved for "
+                    f"{location.get('name', 'location')}"
+                )
+            except Exception as error:
+                messagebox.showerror("Cannot save addresses", str(error), parent=self)
+                raise
+
+        AddressManagerDialog(
+            self,
+            session.data,
+            self.selected_location_id,
+            apply,
+            selected_address_id=selected_address_id,
+        )
 
     def _manage_floors_legacy(self) -> None:
         """Create stable floor records that become independently editable maps."""
@@ -1364,6 +1709,7 @@ class MapperWindow(tk.Tk):
                 self.repository.assets.prune_map_variants(map_id, str(asset.get("file_extension", "")))
             self.world_session = session
             self.maps = list(saved_document.get("maps", []))
+            self.addresses = deepcopy(saved_document.get("addresses", []) or [])
             self.locations = sorted(
                 saved_document.get("locations", []),
                 key=lambda item: str(item.get("name", "")).casefold(),
@@ -1373,6 +1719,7 @@ class MapperWindow(tk.Tk):
                 for item in self.locations
             }
             self.selected_map_id = map_id
+            self.remember_recent_map(map_id)
             self.remember_catalog_selection()
             self.pending_image = None
             self.editor_dirty = False
@@ -1536,7 +1883,17 @@ class MapperWindow(tk.Tk):
                 center_x = sum(point["x"] for point in region["points"]) / len(region["points"])
                 center_y = sum(point["y"] for point in region["points"]) / len(region["points"])
                 cx, cy = self.normal_to_canvas({"x": center_x, "y": center_y})
-                self.canvas.create_text(cx, cy, text=region["name"], fill="#000000", font=("Segoe UI", 10, "bold"))
+                label_offset = region.get("label_offset", {}) or {}
+                cx += float(label_offset.get("x", 0.0)) * self.map_width * self.scale
+                cy += float(label_offset.get("y", 0.0)) * self.map_height * self.scale
+                self.canvas.create_text(
+                    cx,
+                    cy,
+                    text=region["name"],
+                    fill="#000000",
+                    font=("Segoe UI", 10, "bold"),
+                    tags=(f"region-label:{region['record_id']}", "region-label"),
+                )
                 if self.mode == "edit":
                     for index, point in enumerate(region["points"]):
                         x, y = self.normal_to_canvas(point)
@@ -1775,6 +2132,21 @@ class MapperWindow(tk.Tk):
                 )
         return None
 
+    def region_label_at(self, x: float, y: float) -> dict | None:
+        for item_id in reversed(self.canvas.find_overlapping(x, y, x, y)):
+            for tag in self.canvas.gettags(item_id):
+                if not tag.startswith("region-label:"):
+                    continue
+                record_id = tag.split(":", 1)[1]
+                return next(
+                    (
+                        region for region in self.regions
+                        if str(region.get("record_id")) == record_id
+                    ),
+                    None,
+                )
+        return None
+
     def add_warp_point(self, point: dict) -> None:
         name = simpledialog.askstring(
             "Name warp point",
@@ -1832,9 +2204,23 @@ class MapperWindow(tk.Tk):
         point = self.canvas_to_normal(event.x, event.y)
         if not 0 <= point["x"] <= 1 or not 0 <= point["y"] <= 1:
             return
+        control_pressed = bool(int(getattr(event, "state", 0)) & 0x0004)
+        label_region = self.region_label_at(event.x, event.y) if control_pressed else None
+        if label_region is not None and self.mode in {"select", "edit"}:
+            self.select_region(str(label_region["record_id"]))
+            self.record_history()
+            self.drag_state = {
+                "kind": "region-label",
+                "record_id": str(label_region["record_id"]),
+                "start_x": event.x,
+                "start_y": event.y,
+                "offset": deepcopy(label_region.get("label_offset", {"x": 0.0, "y": 0.0})),
+                "changed": False,
+            }
+            return
         label_warp = (
             self.warp_label_at(event.x, event.y)
-            if int(getattr(event, "state", 0)) & 0x0004
+            if control_pressed
             else None
         )
         if label_warp is not None and self.mode in {"select", "edit", "warp"}:
@@ -1907,6 +2293,26 @@ class MapperWindow(tk.Tk):
     def canvas_drag(self, event: tk.Event) -> None:
         if not self.drag_state:
             return
+        if self.drag_state.get("kind") == "region-label":
+            region = next(
+                (
+                    item for item in self.regions
+                    if str(item.get("record_id")) == self.drag_state.get("record_id")
+                ),
+                None,
+            )
+            if region is not None:
+                original = self.drag_state.get("offset", {"x": 0.0, "y": 0.0})
+                width = max(1.0, self.map_width * self.scale)
+                height = max(1.0, self.map_height * self.scale)
+                region["label_offset"] = {
+                    "x": max(-1.0, min(1.0, float(original.get("x", 0.0)) + (event.x - self.drag_state["start_x"]) / width)),
+                    "y": max(-1.0, min(1.0, float(original.get("y", 0.0)) + (event.y - self.drag_state["start_y"]) / height)),
+                }
+                self.drag_state["changed"] = True
+                self.editor_dirty = True
+                self.render_canvas()
+            return
         if self.drag_state.get("kind") == "warp-label":
             warp_point = next(
                 (
@@ -1956,6 +2362,22 @@ class MapperWindow(tk.Tk):
         self.render_canvas()
 
     def canvas_release(self, _event: tk.Event) -> None:
+        if self.drag_state and self.drag_state.get("kind") == "region-label":
+            changed = bool(self.drag_state.get("changed"))
+            region = next(
+                (
+                    item for item in self.regions
+                    if str(item.get("record_id")) == self.drag_state.get("record_id")
+                ),
+                None,
+            )
+            if not changed and self.undo_stack:
+                self.undo_stack.pop()
+            self.drag_state = None
+            if changed and region is not None:
+                region["last_updated"] = utc_now()
+                self.autosave_map("Moved area label")
+            return
         if self.drag_state and self.drag_state.get("kind") in {"warp", "warp-label"}:
             changed = bool(self.drag_state.get("changed"))
             action = "Moved warp label" if self.drag_state.get("kind") == "warp-label" else "Moved warp point"
@@ -2115,6 +2537,16 @@ class MapperWindow(tk.Tk):
             self.select_region(selected[0])
 
     def select_region(self, region_id: str) -> None:
+        # Re-selecting the polygon currently being edited must not reload its
+        # persisted value over an unfinished Text-widget draft.
+        if (
+            region_id
+            and region_id == self.selected_region_id
+            and self.metadata_form_dirty
+        ):
+            self.render_target_controls()
+            self.render_canvas()
+            return
         self.selected_region_id = region_id
         self.selected_vertex = None
         region = self.selected_region()
@@ -2123,6 +2555,9 @@ class MapperWindow(tk.Tk):
             if region:
                 self.region_name.set(region["name"])
                 self.region_behavior.set(BEHAVIOR_LABELS.get(region.get("behavior_type"), "Area"))
+                self.region_address.set(
+                    self.mapped_address_name(region.get("address_id", ""))
+                )
                 self.hover_text.delete("1.0", "end")
                 self.hover_text.insert("1.0", region.get("hover_text", ""))
                 self.hover_text.edit_modified(False)
@@ -2143,6 +2578,7 @@ class MapperWindow(tk.Tk):
                 self.clear_property_fields()
         finally:
             self.loading_region_properties = False
+        self.metadata_form_dirty = False
         self.render_target_controls()
         self.render_canvas()
 
@@ -2152,6 +2588,7 @@ class MapperWindow(tk.Tk):
         try:
             self.region_name.set("")
             self.region_behavior.set("Area")
+            self.region_address.set("")
             if hasattr(self, "hover_text"):
                 self.hover_text.delete("1.0", "end")
                 self.hover_text.edit_modified(False)
@@ -2205,8 +2642,15 @@ class MapperWindow(tk.Tk):
 
     def render_target_controls(self) -> None:
         behavior = next((key for key, label in BEHAVIOR_LABELS.items() if label == self.region_behavior.get()), "area")
+        self.address_frame.pack_forget()
         self.secret_frame.pack_forget()
         self.contents_button.pack_forget()
+        if behavior == "address":
+            self.address_frame.pack(
+                fill="x",
+                pady=(5, 0),
+                before=self.hover_heading,
+            )
         if behavior == "secret":
             self.secret_frame.pack(fill="x", pady=(6, 0), before=self.region_help_label)
         if behavior in {"secret", "library", "storeroom", "shop"}:
@@ -2245,16 +2689,115 @@ class MapperWindow(tk.Tk):
         else:
             self.region_target.set(f"Travel to: {location.get('name')}" if location else "Needs destination")
 
+    def mapped_address_name(self, address_id: object) -> str:
+        address_id = str(address_id or "")
+        return str(next(
+            (
+                item.get("name", "")
+                for item in self.addresses
+                if str(item.get("record_id", "")) == address_id
+            ),
+            "",
+        ))
+
+    def commit_inline_address(self) -> bool:
+        """Create or rename the canonical address linked to an Address polygon."""
+
+        behavior = next(
+            (
+                key for key, label in BEHAVIOR_LABELS.items()
+                if label == self.region_behavior.get()
+            ),
+            "area",
+        )
+        if behavior != "address":
+            return True
+        region = self.selected_region()
+        if region is None:
+            return True
+        address_name = self.region_address.get().strip()
+        if not address_name:
+            region["address_id"] = ""
+            self.status_value.set(
+                "Enter the mapped address to finish the automatic save"
+            )
+            return False
+        try:
+            session = self.edit_session()
+            addresses = session.data.setdefault("addresses", [])
+            address_id = str(region.get("address_id", "") or "")
+            original_address_id = address_id
+            address_changed = False
+            address = next(
+                (
+                    item for item in addresses
+                    if isinstance(item, dict)
+                    and str(item.get("record_id", "")) == address_id
+                ),
+                None,
+            )
+            if address is None:
+                address = next(
+                    (
+                        item for item in addresses
+                        if isinstance(item, dict)
+                        and str(item.get("location_id", ""))
+                        == self.selected_location_id
+                        and str(item.get("name", "")).strip().casefold()
+                        == address_name.casefold()
+                    ),
+                    None,
+                )
+            now = utc_now()
+            if address is None:
+                address = {
+                    "record_id": str(uuid4()),
+                    "location_id": self.selected_location_id,
+                    "name": address_name,
+                    "notes": "",
+                    "created_at": now,
+                    "last_updated": now,
+                }
+                addresses.append(address)
+                address_changed = True
+            elif str(address.get("name", "")) != address_name:
+                address["name"] = address_name
+                address["last_updated"] = now
+                address_changed = True
+            resolved_address_id = str(address["record_id"])
+            address_changed = (
+                address_changed
+                or original_address_id != resolved_address_id
+            )
+            if address_changed:
+                if not self.metadata_history_pending:
+                    self.record_history()
+                self.metadata_history_pending = True
+                self.editor_dirty = True
+            region["address_id"] = resolved_address_id
+            current_region_name = self.region_name.get().strip()
+            if (
+                not current_region_name
+                or (
+                    current_region_name.startswith("Area ")
+                    and current_region_name[5:].isdigit()
+                )
+            ):
+                self.region_name.set(address_name)
+            self.addresses = deepcopy(addresses)
+            return True
+        except Exception as error:
+            messagebox.showerror("Cannot save address", str(error), parent=self)
+            return False
+
     def choose_destination(self) -> None:
-        choices = []
-        for map_record in self.maps:
-            for point in map_record.get("warp_points", []) or []:
-                choices.append({
-                    "record_id": str(point.get("record_id", "")),
-                    "name": str(point.get("name", "Warp point")),
-                    "map_name": str(map_record.get("name", "Map")),
-                    "location_id": str(map_record.get("location_id", "")),
-                })
+        choices = warp_destination_choices(
+            self.maps,
+            self.locations,
+            current_location_id=self.selected_location_id,
+            current_map_id=self.selected_map_id,
+            recent_map_ids=self.recent_map_ids,
+        )
         if not choices:
             messagebox.showinfo(
                 "No warp points",
@@ -2265,37 +2808,101 @@ class MapperWindow(tk.Tk):
         dialog = tk.Toplevel(self)
         dialog.title("Choose destination warp point")
         dialog.transient(self)
-        dialog.geometry("560x460")
-        dialog.minsize(460, 360)
+        apply_window_icon(dialog, MAPPER_ICON)
+        dialog.geometry("760x560")
+        dialog.minsize(600, 420)
         shell = ttk.Frame(dialog, padding=12)
         shell.pack(fill="both", expand=True)
         query = tk.StringVar()
-        ttk.Label(shell, text="Search warp points", font=("Segoe UI", 10, "bold")).pack(anchor="w")
+        ttk.Label(
+            shell,
+            text="Search warp, map, floor, or location",
+            font=("Segoe UI", 10, "bold"),
+        ).pack(anchor="w")
         entry = ttk.Entry(shell, textvariable=query)
         entry.pack(fill="x", pady=(3, 8))
-        tree = ttk.Treeview(shell, columns=("map",), show="tree headings", selectmode="browse")
+        ttk.Label(
+            shell,
+            text="Nearby floors appear first, followed by maps you recently edited.",
+        ).pack(anchor="w", pady=(0, 7))
+        tree = ttk.Treeview(
+            shell,
+            columns=("map", "location"),
+            show="tree headings",
+            selectmode="browse",
+        )
         tree.heading("#0", text="Warp point")
-        tree.heading("map", text="Destination map")
-        tree.column("#0", width=190)
-        tree.column("map", width=270)
+        tree.heading("map", text="Map / floor")
+        tree.heading("location", text="Location")
+        tree.column("#0", width=190, minwidth=130)
+        tree.column("map", width=190, minwidth=120)
+        tree.column("location", width=290, minwidth=180)
         tree.pack(fill="both", expand=True)
 
+        displayed: dict[str, dict] = {}
+
+        def map_label(choice: dict) -> str:
+            floor_name = str(choice.get("floor_name", "") or "")
+            return floor_name or str(choice.get("map_name", "Map") or "Map")
+
         def refill(*_args) -> None:
-            text = query.get().strip().casefold()
+            text = query.get().strip()
             tree.delete(*tree.get_children())
-            for choice in choices:
-                haystack = f"{choice['name']} {choice['map_name']}".casefold()
-                if text and text not in haystack:
+            displayed.clear()
+            matches = filter_warp_destination_choices(choices, text)
+            if text:
+                groups = [("matches", f"Best matches ({len(matches)})", matches)]
+            else:
+                labels = {
+                    "nearby": "Nearby floors and this location",
+                    "recent": "Recently used maps",
+                    "all": "Other maps",
+                }
+                groups = [
+                    (category, labels[category], [
+                        item for item in matches if item["category"] == category
+                    ])
+                    for category in ("nearby", "recent", "all")
+                ]
+            for category, label, items in groups:
+                if not items:
                     continue
-                tree.insert("", "end", iid=choice["record_id"], text=choice["name"], values=(choice["map_name"],))
+                group_id = f"group:{category}"
+                tree.insert("", "end", iid=group_id, text=label, open=True)
+                for index, choice in enumerate(items):
+                    row_id = f"choice:{choice['record_id']}:{index}"
+                    displayed[row_id] = choice
+                    warp_name = str(choice["name"])
+                    if choice.get("player_arrival"):
+                        warp_name = f"★ {warp_name}"
+                    if choice.get("is_current"):
+                        warp_name = f"{warp_name}  · current map"
+                    tree.insert(
+                        group_id,
+                        "end",
+                        iid=row_id,
+                        text=warp_name,
+                        values=(map_label(choice), choice["location_path"]),
+                    )
+            first = next(iter(displayed), "")
+            if first:
+                tree.selection_set(first)
+                tree.focus(first)
+                tree.see(first)
 
         def choose(*_args) -> None:
             selection = tree.selection()
             if not selection:
                 return
-            choice = next(item for item in choices if item["record_id"] == selection[0])
+            choice = displayed.get(selection[0])
+            if choice is None:
+                return
             self.target_location_id = choice["location_id"]
             self.target_warp_point_id = choice["record_id"]
+            self.recent_map_ids = updated_recent_map_ids(
+                self.recent_map_ids, str(choice.get("map_id", ""))
+            )
+            self.remember_catalog_selection()
             self.render_target_controls()
             self.region_metadata_changed()
             self.flush_metadata_save()
@@ -2303,6 +2910,7 @@ class MapperWindow(tk.Tk):
 
         query.trace_add("write", refill)
         tree.bind("<Double-Button-1>", choose)
+        tree.bind("<Return>", choose)
         actions = ttk.Frame(shell)
         actions.pack(fill="x", pady=(8, 0))
         ttk.Button(actions, text="Cancel", command=dialog.destroy).pack(side="right")
@@ -2357,12 +2965,28 @@ class MapperWindow(tk.Tk):
             self.select_region(str(current["record_id"]))
             self.autosave_map("Region searches and contents")
 
-        RegionContentDialog(self, database, region, apply)
+        try:
+            world = self.edit_session().data
+        except Exception as error:
+            messagebox.showerror("Cannot load shop details", str(error), parent=self)
+            return
+        RegionContentDialog(
+            self,
+            database,
+            world,
+            self.selected_location_id,
+            region,
+            apply,
+        )
 
     def hover_text_changed(self, _event: tk.Event | None = None) -> None:
         if not self.hover_text.edit_modified():
             return
         self.hover_text.edit_modified(False)
+        if self.loading_region_properties:
+            return
+        self.metadata_form_dirty = True
+        self.status_value.set("Hover text changed • leave the box to save")
 
     def hover_text_focus_in(self, _event: tk.Event | None = None) -> None:
         return
@@ -2370,19 +2994,39 @@ class MapperWindow(tk.Tk):
     def hover_text_focus_out(self, _event: tk.Event | None = None) -> None:
         self.region_property_focus_out()
 
+    def address_focus_out(self, _event: tk.Event | None = None) -> None:
+        self.region_property_focus_out()
+
+    def open_selected_address_history(self) -> None:
+        if not self.commit_inline_address():
+            return
+        region = self.selected_region()
+        if region is None:
+            return
+        if not self.region_property_focus_out():
+            return
+        self.manage_addresses(str(region.get("address_id", "") or ""))
+
     def region_behavior_changed(self, _event: tk.Event | None = None) -> None:
         self.render_target_controls()
 
     def secret_passage_changed(self) -> None:
         self.render_target_controls()
-        self.region_metadata_changed()
-        self.flush_metadata_save()
+        self.region_property_focus_out()
 
-    def region_property_focus_out(self, _event: tk.Event | None = None) -> None:
+    def region_property_focus_out(self, _event: tk.Event | None = None) -> bool:
         """Commit region metadata only after the edited control loses focus."""
 
         self.region_metadata_changed()
-        self.flush_metadata_save()
+        if not self.commit_inline_address():
+            return False
+        # The inline address commit supplies the stable reference used by the
+        # map region, so fold it into the same map/world save.
+        self.region_metadata_changed()
+        saved = self.flush_metadata_save()
+        if saved:
+            self.metadata_form_dirty = False
+        return saved
 
     def region_metadata_changed(self, *_args) -> None:
         """Update working metadata without writing until its control loses focus."""
@@ -2407,6 +3051,11 @@ class MapperWindow(tk.Tk):
             "name": name,
             "behavior_type": behavior,
             "hover_text": self.hover_text.get("1.0", "end-1c").strip(),
+            "address_id": (
+                str(region.get("address_id", "") or "")
+                if behavior in {"address", "shop"}
+                else ""
+            ),
             "secret_passage": bool(self.secret_passage.get()) if behavior == "secret" else False,
             "target_location_id": (
                 self.target_location_id

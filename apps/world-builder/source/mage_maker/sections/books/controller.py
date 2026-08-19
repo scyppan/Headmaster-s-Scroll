@@ -61,18 +61,64 @@ class BookController:
         self._content_options = None
 
     def list_books(self):
-        return normalize_book_records(
-            self.database.list_records("books")
-        )
+        return [
+            self.hydrate_book_contents(book)
+            for book in normalize_book_records(
+                self.database.list_records("books")
+            )
+        ]
 
     def get_book(self, record_id):
         book = self.database.read_record("books", record_id)
-        return normalize_book_record(book) if book is not None else None
+        return (
+            self.hydrate_book_contents(normalize_book_record(book))
+            if book is not None
+            else None
+        )
+
+    def hydrate_book_contents(self, book):
+        hydrated = deepcopy(book)
+        names = {
+            (option["collection"], option["record_id"]): option["name"]
+            for option in self.content_options()
+        }
+        for entry in hydrated.get("contents", []):
+            if not entry.get("name"):
+                entry["name"] = names.get(
+                    (entry.get("collection"), entry.get("record_id")),
+                    "Missing catalog record",
+                )
+        return hydrated
 
     def list_readings(self):
-        return normalize_book_readings(
+        readings = normalize_book_readings(
             self.database.list_records("book_readings")
         )
+        people_by_id = self.people_by_id()
+        books_by_id = {
+            str(book.get("record_id", "") or "").strip(): book
+            for book in self.database.list_records("books")
+            if isinstance(book, dict)
+        }
+        for reading in readings:
+            person = people_by_id.get(reading["person_id"], {})
+            book = books_by_id.get(reading["book_id"], {})
+            reading["person_name"] = str(
+                person.get("displayed_name")
+                or reading.get("person_name")
+                or "Unknown person"
+            )
+            reading["book_title"] = str(
+                book.get("title")
+                or reading.get("book_title")
+                or "Missing book"
+            )
+            reading["author_name"] = str(
+                book.get("author_name")
+                or reading.get("author_name")
+                or ""
+            )
+        return readings
 
     def readings_for_person(self, person_id):
         normalized_person_id = str(person_id or "").strip()
@@ -155,7 +201,13 @@ class BookController:
             prepared_holdings.append(holding)
 
         candidate["holdings"] = prepared_holdings
-        return normalize_book_record(candidate)
+        prepared = normalize_book_record(candidate)
+        # Names belong to the canonical DBM records.  World Builder stores
+        # stable references and resolves current labels only for display.
+        for entry in prepared.get("contents", []):
+            if str(entry.get("record_id", "") or "").strip():
+                entry.pop("name", None)
+        return prepared
 
     def ensure_unique_title(self, title, excluded_record_id=None):
         normalized_title = str(title or "").strip().casefold()
@@ -292,18 +344,11 @@ class BookController:
                 "selected date."
             )
 
-        person = self.people_by_id().get(normalized_person_id)
-        book = self.require_book(normalized_book_id)
+        self.require_book(normalized_book_id)
         reading = normalize_book_reading(
             {
                 "person_id": normalized_person_id,
-                "person_name": str(
-                    (person or {}).get("displayed_name", "")
-                    or "Unknown person"
-                ).strip(),
                 "book_id": normalized_book_id,
-                "book_title": book["title"],
-                "author_name": book["author_name"],
                 "date": normalized_date,
                 "source_type": source["source_type"],
                 "source_entry_id": source["source_entry_id"],
@@ -340,18 +385,22 @@ class BookController:
         return normalized
 
     def reading_history_entries_for_person(self, person_id):
-        return [
-            {
-                "record_id": reading["record_id"],
-                "date": reading["date"],
-                "name": reading["book_title"],
-                "author": reading["author_name"],
-                "source": book_reading_source_text(reading),
-                "source_kind": "catalog",
-                "book_id": reading["book_id"],
-            }
-            for reading in self.readings_for_person(person_id)
-        ]
+        entries = []
+        books_by_id = {book["record_id"]: book for book in self.list_books()}
+        for reading in self.readings_for_person(person_id):
+            book = books_by_id.get(reading["book_id"], {})
+            entries.append(
+                {
+                    "record_id": reading["record_id"],
+                    "date": reading["date"],
+                    "name": reading.get("book_title") or book.get("title", "Missing book"),
+                    "author": reading.get("author_name") or book.get("author_name", ""),
+                    "source": book_reading_source_text(reading),
+                    "source_kind": "catalog",
+                    "book_id": reading["book_id"],
+                }
+            )
+        return entries
 
     def content_options(self):
         if self._content_options is not None:

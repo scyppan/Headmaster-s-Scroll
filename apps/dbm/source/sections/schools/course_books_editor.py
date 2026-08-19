@@ -347,7 +347,6 @@ class CourseBooksEditor(tk.Frame):
             "year": self.active_year,
             "course": course_name,
             "record_id": selected_reference["record_id"],
-            "name": selected_reference["name"],
         }
 
         if course_book_index is None:

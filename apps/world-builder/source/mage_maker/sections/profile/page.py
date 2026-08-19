@@ -123,6 +123,7 @@ class PersonForm(tk.Frame):
         book_controller=None,
         status_command=None,
         people_summary_provider=None,
+        people_summary_by_ids_provider=None,
         save_person_command=None,
         person_record_provider=None,
     ):
@@ -133,6 +134,11 @@ class PersonForm(tk.Frame):
             people_summary_provider
             if callable(people_summary_provider)
             else people_provider
+        )
+        self.people_summary_by_ids_provider = (
+            people_summary_by_ids_provider
+            if callable(people_summary_by_ids_provider)
+            else None
         )
         self.game_database = game_database
         self.event_controller = event_controller
@@ -946,6 +952,7 @@ class PersonForm(tk.Frame):
             page,
             self.timeline_changed,
             people_provider=self.people_summary_provider,
+            people_by_ids_provider=self.people_summary_by_ids_provider,
             navigate_command=navigate_command,
             name_change_command=self.open_timeline_name_change,
             event_controller=self.event_controller,

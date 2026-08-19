@@ -14,7 +14,7 @@ from .region_interactions import normalize_region_interactions
 DISPLAY_MODES = {"dot", "token"}
 VISIBILITY_MODES = {"players", "headmaster"}
 REGION_BEHAVIOR_TYPES = {
-    "area", "shop", "travel", "library", "secret", "storeroom", "other"
+    "area", "address", "shop", "travel", "library", "secret", "storeroom", "other"
 }
 OBSCURATION_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 OFF_LIMITS_MESSAGE = "This area is off limits for now. Speak with your Headmaster."
@@ -114,6 +114,27 @@ def normalize_floor(value: Any, index: int = 0) -> dict[str, Any]:
     }
 
 
+def normalize_address(value: Any) -> dict[str, Any]:
+    """Normalize one stable address nested under a world location by reference."""
+
+    if not isinstance(value, dict):
+        raise ValueError("Every address must be an object")
+    record_id = str(value.get("record_id", "") or "").strip()
+    location_id = str(value.get("location_id", "") or "").strip()
+    name = str(value.get("name", "") or "").strip()
+    if not record_id or not location_id or not name:
+        raise ValueError("Every address requires a stable ID, location, and address")
+    return {
+        **deepcopy(value),
+        "record_id": record_id,
+        "location_id": location_id,
+        "name": name,
+        "notes": str(value.get("notes", "") or "").strip(),
+        "created_at": str(value.get("created_at", "") or "").strip(),
+        "last_updated": str(value.get("last_updated", "") or "").strip(),
+    }
+
+
 def normalize_region(value: Any) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError("Every map region must be an object")
@@ -155,6 +176,16 @@ def normalize_region(value: Any) -> dict[str, Any]:
         raise ValueError("A map region polygon must enclose an area")
     target_location_id = str(result.get("target_location_id", "") or "").strip()
     target_warp_point_id = str(result.get("target_warp_point_id", "") or "").strip()
+    raw_label_offset = result.get("label_offset", {}) or {}
+    if not isinstance(raw_label_offset, dict):
+        raise ValueError("Map region label offset must be an object")
+    try:
+        label_x = float(raw_label_offset.get("x", 0.0))
+        label_y = float(raw_label_offset.get("y", 0.0))
+    except (TypeError, ValueError) as error:
+        raise ValueError("Map region label offset must use numeric coordinates") from error
+    if not -1.0 <= label_x <= 1.0 or not -1.0 <= label_y <= 1.0:
+        raise ValueError("Map region label offset must remain within the map span")
     secret_passage = behavior_type == "secret" and bool(
         result.get("secret_passage", target_location_id or target_warp_point_id)
     )
@@ -169,6 +200,7 @@ def normalize_region(value: Any) -> dict[str, Any]:
         secret_passage=secret_passage,
         players_visible=bool(result.get("players_visible", True)),
         hover_text=str(result.get("hover_text", "") or "").strip(),
+        label_offset={"x": label_x, "y": label_y},
         points=normalized_points,
         target_location_id=target_location_id if has_travel_behavior else "",
         target_warp_point_id=target_warp_point_id if has_travel_behavior else "",
@@ -376,7 +408,7 @@ def normalize_group(value: Any) -> dict[str, Any]:
 
 def ensure_board_collections(document: dict[str, Any]) -> bool:
     changed = False
-    for collection in ("maps", "board_groups"):
+    for collection in ("maps", "board_groups", "addresses"):
         if collection not in document:
             document[collection] = []
             changed = True
@@ -457,6 +489,22 @@ def validate_world_board(document: dict[str, Any]) -> None:
     if len(set(location_ids)) != len(location_ids):
         raise ValueError("Location IDs must be unique so each location has only one default map")
     locations = {str(item.get("record_id")): item for item in location_records}
+    addresses = [normalize_address(item) for item in document.get("addresses", []) or []]
+    address_ids = [item["record_id"] for item in addresses]
+    if len(set(address_ids)) != len(address_ids):
+        raise ValueError("Address IDs must be unique")
+    addresses_by_id = {item["record_id"]: item for item in addresses}
+    for address in addresses:
+        if address["location_id"] not in locations:
+            raise ValueError("Every address must belong to an existing location")
+    for event in document.get("events", []) or []:
+        if not isinstance(event, dict):
+            continue
+        linked_address_ids = event.get("address_ids", []) or []
+        if not isinstance(linked_address_ids, list):
+            raise ValueError("Event address links must be a list")
+        if any(str(value or "") not in addresses_by_id for value in linked_address_ids):
+            raise ValueError("An event references an unknown address")
     warp_point_maps: dict[str, dict[str, Any]] = {}
     for map_record in maps:
         for warp_point in map_record["warp_points"]:
@@ -471,6 +519,27 @@ def validate_world_board(document: dict[str, Any]) -> None:
             if region_id in region_ids:
                 raise ValueError("Map region IDs must be unique across the world")
             region_ids.add(region_id)
+            if region.get("behavior_type") in {"address", "shop"}:
+                address_id = str(region.get("address_id", "") or "")
+                if region.get("behavior_type") == "address" and not address_id:
+                    raise ValueError("An Address region must reference an address")
+                if address_id:
+                    address = addresses_by_id.get(address_id)
+                    if address is None:
+                        raise ValueError("A map region references an unknown address")
+                    if address["location_id"] != map_record["location_id"]:
+                        raise ValueError("A mapped address must belong to its map location")
+            if region.get("behavior_type") == "shop":
+                owner = region.get("shop_owner")
+                if owner:
+                    owner_type = str(owner.get("owner_type", "") or "")
+                    owner_id = str(owner.get("record_id", "") or "")
+                    source = document.get("people" if owner_type == "person" else "organizations", [])
+                    if owner_type not in {"person", "organization"} or not any(
+                        isinstance(item, dict) and str(item.get("record_id", "") or "") == owner_id
+                        for item in source
+                    ):
+                        raise ValueError("A shop owner must reference an existing person or organization")
             target_location_id = region.get("target_location_id", "")
             if target_location_id and target_location_id not in locations:
                 raise ValueError("A travel region destination must reference an existing location")

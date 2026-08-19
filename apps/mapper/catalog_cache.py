@@ -9,7 +9,7 @@ from uuid import uuid4
 from headmasters_scroll.paths import RUNTIME_DIRECTORY, data_path
 
 
-CATALOG_FORMAT_VERSION = 1
+CATALOG_FORMAT_VERSION = 2
 
 
 def source_fingerprint(path: Path) -> dict[str, int]:
@@ -43,11 +43,17 @@ class MapperCatalogCache:
                 return None
             locations = payload.get("locations")
             maps = payload.get("maps")
-            if not isinstance(locations, list) or not isinstance(maps, list):
+            addresses = payload.get("addresses")
+            if (
+                not isinstance(locations, list)
+                or not isinstance(maps, list)
+                or not isinstance(addresses, list)
+            ):
                 return None
             return {
                 "locations": deepcopy(locations),
                 "maps": deepcopy(maps),
+                "addresses": deepcopy(addresses),
                 "revision_id": str(payload.get("revision_id", "") or ""),
             }
         except (OSError, UnicodeError, ValueError, json.JSONDecodeError):
@@ -65,6 +71,7 @@ class MapperCatalogCache:
             ),
             "locations": deepcopy(document.get("locations", []) or []),
             "maps": deepcopy(document.get("maps", []) or []),
+            "addresses": deepcopy(document.get("addresses", []) or []),
         }
         self.cache_path.parent.mkdir(parents=True, exist_ok=True)
         temporary = self.cache_path.with_name(
@@ -84,4 +91,3 @@ class MapperCatalogCache:
             os.replace(temporary, self.cache_path)
         finally:
             temporary.unlink(missing_ok=True)
-

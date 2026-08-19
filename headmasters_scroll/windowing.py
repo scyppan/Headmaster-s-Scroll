@@ -31,6 +31,19 @@ def apply_window_icon(
         # default for any dialogs or additional top-level windows.
         window.iconbitmap(icon_path)
         window.iconbitmap(default=icon_path)
+        # Some Windows/Tk combinations keep the Python process icon in the
+        # taskbar unless WM_SETICON is also reached through iconphoto. Retain
+        # the PhotoImage on the window so Tk cannot garbage-collect it.
+        try:
+            from PIL import Image, ImageTk
+
+            with Image.open(icon) as source:
+                rendered = source.convert("RGBA").resize((64, 64), Image.Resampling.LANCZOS)
+            photo = ImageTk.PhotoImage(rendered, master=window)
+            setattr(window, "_headmasters_scroll_icon_photo", photo)
+            window.iconphoto(True, photo)
+        except (OSError, tk.TclError, ImportError):
+            pass
 
 
 def maximize_window(window: tk.Tk | tk.Toplevel) -> None:

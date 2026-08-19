@@ -140,7 +140,6 @@ class PeopleController:
         "parental_values",
         "initial_bonuses",
         "characteristics",
-        "timeline_events",
         "created_at",
     )
 
@@ -185,6 +184,24 @@ class PeopleController:
             ]
         summaries.sort(key=self.person_sort_key)
         return summaries
+
+    def get_people_summaries_by_ids(self, person_ids):
+        provider = getattr(self.database, "get_summaries_by_ids", None)
+        if callable(provider):
+            return provider("people", person_ids)
+        requested_ids = {
+            str(person_id or "").strip()
+            for person_id in person_ids or ()
+            if str(person_id or "").strip()
+        }
+        if not requested_ids:
+            return []
+        return [
+            person
+            for person in self.list_people_summaries()
+            if str(person.get("record_id", "") or "").strip()
+            in requested_ids
+        ]
 
     def list_people_list_summaries(self):
         provider = getattr(

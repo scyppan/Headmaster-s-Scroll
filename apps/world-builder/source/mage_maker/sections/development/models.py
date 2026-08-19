@@ -342,19 +342,24 @@ def normalize_school_year_book(value):
             "author": "",
         }
     elif isinstance(value, dict):
-        book = {
-            "record_id": str(
-                value.get("record_id", "") or ""
-            ).strip(),
-            "name": str(value.get("name", "") or "").strip(),
-            "author": str(
-                value.get("author", "") or ""
-            ).strip(),
-        }
+        record_id = str(
+            value.get("record_id") or value.get("book_id") or ""
+        ).strip()
+        # A stable ID is the complete canonical reference.  Labels are kept
+        # only for unresolved legacy entries and are resolved on display.
+        book = (
+            {"record_id": record_id}
+            if record_id
+            else {
+                "record_id": "",
+                "name": str(value.get("name", "") or "").strip(),
+                "author": str(value.get("author", "") or "").strip(),
+            }
+        )
     else:
         raise TypeError("A school-year book must be a book reference.")
 
-    if not book["record_id"] and not book["name"]:
+    if not book.get("record_id") and not book.get("name"):
         raise ValueError("A school-year book must have a name or record ID.")
 
     return book
@@ -367,8 +372,8 @@ def school_year_book_identity(value):
         return f"id:{book['record_id']}"
 
     return (
-        f"name:{book['name'].casefold()}"
-        f"|author:{book['author'].casefold()}"
+        f"name:{book.get('name', '').casefold()}"
+        f"|author:{book.get('author', '').casefold()}"
     )
 
 

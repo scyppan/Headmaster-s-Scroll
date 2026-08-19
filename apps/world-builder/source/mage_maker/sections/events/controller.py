@@ -192,6 +192,28 @@ class EventController:
 
         return self.people_provider()
 
+    def people_summaries_by_ids(self, person_ids=()):
+        requested_ids = list(
+            dict.fromkeys(
+                str(person_id or "").strip()
+                for person_id in person_ids or ()
+                if str(person_id or "").strip()
+            )
+        )
+        if not requested_ids:
+            return []
+        provider = getattr(self.database, "get_summaries_by_ids", None)
+        if callable(provider):
+            return provider("people", requested_ids)
+        requested_id_set = set(requested_ids)
+        return [
+            person
+            for person in self.people_summaries()
+            if isinstance(person, dict)
+            and str(person.get("record_id", "") or "").strip()
+            in requested_id_set
+        ]
+
     def invalidate_event_cache(self):
         self._event_cache = None
         self._event_cache_revision = None
@@ -2798,18 +2820,46 @@ class EventController:
         )
         return list(options)
 
+    def people_options_for_ids(self, person_ids=()):
+        """Build chooser rows only for the requested people.
+
+        Compact event fields and timeline summaries call this method.  The
+        complete searchable catalogue is still built by ``people_options``
+        when the user explicitly opens the person chooser.
+        """
+        groups = self.mage_groups()
+        options = [
+            {
+                "value": str(person.get("record_id", "") or ""),
+                "label": str(
+                    person.get("displayed_name", "") or "Unnamed magician"
+                ).strip(),
+                "person": deepcopy(person),
+                "group_name": mage_group_definition(
+                    person.get("mage_group_id"),
+                    groups,
+                )["name"],
+            }
+            for person in self.people_summaries_by_ids(person_ids)
+            if str(person.get("record_id", "") or "").strip()
+        ]
+        options.sort(key=self.association_option_sort_key)
+        return options
+
     def people_option_labels(self, person_ids=()):
-        self.people_options()
         requested_ids = {
             str(person_id or "").strip()
             for person_id in person_ids or ()
             if str(person_id or "").strip()
         }
+        options_by_id = {
+            str(option.get("value", "") or "").strip(): option
+            for option in self.people_options_for_ids(requested_ids)
+        }
         return {
             person_id: str(
-                self._people_options_by_id_cache.get(person_id, {}).get(
-                    "label",
-                    "Unknown person",
+                options_by_id.get(person_id, {}).get(
+                    "label", "Unknown person"
                 )
                 or "Unknown person"
             ).strip()
@@ -2818,8 +2868,10 @@ class EventController:
 
     def person_can_earn_eminence(self, person_id):
         selected_person_id = str(person_id or "").strip()
-
-        return selected_person_id in self.eminence_eligible_person_ids()
+        if not selected_person_id:
+            return False
+        people = self.people_summaries_by_ids((selected_person_id,))
+        return bool(people and not people[0].get("non_magical"))
 
     def eminence_eligible_person_ids(self):
         database_revision = getattr(self.database, "revision", None)
@@ -2882,16 +2934,23 @@ class EventController:
         event_identity="",
     ):
         selected_person_id = str(person_id or "").strip()
-        person = next(
-            (
-                candidate
-                for candidate in self.people_provider()
-                if isinstance(candidate, dict)
-                and str(candidate.get("record_id", "") or "").strip()
-                == selected_person_id
-            ),
-            {},
+        record_provider = getattr(self.database, "get_record", None)
+        person = (
+            record_provider("people", selected_person_id)
+            if callable(record_provider) and selected_person_id
+            else None
         )
+        if not isinstance(person, dict):
+            person = next(
+                (
+                    candidate
+                    for candidate in self.people_provider()
+                    if isinstance(candidate, dict)
+                    and str(candidate.get("record_id", "") or "").strip()
+                    == selected_person_id
+                ),
+                {},
+            )
         return suggested_event_eminence_skill(
             person.get("development_plan"),
             selected_person_id,
@@ -3325,15 +3384,25 @@ class EventController:
         return normalized_year
 
     def recent_people_options(self, limit=5):
-        options = self.people_options()
+        preferred_ids = self.recent_interaction_ids(
+            RECENT_PERSON_STORAGE_KEY,
+        )
+        candidate_ids = [
+            *preferred_ids,
+            *self.recent_association_ids("person_ids"),
+        ]
+        options = self.people_options_for_ids(candidate_ids)
+        options_by_id = {
+            str(option.get("value", "") or "").strip(): option
+            for option in options
+            if str(option.get("value", "") or "").strip()
+        }
         return self.recent_association_options(
             "person_ids",
             options,
             limit,
-            self.recent_interaction_ids(
-                RECENT_PERSON_STORAGE_KEY,
-            ),
-            options_by_id=self._people_options_by_id_cache,
+            preferred_ids,
+            options_by_id=options_by_id,
         )
 
     def recent_location_options(self, limit=5):

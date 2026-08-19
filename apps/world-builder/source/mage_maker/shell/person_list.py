@@ -59,6 +59,50 @@ SORT_OPTIONS = (
     SORT_GROUP,
     SORT_AGE,
 )
+
+
+def person_search_rank(
+    primary_name,
+    recorded_names,
+    search_text,
+    query,
+):
+    """Rank real name matches ahead of matches found only in metadata.
+
+    Imported provenance notes frequently mention well-known people.  Those
+    references remain searchable, but an actual matching person must appear
+    before a record whose note merely mentions the same name.
+    """
+    normalized_query = " ".join(
+        str(query or "").casefold().split()
+    )
+    if not normalized_query:
+        return 0
+
+    query_terms = normalized_query.split()
+    primary = " ".join(str(primary_name or "").casefold().split())
+    names = " ".join(str(recorded_names or primary).casefold().split())
+    searchable = " ".join(str(search_text or "").casefold().split())
+
+    if primary == normalized_query:
+        return 0
+    if primary.startswith(normalized_query):
+        return 1
+    if normalized_query in primary:
+        return 2
+    if query_terms and all(term in primary for term in query_terms):
+        return 3
+    if normalized_query in names:
+        return 4
+    if query_terms and all(term in names for term in query_terms):
+        return 5
+    if normalized_query in searchable:
+        return 6
+    if query_terms and all(term in searchable for term in query_terms):
+        return 7
+    return None
+
+
 GENERATION_MAX_SPAN_YEARS = 20
 VIRTUAL_ROW_HEIGHT = 58
 VIRTUAL_OVERSCAN = 4
@@ -414,6 +458,8 @@ class PeopleList(tk.Frame):
         self.visible_record_ids = []
         self.labels_by_id = {}
         self.search_text_by_id = {}
+        self.primary_name_search_text_by_id = {}
+        self.name_search_text_by_id = {}
         self.rows_by_id = {}
         self.row_labels_by_id = {}
         self.row_pool = []
@@ -784,6 +830,8 @@ class PeopleList(tk.Frame):
 
         self.labels_by_id = {}
         self.search_text_by_id = {}
+        self.primary_name_search_text_by_id = {}
+        self.name_search_text_by_id = {}
         self.group_colors_by_id = {}
         self.group_names_by_id = {}
         self.initial_values_complete_by_id = {}
@@ -827,6 +875,18 @@ class PeopleList(tk.Frame):
             cached_search_text = str(
                 person.get("_search_text", "") or ""
             ).strip()
+            primary_name_search_text = str(
+                person.get("_primary_name_search_text", "")
+                or person.get("displayed_name", "")
+                or ""
+            ).strip().casefold()
+            self.primary_name_search_text_by_id[record_id] = (
+                primary_name_search_text
+            )
+            self.name_search_text_by_id[record_id] = str(
+                person.get("_name_search_text", "")
+                or primary_name_search_text
+            ).strip().casefold()
             self.search_text_by_id[record_id] = " ".join(
                 value
                 for value in (
@@ -1797,7 +1857,9 @@ class PeopleList(tk.Frame):
         return oldest_birth_key
 
     def filtered_people(self):
-        query = self.search_value.get().strip().casefold()
+        query = " ".join(
+            self.search_value.get().casefold().split()
+        )
         selected_group = self.group_filter_value.get()
         selected_age = self.age_filter_value.get()
         selected_period = (
@@ -1816,15 +1878,20 @@ class PeopleList(tk.Frame):
             else False
         )
         matched_people = []
+        search_ranks = {}
 
         for person in self.people:
             record_id = person["record_id"]
-
-            if (
-                query
-                and query not in self.search_text_by_id[record_id]
-            ):
-                continue
+            if query:
+                search_rank = person_search_rank(
+                    self.primary_name_search_text_by_id.get(record_id),
+                    self.name_search_text_by_id.get(record_id),
+                    self.search_text_by_id.get(record_id),
+                    query,
+                )
+                if search_rank is None:
+                    continue
+                search_ranks[record_id] = search_rank
 
             if (
                 selected_group != FILTER_SHOW_ALL
@@ -1854,10 +1921,16 @@ class PeopleList(tk.Frame):
 
             matched_people.append(person)
 
-        return sorted(
-            matched_people,
-            key=self.person_sort_key,
-        )
+        if query:
+            return sorted(
+                matched_people,
+                key=lambda person: (
+                    search_ranks.get(person["record_id"], 99),
+                    self.person_sort_key(person),
+                ),
+            )
+
+        return sorted(matched_people, key=self.person_sort_key)
 
     def rebuild_rows(self):
         if hasattr(self, "filter_summary_value"):

@@ -86,6 +86,34 @@ class RegionInteractionTests(unittest.TestCase):
         self.assertEqual(first, second)
         self.assertTrue(ancient["window_id"].startswith("shop-stock-v1:"))
 
+    def test_shop_keeps_address_owner_and_stock_as_separate_references(self):
+        value = self.region("shop")
+        value["search_modes"] = []
+        value["contents"] = []
+        value.update({
+            "address_id": "address-1",
+            "shop_owner": {"owner_type": "organization", "record_id": "shopkeepers"},
+            "shop_listings": [],
+        })
+        shop = normalize_region(value)
+        self.assertEqual(shop["address_id"], "address-1")
+        self.assertEqual(
+            shop["shop_owner"],
+            {"owner_type": "organization", "record_id": "shopkeepers"},
+        )
+        self.assertEqual(shop["shop_listings"], [])
+
+    def test_address_behavior_keeps_only_its_canonical_address_reference(self):
+        value = self.region("address")
+        value["search_modes"] = []
+        value["contents"] = []
+        value["address_id"] = "address-1"
+        address = normalize_region(value)
+        self.assertEqual(address["behavior_type"], "address")
+        self.assertEqual(address["address_id"], "address-1")
+        self.assertEqual(address["shop_listings"], [])
+        self.assertIsNone(address["shop_owner"])
+
     def test_gathering_catalog_migration_is_idempotent(self):
         database = {
             "books": [{"record_id": "book-1", "name": "Book"}],

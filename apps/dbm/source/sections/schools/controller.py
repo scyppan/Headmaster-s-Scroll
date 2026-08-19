@@ -210,10 +210,6 @@ class SchoolController:
         if not isinstance(course_books, list):
             raise TypeError("School course books must be a list.")
 
-        books_by_id = {
-            book.get("record_id"): book
-            for book in self.database.get_collection("books")
-        }
         normalized_course_books = []
 
         for course_book in course_books:
@@ -237,18 +233,11 @@ class SchoolController:
                 raise ValueError(f"Unknown school course: {course_text}")
 
             record_id = str(course_book.get("record_id", "")).strip()
-            book = books_by_id.get(record_id)
-            book_name = (
-                str(book.get("name", "")).strip()
-                if book is not None
-                else str(course_book.get("name", "")).strip()
-            )
             normalized_course_books.append(
                 {
                     "year": year,
                     "course": course,
                     "record_id": record_id,
-                    "name": book_name,
                 }
             )
 

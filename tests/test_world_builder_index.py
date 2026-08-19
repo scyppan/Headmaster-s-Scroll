@@ -14,10 +14,12 @@ if str(WORLD_BUILDER_SOURCE) not in sys.path:
 from mage_maker.core.database import JsonDatabase
 from mage_maker.core.world_index import (
     WorldIndexCache,
+    people_list_summary,
     read_indexed_record,
     scan_record_locations,
 )
 from mage_maker.sections.events.controller import EventController
+from mage_maker.shell.person_list import person_search_rank
 
 
 def indexed_world():
@@ -35,6 +37,13 @@ def indexed_world():
         "locations": [
             {"record_id": "place-one", "name": "Indexed Place"}
         ],
+        "addresses": [
+            {
+                "record_id": "address-one",
+                "location_id": "place-one",
+                "name": "One Indexed Lane",
+            }
+        ],
         "organizations": [],
         "events": [
             {
@@ -44,6 +53,7 @@ def indexed_world():
                 "date": "2000-01-01",
                 "person_ids": ["person-one"],
                 "location_ids": ["place-one"],
+                "address_ids": ["address-one"],
             }
         ],
         "items": [],
@@ -78,6 +88,64 @@ def test_index_reads_one_record_and_keeps_summaries_compact(tmp_path):
     assert reloaded.linked_event_ids("people", "person-one") == [
         "event-one"
     ]
+    assert reloaded.linked_event_ids("addresses", "address-one") == [
+        "event-one"
+    ]
+
+
+def test_index_resolves_only_requested_people_summaries(tmp_path):
+    source = tmp_path / "world.json"
+    data = indexed_world()
+    data["people"].append({
+        "record_id": "person-two",
+        "displayed_name": "Unrelated Magician",
+        "development_plan": {"very_large": list(range(500))},
+    })
+    source.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    cache = WorldIndexCache(source, tmp_path / "index.json")
+    cache.build(data, scan_record_locations(source))
+
+    summaries = cache.summaries_by_ids("people", ["person-one"])
+
+    assert [item["record_id"] for item in summaries] == ["person-one"]
+    assert "development_plan" not in summaries[0]
+
+
+def test_people_summary_separates_names_from_provenance_notes():
+    summary = people_list_summary({
+        "record_id": "person-one",
+        "displayed_name": "Rosie Hill",
+        "name_details": {
+            "entries": [{
+                "name_type": "Birth name",
+                "name_entry": "Rosie Hill",
+                "note": "Reconciled from the Harry Potter wiki.",
+            }],
+        },
+    })
+
+    assert "harry potter" in summary["_search_text"]
+    assert "harry potter" not in summary["_name_search_text"]
+    assert summary["_primary_name_search_text"] == "rosie hill"
+
+
+def test_people_search_ranks_actual_name_above_metadata_reference():
+    direct = person_search_rank(
+        "harry potter",
+        "harry potter",
+        "harry potter hogwarts 1980",
+        "Harry Potter",
+    )
+    reference = person_search_rank(
+        "rosie hill",
+        "rosie hill",
+        "rosie hill reconciled from the harry potter wiki",
+        "Harry Potter",
+    )
+
+    assert direct == 0
+    assert reference is not None
+    assert direct < reference
 
 
 def test_index_fast_scan_with_known_record_order_reads_exact_records(tmp_path):
@@ -241,3 +309,41 @@ def test_basic_profile_events_use_person_links_without_listing_all_events(
 
     events = controller.events_for_person("person-one")
     assert [event["record_id"] for event in events] == ["event-one"]
+
+
+def test_event_participant_labels_do_not_load_the_people_collection(tmp_path):
+    source = tmp_path / "data" / "world.json"
+    source.parent.mkdir()
+    data = indexed_world()
+    data["people"].append({
+        "record_id": "person-two",
+        "displayed_name": "Second Magician",
+        "development_plan": {"very_large": list(range(500))},
+    })
+    source.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    cache_path = tmp_path / "runtime" / "index.json"
+    cache = WorldIndexCache(source, cache_path)
+    cache.build(data, scan_record_locations(source))
+    cache.write()
+    database = JsonDatabase(source)
+    database.world_index = WorldIndexCache(source, cache_path)
+    assert database.load_index_only() is True
+
+    def full_people_collection_was_requested():
+        raise AssertionError("event participant labels loaded every person")
+
+    controller = EventController(
+        database,
+        full_people_collection_was_requested,
+        lambda: [],
+        lambda: [],
+        people_summary_provider=full_people_collection_was_requested,
+    )
+
+    assert controller.people_option_labels(["person-one"]) == {
+        "person-one": "Indexed Magician"
+    }
+    assert [
+        option["value"]
+        for option in controller.people_options_for_ids(["person-two"])
+    ] == ["person-two"]

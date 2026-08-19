@@ -7,6 +7,7 @@ from typing import Any, Callable
 from uuid import uuid4
 
 from headmasters_scroll.region_interactions import validate_region_catalog_links
+from apps.mapper.address_dialogs import AddressChooser, WorldReferenceChooser
 
 
 COLLECTION_LABELS = {
@@ -171,13 +172,23 @@ class ModeEditor(tk.Toplevel):
 
 
 class RegionContentDialog(tk.Toplevel):
-    def __init__(self, parent: tk.Misc, database: dict[str, Any], region: dict[str, Any], callback: Callable[[dict[str, Any]], None]):
+    def __init__(
+        self,
+        parent: tk.Misc,
+        database: dict[str, Any],
+        world: dict[str, Any],
+        location_id: str,
+        region: dict[str, Any],
+        callback: Callable[[dict[str, Any]], None],
+    ):
         super().__init__(parent)
         self.title("Region contents")
         self.geometry("1040x680")
         self.minsize(800, 520)
         self.transient(parent)
         self.database = database
+        self.world = world
+        self.location_id = str(location_id or "")
         self.region = deepcopy(region)
         self.callback = callback
         shell = ttk.Frame(self, padding=10)
@@ -314,12 +325,77 @@ class RegionContentDialog(tk.Toplevel):
     def _build_shop(self) -> None:
         tab = ttk.Frame(self.tabs, padding=8)
         self.tabs.add(tab, text="Shop listings")
+        setup = ttk.LabelFrame(tab, text="Shop", padding=7)
+        setup.pack(fill="x", pady=(0, 7))
+        self.shop_address_value = tk.StringVar(value=self.shop_address_name())
+        self.shop_owner_value = tk.StringVar(value=self.shop_owner_name())
+        address_row = ttk.Frame(setup)
+        address_row.pack(fill="x")
+        ttk.Label(address_row, text="Address", width=9).pack(side="left")
+        ttk.Label(address_row, textvariable=self.shop_address_value).pack(side="left", fill="x", expand=True)
+        ttk.Button(address_row, text="Choose…", command=self.choose_shop_address).pack(side="left")
+        ttk.Button(address_row, text="Clear", command=self.clear_shop_address).pack(side="left", padx=(4, 0))
+        owner_row = ttk.Frame(setup)
+        owner_row.pack(fill="x", pady=(5, 0))
+        ttk.Label(owner_row, text="Owner", width=9).pack(side="left")
+        ttk.Label(owner_row, textvariable=self.shop_owner_value).pack(side="left", fill="x", expand=True)
+        ttk.Button(owner_row, text="Choose…", command=self.choose_shop_owner).pack(side="left")
+        ttk.Button(owner_row, text="Clear", command=self.clear_shop_owner).pack(side="left", padx=(4, 0))
+        ttk.Label(
+            setup,
+            text="Stock below belongs to this shop; it is not stored on the location or address.",
+        ).pack(anchor="w", pady=(6, 0))
         self._toolbar(tab, self.add_listing, self.edit_listing, self.delete_listing)
         self.shop_tree = ttk.Treeview(tab, columns=("frequency", "price", "status"), show="tree headings")
         for column, title, width in (("#0", "Item", 380), ("frequency", "Frequency", 140), ("price", "Price (Knuts)", 120), ("status", "Price", 110)):
             self.shop_tree.heading(column, text=title); self.shop_tree.column(column, width=width)
         self.shop_tree.pack(fill="both", expand=True)
         self.refresh_shop()
+
+    def shop_address_name(self) -> str:
+        address_id = str(self.region.get("address_id", "") or "")
+        address = next((
+            item for item in self.world.get("addresses", []) or []
+            if str(item.get("record_id", "")) == address_id
+        ), None)
+        return str(address.get("name", "")) if address else "No address selected"
+
+    def shop_owner_name(self) -> str:
+        owner = self.region.get("shop_owner")
+        if not isinstance(owner, dict):
+            return "No owner selected"
+        kind = str(owner.get("owner_type", "") or "")
+        collection = "people" if kind == "person" else "organizations"
+        record = next((
+            item for item in self.world.get(collection, []) or []
+            if str(item.get("record_id", "")) == str(owner.get("record_id", ""))
+        ), None)
+        if not record:
+            return "Missing owner"
+        return str(record.get("displayed_name") or record.get("name") or "Unnamed owner")
+
+    def choose_shop_address(self) -> None:
+        def accept(address: dict) -> None:
+            self.region["address_id"] = str(address["record_id"])
+            self.shop_address_value.set(str(address.get("name", "Address")))
+        AddressChooser(self, self.world, self.location_id, accept)
+
+    def clear_shop_address(self) -> None:
+        self.region["address_id"] = ""
+        self.shop_address_value.set("No address selected")
+
+    def choose_shop_owner(self) -> None:
+        def accept(owner: dict) -> None:
+            self.region["shop_owner"] = {
+                "owner_type": owner["owner_type"],
+                "record_id": owner["record_id"],
+            }
+            self.shop_owner_value.set(owner["display_name"])
+        WorldReferenceChooser(self, self.world, accept)
+
+    def clear_shop_owner(self) -> None:
+        self.region["shop_owner"] = None
+        self.shop_owner_value.set("No owner selected")
 
     def refresh_shop(self) -> None:
         self.shop_tree.delete(*self.shop_tree.get_children())

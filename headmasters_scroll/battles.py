@@ -76,10 +76,33 @@ def normalize_battle(value: Any) -> dict[str, Any]:
 
 
 def normalize_battles(value: Any) -> dict[str, dict[str, Any]]:
-    raw = value if isinstance(value, dict) else {}
+    # Early Game Board builds stored the admin snapshot shape
+    # ``{"battles": [...]}`` (and, briefly, the list itself) in campaign
+    # state.  Accept and normalize those shapes so an older campaign can open
+    # and be repaired on its next save instead of failing battle setup.
+    if isinstance(value, list):
+        raw_items = [
+            (str(item.get("record_id", "") or ""), item)
+            for item in value
+            if isinstance(item, dict)
+        ]
+    elif (
+        isinstance(value, dict)
+        and isinstance(value.get("battles"), list)
+        and not any(key in value for key in ("record_id", "name", "map_id"))
+    ):
+        raw_items = [
+            (str(item.get("record_id", "") or ""), item)
+            for item in value.get("battles", [])
+            if isinstance(item, dict)
+        ]
+    elif isinstance(value, dict):
+        raw_items = list(value.items())
+    else:
+        raw_items = []
     battles: dict[str, dict[str, Any]] = {}
     occupied: set[tuple[str, str]] = set()
-    for raw_id, item in raw.items():
+    for raw_id, item in raw_items:
         battle = normalize_battle(item)
         battle_id = str(raw_id or battle["record_id"])
         if battle_id != battle["record_id"] or battle_id in battles:

@@ -112,8 +112,16 @@ from mage_maker.sections.books.models import (
 from mage_maker.core.world_index import (
     WorldIndexCache,
     people_list_summary,
+    record_summary,
     read_indexed_record,
     scan_record_locations,
+)
+from mage_maker.core.reference_storage import (
+    colored_tag_record_id,
+    is_derived_timeline_event,
+    normalize_event_references,
+    timeline_event_to_world,
+    world_event_to_timeline,
 )
 
 
@@ -418,13 +426,52 @@ class JsonDatabase:
         start = max(0, int(page or 0)) * max(1, int(page_size or 100))
         return summaries[start : start + max(1, int(page_size or 100))]
 
+    def get_summaries_by_ids(self, collection_name, record_ids):
+        """Fetch compact summaries for a small stable-ID set.
+
+        This deliberately avoids ``list_summaries`` because profile event
+        rendering normally needs only the people linked to one mage's events,
+        not every person in the world.
+        """
+        normalized_ids = list(
+            dict.fromkeys(
+                str(record_id or "").strip()
+                for record_id in record_ids or ()
+                if str(record_id or "").strip()
+            )
+        )
+        if not normalized_ids:
+            return []
+        if not self.index_dirty and self.world_index.is_current():
+            return self.world_index.summaries_by_ids(
+                collection_name,
+                normalized_ids,
+            )
+        records_by_id = self.record_indexes.get(collection_name, {})
+        summaries = []
+        for record_id in normalized_ids:
+            record = records_by_id.get(record_id)
+            if not isinstance(record, dict):
+                continue
+            summaries.append(
+                people_list_summary(record)
+                if collection_name == "people"
+                else record_summary(collection_name, record)
+            )
+        return summaries
+
     def get_record(self, collection_name, record_id):
         normalized_id = str(record_id or "")
         cache_key = (str(collection_name or ""), normalized_id)
         cached = self.record_cache.get(cache_key)
         if cached is not None:
             self.record_cache.move_to_end(cache_key)
-            return deepcopy(cached)
+            record = deepcopy(cached)
+            return (
+                self._hydrate_person_record(record)
+                if collection_name == "people"
+                else record
+            )
         # Once canonical data is loaded, its in-memory record is newer than
         # byte ranges taken from the last saved file (notably after a migration
         # or an unsaved edit).  Indexed byte reads are for index-first mode.
@@ -432,7 +479,14 @@ class JsonDatabase:
             record = self.record_indexes.get(collection_name, {}).get(
                 normalized_id
             )
-            return deepcopy(record) if record is not None else None
+            if record is None:
+                return None
+            record = deepcopy(record)
+            return (
+                self._hydrate_person_record(record)
+                if collection_name == "people"
+                else record
+            )
         if not self.index_dirty and self.world_index.is_current():
             indexed = read_indexed_record(
                 self.database_path,
@@ -445,8 +499,210 @@ class JsonDatabase:
                 self.record_cache.move_to_end(cache_key)
                 while len(self.record_cache) > self.record_cache_limit:
                     self.record_cache.popitem(last=False)
-                return deepcopy(indexed)
+                record = deepcopy(indexed)
+                return (
+                    self._hydrate_person_record(record)
+                    if collection_name == "people"
+                    else record
+                )
         return None
+
+    def _hydrate_person_record(self, person):
+        """Resolve selected-person references without bloating stored data."""
+        if not isinstance(person, dict):
+            return person
+        if "tags" not in person:
+            tags_by_id = self.record_indexes.get("person_tag_catalog", {})
+            person["tags"] = []
+            for tag_id in person.get("tag_ids", []) or []:
+                tag = tags_by_id.get(tag_id)
+                if tag is None and not self.fully_loaded:
+                    tag = self.get_record("person_tag_catalog", tag_id)
+                if not isinstance(tag, dict):
+                    continue
+                hydrated_tag = deepcopy(tag)
+                hydrated_tag.pop("record_id", None)
+                person["tags"].append(hydrated_tag)
+        if "imported_fields" not in person:
+            import_id = str(person.get("legacy_import_id", "") or "").strip()
+            imported = self.record_indexes.get("legacy_person_imports", {}).get(
+                import_id
+            )
+            if imported is None and import_id and not self.fully_loaded:
+                imported = self.get_record("legacy_person_imports", import_id)
+            person["imported_fields"] = deepcopy(
+                imported.get("fields", {}) if isinstance(imported, dict) else {}
+            )
+        self._hydrate_person_book_references(person)
+        if "timeline_events" in person:
+            return person
+        person_id = str(person.get("record_id", "") or "").strip()
+        timeline = synchronize_profile_timeline_events(
+            person,
+            [],
+            organizations=self.data.get("organizations", []),
+        )
+        overrides_by_id = person.get("event_overrides", {})
+        if not isinstance(overrides_by_id, dict):
+            overrides_by_id = {}
+        for event_id in normalize_event_references(
+            person.get("event_refs", [])
+        ):
+            event = self.record_indexes.get("events", {}).get(event_id)
+            if event is None and not self.fully_loaded:
+                event = self.get_record("events", event_id)
+            hydrated = world_event_to_timeline(
+                event,
+                person_id,
+                overrides_by_id.get(event_id),
+            )
+            if hydrated is not None:
+                timeline.append(hydrated)
+        person["timeline_events"] = normalize_timeline_events(timeline)
+        return person
+
+    def _hydrate_person_book_references(self, person):
+        """Attach book labels to one loaded profile's ID-only references."""
+        development_plan = person.get("development_plan")
+        if not isinstance(development_plan, dict):
+            return
+
+        books_by_id = self.record_indexes.get("books", {})
+
+        def display_reference(value):
+            if not isinstance(value, dict):
+                return value
+            record_id = str(
+                value.get("record_id") or value.get("book_id") or ""
+            ).strip()
+            if not record_id:
+                return value
+            book = books_by_id.get(record_id)
+            if book is None and not self.fully_loaded:
+                book = self.get_record("books", record_id)
+            if not isinstance(book, dict):
+                return value
+            return {
+                "record_id": record_id,
+                "name": str(
+                    book.get("title") or book.get("name") or "Missing book"
+                ),
+                "author": str(
+                    book.get("author_name") or book.get("author") or ""
+                ),
+            }
+
+        for section_name in ("school_years", "adult_years"):
+            for record in development_plan.get(section_name, []) or []:
+                if not isinstance(record, dict):
+                    continue
+                for field_name in ("assigned_books", "books"):
+                    values = record.get(field_name)
+                    if isinstance(values, list):
+                        record[field_name] = [
+                            display_reference(value) for value in values
+                        ]
+
+    def _store_person_timeline(self, person_id, timeline_events, references):
+        """Store profile timeline edits in the canonical event collection."""
+        normalized_person_id = str(person_id or "").strip()
+        existing_refs = normalize_event_references(references)
+        events_by_id = self.record_indexes.setdefault("events", {})
+        owned_ids = {
+            event_id
+            for event_id in existing_refs
+            if str(
+                (events_by_id.get(event_id) or {}).get(
+                    "profile_owner_person_id", ""
+                )
+                or ""
+            ).strip()
+            == normalized_person_id
+        }
+        retained_refs = [
+            event_id for event_id in existing_refs if event_id not in owned_ids
+        ]
+        changed_ids = []
+        for timeline_event in normalize_timeline_events(timeline_events):
+            if is_derived_timeline_event(timeline_event):
+                continue
+            canonical = timeline_event_to_world(
+                normalized_person_id,
+                timeline_event,
+            )
+            event_id = canonical["record_id"]
+            current = events_by_id.get(event_id)
+            if current is None:
+                self.data["events"].append(canonical)
+                events_by_id[event_id] = canonical
+                changed_ids.append(event_id)
+            elif current != canonical:
+                current.clear()
+                current.update(canonical)
+                changed_ids.append(event_id)
+            if event_id not in retained_refs:
+                retained_refs.append(event_id)
+
+        if changed_ids:
+            self.dirty = True
+            self.index_dirty = True
+            self.notify_changed("events", tuple(changed_ids))
+        return retained_refs
+
+    def _store_person_support_references(self, person_id, values):
+        """Externalize selected-profile support data before canonical storage."""
+        stored = deepcopy(values)
+        if "tags" in stored:
+            tag_ids = []
+            catalog = self.record_indexes.setdefault("person_tag_catalog", {})
+            for tag in stored.pop("tags", []) or []:
+                if not isinstance(tag, dict):
+                    continue
+                text = str(tag.get("text", "") or "").strip()
+                if not text:
+                    continue
+                record_id = colored_tag_record_id(tag)
+                record = {
+                    "record_id": record_id,
+                    "text": text,
+                    "background_color": str(
+                        tag.get("background_color", "") or ""
+                    ).strip(),
+                }
+                if record_id not in catalog:
+                    self.data.setdefault("person_tag_catalog", []).append(record)
+                    catalog[record_id] = record
+                if record_id not in tag_ids:
+                    tag_ids.append(record_id)
+            stored["tag_ids"] = tag_ids
+        if "imported_fields" in stored:
+            imported_fields = stored.pop("imported_fields")
+            import_id = f"legacy-import:{person_id}"
+            imports = self.record_indexes.setdefault("legacy_person_imports", {})
+            existing = imports.get(import_id)
+            if isinstance(imported_fields, dict) and imported_fields:
+                record = {
+                    "record_id": import_id,
+                    "person_id": person_id,
+                    "fields": deepcopy(imported_fields),
+                }
+                if existing is None:
+                    self.data.setdefault("legacy_person_imports", []).append(record)
+                    imports[import_id] = record
+                else:
+                    existing.clear()
+                    existing.update(record)
+                stored["legacy_import_id"] = import_id
+            else:
+                if existing is not None:
+                    self.data["legacy_person_imports"] = [
+                        item
+                        for item in self.data.get("legacy_person_imports", [])
+                        if item.get("record_id") != import_id
+                    ]
+                    imports.pop(import_id, None)
+                stored["legacy_import_id"] = ""
+        return stored
 
     def get_linked_records(self, collection_name, record_id, relationship):
         if collection_name != "events":
@@ -541,6 +797,8 @@ class JsonDatabase:
             "maps",
             "board_groups",
             "named_creatures",
+            "person_tag_catalog",
+            "legacy_person_imports",
         ):
             if collection_name not in database_data:
                 database_data[collection_name] = []
@@ -743,7 +1001,12 @@ class JsonDatabase:
 
         schema_version = metadata.get("schema_version")
 
-        if not isinstance(schema_version, int) or schema_version > 36:
+        if not isinstance(schema_version, int) or schema_version > 38:
+            return False
+
+        # Schema 37 is produced only by the explicit, backed-up reference
+        # migration.  Ordinary startup must never delete embedded legacy data.
+        if schema_version in (37, 38):
             return False
 
         # Schema 36 is the current canonical format.  This branch used to run
@@ -2095,6 +2358,8 @@ class JsonDatabase:
             "books",
             "book_readings",
             "named_creatures",
+            "person_tag_catalog",
+            "legacy_person_imports",
         ):
             if not isinstance(database_data.get(collection_name), list):
                 raise TypeError(
@@ -3168,6 +3433,17 @@ class JsonDatabase:
 
         self.ensure_unique_displayed_name(person.get("displayed_name"))
 
+        person = self._store_person_support_references(
+            person["record_id"], person
+        )
+
+        timeline_events = person.pop("timeline_events", [])
+        person["event_refs"] = self._store_person_timeline(
+            person["record_id"],
+            timeline_events,
+            person.get("event_refs", []),
+        )
+
         current_time = datetime.now(timezone.utc).isoformat()
         person.setdefault("created_at", current_time)
         person["last_updated"] = current_time
@@ -3180,7 +3456,7 @@ class JsonDatabase:
         self.index_dirty = True
         self.notify_changed("people", (person["record_id"],))
 
-        return deepcopy(person)
+        return self._hydrate_person_record(deepcopy(person))
 
     def update_person(self, record_id, values):
         if not isinstance(values, dict):
@@ -3270,7 +3546,16 @@ class JsonDatabase:
                 prospective_person.get("displayed_name"),
                 excluded_record_id=record_id,
             )
-            person.update(deepcopy(values))
+            stored_values = self._store_person_support_references(
+                record_id, values
+            )
+            if "timeline_events" in stored_values:
+                stored_values["event_refs"] = self._store_person_timeline(
+                    record_id,
+                    stored_values.pop("timeline_events"),
+                    person.get("event_refs", []),
+                )
+            person.update(stored_values)
             person["school"] = prospective_person.get("school", "")
             person["does_not_have_children"] = prospective_person[
                 "does_not_have_children"
@@ -3302,7 +3587,7 @@ class JsonDatabase:
             self.index_dirty = True
             self.notify_changed("people", (record_id,))
 
-            return deepcopy(person)
+            return self._hydrate_person_record(deepcopy(person))
 
         raise KeyError(f"Unknown person record_id: {record_id}")
 
@@ -4026,6 +4311,19 @@ class JsonDatabase:
                 if reading.get("person_id") != record_id
             ]
 
+            legacy_import_id = str(
+                deleted_person.get("legacy_import_id", "") or ""
+            ).strip()
+            if legacy_import_id:
+                self.data["legacy_person_imports"] = [
+                    item
+                    for item in self.data.get("legacy_person_imports", [])
+                    if item.get("record_id") != legacy_import_id
+                ]
+                self.record_indexes.get("legacy_person_imports", {}).pop(
+                    legacy_import_id, None
+                )
+
             self.dirty = True
             self.revision += 1
             self.rebuild_record_indexes()
@@ -4051,6 +4349,8 @@ class JsonDatabase:
             "maps",
             "board_groups",
             "named_creatures",
+            "person_tag_catalog",
+            "legacy_person_imports",
         ):
             raise KeyError(f"Unknown application collection: {collection_name}")
 
@@ -4072,12 +4372,34 @@ class JsonDatabase:
             "maps",
             "board_groups",
             "named_creatures",
+            "person_tag_catalog",
+            "legacy_person_imports",
         ):
             raise KeyError(
                 f"Unknown application collection: {collection_name}"
             )
 
         return self.get_record(collection_name, record_id)
+
+    def _set_person_event_reference(self, person_id, event_id, present):
+        person = self.record_indexes.get("people", {}).get(
+            str(person_id or "").strip()
+        )
+        if person is None:
+            return False
+        references = normalize_event_references(person.get("event_refs", []))
+        normalized_event_id = str(event_id or "").strip()
+        updated = [
+            reference
+            for reference in references
+            if reference != normalized_event_id
+        ]
+        if present and normalized_event_id:
+            updated.append(normalized_event_id)
+        if updated == references:
+            return False
+        person["event_refs"] = updated
+        return True
 
     def create_record(self, collection_name, values):
         if not isinstance(values, dict):
@@ -4106,6 +4428,11 @@ class JsonDatabase:
                     person_id,
                     set(),
                 ).add(record["record_id"])
+                self._set_person_event_reference(
+                    person_id,
+                    record["record_id"],
+                    True,
+                )
         self.index_dirty = True
         self.notify_changed(collection_name, (record["record_id"],))
         return deepcopy(record)
@@ -4141,11 +4468,21 @@ class JsonDatabase:
                                 person_id,
                                 None,
                             )
+                    self._set_person_event_reference(
+                        person_id,
+                        record_id,
+                        False,
+                    )
                 for person_id in current_person_ids:
                     self.event_person_reference_index.setdefault(
                         person_id,
                         set(),
                     ).add(record_id)
+                    self._set_person_event_reference(
+                        person_id,
+                        record_id,
+                        True,
+                    )
             self.dirty = True
             self.revision += 1
             self.index_dirty = True
@@ -4172,6 +4509,11 @@ class JsonDatabase:
                                 person_id,
                                 None,
                             )
+                    self._set_person_event_reference(
+                        person_id,
+                        record_id,
+                        False,
+                    )
             self.dirty = True
             self.revision += 1
             self.record_indexes.get(collection_name, {}).pop(

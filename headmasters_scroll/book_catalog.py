@@ -22,10 +22,32 @@ def _indexed_books(world_path):
         if not isinstance(locations, dict):
             return None
         books = []
+        event_locations = index.get("record_locations", {}).get(
+            "events", {}
+        )
         with world_path.open("rb") as stream:
             for offset, length in locations.values():
                 stream.seek(int(offset))
-                books.append(json.loads(stream.read(int(length)).decode("utf-8")))
+                book = json.loads(stream.read(int(length)).decode("utf-8"))
+                event_id = str(
+                    book.get("publication_event_id", "") or ""
+                ).strip()
+                event_location = event_locations.get(event_id)
+                if event_location:
+                    event_offset, event_length = event_location
+                    stream.seek(int(event_offset))
+                    event = json.loads(
+                        stream.read(int(event_length)).decode("utf-8")
+                    )
+                    book["publication_date"] = str(
+                        event.get("date", "")
+                        or book.get("publication_date", "")
+                    )
+                    book["author_name"] = str(
+                        event.get("book_author_name", "")
+                        or book.get("author_name", "")
+                    )
+                books.append(book)
         return books
     except (OSError, ValueError, TypeError, UnicodeError, json.JSONDecodeError):
         return None
@@ -44,7 +66,29 @@ def load_world_books(world_path):
     except (OSError, UnicodeError, json.JSONDecodeError):
         return None
     books = world.get("books", []) if isinstance(world, dict) else []
-    return books if isinstance(books, list) else None
+    if not isinstance(books, list):
+        return None
+    events_by_id = {
+        str(event.get("record_id", "") or "").strip(): event
+        for event in world.get("events", [])
+        if isinstance(event, dict)
+    }
+    for book in books:
+        if not isinstance(book, dict):
+            continue
+        event = events_by_id.get(
+            str(book.get("publication_event_id", "") or "").strip()
+        )
+        if not isinstance(event, dict):
+            continue
+        book["publication_date"] = str(
+            event.get("date", "") or book.get("publication_date", "")
+        )
+        book["author_name"] = str(
+            event.get("book_author_name", "")
+            or book.get("author_name", "")
+        )
+    return books
 
 
 def world_book_as_legacy_catalog_record(book):

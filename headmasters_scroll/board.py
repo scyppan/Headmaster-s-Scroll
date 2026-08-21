@@ -111,7 +111,62 @@ def normalize_floor(value: Any, index: int = 0) -> dict[str, Any]:
         "name": name,
         "sort_order": int(value.get("sort_order", index)),
         "primary_map_id": str(value.get("primary_map_id", "") or "").strip(),
+        "has_map_history": bool(value.get("has_map_history", False)),
+        "map_timeline": normalize_map_timeline(value.get("map_timeline", [])),
     }
+
+
+def normalize_map_timeline(value: Any) -> list[dict[str, str]]:
+    """Normalize dated references without embedding or duplicating map records."""
+
+    if value in (None, ""):
+        return []
+    if not isinstance(value, list):
+        raise ValueError("Map history must be a list")
+    result: list[dict[str, str]] = []
+    seen_ids: set[str] = set()
+    seen_dates: set[tuple[int, int, int, int, int]] = set()
+    for entry in value:
+        if not isinstance(entry, dict):
+            raise ValueError("Every dated map must be an object")
+        record_id = str(entry.get("record_id", "") or "").strip()
+        map_id = str(entry.get("map_id", "") or "").strip()
+        effective_from = str(entry.get("effective_from", "") or "").strip()
+        if not record_id or not map_id or not effective_from:
+            raise ValueError("Every dated map needs a stable ID, map, and start date")
+        date_key = _date_key(effective_from)
+        if record_id in seen_ids:
+            raise ValueError("Dated map IDs must be unique")
+        if date_key in seen_dates:
+            raise ValueError("Only one map may begin on a given date")
+        seen_ids.add(record_id)
+        seen_dates.add(date_key)
+        result.append({
+            "record_id": record_id,
+            "map_id": map_id,
+            "effective_from": effective_from,
+        })
+    return sorted(result, key=lambda item: (_date_key(item["effective_from"]), item["record_id"]))
+
+
+def effective_map_id(
+    baseline_map_id: object,
+    timeline: object,
+    game_datetime: str,
+) -> str:
+    """Return the latest map reference effective at the requested world date."""
+
+    selected = str(baseline_map_id or "").strip()
+    cutoff_date, _, cutoff_time = str(game_datetime or "").partition("T")
+    cutoff = _date_key(cutoff_date, cutoff_time) if cutoff_date else None
+    if cutoff is None:
+        return selected
+    for entry in normalize_map_timeline(timeline):
+        if _date_key(entry["effective_from"]) <= cutoff:
+            selected = entry["map_id"]
+        else:
+            break
+    return selected
 
 
 def normalize_address(value: Any) -> dict[str, Any]:
@@ -199,7 +254,11 @@ def normalize_region(value: Any) -> dict[str, Any]:
         behavior_type=behavior_type,
         secret_passage=secret_passage,
         players_visible=bool(result.get("players_visible", True)),
-        hover_text=str(result.get("hover_text", "") or "").strip(),
+        hover_text=(
+            ""
+            if behavior_type == "address"
+            else str(result.get("hover_text", "") or "").strip()
+        ),
         label_offset={"x": label_x, "y": label_y},
         points=normalized_points,
         target_location_id=target_location_id if has_travel_behavior else "",
@@ -415,7 +474,14 @@ def ensure_board_collections(document: dict[str, Any]) -> bool:
     for location in document.get("locations", []):
         if not isinstance(location, dict):
             continue
-        defaults = {"is_building": False, "floors": [], "default_map_id": ""}
+        defaults = {
+            "is_building": False,
+            "floors": [],
+            "default_map_id": "",
+            "has_addresses": False,
+            "has_map_history": False,
+            "map_timeline": [],
+        }
         for key, default in defaults.items():
             if key not in location:
                 location[key] = deepcopy(default)
@@ -477,6 +543,60 @@ def active_faction_ids(document: dict[str, Any], person_id: str, game_datetime: 
     for _, __, event in sorted(events, key=lambda item: (item[0], item[1])):
         state[str(event.get("organization_id"))] = event.get("event_type") == "joined_faction"
     return sorted(organization_id for organization_id, active in state.items() if active)
+
+
+def address_display_name(
+    document: dict[str, Any],
+    address_id: str,
+    game_datetime: str,
+) -> str:
+    """Resolve the person or organization occupying an address at a world date."""
+
+    cutoff_date, _, cutoff_time = str(game_datetime).partition("T")
+    cutoff = _date_key(cutoff_date, cutoff_time)
+    relevant_types = {
+        "address_owner_changed",
+        "address_occupancy_changed",
+    }
+    events: list[tuple[tuple[int, int, int, int, int], str, dict[str, Any]]] = []
+    for event in document.get("events", []) or []:
+        if not isinstance(event, dict):
+            continue
+        if str(event.get("event_type", "")) not in relevant_types:
+            continue
+        if str(address_id) not in {
+            str(value) for value in (event.get("address_ids", []) or [])
+        }:
+            continue
+        key = _date_key(event.get("date"), event.get("time"))
+        if key <= cutoff:
+            events.append((key, str(event.get("record_id", "")), event))
+    if not events:
+        return "Unoccupied"
+    event = max(events, key=lambda item: (item[0], item[1]))[2]
+    owner = event.get("owner_reference")
+    if not isinstance(owner, dict):
+        return "Unoccupied"
+    owner_type = str(owner.get("owner_type", "") or "")
+    owner_id = str(owner.get("record_id", "") or "")
+    collection = "people" if owner_type == "person" else "organizations"
+    if owner_type not in {"person", "organization"}:
+        return "Unoccupied"
+    record = next(
+        (
+            item for item in document.get(collection, []) or []
+            if isinstance(item, dict)
+            and str(item.get("record_id", "") or "") == owner_id
+        ),
+        None,
+    )
+    if not record:
+        return "Unoccupied"
+    return str(
+        record.get("displayed_name")
+        or record.get("name")
+        or "Unoccupied"
+    )
 
 
 def validate_world_board(document: dict[str, Any]) -> None:
@@ -567,6 +687,19 @@ def validate_world_board(document: dict[str, Any]) -> None:
             raise ValueError("A location default map must exist")
         if default_map_id and map_by_id[default_map_id]["location_id"] != location_id:
             raise ValueError("A location default map must belong to that location")
+        for entry in normalize_map_timeline(location.get("map_timeline", [])):
+            dated_map = map_by_id.get(entry["map_id"])
+            if dated_map is None or dated_map["location_id"] != location_id:
+                raise ValueError("A dated location map must belong to that location")
+        for floor in floors:
+            for entry in normalize_map_timeline(floor.get("map_timeline", [])):
+                dated_map = map_by_id.get(entry["map_id"])
+                if (
+                    dated_map is None
+                    or dated_map["location_id"] != location_id
+                    or dated_map["floor_id"] != floor["record_id"]
+                ):
+                    raise ValueError("A dated floor map must belong to that floor")
     for map_record in maps:
         if map_record["location_id"] not in locations:
             raise ValueError("Every map must reference an existing location")
@@ -650,7 +783,9 @@ class WorldBoardRepository:
         return deepcopy(session.data) if copy_result else session.data
 
     @staticmethod
-    def _location_maps(document: dict[str, Any]) -> list[dict[str, Any]]:
+    def _location_maps(
+        document: dict[str, Any], game_datetime: str = ""
+    ) -> list[dict[str, Any]]:
         """Return only maps explicitly assigned by locations or their floors.
 
         The top-level maps collection holds stable records and asset metadata; it
@@ -717,9 +852,20 @@ class WorldBoardRepository:
                 entry["is_floor_primary"] = True
                 entry["floor_name"] = str(floor.get("name", "") or "Unnamed floor")
 
+        def role_map_ids(owner: dict[str, Any], baseline_key: str) -> list[str]:
+            baseline = str(owner.get(baseline_key, "") or "")
+            timeline = normalize_map_timeline(owner.get("map_timeline", []))
+            if game_datetime:
+                chosen = effective_map_id(baseline, timeline, game_datetime)
+                return [chosen] if chosen else []
+            result = [baseline] if baseline else []
+            result.extend(
+                entry["map_id"] for entry in timeline if entry["map_id"] not in result
+            )
+            return result
+
         for location in location_records:
-            default_map_id = str(location.get("default_map_id", "") or "")
-            if default_map_id:
+            for default_map_id in role_map_ids(location, "default_map_id"):
                 assign(location, default_map_id, is_default=True)
             if bool(location.get("has_floors", location.get("floors"))):
                 floors = sorted(
@@ -727,8 +873,7 @@ class WorldBoardRepository:
                     key=lambda item: (int(item.get("sort_order", 0)), str(item.get("name", ""))),
                 )
                 for floor in floors:
-                    primary_map_id = str(floor.get("primary_map_id", "") or "")
-                    if primary_map_id:
+                    for primary_map_id in role_map_ids(floor, "primary_map_id"):
                         assign(location, primary_map_id, floor=floor)
 
         return sorted(
@@ -762,7 +907,7 @@ class WorldBoardRepository:
             else self.load().data
         )
         player_ids = {str(value) for value in player_character_ids if value}
-        maps = self._location_maps(document)
+        maps = self._location_maps(document, game_datetime)
         locations = {
             str(item.get("record_id")): item
             for item in document.get("locations", [])
@@ -774,6 +919,14 @@ class WorldBoardRepository:
             if item.get("players_published")
         }
         assigned_map_ids = {item["record_id"] for item in maps}
+        for map_record in maps:
+            for region in map_record.get("regions", []) or []:
+                if str(region.get("behavior_type", "")) == "address":
+                    region["display_name"] = address_display_name(
+                        document,
+                        str(region.get("address_id", "") or ""),
+                        game_datetime,
+                    )
         if for_players:
             maps = [item for item in maps if item["record_id"] in visible_map_ids]
             public_maps = []
@@ -792,7 +945,7 @@ class WorldBoardRepository:
                     warp_target = next(
                         (
                             candidate
-                            for candidate in self._location_maps(document)
+                            for candidate in self._location_maps(document, game_datetime)
                             if any(
                                 str(point.get("record_id", "")) == target_warp_point_id
                                 for point in candidate.get("warp_points", []) or []
@@ -800,9 +953,14 @@ class WorldBoardRepository:
                         ),
                         None,
                     )
+                    target_location = locations.get(target_location_id, {})
                     target_map_id = str(
                         (warp_target or {}).get("record_id")
-                        or locations.get(target_location_id, {}).get("default_map_id", "")
+                        or effective_map_id(
+                            target_location.get("default_map_id", ""),
+                            target_location.get("map_timeline", []),
+                            game_datetime,
+                        )
                         or ""
                     )
                     target_available = bool(target_map_id and target_map_id in visible_map_ids)
@@ -815,16 +973,26 @@ class WorldBoardRepository:
                         region.get("secret_passage", False)
                     )
                     public_behavior = "travel" if revealed_passage else behavior
+                    public_name = (
+                        str(region.get("display_name") or "Unoccupied")
+                        if behavior == "address"
+                        else region["name"]
+                    )
                     public["regions"].append({
                         "record_id": region["record_id"],
                         "name": (
-                            region["name"]
+                            public_name
                             if not is_secret or secret_revealed
                             else "Search"
                         ),
+                        "display_name": public_name,
                         "behavior_type": public_behavior,
                         "hover_text": (
-                            region["hover_text"]
+                            (
+                                public_name
+                                if behavior == "address"
+                                else region["hover_text"]
+                            )
                             if not is_secret or secret_revealed
                             else ""
                         ),

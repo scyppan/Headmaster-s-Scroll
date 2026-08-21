@@ -1,11 +1,347 @@
 from __future__ import annotations
 
+import calendar
+import re
 import tkinter as tk
 from copy import deepcopy
 from datetime import datetime, timezone
 from tkinter import messagebox, ttk
 from typing import Callable
 from uuid import uuid4
+
+from headmasters_scroll.campaigns import (
+    format_game_world_date,
+    normalize_game_world_date,
+)
+
+
+PAPER = "#ead7aa"
+LIGHT = "#f8edcf"
+FIELD = "#fff8e6"
+EDGE = "#c9aa71"
+INK = "#382719"
+MUTED = "#765f45"
+
+ADDRESS_EVENT_TYPES = (
+    ("address_owner_changed", "New owner"),
+    ("address_occupancy_changed", "New occupant"),
+    ("address_contents_changed", "New inventory"),
+)
+ADDRESS_EVENT_LABELS = dict(ADDRESS_EVENT_TYPES)
+ADDRESS_EVENT_TYPES_BY_LABEL = {
+    label: event_type for event_type, label in ADDRESS_EVENT_TYPES
+}
+
+
+def address_event_type_label(event_type: object) -> str:
+    """Return the human event label without exposing the storage key."""
+
+    return ADDRESS_EVENT_LABELS.get(
+        str(event_type or "").strip(), "Address event"
+    )
+
+
+INVENTORY_COLLECTIONS = (
+    "general_items",
+    "raw_materials",
+    "holdable_items",
+    "accessories",
+    "wands",
+    "potions",
+    "preparations",
+    "foods_and_drinks",
+    "books",
+)
+
+
+def inherited_address_inventory(
+    world: dict,
+    address_id: str,
+    *,
+    before_date: str = "",
+    before_time: str = "",
+    exclude_event_id: str = "",
+) -> list[dict]:
+    """Copy the last effective inventory; never mutate the prior event."""
+
+    def event_key(date_value: object, time_value: object = "") -> tuple[int, int, int, int, int]:
+        normalized = parse_address_event_date(date_value)
+        negative = normalized.startswith("-")
+        body = normalized[1:] if negative else normalized
+        year_text, month_text, day_text = body.split("-")
+        year = -int(year_text) if negative else int(year_text)
+        clock = normalize_address_event_time(time_value) or "00:00"
+        hour_text, minute_text = clock.split(":")
+        return year, int(month_text), int(day_text), int(hour_text), int(minute_text)
+
+    cutoff = None
+    if before_date:
+        cutoff = event_key(before_date, before_time)
+    candidates: list[tuple[tuple[int, int, int, int, int], str, dict]] = []
+    for event in world.get("events", []) or []:
+        if not isinstance(event, dict):
+            continue
+        if str(event.get("record_id", "")) == str(exclude_event_id or ""):
+            continue
+        if str(event.get("event_type", "")) != "address_contents_changed":
+            continue
+        if str(address_id) not in {str(value) for value in event.get("address_ids", []) or []}:
+            continue
+        try:
+            key = event_key(event.get("date", ""), event.get("time", ""))
+        except ValueError:
+            continue
+        if cutoff is not None and key >= cutoff:
+            continue
+        candidates.append((key, str(event.get("record_id", "")), event))
+    if not candidates:
+        return []
+    inventory = max(candidates, key=lambda item: item[:2])[2].get("inventory", [])
+    return deepcopy(inventory) if isinstance(inventory, list) else []
+
+
+class InventoryReferenceChooser(tk.Toplevel):
+    """Search the item catalog instead of forcing a large select box."""
+
+    def __init__(self, parent: tk.Misc, catalog: dict, callback: Callable[[dict], None]):
+        super().__init__(parent)
+        self.title("Add inventory item")
+        self.geometry("720x500")
+        self.minsize(560, 380)
+        self.transient(parent)
+        _apply_dialog_theme(self)
+        self.callback = callback
+        self.rows: list[dict] = []
+        for collection in INVENTORY_COLLECTIONS:
+            for record in catalog.get(collection, []) or []:
+                if not isinstance(record, dict):
+                    continue
+                record_id = str(record.get("record_id", "") or "")
+                name = str(
+                    record.get("name")
+                    or record.get("title")
+                    or record.get("item_name")
+                    or ""
+                ).strip()
+                if record_id and name:
+                    self.rows.append({
+                        "collection": collection,
+                        "catalog_record_id": record_id,
+                        "name": name,
+                    })
+        shell = ttk.Frame(self, padding=10, style="Address.TFrame")
+        shell.pack(fill="both", expand=True)
+        self.query = tk.StringVar()
+        entry = ttk.Entry(shell, textvariable=self.query, style="Address.TEntry")
+        entry.pack(fill="x")
+        self.tree = ttk.Treeview(
+            shell, columns=("kind",), show="tree headings", selectmode="browse"
+        )
+        self.tree.heading("#0", text="Item")
+        self.tree.heading("kind", text="Catalog")
+        self.tree.column("#0", width=430)
+        self.tree.column("kind", width=180)
+        self.tree.pack(fill="both", expand=True, pady=7)
+        actions = ttk.Frame(shell, style="Address.TFrame")
+        actions.pack(fill="x")
+        ttk.Button(actions, text="Cancel", command=self.destroy).pack(side="right")
+        ttk.Button(actions, text="Add", command=self.accept).pack(side="right", padx=(0, 5))
+        self.query.trace_add("write", lambda *_: self.refresh())
+        self.tree.bind("<Double-Button-1>", lambda _event: self.accept())
+        self.bind("<Escape>", lambda _event: self.destroy())
+        self.refresh()
+        entry.focus_set()
+        self.grab_set()
+
+    def refresh(self) -> None:
+        self.tree.delete(*self.tree.get_children())
+        query = self.query.get().strip().casefold()
+        for index, row in enumerate(self.rows):
+            haystack = f"{row['name']} {row['collection']}".casefold()
+            if query and query not in haystack:
+                continue
+            self.tree.insert(
+                "", "end", iid=str(index), text=row["name"],
+                values=(row["collection"].replace("_", " ").title(),),
+            )
+
+    def accept(self) -> None:
+        selected = self.tree.selection()
+        if not selected:
+            return
+        row = deepcopy(self.rows[int(selected[0])])
+        row.update(record_id=str(uuid4()), quantity=1)
+        self.callback(row)
+        self.destroy()
+
+
+def parse_address_event_date(value: object) -> str:
+    """Accept the established display date or canonical ISO storage date."""
+
+    raw = " ".join(str(value or "").strip().split())
+    if not raw:
+        raise ValueError("Enter a Game World Date.")
+    try:
+        return normalize_game_world_date(raw)
+    except ValueError:
+        pass
+    shown = re.fullmatch(
+        r"(?P<day>\d{1,2})\s+(?P<month>[A-Za-z]{3,9})\s+"
+        r"(?P<year>[1-9]\d*)\s*(?P<era>BCE|BC|CE|AD)?",
+        raw,
+        re.IGNORECASE,
+    )
+    if shown is None:
+        raise ValueError("Use DD Mmm YYYY, for example 27 Aug 2000.")
+    month_text = shown.group("month")[:3].title()
+    try:
+        month = list(calendar.month_abbr).index(month_text)
+    except ValueError as error:
+        raise ValueError("Enter a valid month name.") from error
+    year = int(shown.group("year"))
+    if (shown.group("era") or "").upper() in {"BCE", "BC"}:
+        year = -year
+    shown_year = f"-{abs(year):04d}" if year < 0 else f"{year:04d}"
+    return normalize_game_world_date(
+        f"{shown_year}-{month:02d}-{int(shown.group('day')):02d}"
+    )
+
+
+def format_address_event_date(value: object) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    try:
+        return format_game_world_date(raw)
+    except ValueError:
+        return raw
+
+
+def split_address_event_date(value: object) -> tuple[str, str, str]:
+    """Return the canonical date as the standard Year, Month, Day fields."""
+
+    raw = str(value or "").strip()
+    if not raw:
+        return "", "", ""
+    canonical = parse_address_event_date(raw)
+    negative = canonical.startswith("-")
+    body = canonical[1:] if negative else canonical
+    year_text, month_text, day_text = body.split("-")
+    year = int(year_text)
+    return (
+        f"-{year}" if negative else str(year),
+        str(int(month_text)),
+        str(int(day_text)),
+    )
+
+
+def compose_address_event_date(
+    year_value: object,
+    month_value: object,
+    day_value: object,
+) -> str:
+    """Validate standard Year, Month, Day fields and return canonical storage."""
+
+    year_text = str(year_value or "").strip()
+    month_text = str(month_value or "").strip()
+    day_text = str(day_value or "").strip()
+    if not year_text or not month_text or not day_text:
+        raise ValueError("Enter the year, month, and day.")
+    try:
+        year = int(year_text)
+        month = int(month_text)
+        day = int(day_text)
+    except ValueError as error:
+        raise ValueError("Year, month, and day must be numbers.") from error
+    if year == 0:
+        raise ValueError("Year zero is not valid; use -1 for 1 BCE.")
+    shown_year = f"-{abs(year):04d}" if year < 0 else f"{year:04d}"
+    return normalize_game_world_date(f"{shown_year}-{month:02d}-{day:02d}")
+
+
+def prompt_game_world_date(
+    parent: tk.Misc,
+    *,
+    title: str = "Game World Date",
+    initial: object = "",
+) -> str:
+    """Show the project's standard three-field historical date editor."""
+
+    year, month, day = split_address_event_date(initial)
+    result: list[str] = []
+    dialog = tk.Toplevel(parent)
+    dialog.title(title)
+    dialog.transient(parent)
+    dialog.resizable(False, False)
+    _apply_dialog_theme(dialog)
+    shell = ttk.Frame(dialog, padding=14, style="Address.TFrame")
+    shell.pack(fill="both", expand=True)
+    fields = ttk.Frame(shell, padding=12, style="AddressCard.TFrame")
+    fields.pack(fill="x")
+    values = (
+        ("Year", tk.StringVar(value=year), 12),
+        ("Month", tk.StringVar(value=month), 8),
+        ("Day", tk.StringVar(value=day), 8),
+    )
+    for column, (label, variable, width) in enumerate(values):
+        fields.columnconfigure(column, weight=1)
+        ttk.Label(fields, text=label, style="AddressCard.TLabel").grid(
+            row=0, column=column, sticky="w", padx=(0 if column == 0 else 7, 0)
+        )
+        entry = ttk.Entry(
+            fields, textvariable=variable, width=width, style="Address.TEntry"
+        )
+        entry.grid(
+            row=1, column=column, sticky="ew", padx=(0 if column == 0 else 7, 0),
+            pady=(3, 0),
+        )
+        if column == 0:
+            entry.focus_set()
+
+    def accept() -> None:
+        try:
+            result.append(compose_address_event_date(*(row[1].get() for row in values)))
+        except ValueError as error:
+            messagebox.showerror("Invalid date", str(error), parent=dialog)
+            return
+        dialog.destroy()
+
+    actions = ttk.Frame(shell, style="Address.TFrame")
+    actions.pack(fill="x", pady=(10, 0))
+    ttk.Button(actions, text="Cancel", command=dialog.destroy).pack(side="right")
+    ttk.Button(actions, text="Apply", command=accept).pack(
+        side="right", padx=(0, 6)
+    )
+    dialog.bind("<Return>", lambda _event: accept())
+    dialog.bind("<Escape>", lambda _event: dialog.destroy())
+    dialog.grab_set()
+    dialog.wait_window()
+    return result[0] if result else ""
+
+
+def normalize_address_event_time(value: object) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    compact = raw.replace(":", "")
+    if not re.fullmatch(r"\d{4}", compact):
+        raise ValueError("Use a 24-hour time such as 08:30.")
+    hour, minute = int(compact[:2]), int(compact[2:])
+    if not 0 <= hour <= 23 or not 0 <= minute <= 59:
+        raise ValueError("Enter a valid 24-hour time.")
+    return f"{hour:02d}:{minute:02d}"
+
+
+def _apply_dialog_theme(window: tk.Toplevel) -> None:
+    window.configure(background=PAPER)
+    style = ttk.Style(window)
+    style.configure("Address.TFrame", background=PAPER)
+    style.configure("AddressCard.TFrame", background=LIGHT)
+    style.configure("Address.TLabel", background=PAPER, foreground=INK)
+    style.configure("AddressCard.TLabel", background=LIGHT, foreground=INK)
+    style.configure("AddressMuted.TLabel", background=LIGHT, foreground=MUTED)
+    style.configure("Address.TEntry", fieldbackground=FIELD, foreground=INK)
+    style.configure("Address.TCombobox", fieldbackground=FIELD, foreground=INK)
 
 
 def utc_now() -> str:
@@ -118,15 +454,17 @@ class WorldReferenceChooser(tk.Toplevel):
 
 
 class AddressChooser(tk.Toplevel):
-    """Search addresses belonging to the shop's current location."""
+    """Search or create addresses belonging to the current location."""
 
     def __init__(self, parent: tk.Misc, world: dict, location_id: str, callback: Callable[[dict], None]):
         super().__init__(parent)
-        self.title("Choose shop address")
+        self.title("Link address")
         self.geometry("620x450")
         self.minsize(480, 340)
         self.transient(parent)
         self.callback = callback
+        self.world = world
+        self.location_id = str(location_id)
         self.rows = sorted(
             [
                 item for item in world.get("addresses", []) or []
@@ -147,6 +485,11 @@ class AddressChooser(tk.Toplevel):
         self.tree.pack(fill="both", expand=True)
         actions = ttk.Frame(shell)
         actions.pack(fill="x", pady=(8, 0))
+        ttk.Button(
+            actions,
+            text="+ Add address",
+            command=self.add_address,
+        ).pack(side="left")
         ttk.Button(actions, text="Cancel", command=self.destroy).pack(side="right")
         ttk.Button(actions, text="Choose", command=self.choose).pack(side="right", padx=(0, 7))
         self.query.trace_add("write", self.refill)
@@ -177,6 +520,22 @@ class AddressChooser(tk.Toplevel):
         self.grab_release()
         self.destroy()
         self.callback(deepcopy(address))
+
+    def add_address(self) -> None:
+        def accept(address: dict) -> None:
+            address["location_id"] = self.location_id
+            self.world.setdefault("addresses", []).append(address)
+            self.rows.append(address)
+            self.rows.sort(key=lambda item: str(item.get("name", "")).casefold())
+            self.refill()
+            address_id = str(address["record_id"])
+            if self.tree.exists(address_id):
+                self.tree.selection_set(address_id)
+                self.tree.focus(address_id)
+                self.tree.see(address_id)
+                self.after_idle(self.choose)
+
+        AddressEditor(self, None, accept)
 
 
 class AddressEditor(tk.Toplevel):
@@ -222,100 +581,282 @@ class AddressEditor(tk.Toplevel):
 
 
 class AddressEventEditor(tk.Toplevel):
-    EVENT_TYPES = (
-        ("address_owner_changed", "Owner changed"),
-        ("address_contents_changed", "Contents changed"),
-        ("address_occupancy_changed", "Occupancy changed"),
-        ("address_established", "Address established"),
-        ("custom", "Other"),
-    )
+    EVENT_TYPES = ADDRESS_EVENT_TYPES
 
-    def __init__(self, parent: tk.Misc, world: dict, address: dict, value: dict | None, callback: Callable[[dict], None]):
+    def __init__(self, parent: tk.Misc, world: dict, catalog: dict, address: dict, value: dict | None, callback: Callable[[dict], None]):
         super().__init__(parent)
         value = value or {}
-        self.title("Address event")
-        self.geometry("620x500")
+        self.title("Edit address event" if value.get("record_id") else "Add address event")
+        self.geometry("700x510")
+        self.minsize(620, 470)
         self.transient(parent)
+        _apply_dialog_theme(self)
         self.world = world
+        self.catalog = catalog
         self.address = address
         self.callback = callback
         self.record_id = str(value.get("record_id") or uuid4())
-        self.event_type = tk.StringVar(value=str(value.get("event_type") or "address_owner_changed"))
-        self.date = tk.StringVar(value=str(value.get("date", "")))
-        self.time = tk.StringVar(value=str(value.get("time", "")))
-        self.title_value = tk.StringVar(value=str(value.get("title", "")))
+        event_label = address_event_type_label(
+            value.get("event_type") or "address_owner_changed"
+        )
+        self.event_type_label = tk.StringVar(value=event_label)
+        self._last_default_title = event_label
+        year, month, day = split_address_event_date(value.get("date", ""))
+        self.date_year = tk.StringVar(value=year)
+        self.date_month = tk.StringVar(value=month)
+        self.date_day = tk.StringVar(value=day)
+        self.time = tk.StringVar(
+            value=normalize_address_event_time(value.get("time", ""))
+        )
+        self.title_value = tk.StringVar(
+            value=str(value.get("title", "")) or event_label
+        )
         self.owner = deepcopy(value.get("owner_reference")) if isinstance(value.get("owner_reference"), dict) else None
         self.owner_label = tk.StringVar(value=self.owner_name())
-        shell = ttk.Frame(self, padding=12)
+        self.inventory = deepcopy(value.get("inventory", [])) if isinstance(value.get("inventory"), list) else []
+        self._inventory_initialized = bool(value.get("record_id"))
+        shell = ttk.Frame(self, padding=14, style="Address.TFrame")
         shell.pack(fill="both", expand=True)
-        ttk.Label(shell, text=str(address.get("name", "Address")), font=("Georgia", 13, "bold")).pack(anchor="w")
-        grid = ttk.Frame(shell)
-        grid.pack(fill="x", pady=(8, 7))
-        for column in range(3):
-            grid.columnconfigure(column, weight=1)
-        ttk.Label(grid, text="Event").grid(row=0, column=0, sticky="w")
-        ttk.Label(grid, text="World date").grid(row=0, column=1, sticky="w", padx=(7, 0))
-        ttk.Label(grid, text="Time").grid(row=0, column=2, sticky="w", padx=(7, 0))
+        card = ttk.Frame(shell, padding=16, style="AddressCard.TFrame")
+        card.pack(fill="both", expand=True)
+        ttk.Label(
+            card,
+            text="Address event",
+            style="AddressCard.TLabel",
+            font=("Georgia", 15, "bold"),
+        ).pack(anchor="w")
+        ttk.Label(
+            card,
+            text=str(address.get("name", "Address")),
+            style="AddressMuted.TLabel",
+            font=("Segoe UI", 9),
+        ).pack(anchor="w", pady=(1, 12))
+
+        main_fields = ttk.Frame(card, style="AddressCard.TFrame")
+        main_fields.pack(fill="x")
+        main_fields.columnconfigure(0, weight=3)
+        main_fields.columnconfigure(1, weight=2)
+        ttk.Label(
+            main_fields, text="Event title", style="AddressCard.TLabel"
+        ).grid(row=0, column=0, sticky="w")
+        ttk.Label(
+            main_fields, text="Event type", style="AddressCard.TLabel"
+        ).grid(row=0, column=1, sticky="w", padx=(10, 0))
+        ttk.Entry(
+            main_fields,
+            textvariable=self.title_value,
+            style="Address.TEntry",
+        ).grid(row=1, column=0, sticky="ew", pady=(3, 0))
         ttk.Combobox(
-            grid, textvariable=self.event_type, state="readonly",
-            values=[key for key, _label in self.EVENT_TYPES],
-        ).grid(row=1, column=0, sticky="ew")
-        ttk.Entry(grid, textvariable=self.date).grid(row=1, column=1, sticky="ew", padx=(7, 0))
-        ttk.Entry(grid, textvariable=self.time).grid(row=1, column=2, sticky="ew", padx=(7, 0))
-        ttk.Label(shell, text="Title").pack(anchor="w")
-        ttk.Entry(shell, textvariable=self.title_value).pack(fill="x", pady=(3, 7))
-        owner_row = ttk.Frame(shell)
-        owner_row.pack(fill="x", pady=(0, 7))
-        ttk.Label(owner_row, textvariable=self.owner_label).pack(side="left", fill="x", expand=True)
-        ttk.Button(owner_row, text="Choose owner…", command=self.choose_owner).pack(side="left")
-        ttk.Button(owner_row, text="Clear", command=self.clear_owner).pack(side="left", padx=(4, 0))
-        ttk.Label(shell, text="Details").pack(anchor="w")
-        self.description = tk.Text(shell, height=10, wrap="word")
+            main_fields,
+            textvariable=self.event_type_label,
+            state="readonly",
+            values=[label for _key, label in self.EVENT_TYPES],
+            style="Address.TCombobox",
+        ).grid(row=1, column=1, sticky="ew", padx=(10, 0), pady=(3, 0))
+
+        date_fields = ttk.Frame(card, style="AddressCard.TFrame")
+        date_fields.pack(fill="x", pady=(12, 0))
+        date_values = (
+            ("Year", self.date_year),
+            ("Month", self.date_month),
+            ("Day", self.date_day),
+            ("Time (24-hour)", self.time),
+        )
+        for column, (label, variable) in enumerate(date_values):
+            date_fields.columnconfigure(column, weight=2 if column == 0 else 1)
+            ttk.Label(
+                date_fields, text=label, style="AddressCard.TLabel"
+            ).grid(
+                row=0, column=column, sticky="w",
+                padx=(0 if column == 0 else 8, 0),
+            )
+            ttk.Entry(
+                date_fields,
+                textvariable=variable,
+                style="Address.TEntry",
+            ).grid(
+                row=1, column=column, sticky="ew",
+                padx=(0 if column == 0 else 8, 0), pady=(3, 0),
+            )
+
+        self.owner_row = ttk.Frame(card, style="AddressCard.TFrame")
+        self.owner_row.pack(fill="x", pady=(12, 9))
+        ttk.Label(
+            self.owner_row, textvariable=self.owner_label, style="AddressCard.TLabel"
+        ).pack(side="left", fill="x", expand=True)
+        self.choose_owner_button = ttk.Button(self.owner_row, text="Choose…", command=self.choose_owner)
+        self.choose_owner_button.pack(side="left")
+        ttk.Button(self.owner_row, text="Clear", command=self.clear_owner).pack(side="left", padx=(4, 0))
+        self.inventory_frame = ttk.Frame(card, style="AddressCard.TFrame")
+        inventory_header = ttk.Frame(self.inventory_frame, style="AddressCard.TFrame")
+        inventory_header.pack(fill="x")
+        ttk.Label(inventory_header, text="Inventory after this event", style="AddressCard.TLabel").pack(side="left")
+        ttk.Button(inventory_header, text="−", width=3, command=self.remove_inventory_item).pack(side="right")
+        ttk.Button(inventory_header, text="+", width=3, command=self.add_inventory_item).pack(side="right", padx=(0, 3))
+        self.inventory_tree = ttk.Treeview(
+            self.inventory_frame, columns=("kind", "quantity"), show="tree headings", height=6
+        )
+        self.inventory_tree.heading("#0", text="Item")
+        self.inventory_tree.heading("kind", text="Kind")
+        self.inventory_tree.heading("quantity", text="Qty")
+        self.inventory_tree.column("#0", width=310)
+        self.inventory_tree.column("kind", width=140)
+        self.inventory_tree.column("quantity", width=55, anchor="center")
+        self.inventory_tree.pack(fill="x", pady=(3, 8))
+        self.inventory_tree.bind("<Double-Button-1>", lambda _event: self.edit_inventory_quantity())
+        self.description_label = ttk.Label(
+            card, text="Description", style="AddressCard.TLabel"
+        )
+        self.description_label.pack(anchor="w")
+        self.description = tk.Text(
+            card,
+            height=8,
+            wrap="word",
+            background=FIELD,
+            foreground=INK,
+            insertbackground=INK,
+            relief="solid",
+            borderwidth=1,
+            highlightthickness=0,
+        )
         self.description.pack(fill="both", expand=True, pady=(3, 8))
         self.description.insert("1.0", str(value.get("description", "")))
-        actions = ttk.Frame(shell)
+        actions = ttk.Frame(card, style="AddressCard.TFrame")
         actions.pack(fill="x")
         ttk.Button(actions, text="Cancel", command=self.destroy).pack(side="right")
         ttk.Button(actions, text="Apply", command=self.apply).pack(side="right", padx=(0, 7))
+        self.event_type_label.trace_add("write", self._event_type_changed)
+        self.bind("<Escape>", lambda _event: self.destroy())
+        self._event_type_changed()
         self.grab_set()
 
-    def owner_name(self) -> str:
+    def _event_type_changed(self, *_args) -> None:
+        next_default = self.event_type_label.get().strip()
+        current_title = self.title_value.get().strip()
+        if not current_title or current_title == self._last_default_title:
+            self.title_value.set(next_default)
+        self._last_default_title = next_default
+        event_type = ADDRESS_EVENT_TYPES_BY_LABEL.get(next_default, "address_owner_changed")
+        if event_type == "address_contents_changed":
+            self.owner_row.pack_forget()
+            self.inventory_frame.pack(fill="x", pady=(12, 2), before=self.description_label)
+            if not self._inventory_initialized:
+                try:
+                    before_date = compose_address_event_date(
+                        self.date_year.get(),
+                        self.date_month.get(),
+                        self.date_day.get(),
+                    )
+                except ValueError:
+                    before_date = ""
+                self.inventory = inherited_address_inventory(
+                    self.world,
+                    str(self.address.get("record_id", "")),
+                    before_date=before_date,
+                    before_time=self.time.get(),
+                    exclude_event_id=self.record_id,
+                )
+                self._inventory_initialized = True
+            self.refresh_inventory()
+        else:
+            self.inventory_frame.pack_forget()
+            if not self.owner_row.winfo_manager():
+                self.owner_row.pack(fill="x", pady=(12, 9), before=self.description_label)
+            noun = "occupant" if event_type == "address_occupancy_changed" else "owner"
+            self.choose_owner_button.configure(text=f"Choose {noun}…")
+            self.owner_label.set(self.owner_name(noun))
+
+    def refresh_inventory(self) -> None:
+        self.inventory_tree.delete(*self.inventory_tree.get_children())
+        for item in self.inventory:
+            item_id = str(item.get("record_id", "") or uuid4())
+            item["record_id"] = item_id
+            self.inventory_tree.insert(
+                "", "end", iid=item_id, text=str(item.get("name", "Item")),
+                values=(str(item.get("collection", "")).replace("_", " ").title(), int(item.get("quantity", 1) or 1)),
+            )
+
+    def add_inventory_item(self) -> None:
+        def accept(item: dict) -> None:
+            self.inventory.append(item)
+            self.refresh_inventory()
+        InventoryReferenceChooser(self, self.catalog, accept)
+
+    def remove_inventory_item(self) -> None:
+        selected = set(self.inventory_tree.selection())
+        if selected:
+            self.inventory = [item for item in self.inventory if str(item.get("record_id")) not in selected]
+            self.refresh_inventory()
+
+    def edit_inventory_quantity(self) -> None:
+        selected = self.inventory_tree.selection()
+        item = next((row for row in self.inventory if selected and str(row.get("record_id")) == selected[0]), None)
+        if item is None:
+            return
+        from tkinter import simpledialog
+        quantity = simpledialog.askinteger(
+            "Inventory quantity", "Quantity", initialvalue=int(item.get("quantity", 1) or 1),
+            minvalue=1, maxvalue=999999, parent=self,
+        )
+        if quantity is not None:
+            item["quantity"] = quantity
+            self.refresh_inventory()
+
+    def owner_name(self, noun: str = "owner") -> str:
         if not self.owner:
-            return "No owner linked"
+            return f"No {noun} linked"
         kind = str(self.owner.get("owner_type", ""))
         collection = "people" if kind == "person" else "organizations"
         record = next((
             item for item in self.world.get(collection, []) or []
             if str(item.get("record_id", "")) == str(self.owner.get("record_id", ""))
         ), {})
-        return f"Owner: {_display_name(record, kind)}"
+        return f"{noun.title()}: {_display_name(record, kind)}"
 
     def choose_owner(self) -> None:
         def accept(value: dict) -> None:
             self.owner = {key: value[key] for key in ("owner_type", "record_id")}
-            self.owner_label.set(f"Owner: {value['display_name']}")
+            noun = "occupant" if ADDRESS_EVENT_TYPES_BY_LABEL.get(self.event_type_label.get()) == "address_occupancy_changed" else "owner"
+            self.owner_label.set(f"{noun.title()}: {value['display_name']}")
         WorldReferenceChooser(self, self.world, accept)
 
     def clear_owner(self) -> None:
         self.owner = None
-        self.owner_label.set("No owner linked")
+        self._event_type_changed()
 
     def apply(self) -> None:
         title = self.title_value.get().strip()
-        date = self.date.get().strip()
-        if not title or not date:
-            messagebox.showerror("Incomplete event", "Enter a title and world date.", parent=self)
+        if not title:
+            messagebox.showerror(
+                "Incomplete event", "Enter an event title.", parent=self
+            )
             return
+        try:
+            date_value = compose_address_event_date(
+                self.date_year.get(),
+                self.date_month.get(),
+                self.date_day.get(),
+            )
+            time_value = normalize_address_event_time(self.time.get())
+        except ValueError as error:
+            messagebox.showerror("Invalid event date", str(error), parent=self)
+            return
+        event_type = ADDRESS_EVENT_TYPES_BY_LABEL.get(
+            self.event_type_label.get(), "address_owner_changed"
+        )
         value = {
             "record_id": self.record_id,
-            "event_type": self.event_type.get(),
+            "event_type": event_type,
             "title": title,
-            "date": date,
-            "time": self.time.get().strip(),
+            "date": date_value,
+            "time": time_value,
             "description": self.description.get("1.0", "end-1c").strip(),
             "address_ids": [str(self.address["record_id"])],
         }
-        if self.owner:
+        if event_type == "address_contents_changed":
+            value["inventory"] = deepcopy(self.inventory)
+        elif self.owner:
             value["owner_reference"] = deepcopy(self.owner)
             key = "person_ids" if self.owner["owner_type"] == "person" else "organization_ids"
             value[key] = [self.owner["record_id"]]
@@ -330,6 +871,7 @@ class AddressManagerDialog(tk.Toplevel):
         self,
         parent: tk.Misc,
         world: dict,
+        catalog: dict,
         location_id: str,
         callback: Callable[[list, list], None],
         *,
@@ -337,6 +879,7 @@ class AddressManagerDialog(tk.Toplevel):
     ):
         super().__init__(parent)
         self.world = world
+        self.catalog = catalog
         self.location_id = str(location_id)
         self.callback = callback
         location = next((item for item in world.get("locations", []) or [] if str(item.get("record_id")) == self.location_id), {})
@@ -463,7 +1006,17 @@ class AddressManagerDialog(tk.Toplevel):
         for event in sorted(self.address_events(), key=lambda item: (str(item.get("date", "")), str(item.get("time", "")))):
             event_id = str(event.get("record_id", "") or "")
             if event_id:
-                self.event_tree.insert("", "end", iid=event_id, text=str(event.get("title", "Event")), values=(event.get("date", ""), str(event.get("event_type", "")).replace("address_", "").replace("_", " ").title(), self.owner_name(event)))
+                self.event_tree.insert(
+                    "",
+                    "end",
+                    iid=event_id,
+                    text=str(event.get("title", "Event")),
+                    values=(
+                        format_address_event_date(event.get("date", "")),
+                        address_event_type_label(event.get("event_type")),
+                        self.owner_name(event),
+                    ),
+                )
 
     def add_event(self) -> None:
         address = self.selected_address()
@@ -472,7 +1025,8 @@ class AddressManagerDialog(tk.Toplevel):
             return
         def accept(value: dict) -> None:
             self.events.append(value); self.refresh_events()
-        AddressEventEditor(self, self.world, address, None, accept)
+        editor_world = {**self.world, "events": self.events, "addresses": self.addresses}
+        AddressEventEditor(self, editor_world, self.catalog, address, None, accept)
 
     def edit_event(self) -> None:
         selected = self.event_tree.selection()
@@ -482,7 +1036,8 @@ class AddressManagerDialog(tk.Toplevel):
             return
         def accept(value: dict) -> None:
             event.clear(); event.update(value); self.refresh_events()
-        AddressEventEditor(self, self.world, address, event, accept)
+        editor_world = {**self.world, "events": self.events, "addresses": self.addresses}
+        AddressEventEditor(self, editor_world, self.catalog, address, event, accept)
 
     def delete_event(self) -> None:
         selected = set(self.event_tree.selection())

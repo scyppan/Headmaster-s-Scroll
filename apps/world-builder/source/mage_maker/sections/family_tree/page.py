@@ -79,6 +79,8 @@ class FamilyTreeView(tk.Frame):
         update_person_command,
         refresh_people_command,
         navigate_command,
+        locations_provider=None,
+        event_provider=None,
     ):
         super().__init__(parent, bg=SURFACE)
         self.change_command = change_command
@@ -87,6 +89,8 @@ class FamilyTreeView(tk.Frame):
         self.update_person_command = update_person_command
         self.refresh_people_command = refresh_people_command
         self.navigate_command = navigate_command
+        self.locations_provider = locations_provider
+        self.event_provider = event_provider
         self.current_person = {}
         self.people = []
         self.relationship_map = FamilyRelationshipMap([])
@@ -270,8 +274,13 @@ class FamilyTreeView(tk.Frame):
             "spouse_relationships": deepcopy(self.spouse_relationships),
         }
 
-    def reload_people(self, redraw=True):
-        self.people = self.people_provider()
+    def reload_people(self, redraw=True, refresh_provider=True):
+        # Most relationship edits only change the selected person's links.
+        # Re-querying every person summary after each click is expensive on a
+        # large world and is unnecessary because the family map already owns
+        # the summaries required to redraw the graph.
+        if refresh_provider or not self.people:
+            self.people = self.people_provider()
         self.current_person["biological_mother_id"] = self.mother_id
         self.current_person["biological_father_id"] = self.father_id
         self.current_person["biological_mother_status"] = self.mother_status
@@ -283,6 +292,14 @@ class FamilyTreeView(tk.Frame):
         self.relationship_map = FamilyRelationshipMap(
             self.people,
             self.current_person,
+            foster_events=(
+                self.event_provider(
+                    self.current_person.get("record_id", "")
+                )
+                if callable(self.event_provider)
+                and self.current_person.get("record_id")
+                else ()
+            ),
         )
         self.update_add_child_control()
 
@@ -426,7 +443,9 @@ class FamilyTreeView(tk.Frame):
                     "person": {
                         "record_id": "__select_mother__",
                         "displayed_name": (
-                            "Muggle" if self.mother_status == "muggle" else "Unknown"
+                            "Unknown Muggle"
+                            if self.mother_status == "muggle"
+                            else "Unknown"
                         ),
                     },
                     "relation": "Birthing parent",
@@ -440,7 +459,9 @@ class FamilyTreeView(tk.Frame):
                     "person": {
                         "record_id": "__select_father__",
                         "displayed_name": (
-                            "Muggle" if self.father_status == "muggle" else "Unknown"
+                            "Unknown Muggle"
+                            if self.father_status == "muggle"
+                            else "Unknown"
                         ),
                     },
                     "relation": "Non-birthing parent",
@@ -980,8 +1001,13 @@ class FamilyTreeView(tk.Frame):
         if row_index == 3:
             anchored_groups = {}
             unanchored_nodes = []
+            foster_nodes = []
 
             for node in nodes:
+                if node.get("relation") == "Foster child":
+                    foster_nodes.append(node)
+                    continue
+
                 record_id = str(
                     node["person"].get("record_id", "") or ""
                 ).strip()
@@ -1056,6 +1082,28 @@ class FamilyTreeView(tk.Frame):
                     (
                         node,
                         unanchored_start
+                        + node_index * (node_width + card_gap),
+                    )
+                )
+
+            # Foster children share the generation, but they are deliberately
+            # not part of the connected biological-child cluster. Keep them
+            # together at the far right so they cannot be mistaken for a
+            # child connected to the selected person's parent line.
+            foster_gap = 22
+            foster_start = (
+                max(position[1] for position in desired_positions)
+                + node_width
+                + foster_gap
+                if desired_positions
+                else center_x
+            )
+
+            for node_index, node in enumerate(foster_nodes):
+                desired_positions.append(
+                    (
+                        node,
+                        foster_start
                         + node_index * (node_width + card_gap),
                     )
                 )
@@ -1699,7 +1747,7 @@ class FamilyTreeView(tk.Frame):
                 "name-only character entry.\n"
                 + parent_candidate_explanation(
                     self.current_person,
-                    self.people,
+                    self.relationship_map.people_by_id,
                     parent_role,
                 )
             ),
@@ -1712,8 +1760,21 @@ class FamilyTreeView(tk.Frame):
             create_command=partial(self.create_parent, parent_role),
             new_profile_label=f"Enter a new {role_label}",
             new_profile_explanation=(
-                "Only the displayed name will be entered. Can give birth will be "
-                f"{required_setting}."
+                "Enter the displayed name and starting location. Can give "
+                f"birth will be {required_setting}."
+            ),
+            status_options=(
+                ("Unknown", "unknown"),
+                ("Unknown Muggle", "muggle"),
+            ),
+            status_command=partial(
+                self.set_parent_status,
+                parent_role,
+            ),
+            locations=(
+                self.locations_provider()
+                if callable(self.locations_provider)
+                else ()
             ),
         )
 
@@ -1731,7 +1792,7 @@ class FamilyTreeView(tk.Frame):
 
         allowed_magic_states = allowed_parent_magic_states(
             self.current_person,
-            self.people,
+            self.relationship_map.people_by_id,
             parent_role,
         )
 
@@ -1742,10 +1803,16 @@ class FamilyTreeView(tk.Frame):
             )
 
         if change_birth_assignment:
-            self.update_person_command(
+            updated_parent = self.update_person_command(
                 record_id,
                 {"can_give_birth": parent_role == "mother"},
             )
+            if isinstance(updated_parent, dict):
+                selected_parent.update(updated_parent)
+                for person in self.people:
+                    if str(person.get("record_id", "") or "") == record_id:
+                        person.update(updated_parent)
+                        break
 
         if parent_role == "mother":
             self.mother_id = record_id
@@ -1754,32 +1821,40 @@ class FamilyTreeView(tk.Frame):
             self.father_id = record_id
             self.father_status = "person"
 
-        self.reload_people()
+        self.reload_people(refresh_provider=False)
         self.change_command()
 
-    def create_parent(self, parent_role, displayed_name):
+    def create_parent(self, parent_role, profile_values):
+        values = (
+            dict(profile_values)
+            if isinstance(profile_values, dict)
+            else {"displayed_name": str(profile_values or "")}
+        )
         allowed_magic_states = allowed_parent_magic_states(
             self.current_person,
             self.people,
             parent_role,
         )
-        created_person = self.create_person_command(
+        values.update(
             {
-                "displayed_name": displayed_name,
                 "can_give_birth": parent_role == "mother",
                 "non_magical": allowed_magic_states == (
                     PARENT_MAGIC_STATE_NON_MAGICAL,
                 ),
             }
         )
+        created_person = self.create_person_command(values)
         self.reload_people(redraw=False)
         self.set_parent(parent_role, created_person["record_id"])
         return created_person
 
     def remove_parent(self, parent_role):
         parent_id = self.mother_id if parent_role == "mother" else self.father_id
+        parent_status = (
+            self.mother_status if parent_role == "mother" else self.father_status
+        )
 
-        if not parent_id:
+        if not parent_id and parent_status != "muggle":
             return
 
         parent = self.relationship_map.person(parent_id)
@@ -1789,7 +1864,11 @@ class FamilyTreeView(tk.Frame):
         parent_name = (
             parent.get("displayed_name", f"this {role_label}")
             if parent
-            else f"this {role_label}"
+            else (
+                "the unknown Muggle parent"
+                if parent_status == "muggle"
+                else f"this {role_label}"
+            )
         )
 
         if not messagebox.askyesno(
@@ -1810,6 +1889,21 @@ class FamilyTreeView(tk.Frame):
             self.father_status = "unknown"
 
         self.reload_people()
+        self.change_command()
+
+    def set_parent_status(self, parent_role, status):
+        normalized_status = (
+            "muggle" if str(status or "").casefold() == "muggle" else "unknown"
+        )
+
+        if parent_role == "mother":
+            self.mother_id = ""
+            self.mother_status = normalized_status
+        else:
+            self.father_id = ""
+            self.father_status = normalized_status
+
+        self.reload_people(refresh_provider=False)
         self.change_command()
 
     def open_mate_picker(self):
@@ -2070,20 +2164,26 @@ class FamilyTreeView(tk.Frame):
             ),
             new_profile_label=f"Enter a new {required_role_label}",
             new_profile_explanation=(
-                "Only the displayed name will be entered. Can give birth will be "
-                f"{required_setting}."
+                "Enter the displayed name and starting location. Can give "
+                f"birth will be {required_setting}."
+            ),
+            locations=(
+                self.locations_provider()
+                if callable(self.locations_provider)
+                else ()
             ),
         )
 
-    def create_child_other_parent(self, selection_command, displayed_name):
-        created_person = self.create_person_command(
-            {
-                "displayed_name": displayed_name,
-                "can_give_birth": not person_can_give_birth(
-                    self.current_person
-                ),
-            }
+    def create_child_other_parent(self, selection_command, profile_values):
+        values = (
+            dict(profile_values)
+            if isinstance(profile_values, dict)
+            else {"displayed_name": str(profile_values or "")}
         )
+        values["can_give_birth"] = not person_can_give_birth(
+            self.current_person
+        )
+        created_person = self.create_person_command(values)
         selection_command(created_person["record_id"], False)
         return created_person
 

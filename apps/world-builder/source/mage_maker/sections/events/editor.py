@@ -69,6 +69,7 @@ EVENT_TYPE_DEFAULT_TITLES = {
     "item_event": "Item event",
     "joined_faction": "Joined a faction",
     "left_faction": "Left a faction",
+    "published_book": "Published a book",
 }
 
 
@@ -606,6 +607,11 @@ class EventAssociationPicker(tk.Frame):
                 mage_groups=(
                     self.controller.mage_groups()
                     if hasattr(self.controller, "mage_groups")
+                    else []
+                ),
+                locations=(
+                    self.controller.location_records()
+                    if hasattr(self.controller, "location_records")
                     else []
                 ),
             )
@@ -1489,6 +1495,49 @@ class EventEditor(tk.Frame):
             self.birth_people_selection_changed
         )
         self.baby_picker.grid_remove()
+        self.fixed_baby_value = tk.StringVar(value="Current person")
+        self.fixed_baby_panel = tk.Frame(
+            self.association_panel,
+            bg=self.background,
+            highlightbackground=BORDER_SOFT,
+            highlightthickness=1,
+            padx=6,
+            pady=4,
+        )
+        self.fixed_baby_panel.grid_columnconfigure(0, weight=1)
+        fixed_baby_heading = tk.Frame(
+            self.fixed_baby_panel,
+            bg=self.background,
+        )
+        fixed_baby_heading.grid(row=0, column=0, sticky="ew")
+        fixed_baby_heading.grid_columnconfigure(0, weight=1)
+        tk.Label(
+            fixed_baby_heading,
+            text="Baby",
+            bg=self.background,
+            fg=TEXT_DARK,
+            font=app_font(9, "bold"),
+            anchor="w",
+        ).grid(row=0, column=0, sticky="w")
+        tk.Label(
+            fixed_baby_heading,
+            text="Current person",
+            bg=self.background,
+            fg=TEXT_MUTED,
+            font=app_font(8, "bold"),
+            anchor="e",
+        ).grid(row=0, column=1, sticky="e", padx=(8, 0))
+        tk.Label(
+            self.fixed_baby_panel,
+            textvariable=self.fixed_baby_value,
+            bg=FIELD_BACKGROUND,
+            fg=TEXT_DARK,
+            font=app_font(9),
+            anchor="w",
+            padx=7,
+            pady=5,
+        ).grid(row=1, column=0, sticky="ew", pady=(3, 0))
+        self.fixed_baby_panel.grid_remove()
         self.birthing_parent_picker = EventAssociationPicker(
             self.association_panel,
             self.controller,
@@ -2201,6 +2250,14 @@ class EventEditor(tk.Frame):
             self.character_control_link_id = str(self.event.get("knowledge_record_id", "") or "")
             self.character_control_link_collection = str(self.event.get("knowledge_collection", "") or "")
             self.character_control_link_name.set(str(self.event.get("knowledge_name", "") or "Linked taught record"))
+        elif loaded_type == "published_book":
+            self.character_control_link_id = str(
+                (self.event.get("book_ids", []) or [""])[0] or ""
+            )
+            self.character_control_link_collection = "books"
+            self.character_control_link_name.set(
+                str(self.event.get("book_title", "") or "Linked book")
+            )
         elif loaded_type in ("tamed_creature", "bonded_creature", "irked_creature"):
             self.character_control_link_id = str(self.event.get("named_creature_id", "") or "")
             self.character_control_link_collection = "named_creatures"
@@ -2265,6 +2322,7 @@ class EventEditor(tk.Frame):
                 else ()
             ),
         )
+        self.update_fixed_baby_display()
         self.birthing_parent_picker.set_values(birthing_parent_ids)
         self.non_birthing_parent_picker.set_values(
             non_birthing_parent_ids
@@ -2665,6 +2723,7 @@ class EventEditor(tk.Frame):
         )
         self.people_picker.grid_remove()
         self.baby_picker.grid_remove()
+        self.fixed_baby_panel.grid_remove()
         self.birthing_parent_picker.grid_remove()
         self.non_birthing_parent_picker.grid_remove()
         self.perpetrators_picker.grid_remove()
@@ -2733,7 +2792,13 @@ class EventEditor(tk.Frame):
                 sticky="ew",
                 padx=(4, 0),
             )
-            self.baby_picker.grid(
+            baby_control = (
+                self.fixed_baby_panel
+                if self.context == "person"
+                and bool(self.baby_picker.locked_order)
+                else self.baby_picker
+            )
+            baby_control.grid(
                 row=1,
                 column=0,
                 sticky="ew",
@@ -2910,10 +2975,44 @@ class EventEditor(tk.Frame):
         self.murder_people_selection_changed()
 
     def birth_people_selection_changed(self):
+        self.update_fixed_baby_display()
         baby_ids = self.baby_picker.get_values()
         self.birthing_parent_picker.set_excluded_ids(baby_ids)
         self.non_birthing_parent_picker.set_excluded_ids(baby_ids)
         self.murder_people_selection_changed()
+
+    def update_fixed_baby_display(self):
+        baby_id = next(iter(self.baby_picker.get_values()), "")
+        label = ""
+
+        if baby_id:
+            option = self.baby_picker.options_by_id.get(baby_id)
+
+            if not isinstance(option, dict):
+                targeted_provider = getattr(
+                    self.controller,
+                    "people_options_for_ids",
+                    None,
+                )
+                options = (
+                    targeted_provider((baby_id,))
+                    if callable(targeted_provider)
+                    else []
+                )
+                option = next(
+                    (
+                        candidate
+                        for candidate in options
+                        if str(candidate.get("value", "") or "").strip()
+                        == baby_id
+                    ),
+                    None,
+                )
+
+            if isinstance(option, dict):
+                label = str(option.get("label", "") or "").strip()
+
+        self.fixed_baby_value.set(label or "Current person")
 
     def murder_people_selection_changed(self):
         self.update_murder_additional_people_summary()
@@ -3308,6 +3407,7 @@ class EventEditor(tk.Frame):
         supported = selected_type in {
             "taught_spell", "taught_proficiency", "taught_recipe",
             "tamed_creature", "bonded_creature", "irked_creature",
+            "published_book",
         }
         if supported:
             self.character_control_link_panel.grid(
@@ -3453,7 +3553,7 @@ class EventEditor(tk.Frame):
                     "(optional; select no more than one location)."
                     if selected_type in ("died", "murder")
                     else (
-                        "(editable; select no more than one birth location)."
+                        "(required; select one starting location)."
                         if selected_type == "born"
                         else ""
                     )
@@ -3471,6 +3571,23 @@ class EventEditor(tk.Frame):
                     self.people_picker.get_values(),
                     (),
                 )
+
+        elif selected_type == "born" and self.context == "person":
+            active_person_ids = list(
+                dict.fromkeys(
+                    [
+                        *self.people_picker.locked_order,
+                        *self.people_picker.get_values(),
+                    ]
+                )
+            )
+
+            if active_person_ids:
+                baby_id = active_person_ids[0]
+                self.baby_picker.set_values((baby_id,), (baby_id,))
+                self.update_fixed_baby_display()
+                self.birthing_parent_picker.set_excluded_ids((baby_id,))
+                self.non_birthing_parent_picker.set_excluded_ids((baby_id,))
 
         elif selected_type in (
             "died",
@@ -4164,6 +4281,18 @@ class EventEditor(tk.Frame):
                 and self.character_control_link_id
                 else ""
             ),
+            "book_ids": (
+                [self.character_control_link_id]
+                if event_type == "published_book"
+                and self.character_control_link_id
+                else []
+            ),
+            "book_title": (
+                self.character_control_link_name.get()
+                if event_type == "published_book"
+                and self.character_control_link_id
+                else ""
+            ),
         }
 
     def save(self):
@@ -4202,6 +4331,7 @@ class EventEditor(tk.Frame):
         if values["event_type"] in (
             "taught_spell", "taught_proficiency", "taught_recipe",
             "tamed_creature", "bonded_creature", "irked_creature",
+            "published_book",
         ) and not self.character_control_link_id:
             self.show_error("Choose the record linked to this event.")
             return False

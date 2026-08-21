@@ -144,6 +144,54 @@ class ProfileLoadingPerformanceTests(unittest.TestCase):
         self.assertEqual("mother", relationship_values["biological_mother_id"])
         self.assertEqual(["mate"], relationship_values["mate_ids"])
 
+    def test_shared_event_save_does_not_repaint_or_resave_person(self):
+        form = object.__new__(PersonForm)
+        form.loading = False
+        form.refresh_linked_events = Mock()
+        form.timeline_event_selected = Mock()
+        form.events_changed_command = Mock()
+        form.change_command = Mock()
+        form.schedule_person_autosave = Mock()
+
+        PersonForm.shared_event_saved(form, {"record_id": "event-1"})
+
+        form.refresh_linked_events.assert_called_once_with(
+            refresh_timeline=False
+        )
+        form.timeline_event_selected.assert_called_once_with("event-1")
+        form.events_changed_command.assert_called_once_with(
+            "events",
+            ("event-1",),
+        )
+        form.change_command.assert_not_called()
+        form.schedule_person_autosave.assert_not_called()
+
+    def test_accept_saved_person_preserves_open_section(self):
+        form = object.__new__(PersonForm)
+        form.current_record_id = "maeve"
+        form.active_page_name = "timeline"
+        form.timeline = Mock()
+        form.person_snapshot = {"record_id": "maeve", "displayed_name": "Old"}
+        form.name_details = {"entries": []}
+        form.update_school_summary_from_person = Mock()
+        form.update_birth_date_display = Mock()
+        form.update_death_date_visibility = Mock()
+        form.update_death_overview = Mock()
+
+        accepted = PersonForm.accept_saved_person(
+            form,
+            {
+                "record_id": "maeve",
+                "displayed_name": "Maeve",
+                "board": {},
+                "name_details": {"entries": [{"name": "Maeve"}]},
+            },
+        )
+
+        self.assertTrue(accepted)
+        self.assertEqual("Maeve", form.person_snapshot["displayed_name"])
+        form.timeline.reset_for_person_change.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

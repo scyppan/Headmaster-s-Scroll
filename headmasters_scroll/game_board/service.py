@@ -566,7 +566,10 @@ class GameBoardService:
                 creature["visibility"] = "headmaster"
                 saved_stats = named.get("generated") or named.get("statistics")
                 if isinstance(saved_stats, dict) and saved_stats:
-                    creature["generated"].update(deepcopy(saved_stats))
+                    creature["generated"] = deepcopy(saved_stats)
+                saved_actions = named.get("actions")
+                if isinstance(saved_actions, list):
+                    creature["actions"] = deepcopy(saved_actions)
                 state.setdefault("creatures", {})[creature["record_id"]] = creature
                 result = deepcopy(creature)
 

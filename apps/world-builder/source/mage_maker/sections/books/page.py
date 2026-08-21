@@ -586,7 +586,7 @@ class BooksPage(tk.Frame):
         self.title_value.set(book["title"])
         self.author_value.set(f"Author: {book['author_name']}")
         self.publication_value.set(
-            f"Published: {book['publication_date']}"
+            f"Published book event: {book['publication_date']}"
         )
         self.printing_value.set(
             "Mass printed"

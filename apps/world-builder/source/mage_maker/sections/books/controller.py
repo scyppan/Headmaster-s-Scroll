@@ -2,6 +2,7 @@ from copy import deepcopy
 
 from mage_maker.sections.books.models import (
     BOOK_CONTENT_COLLECTIONS,
+    BOOK_PUBLICATION_EVENT_TYPE,
     book_date_end_key,
     book_date_is_on_or_before,
     book_date_start_key,
@@ -13,6 +14,8 @@ from mage_maker.sections.books.models import (
     normalize_book_readings,
     normalize_book_record,
     normalize_book_records,
+    publication_event_from_book,
+    publication_event_book_ids,
 )
 from mage_maker.sections.development.models import (
     ADULT_YEAR_MAX_BOOK_COUNT,
@@ -62,7 +65,9 @@ class BookController:
 
     def list_books(self):
         return [
-            self.hydrate_book_contents(book)
+            self.hydrate_book_contents(
+                self.hydrate_book_publication(book)
+            )
             for book in normalize_book_records(
                 self.database.list_records("books")
             )
@@ -71,10 +76,64 @@ class BookController:
     def get_book(self, record_id):
         book = self.database.read_record("books", record_id)
         return (
-            self.hydrate_book_contents(normalize_book_record(book))
+            self.hydrate_book_contents(
+                self.hydrate_book_publication(
+                    normalize_book_record(book)
+                )
+            )
             if book is not None
             else None
         )
+
+    def publication_events_by_book_id(self):
+        result = {}
+        for event in self.database.list_records("events"):
+            if not isinstance(event, dict):
+                continue
+            if str(event.get("event_type", "") or "") != (
+                BOOK_PUBLICATION_EVENT_TYPE
+            ):
+                continue
+            for book_id in publication_event_book_ids(event):
+                result.setdefault(book_id, event)
+        return result
+
+    def hydrate_book_publication(self, book):
+        hydrated = deepcopy(book)
+        event_id = str(
+            hydrated.get("publication_event_id", "") or ""
+        ).strip()
+        event = (
+            self.database.read_record("events", event_id)
+            if event_id
+            else None
+        )
+        if event is None:
+            event = self.publication_events_by_book_id().get(
+                hydrated["record_id"]
+            )
+        if not isinstance(event, dict):
+            return hydrated
+
+        hydrated["publication_event_id"] = str(
+            event.get("record_id", "") or event_id
+        ).strip()
+        hydrated["publication_date"] = str(
+            event.get("date", "") or hydrated.get("publication_date", "")
+        ).strip()
+        person_ids = list(event.get("person_ids", []) or [])
+        if person_ids:
+            hydrated["author_person_id"] = str(person_ids[0] or "").strip()
+        hydrated["author_name"] = str(
+            event.get("book_author_name", "")
+            or hydrated.get("author_name", "")
+        ).strip()
+        location_ids = list(event.get("location_ids", []) or [])
+        if location_ids:
+            hydrated["publication_location_id"] = str(
+                location_ids[0] or ""
+            ).strip()
+        return hydrated
 
     def hydrate_book_contents(self, book):
         hydrated = deepcopy(book)
@@ -140,8 +199,9 @@ class BookController:
         book = self.prepare_book(values)
         self.ensure_unique_title(book["title"])
         created = self.database.create_record("books", book)
+        self.upsert_publication_event(created)
         self.database.save()
-        return normalize_book_record(created)
+        return self.hydrate_book_publication(normalize_book_record(created))
 
     def update_book(self, record_id, values):
         current = self.get_book(record_id)
@@ -155,8 +215,9 @@ class BookController:
         book = self.prepare_book(candidate)
         self.ensure_unique_title(book["title"], record_id)
         updated = self.database.update_record("books", record_id, book)
+        self.upsert_publication_event(updated)
         self.database.save()
-        return normalize_book_record(updated)
+        return self.hydrate_book_publication(normalize_book_record(updated))
 
     def delete_book(self, record_id):
         book = self.require_book(record_id)
@@ -168,8 +229,28 @@ class BookController:
             )
 
         self.database.delete_record("books", record_id)
+        publication_event_id = str(
+            book.get("publication_event_id", "") or ""
+        ).strip()
+        if (
+            publication_event_id
+            and self.database.read_record("events", publication_event_id)
+            is not None
+        ):
+            self.database.delete_record("events", publication_event_id)
         self.database.save()
         return book
+
+    def upsert_publication_event(self, book):
+        normalized_book = normalize_book_record(book)
+        event_id = normalized_book["publication_event_id"]
+        current = self.database.read_record("events", event_id)
+        event = publication_event_from_book(normalized_book, current)
+        if current is None:
+            self.database.create_record("events", event)
+        else:
+            self.database.update_record("events", event_id, event)
+        return event
 
     def prepare_book(self, values):
         candidate = deepcopy(values) if isinstance(values, dict) else {}
@@ -635,6 +716,7 @@ class BookController:
             person.get("timeline_events", [])
         ):
             if event.get("event_type") not in (
+                "born",
                 "starting_location",
                 "relocated",
             ):

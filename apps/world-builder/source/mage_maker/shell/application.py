@@ -617,6 +617,7 @@ class MageMakerApp(tk.Tk):
                     self.game_database,
                     self.set_status,
                     self.refresh_cross_page_data,
+                    self.event_controller,
                 )
             elif page_name == "settings":
                 from mage_maker.sections.settings.page import SettingsPage
@@ -1192,6 +1193,7 @@ class MageMakerApp(tk.Tk):
         self.release_child_grabs()
         if not self.has_unsaved_application_changes():
             self._closing = True
+            self.cancel_deferred_editor_work()
             self.finish_close()
             return
 
@@ -1211,6 +1213,7 @@ class MageMakerApp(tk.Tk):
             return
         if not save_choice:
             self._closing = True
+            self.cancel_deferred_editor_work()
             self.finish_close()
             return
 
@@ -1221,6 +1224,7 @@ class MageMakerApp(tk.Tk):
             self._closing = False
             self.set_status("Close cancelled because an editor could not be saved")
             return
+        self.cancel_deferred_editor_work()
         if not self.database.dirty:
             self.finish_close()
             return
@@ -1284,7 +1288,10 @@ class MageMakerApp(tk.Tk):
 
         mages_page = self.pages.get("mages")
         if bool(getattr(mages_page, "form_dirty", False)):
-            if not mages_page.save_person():
+            if not mages_page.save_person(
+                save_database=False,
+                refresh_after=False,
+            ):
                 return False
         location_page = self.pages.get("locations")
         location_dirty = getattr(
@@ -1350,6 +1357,11 @@ class MageMakerApp(tk.Tk):
         else:
             self._closing = False
             self.set_status("Save failed; World Builder remains open")
+            if self._world_watch_after_id is None:
+                self._world_watch_after_id = self.after(
+                    2000,
+                    self.monitor_external_world_save,
+                )
 
     def release_child_grabs(self):
         try:
@@ -1359,19 +1371,38 @@ class MageMakerApp(tk.Tk):
         except tk.TclError:
             pass
 
-    def finish_close(self):
-        active_workers = (
-            self._initial_load_thread,
-            self._index_rebuild_thread,
-            self._external_reload_thread,
-        )
-        if any(
-            worker is not None and worker.is_alive()
-            for worker in active_workers
+    def cancel_deferred_editor_work(self):
+        """Prevent queued refresh/autosave callbacks racing with shutdown."""
+        mages_page = self.pages.get("mages")
+        person_form = getattr(mages_page, "person_form", None)
+        autosave_job = getattr(person_form, "autosave_job", None)
+        if autosave_job is not None:
+            try:
+                person_form.after_cancel(autosave_job)
+            except (AttributeError, tk.TclError):
+                pass
+            person_form.autosave_job = None
+
+        for attribute_name in (
+            "_cross_page_refresh_after_id",
+            "_world_watch_after_id",
         ):
-            self.set_status("Closing after background work finishes...")
-            self.after(50, self.finish_close)
-            return
+            callback_id = getattr(self, attribute_name, None)
+            if callback_id is None:
+                continue
+            try:
+                self.after_cancel(callback_id)
+            except tk.TclError:
+                pass
+            setattr(self, attribute_name, None)
+
+    def finish_close(self):
+        # These workers operate only on detached database/index instances and
+        # are daemon threads.  Waiting for a large streaming scan made the X
+        # button appear broken; atomic index replacement keeps an interrupted
+        # rebuild harmless, so the UI may close immediately.
+        self._initial_load_database = None
+        self._external_reload_database = None
         if self._cross_page_refresh_after_id is not None:
             try:
                 self.after_cancel(self._cross_page_refresh_after_id)

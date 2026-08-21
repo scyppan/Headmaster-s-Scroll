@@ -4,6 +4,16 @@ from copy import deepcopy
 from pathlib import Path
 from unittest.mock import patch
 
+from apps.mapper.address_dialogs import (
+    address_event_type_label,
+    compose_address_event_date,
+    format_address_event_date,
+    normalize_address_event_time,
+    parse_address_event_date,
+    split_address_event_date,
+    inherited_address_inventory,
+)
+
 
 MAPPER_PATH = Path(__file__).resolve().parents[1] / "apps" / "mapper" / "main.py"
 SPEC = importlib.util.spec_from_file_location("headmasters_scroll_mapper", MAPPER_PATH)
@@ -20,6 +30,56 @@ class MapperGeometryTests(unittest.TestCase):
             {"x": 0.8, "y": 0.8},
             {"x": 0.2, "y": 0.8},
         ]
+
+    def test_address_event_labels_and_historical_date_display(self):
+        self.assertEqual(
+            address_event_type_label("address_owner_changed"),
+            "New owner",
+        )
+        self.assertEqual(
+            address_event_type_label("address_unknown"),
+            "Address event",
+        )
+        self.assertEqual(parse_address_event_date("27 Aug 2000"), "2000-08-27")
+        self.assertEqual(
+            parse_address_event_date("04 Mar 3100 BCE"), "-3100-03-04"
+        )
+        self.assertEqual(
+            format_address_event_date("-3100-03-04"), "04 Mar 3100 BCE"
+        )
+        self.assertEqual(
+            split_address_event_date("-3100-03-04"), ("-3100", "3", "4")
+        )
+        self.assertEqual(
+            compose_address_event_date("-3100", "3", "4"), "-3100-03-04"
+        )
+        self.assertEqual(normalize_address_event_time("0830"), "08:30")
+        self.assertEqual(normalize_address_event_time("20:15"), "20:15")
+        with self.assertRaises(ValueError):
+            parse_address_event_date("August someday")
+        with self.assertRaises(ValueError):
+            normalize_address_event_time("25:00")
+
+    def test_new_inventory_copies_the_last_snapshot_without_mutating_it(self):
+        original = [{
+            "record_id": "line-1",
+            "collection": "general_items",
+            "catalog_record_id": "item-1",
+            "name": "Brass key",
+            "quantity": 2,
+        }]
+        world = {"events": [{
+            "record_id": "inventory-1",
+            "event_type": "address_contents_changed",
+            "date": "2000-01-01",
+            "address_ids": ["address-1"],
+            "inventory": original,
+        }]}
+        inherited = inherited_address_inventory(
+            world, "address-1", before_date="2001-01-01"
+        )
+        inherited[0]["quantity"] = 9
+        self.assertEqual(original[0]["quantity"], 2)
 
     def test_polygon_hit_testing(self):
         self.assertTrue(mapper.point_in_polygon(0.5, 0.5, self.square))
@@ -361,7 +421,7 @@ class MapperGeometryTests(unittest.TestCase):
 
         self.assertTrue(window.metadata_form_dirty)
 
-    def test_inline_address_creates_and_links_one_canonical_record(self):
+    def test_address_polygon_links_one_canonical_location_address(self):
         class Value:
             def __init__(self, value):
                 self.value = value
@@ -373,10 +433,14 @@ class MapperGeometryTests(unittest.TestCase):
                 self.value = value
 
         window = mapper.MapperWindow.__new__(mapper.MapperWindow)
-        region = {"record_id": "region-1", "address_id": ""}
-        session = type("Session", (), {"data": {"addresses": []}})()
-        window.region_behavior = Value("Address")
-        window.region_address = Value("93 High Street")
+        address = {
+            "record_id": "address-1",
+            "location_id": "castle",
+            "name": "93 High Street",
+        }
+        region = {"record_id": "region-1", "address_id": "", "name": "Area 1"}
+        session = type("Session", (), {"data": {"addresses": [address]}})()
+        window.region_address = Value("No address linked")
         window.region_name = Value("Area 1")
         window.selected_location_id = "castle"
         window.selected_region = lambda: region
@@ -385,13 +449,16 @@ class MapperGeometryTests(unittest.TestCase):
         window.metadata_history_pending = False
         window.editor_dirty = False
         window.record_history = lambda: None
+        window.region_metadata_changed = lambda: None
+        window.flush_metadata_save = lambda: True
+        window.render_region_list = lambda: None
+        window.render_canvas = lambda: None
 
-        self.assertTrue(window.commit_inline_address())
-        self.assertEqual(len(session.data["addresses"]), 1)
-        self.assertEqual(session.data["addresses"][0]["name"], "93 High Street")
-        self.assertEqual(session.data["addresses"][0]["location_id"], "castle")
-        self.assertEqual(region["address_id"], session.data["addresses"][0]["record_id"])
+        self.assertTrue(window.link_region_address(address))
+        self.assertEqual(region["address_id"], "address-1")
+        self.assertEqual(region["name"], "93 High Street")
         self.assertEqual(window.region_name.get(), "93 High Street")
+        self.assertEqual(window.region_address.get(), "Linked: 93 High Street")
 
     def test_warp_tool_creates_named_point_and_saves_it(self):
         window = mapper.MapperWindow.__new__(mapper.MapperWindow)

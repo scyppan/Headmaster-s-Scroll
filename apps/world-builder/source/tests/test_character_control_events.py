@@ -72,6 +72,21 @@ class CharacterControlEventTests(unittest.TestCase):
         self.assertEqual(creatures[0]["value"], "named-1")
         self.assertEqual(creatures[0]["collection"], "named_creatures")
 
+    def test_foster_event_preserves_roles_and_canonical_person_links(self):
+        event = normalize_world_event({
+            "record_id": "event-foster",
+            "event_type": "foster_child",
+            "title": "Foster child",
+            "date": "2000-09-01",
+            "person_ids": [],
+            "foster_parent_person_ids": ["parent-1"],
+            "foster_child_person_ids": ["child-1"],
+        })
+
+        self.assertEqual(event["foster_parent_person_ids"], ["parent-1"])
+        self.assertEqual(event["foster_child_person_ids"], ["child-1"])
+        self.assertEqual(set(event["person_ids"]), {"parent-1", "child-1"})
+
 
 if __name__ == "__main__":
     unittest.main()

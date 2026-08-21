@@ -133,7 +133,7 @@ class AddChildDialog(tk.Toplevel):
             self.partner_screen,
             text=(
                 "Choose an existing mate first, choose a different person, or mark "
-                "the other parent as Unknown or Muggle."
+                "the other parent as Unknown or Unknown Muggle."
             ),
             bg=SURFACE,
             fg=TEXT_MUTED,
@@ -159,10 +159,10 @@ class AddChildDialog(tk.Toplevel):
 
         self.muggle_button = SoftButton(
             quick_row,
-            text="Muggle",
+            text="Unknown Muggle",
             command=self.choose_muggle_parent,
             background=SURFACE,
-            width=102,
+            width=142,
             height=36,
         )
         self.muggle_button.pack(side="left", padx=(6, 0))
@@ -675,7 +675,7 @@ class AddChildDialog(tk.Toplevel):
             return
 
         if self.other_parent_kind == "muggle":
-            self.partner_summary_value.set("Other parent: Muggle")
+            self.partner_summary_value.set("Other parent: Unknown Muggle")
             self.unknown_button.set_colors(
                 BUTTON_SOFT,
                 BUTTON_SOFT_HOVER,
@@ -868,7 +868,10 @@ class AddChildDialog(tk.Toplevel):
             f"{date_suffix}{death_suffix}"
         )
         self.child_listbox.selection_clear(0, "end")
-        self.after_idle(self.save_child)
+        # Completing the basic profile selects the new child; it must not
+        # submit the outer dialog on an idle callback.  The old callback raced
+        # the nested dialog/grab teardown and made Add child appear unreliable.
+        # Keep the explicit Add child action as the single commit point.
         return True
 
     def selected_child_record_id(self):

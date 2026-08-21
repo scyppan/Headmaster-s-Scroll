@@ -13,7 +13,9 @@ from headmasters_scroll.campaigns import CampaignRepository
 from headmasters_scroll.board import (
     OFF_LIMITS_MESSAGE,
     WorldBoardRepository,
+    address_display_name,
     active_faction_ids,
+    effective_map_id,
     normalize_map,
     normalize_region,
     validate_world_board,
@@ -604,6 +606,63 @@ class BoardFoundationTests(unittest.TestCase):
         missing["maps"][0]["regions"][1]["address_id"] = ""
         with self.assertRaisesRegex(ValueError, "must reference an address"):
             validate_world_board(missing)
+
+    def test_address_display_uses_date_effective_occupant_and_unoccupied_default(self):
+        document = world_document()
+        document["addresses"] = [{
+            "record_id": "address-1",
+            "location_id": "castle",
+            "name": "93 High Street",
+        }]
+        document["organizations"].append({
+            "record_id": "shopkeepers",
+            "name": "Hogsmeade Shopkeepers",
+        })
+        document["events"].extend([{
+            "record_id": "occupied",
+            "event_type": "address_occupancy_changed",
+            "title": "Shopkeepers moved in",
+            "date": "2000-01-01",
+            "address_ids": ["address-1"],
+            "owner_reference": {
+                "owner_type": "organization",
+                "record_id": "shopkeepers",
+            },
+        }, {
+            "record_id": "vacated",
+            "event_type": "address_occupancy_changed",
+            "title": "Shopkeepers moved out",
+            "date": "2001-01-01",
+            "address_ids": ["address-1"],
+        }])
+
+        self.assertEqual(
+            address_display_name(document, "address-1", "1999-12-31T12:00"),
+            "Unoccupied",
+        )
+        self.assertEqual(
+            address_display_name(document, "address-1", "2000-06-01T12:00"),
+            "Hogsmeade Shopkeepers",
+        )
+        self.assertEqual(
+            address_display_name(document, "address-1", "2001-06-01T12:00"),
+            "Unoccupied",
+        )
+
+    def test_dated_maps_replace_the_baseline_by_game_world_date(self):
+        timeline = [{
+            "record_id": "change-1",
+            "map_id": "map-future",
+            "effective_from": "2001-09-01",
+        }]
+        self.assertEqual(
+            effective_map_id("map-original", timeline, "2001-08-31T23:59"),
+            "map-original",
+        )
+        self.assertEqual(
+            effective_map_id("map-original", timeline, "2001-09-01T00:00"),
+            "map-future",
+        )
 
     def test_groups_require_one_location_and_dissolve_when_member_leaves(self):
         group = self.repository.create_group("Explorers", "castle", ["pc-1", "npc-1"])

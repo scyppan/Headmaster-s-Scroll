@@ -441,7 +441,7 @@ class MagesPage(tk.Frame):
     def refresh_period_filters(self):
         self.people_list.refresh_periods()
 
-    def save_person(self):
+    def save_person(self, save_database=True, refresh_after=True):
         if self.current_record_id is None:
             return False
 
@@ -462,6 +462,7 @@ class MagesPage(tk.Frame):
             saved_person = self.controller.update_person(
                 self.current_record_id,
                 values,
+                save_database=save_database,
             )
         except ParentLocationConflict as error:
             if not self.confirm_long_distance_parent_override(error):
@@ -473,6 +474,7 @@ class MagesPage(tk.Frame):
                 saved_person = self.controller.update_person(
                     self.current_record_id,
                     values,
+                    save_database=save_database,
                 )
             except Exception as retry_error:
                 messagebox.showerror(
@@ -498,12 +500,21 @@ class MagesPage(tk.Frame):
             except tk.TclError:
                 pass
 
-        self.refresh_people(saved_person["record_id"])
-        self.load_person(saved_person["record_id"])
-        self.records_changed_command(
-            "people",
-            (saved_person["record_id"],),
-        )
+        self.form_dirty = False
+        if refresh_after:
+            self.refresh_people(saved_person["record_id"])
+            # The form already contains the values that were just committed.
+            # Reloading the same person reset every lazily built section and
+            # made the open Events page disappear and repaint.  Adopt the
+            # canonical saved snapshot in place instead.
+            self.current_record_id = saved_person["record_id"]
+            self.person_form.accept_saved_person(saved_person)
+            self.people_list.set_selected_record(saved_person["record_id"])
+            self.update_editor_identity(saved_person)
+            self.records_changed_command(
+                "people",
+                (saved_person["record_id"],),
+            )
         self.status_command(f"Saved {saved_person['displayed_name']}")
         return True
 

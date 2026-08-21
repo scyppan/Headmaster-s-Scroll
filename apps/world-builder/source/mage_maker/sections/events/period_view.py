@@ -331,6 +331,7 @@ class PeriodEventsView(tk.Frame):
             "",
             famous_people_only=True,
         )
+        label_context = self.event_controller.association_label_context()
 
         for event in stored_events:
             if not event_visible_outside_person(event.get("event_type")):
@@ -346,7 +347,10 @@ class PeriodEventsView(tk.Frame):
             row["event_kind"] = "global"
             row["event_id"] = event["record_id"]
             row["association_labels"] = (
-                self.event_controller.association_labels(event)
+                self.event_controller.association_labels(
+                    event,
+                    label_context,
+                )
             )
             self.events.append(row)
 
@@ -356,7 +360,10 @@ class PeriodEventsView(tk.Frame):
 
             row = deepcopy(event)
             row["event_id"] = str(event.get("event_id", "") or "")
-            row["association_labels"] = self.generated_association_labels(row)
+            row["association_labels"] = self.generated_association_labels(
+                row,
+                label_context,
+            )
             self.events.append(row)
 
         self.events.sort(key=period_event_sort_key)
@@ -366,7 +373,7 @@ class PeriodEventsView(tk.Frame):
 
         self.render_events()
 
-    def generated_association_labels(self, event):
+    def generated_association_labels(self, event, label_context=None):
         person_ids = [
             str(person_id or "").strip()
             for person_id in event.get("person_ids", [])
@@ -377,14 +384,13 @@ class PeriodEventsView(tk.Frame):
             person_ids = [str(event.get("related_person_id"))]
 
         location_id = str(event.get("origin_location_id", "") or "")
-        people_by_id = {
-            option["value"]: option["label"]
-            for option in self.event_controller.people_options()
-        }
-        locations_by_id = {
-            option["value"]: option["label"]
-            for option in self.event_controller.location_options()
-        }
+        resolved_context = (
+            label_context
+            if isinstance(label_context, dict)
+            else self.event_controller.association_label_context()
+        )
+        people_by_id = resolved_context.get("people_by_id", {})
+        locations_by_id = resolved_context.get("location_labels", {})
         return {
             "people": [
                 people_by_id.get(person_id, "Missing person")

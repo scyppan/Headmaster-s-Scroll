@@ -18,6 +18,7 @@ from mage_maker.sections.items.links import (
     normalize_item_event_link_types,
     normalize_item_event_new_owners,
 )
+from mage_maker.sections.names.history import birth_name_entry
 
 WORLD_EVENT_TYPES = event_type_options("period")
 WORLD_EVENT_TYPE_LABELS = EVENT_TYPE_LABELS
@@ -218,9 +219,35 @@ def normalize_world_event(event):
     normalized["description"] = str(
         normalized.get("description", "") or ""
     ).strip()
+    if normalized["event_type"] == BIRTH_EVENT_TYPE:
+        normalized["birth_name"] = str(
+            normalized.get("birth_name", "") or ""
+        ).strip()
+    else:
+        normalized.pop("birth_name", None)
     normalized["person_ids"] = normalize_association_values(
         normalized.get("person_ids")
     )
+    if normalized["event_type"] == "foster_child":
+        normalized["foster_parent_person_ids"] = (
+            normalize_association_values(
+                normalized.get("foster_parent_person_ids")
+            )
+        )
+        normalized["foster_child_person_ids"] = (
+            normalize_association_values(
+                normalized.get("foster_child_person_ids")
+            )
+        )
+        normalized["person_ids"] = normalize_association_values(
+            [
+                *normalized["foster_parent_person_ids"],
+                *normalized["foster_child_person_ids"],
+            ]
+        )
+    else:
+        normalized.pop("foster_parent_person_ids", None)
+        normalized.pop("foster_child_person_ids", None)
     has_witness_role = (
         "witness_person_ids" in normalized
         or normalized["event_type"] == "murder"
@@ -372,6 +399,21 @@ def normalize_world_event(event):
     normalized["item_ids"] = normalize_association_values(
         normalized.get("item_ids")
     )
+    normalized["book_ids"] = normalize_association_values(
+        normalized.get("book_ids")
+    )
+    if normalized["event_type"] == "published_book":
+        if len(normalized["book_ids"]) != 1:
+            raise ValueError(
+                "A Published book event must link exactly one book."
+            )
+        normalized["book_author_name"] = " ".join(
+            str(normalized.get("book_author_name", "") or "")
+            .strip()
+            .split()
+        )
+    else:
+        normalized.pop("book_author_name", None)
     normalized["item_link_types"] = normalize_item_event_link_types(
         normalized.get("item_link_types"),
         normalized["item_ids"],
@@ -948,6 +990,9 @@ def birth_event_from_person(person, existing_event=None):
     existing_locations = normalize_association_values(
         event.get("location_ids")
     )[-1:]
+    explicit_birth_name = birth_name_entry(
+        person_values.get("name_details", {})
+    )
     event.update(
         {
             "record_id": str(
@@ -987,6 +1032,12 @@ def birth_event_from_person(person, existing_event=None):
             ),
             "locked_location_ids": [],
             "automatic_source": BIRTH_EVENT_SOURCE,
+            "birth_name": str(
+                (explicit_birth_name or {}).get("name_entry", "") or ""
+            ).strip(),
+            "related_name_entry_id": str(
+                (explicit_birth_name or {}).get("entry_id", "") or ""
+            ).strip(),
         }
     )
     return normalize_world_event(event)

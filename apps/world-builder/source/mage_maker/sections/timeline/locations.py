@@ -15,9 +15,7 @@ LEGACY_LONG_DISTANCE_NOTE = (
 )
 PRESERVE_PARENT_LOCATION_OVERRIDE = object()
 LIFE_START_SOURCE = "life_start"
-STARTING_LOCATION_EVENT_ID = "life-start:starting-location"
 BORN_EVENT_ID = "life-start:born"
-BIRTH_NAME_EVENT_ID = "life-start:birth-name"
 
 
 class ParentLocationConflict(ValueError):
@@ -67,7 +65,6 @@ def ensure_life_start_events(
     events = normalize_timeline_events(person_values.get("timeline_events", []))
     starting_event = first_event_of_type(events, "starting_location")
     born_event = first_event_of_type(events, "born")
-    birth_name_event = first_event_of_type(events, "birth_name")
     retained_events = [
         deepcopy(event)
         for event in events
@@ -83,7 +80,9 @@ def ensure_life_start_events(
         str(starting_location or "").strip()
         if starting_location is not None
         else str(
-            (starting_event or {}).get("detail", "") or ""
+            (born_event or {}).get("detail", "")
+            or (starting_event or {}).get("detail", "")
+            or ""
         ).strip()
     )
     resolved_born_note = (
@@ -91,27 +90,15 @@ def ensure_life_start_events(
         if born_note is not None
         else str((born_event or {}).get("note", "") or "").strip()
     )
-    starting_values = deepcopy(starting_event) if starting_event else {}
-    starting_values.update(
-        {
-            "event_id": str(
-                starting_values.get("event_id")
-                or STARTING_LOCATION_EVENT_ID
-            ),
-            "event_type": "starting_location",
-            "detail": resolved_starting_location,
-            "date": birth_date,
-            "note": str(starting_values.get("note", "") or "").strip(),
-            "related_person_id": "",
-            "automatic_source": LIFE_START_SOURCE,
-        }
-    )
     born_values = deepcopy(born_event) if born_event else {}
     born_values.update(
         {
             "event_id": str(born_values.get("event_id") or BORN_EVENT_ID),
             "event_type": "born",
-            "detail": "",
+            # The one opening event owns the starting location.  Keeping the
+            # label here also lets old location-history readers migrate
+            # without retaining a second embedded event.
+            "detail": resolved_starting_location,
             "date": birth_date,
             "note": resolved_born_note,
             "related_person_id": "",
@@ -129,39 +116,34 @@ def ensure_life_start_events(
             else []
         )
 
-        for opening_event in (starting_values, born_values):
-            opening_event["location_ids"] = selected_location_ids
-            opening_event["locked_location_ids"] = []
+        born_values["location_ids"] = selected_location_ids
+        born_values["locked_location_ids"] = []
 
-            if normalized_location_id:
-                opening_event["birth_location_source"] = "manual"
-            else:
-                opening_event.pop("birth_location_source", None)
+        if normalized_location_id:
+            born_values["birth_location_source"] = "manual"
+        else:
+            born_values.pop("birth_location_source", None)
+    elif not born_values.get("location_ids") and starting_event:
+        born_values["location_ids"] = deepcopy(
+            starting_event.get("location_ids", [])
+        )
+        born_values["locked_location_ids"] = []
+
+        if starting_event.get("birth_location_source"):
+            born_values["birth_location_source"] = str(
+                starting_event.get("birth_location_source") or ""
+            ).strip()
 
     explicit_birth_name = birth_name_entry(person_values.get("name_details", {}))
-    birth_name_values = deepcopy(birth_name_event) if birth_name_event else {}
-    birth_name_values.update(
-        {
-            "event_id": str(
-                birth_name_values.get("event_id") or BIRTH_NAME_EVENT_ID
-            ),
-            "event_type": "birth_name",
-            "detail": str(
-                (explicit_birth_name or {}).get("name_entry", "")
-                or person_values.get("displayed_name", "")
-                or "Unnamed magician"
-            ).strip(),
-            "date": birth_date,
-            "note": str(
-                (explicit_birth_name or {}).get("note", "") or ""
-            ).strip(),
-            "related_person_id": "",
-            "related_name_entry_id": str(
-                (explicit_birth_name or {}).get("entry_id", "") or ""
-            ).strip(),
-            "automatic_source": LIFE_START_SOURCE,
-        }
-    )
+    born_values["birth_name"] = str(
+        (explicit_birth_name or {}).get("name_entry", "") or ""
+    ).strip()
+    born_values["related_name_entry_id"] = str(
+        (explicit_birth_name or {}).get("entry_id", "") or ""
+    ).strip()
+    born_values["baby_person_ids"] = [
+        str(person_values.get("record_id", "") or "").strip()
+    ] if str(person_values.get("record_id", "") or "").strip() else []
 
     if long_distance_parent_ids is PRESERVE_PARENT_LOCATION_OVERRIDE:
         resolved_parent_location_override_ids = (
@@ -187,9 +169,7 @@ def ensure_life_start_events(
 
     return normalize_timeline_events(
         [
-            normalize_timeline_event(starting_values),
             normalize_timeline_event(born_values),
-            normalize_timeline_event(birth_name_values),
             *retained_events,
         ]
     )
@@ -204,10 +184,12 @@ def first_event_of_type(events, event_type):
 
 
 def starting_location_from_events(events):
-    event = first_event_of_type(
-        normalize_timeline_events(events),
-        "starting_location",
-    )
+    normalized_events = normalize_timeline_events(events)
+    event = first_event_of_type(normalized_events, "born")
+
+    if not str((event or {}).get("detail", "") or "").strip():
+        event = first_event_of_type(normalized_events, "starting_location")
+
     return str((event or {}).get("detail", "") or "").strip()
 
 
@@ -325,11 +307,22 @@ def location_at_date(
     }
 
     for shared_event in shared_events or []:
-        if (
-            not isinstance(shared_event, dict)
-            or shared_event.get("event_type") != "relocated"
-            or person_id not in shared_event.get("person_ids", [])
-        ):
+        if not isinstance(shared_event, dict):
+            continue
+
+        shared_event_type = str(
+            shared_event.get("event_type", "") or ""
+        ).strip()
+        is_person_birth = (
+            shared_event_type == "born"
+            and person_id in shared_event.get("baby_person_ids", [])
+        )
+        is_person_relocation = (
+            shared_event_type == "relocated"
+            and person_id in shared_event.get("person_ids", [])
+        )
+
+        if not is_person_birth and not is_person_relocation:
             continue
 
         location_ids = [
@@ -359,7 +352,9 @@ def location_at_date(
                     "event_id": str(
                         shared_event.get("record_id", "") or ""
                     ),
-                    "event_type": "relocated",
+                    "event_type": (
+                        "born" if is_person_birth else "relocated"
+                    ),
                     "detail": location_name,
                     "date": str(shared_event.get("date", "") or ""),
                     "time": str(shared_event.get("time", "") or ""),
@@ -370,7 +365,7 @@ def location_at_date(
     location_events = [
         event
         for event in events
-        if event.get("event_type") in ("starting_location", "relocated")
+        if event.get("event_type") in ("born", "starting_location", "relocated")
         and str(event.get("detail", "") or "").strip()
     ]
 
@@ -390,7 +385,13 @@ def location_at_date(
         eligible_events.sort(key=location_event_sort_key)
         return str(eligible_events[-1][2].get("detail", "") or "").strip()
 
-    starting_event = first_event_of_type(location_events, "starting_location")
+    starting_event = first_event_of_type(location_events, "born")
+
+    if starting_event is None:
+        starting_event = first_event_of_type(
+            location_events,
+            "starting_location",
+        )
 
     if starting_event is not None:
         return str(starting_event.get("detail", "") or "").strip()
@@ -422,7 +423,7 @@ def location_event_sort_key(item):
     return (
         event_key is not None,
         event_key or (0, 0, 0),
-        0 if event.get("event_type") == "starting_location" else 1,
+        0 if event.get("event_type") in ("born", "starting_location") else 1,
         event_time_sort_key(event.get("time")),
         index,
     )

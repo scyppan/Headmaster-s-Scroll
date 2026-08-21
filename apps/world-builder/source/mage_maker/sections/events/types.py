@@ -15,6 +15,10 @@ EVENT_TYPE_DEFINITIONS = (
     ("started_job", "Started job", ("person",), False),
     ("received_raise", "Received a raise", ("person",), False),
     ("began_friendship", "Began friendship", ("person",), False),
+    # Foster care is authored from the Relationships tab because it needs
+    # explicit parent/child roles.  Existing foster events remain editable
+    # from the general event editor once selected.
+    ("foster_child", "Foster child", ("relationship",), False),
     ("taught_spell", "Taught a spell", ("person",), False),
     ("taught_proficiency", "Taught a proficiency", ("person",), False),
     ("taught_recipe", "Taught a recipe", ("person",), False),
@@ -27,6 +31,12 @@ EVENT_TYPE_DEFINITIONS = (
     ("relocated", "Relocated", ("person",), False),
     ("travel", "Travel", ("person",), False),
     ("crafted", "Crafted", ("person",), False),
+    (
+        "published_book",
+        "Published a book",
+        ("person", "book"),
+        False,
+    ),
     ("item_event", "Item event", ("person", "item"), False),
     ("gifted", "Gifted", ("person", "item"), False),
     ("destroyed", "Destroyed", ("item",), False),
@@ -57,6 +67,24 @@ EVENT_TYPE_DEFINITIONS = (
     ("education", "Education", ("location",), False),
     ("cultural", "Cultural", ("location",), False),
     ("disaster", "Disaster", ("location",), False),
+    (
+        "address_owner_changed",
+        "New owner",
+        ("location",),
+        False,
+    ),
+    (
+        "address_occupancy_changed",
+        "New occupant",
+        ("location",),
+        False,
+    ),
+    (
+        "address_contents_changed",
+        "New inventory",
+        ("location",),
+        False,
+    ),
     ("other", "General event", ("location",), False),
 )
 EVENT_TYPE_LABELS = {
@@ -94,6 +122,8 @@ LEGACY_EVENT_TYPE_ALIASES = {
     "started job": "started_job",
     "received a raise": "received_raise",
     "began friendship": "began_friendship",
+    "foster child": "foster_child",
+    "fostered a child": "foster_child",
     "extinct": "extinction",
     "extinction": "extinction",
     "relocation": "relocated",

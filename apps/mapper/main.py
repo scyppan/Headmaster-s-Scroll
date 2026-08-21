@@ -22,6 +22,7 @@ from headmasters_scroll.board import (
     ensure_board_collections,
     normalize_region,
     normalize_warp_point,
+    normalize_map_timeline,
 )
 from headmasters_scroll.assets import MAP_CANVAS_HEIGHT, MAP_CANVAS_WIDTH
 from headmasters_scroll.preferences import Preferences
@@ -31,7 +32,12 @@ from headmasters_scroll.region_interactions import ensure_gathering_catalog
 from headmasters_scroll.windowing import MAPPER_ICON, apply_window_icon, configure_windows_app_id, maximize_window
 from apps.mapper.catalog_cache import MapperCatalogCache, source_fingerprint
 from apps.mapper.region_content_dialog import RegionContentDialog
-from apps.mapper.address_dialogs import AddressManagerDialog
+from apps.mapper.address_dialogs import (
+    AddressChooser,
+    AddressManagerDialog,
+    format_address_event_date,
+    prompt_game_world_date,
+)
 
 
 BEHAVIOR_LABELS = {
@@ -359,6 +365,9 @@ class MapperWindow(tk.Tk):
         self.location_options: dict[str, str] = {}
         self.selected_location_id = str(self.preferences.get("last_location_id", "") or "")
         self.selected_floor_id = str(self.preferences.get("last_floor_id", "") or "")
+        self.selected_map_history_entry_id = str(
+            self.preferences.get("last_map_history_entry_id", "") or ""
+        )
         self.recent_map_ids = updated_recent_map_ids(
             self.preferences.get("recent_map_ids", []), ""
         )
@@ -465,6 +474,7 @@ class MapperWindow(tk.Tk):
         details.pack(fill="x", pady=(7, 0))
         self.floor_value = tk.StringVar(value="Select a location")
         self.has_floors_value = tk.BooleanVar(value=False)
+        self.has_map_history_value = tk.BooleanVar(value=False)
         self.image_value = tk.StringVar(value="No image")
         ttk.Label(details, textvariable=self.floor_value, style="MapperCard.TLabel", font=("Segoe UI", 9, "bold")).pack(anchor="w")
         floor_controls = ttk.Frame(details)
@@ -485,10 +495,25 @@ class MapperWindow(tk.Tk):
         self.manage_floors_button.pack(side="right")
         self.manage_addresses_button = ttk.Button(
             floor_controls,
-            text="Address history…",
+            text="Addresses…",
             command=self.manage_addresses,
         )
         self.manage_addresses_button.pack(side="right", padx=(0, 4))
+        history_controls = ttk.Frame(details)
+        history_controls.pack(fill="x", pady=(3, 0))
+        self.has_map_history_check = ttk.Checkbutton(
+            history_controls,
+            text="Maps change over time",
+            variable=self.has_map_history_value,
+            command=self.has_map_history_changed,
+        )
+        self.has_map_history_check.pack(side="left")
+        self.manage_map_history_button = ttk.Button(
+            history_controls,
+            text="Map dates…",
+            command=self.manage_map_history,
+        )
+        self.manage_map_history_button.pack(side="right")
         self.update_floor_control_state()
         ttk.Label(details, textvariable=self.image_value, wraplength=250).pack(anchor="w", pady=(4, 2))
         buttons = ttk.Frame(details)
@@ -579,28 +604,31 @@ class MapperWindow(tk.Tk):
         self.region_name = tk.StringVar()
         self.region_behavior = tk.StringVar(value="Area")
         self.region_target = tk.StringVar(value="Not applicable")
-        ttk.Label(props, text="Name").pack(anchor="w")
+        self.region_name_heading = ttk.Label(props, text="Name")
+        self.region_name_heading.pack(anchor="w")
         self.region_name_entry = ttk.Entry(props, textvariable=self.region_name)
         self.region_name_entry.pack(fill="x")
         self.region_name_entry.bind("<FocusOut>", self.region_property_focus_out)
-        ttk.Label(props, text="Behavior").pack(anchor="w", pady=(5, 0))
+        self.behavior_heading = ttk.Label(props, text="Behavior")
+        self.behavior_heading.pack(anchor="w", pady=(5, 0))
         self.behavior_select = ttk.Combobox(props, textvariable=self.region_behavior, state="readonly", values=list(BEHAVIOR_LABELS.values()))
         self.behavior_select.pack(fill="x")
         self.behavior_select.bind("<<ComboboxSelected>>", self.region_behavior_changed)
         self.behavior_select.bind("<FocusOut>", self.region_property_focus_out)
         self.region_address = tk.StringVar()
         self.address_frame = ttk.Frame(props)
-        ttk.Label(self.address_frame, text="Address").pack(anchor="w")
-        address_row = ttk.Frame(self.address_frame)
-        address_row.pack(fill="x")
-        self.address_entry = ttk.Entry(
-            address_row,
-            textvariable=self.region_address,
+        ttk.Label(self.address_frame, textvariable=self.region_address).pack(
+            side="left",
+            fill="x",
+            expand=True,
         )
-        self.address_entry.pack(side="left", fill="x", expand=True)
-        self.address_entry.bind("<FocusOut>", self.address_focus_out)
         ttk.Button(
-            address_row,
+            self.address_frame,
+            text="Link address…",
+            command=self.choose_region_address,
+        ).pack(side="left")
+        ttk.Button(
+            self.address_frame,
             text="History…",
             command=self.open_selected_address_history,
         ).pack(side="left", padx=(4, 0))
@@ -732,6 +760,7 @@ class MapperWindow(tk.Tk):
             "last_map_id": self.selected_map_id,
             "last_location_id": self.selected_location_id,
             "last_floor_id": self.selected_floor_id,
+            "last_map_history_entry_id": self.selected_map_history_entry_id,
             "recent_map_ids": list(self.recent_map_ids),
         })
         try:
@@ -760,6 +789,13 @@ class MapperWindow(tk.Tk):
             self.has_floors_check.state(["disabled"])
             self.manage_floors_button.state(["disabled"])
             self.manage_addresses_button.state(["disabled"])
+        role_selected = bool(self.selected_location_id)
+        if role_selected:
+            self.has_map_history_check.state(["!disabled"])
+            self.manage_map_history_button.state(["!disabled"])
+        else:
+            self.has_map_history_check.state(["disabled"])
+            self.manage_map_history_button.state(["disabled"])
 
     def confirm_discard(self) -> bool:
         if (
@@ -809,7 +845,14 @@ class MapperWindow(tk.Tk):
                 # map. Never leave its shapes or image displayed under the new
                 # catalog state.
                 self.clear_map_editor()
-            selected = f"floor:{self.selected_location_id}:{self.selected_floor_id}" if self.selected_floor_id else f"location:{self.selected_location_id}"
+            if self.selected_map_history_entry_id:
+                selected = (
+                    f"history:{self.selected_location_id}:"
+                    f"{self.selected_floor_id or '-'}:"
+                    f"{self.selected_map_history_entry_id}"
+                )
+            else:
+                selected = f"floor:{self.selected_location_id}:{self.selected_floor_id}" if self.selected_floor_id else f"location:{self.selected_location_id}"
             if self.selected_location_id and self.map_tree.exists(selected):
                 self.map_tree.selection_set(selected)
                 self.map_tree.see(selected)
@@ -874,10 +917,12 @@ class MapperWindow(tk.Tk):
                     selected_map_id = self.selected_map_id
                     selected_location_id = self.selected_location_id
                     selected_floor_id = self.selected_floor_id
+                    selected_history_entry_id = self.selected_map_history_entry_id
                     self.world_session = None
                     self.selected_map_id = selected_map_id
                     self.selected_location_id = selected_location_id
                     self.selected_floor_id = selected_floor_id
+                    self.selected_map_history_entry_id = selected_history_entry_id
                     self.refresh()
                     self.status_value.set("Mapper refreshed after an external save")
         except (OSError, ValueError):
@@ -933,16 +978,35 @@ class MapperWindow(tk.Tk):
             tree_id = f"location:{location_id}"
             self.map_tree.insert(parent_tree_id, "end", iid=tree_id, text=f"{location_name}{suffix}", open=bool(query))
             inserted.add(location_id)
+            for entry in normalize_map_timeline(location.get("map_timeline", [])):
+                dated_map = maps_by_id.get(entry["map_id"])
+                dated_suffix = "" if dated_map and dated_map.get("asset") else " — No map"
+                self.map_tree.insert(
+                    tree_id,
+                    "end",
+                    iid=f"history:{location_id}:-:{entry['record_id']}",
+                    text=f"From {format_address_event_date(entry['effective_from'])}{dated_suffix}",
+                )
             for floor in floors:
                 floor_id = str(floor.get("record_id", ""))
                 floor_map = maps_by_id.get(str(floor.get("primary_map_id", "")))
                 floor_suffix = "" if floor_map and floor_map.get("asset") else " — No map"
+                floor_tree_id = f"floor:{location_id}:{floor_id}"
                 self.map_tree.insert(
                     tree_id,
                     "end",
-                    iid=f"floor:{location_id}:{floor_id}",
+                    iid=floor_tree_id,
                     text=f"{floor.get('name', 'Unnamed')}{floor_suffix}",
                 )
+                for entry in normalize_map_timeline(floor.get("map_timeline", [])):
+                    dated_map = maps_by_id.get(entry["map_id"])
+                    dated_suffix = "" if dated_map and dated_map.get("asset") else " — No map"
+                    self.map_tree.insert(
+                        floor_tree_id,
+                        "end",
+                        iid=f"history:{location_id}:{floor_id}:{entry['record_id']}",
+                        text=f"From {format_address_event_date(entry['effective_from'])}{dated_suffix}",
+                    )
             next_ancestry = ancestry | {location_id}
             for child in children.get(location_id, []):
                 insert_location(child, tree_id, next_ancestry)
@@ -990,10 +1054,19 @@ class MapperWindow(tk.Tk):
             return
         self.region_property_focus_out()
         self.flush_metadata_save()
-        parts = selected[0].split(":", 2)
+        parts = selected[0].split(":")
         location_id = parts[1] if len(parts) > 1 else ""
-        floor_id = parts[2] if len(parts) > 2 and parts[0] == "floor" else ""
-        if location_id == self.selected_location_id and floor_id == self.selected_floor_id:
+        history_entry_id = parts[3] if len(parts) > 3 and parts[0] == "history" else ""
+        floor_id = ""
+        if parts[0] == "floor" and len(parts) > 2:
+            floor_id = parts[2]
+        elif parts[0] == "history" and len(parts) > 2 and parts[2] != "-":
+            floor_id = parts[2]
+        if (
+            location_id == self.selected_location_id
+            and floor_id == self.selected_floor_id
+            and history_entry_id == self.selected_map_history_entry_id
+        ):
             return
         if not self.confirm_discard():
             previous = f"floor:{self.selected_location_id}:{self.selected_floor_id}" if self.selected_floor_id else f"location:{self.selected_location_id}"
@@ -1005,18 +1078,32 @@ class MapperWindow(tk.Tk):
             return
         self.selected_location_id = location_id
         self.selected_floor_id = floor_id
+        self.selected_map_history_entry_id = history_entry_id
         self.floor_value.set(next((str(floor.get("name", "Unnamed")) for floor in location.get("floors", []) or [] if str(floor.get("record_id")) == floor_id), "Default location map"))
         self.has_floors_value.set(bool(location.get("has_floors", False)))
         self.update_floor_control_state()
+        owner = location
         map_id = str(location.get("default_map_id", ""))
         if floor_id:
             floor = next((item for item in location.get("floors", []) or [] if str(item.get("record_id")) == floor_id), {})
+            owner = floor
             map_id = str(floor.get("primary_map_id", ""))
+        if history_entry_id:
+            map_id = next(
+                (
+                    entry["map_id"]
+                    for entry in normalize_map_timeline(owner.get("map_timeline", []))
+                    if entry["record_id"] == history_entry_id
+                ),
+                "",
+            )
+        self.has_map_history_value.set(bool(owner.get("has_map_history", False) or owner.get("map_timeline")))
         record = next((item for item in self.maps if str(item.get("record_id")) == map_id), None)
         if record:
             # The same record may be selected through the location row or its
             # named floor row, so retain the row's role explicitly.
             self.load_map(record, floor_id)
+            self.selected_map_history_entry_id = history_entry_id
         else:
             self.clear_map_editor()
             self.status_value.set(f"{self.map_display_name()} has no map yet")
@@ -1039,6 +1126,13 @@ class MapperWindow(tk.Tk):
         )
         self.floor_value.set(next((str(floor.get("name", "Unnamed")) for floor in (location or {}).get("floors", []) or [] if str(floor.get("record_id")) == self.selected_floor_id), "Default location map"))
         self.has_floors_value.set(bool((location or {}).get("has_floors", False)))
+        owner = location or {}
+        if self.selected_floor_id:
+            owner = next(
+                (floor for floor in owner.get("floors", []) or [] if str(floor.get("record_id")) == self.selected_floor_id),
+                {},
+            )
+        self.has_map_history_value.set(bool(owner.get("has_map_history", False) or owner.get("map_timeline")))
         self.update_floor_control_state()
         self.regions = deepcopy(record.get("regions", []) or [])
         self.warp_points = deepcopy(record.get("warp_points", []) or [])
@@ -1138,6 +1232,239 @@ class MapperWindow(tk.Tk):
         except Exception as error:
             self.has_floors_value.set(bool(location.get("has_floors", False)))
             messagebox.showerror("Cannot update location", str(error), parent=self)
+
+    def _selected_map_role(self, location: dict) -> dict:
+        if not self.selected_floor_id:
+            return location
+        return next(
+            (
+                floor for floor in location.get("floors", []) or []
+                if str(floor.get("record_id", "")) == self.selected_floor_id
+            ),
+            {},
+        )
+
+    def has_map_history_changed(self) -> None:
+        location = next(
+            (item for item in self.locations if str(item.get("record_id")) == self.selected_location_id),
+            None,
+        )
+        if location is None:
+            self.has_map_history_value.set(False)
+            return
+        role = self._selected_map_role(location)
+        enabled = bool(self.has_map_history_value.get())
+        if not enabled and role.get("map_timeline"):
+            messagebox.showinfo(
+                "Dated maps",
+                "Remove the dated map entries before turning off map history.",
+                parent=self,
+            )
+            self.has_map_history_value.set(True)
+            return
+        try:
+            session = self.edit_session()
+            stored_location = next(
+                item for item in session.data["locations"]
+                if str(item.get("record_id")) == self.selected_location_id
+            )
+            stored_role = self._selected_map_role(stored_location)
+            stored_role["has_map_history"] = enabled
+            saved = self.save_session(session)
+            self.locations = sorted(
+                saved.get("locations", []),
+                key=lambda item: str(item.get("name", "")).casefold(),
+            )
+            self.status_value.set(
+                "Dated maps enabled" if enabled else "Dated maps disabled"
+            )
+        except Exception as error:
+            self.has_map_history_value.set(bool(role.get("has_map_history", False)))
+            messagebox.showerror("Cannot update map history", str(error), parent=self)
+
+    @staticmethod
+    def _clone_map_for_date(source: dict | None, location_id: str, floor_id: str) -> dict:
+        now = utc_now()
+        clone = deepcopy(source) if isinstance(source, dict) else {}
+        clone["record_id"] = str(uuid4())
+        clone["location_id"] = location_id
+        clone["floor_id"] = floor_id
+        clone["created_at"] = now
+        clone["last_updated"] = now
+        clone["players_published"] = False
+        warp_id_map: dict[str, str] = {}
+        for warp in clone.get("warp_points", []) or []:
+            old_id = str(warp.get("record_id", ""))
+            new_id = str(uuid4())
+            warp["record_id"] = new_id
+            if old_id:
+                warp_id_map[old_id] = new_id
+        for region in clone.get("regions", []) or []:
+            region["record_id"] = str(uuid4())
+            target_warp = str(region.get("target_warp_point_id", "") or "")
+            if target_warp in warp_id_map:
+                region["target_warp_point_id"] = warp_id_map[target_warp]
+        return clone
+
+    def manage_map_history(self) -> None:
+        location = next(
+            (item for item in self.locations if str(item.get("record_id")) == self.selected_location_id),
+            None,
+        )
+        if location is None:
+            messagebox.showinfo("Dated maps", "Select a location or floor first.", parent=self)
+            return
+        role = self._selected_map_role(location)
+        if not role:
+            return
+        timeline = deepcopy(normalize_map_timeline(role.get("map_timeline", [])))
+        working_maps = deepcopy(self.maps)
+        baseline_id = str(
+            role.get("primary_map_id" if self.selected_floor_id else "default_map_id", "") or ""
+        )
+
+        dialog = tk.Toplevel(self)
+        dialog.title(f"Dated maps — {self.map_display_name()}")
+        dialog.geometry("650x470")
+        dialog.minsize(520, 360)
+        dialog.transient(self)
+        dialog.grab_set()
+        body = ttk.Frame(dialog, padding=12)
+        body.pack(fill="both", expand=True)
+        ttk.Label(
+            body,
+            text="The baseline map remains in effect until the first dated replacement.",
+            wraplength=600,
+        ).pack(fill="x", pady=(0, 7))
+        tree = ttk.Treeview(body, columns=("map",), show="tree headings", selectmode="browse")
+        tree.heading("#0", text="Effective from")
+        tree.heading("map", text="Map")
+        tree.column("#0", width=175)
+        tree.column("map", width=390)
+        tree.pack(fill="both", expand=True)
+
+        def map_name(map_id: str) -> str:
+            record = next((item for item in working_maps if str(item.get("record_id")) == map_id), {})
+            return str(record.get("name", "Dated map") or "Dated map")
+
+        def render(selected_id: str = "") -> None:
+            tree.delete(*tree.get_children())
+            for entry in normalize_map_timeline(timeline):
+                tree.insert(
+                    "", "end", iid=entry["record_id"],
+                    text=format_address_event_date(entry["effective_from"]),
+                    values=(map_name(entry["map_id"]),),
+                )
+            if selected_id and tree.exists(selected_id):
+                tree.selection_set(selected_id)
+                tree.see(selected_id)
+
+        def ask_date(initial: str = "") -> str:
+            return prompt_game_world_date(
+                dialog,
+                title="Game World Date",
+                initial=initial,
+            )
+
+        def add() -> None:
+            try:
+                effective_from = ask_date()
+            except ValueError as error:
+                messagebox.showerror("Invalid date", str(error), parent=dialog)
+                return
+            if not effective_from:
+                return
+            if any(entry["effective_from"] == effective_from for entry in timeline):
+                messagebox.showerror("Duplicate date", "A map already begins on that date.", parent=dialog)
+                return
+            source_id = timeline[-1]["map_id"] if timeline else (self.selected_map_id or baseline_id)
+            source = next((item for item in working_maps if str(item.get("record_id")) == source_id), None)
+            clone = self._clone_map_for_date(source, self.selected_location_id, self.selected_floor_id)
+            clone["name"] = f"{self.map_display_name()} — {format_address_event_date(effective_from)}"
+            working_maps.append(clone)
+            entry = {
+                "record_id": str(uuid4()),
+                "map_id": str(clone["record_id"]),
+                "effective_from": effective_from,
+            }
+            timeline.append(entry)
+            timeline[:] = normalize_map_timeline(timeline)
+            render(entry["record_id"])
+
+        def edit_date() -> None:
+            selected = tree.selection()
+            entry = next((item for item in timeline if selected and item["record_id"] == selected[0]), None)
+            if entry is None:
+                return
+            try:
+                effective_from = ask_date(entry["effective_from"])
+            except ValueError as error:
+                messagebox.showerror("Invalid date", str(error), parent=dialog)
+                return
+            if not effective_from:
+                return
+            if any(
+                item["record_id"] != entry["record_id"] and item["effective_from"] == effective_from
+                for item in timeline
+            ):
+                messagebox.showerror("Duplicate date", "A map already begins on that date.", parent=dialog)
+                return
+            entry["effective_from"] = effective_from
+            timeline[:] = normalize_map_timeline(timeline)
+            render(entry["record_id"])
+
+        def remove() -> None:
+            selected = tree.selection()
+            entry = next((item for item in timeline if selected and item["record_id"] == selected[0]), None)
+            if entry is None:
+                return
+            if not messagebox.askyesno(
+                "Remove dated map", "Remove this dated map reference?", parent=dialog
+            ):
+                return
+            timeline.remove(entry)
+            referenced_elsewhere = {baseline_id}
+            referenced_elsewhere.update(item["map_id"] for item in timeline)
+            if entry["map_id"] not in referenced_elsewhere:
+                working_maps[:] = [
+                    item for item in working_maps
+                    if str(item.get("record_id")) != entry["map_id"]
+                ]
+            render()
+
+        def apply() -> None:
+            try:
+                session = self.edit_session()
+                stored_location = next(
+                    item for item in session.data["locations"]
+                    if str(item.get("record_id")) == self.selected_location_id
+                )
+                stored_role = self._selected_map_role(stored_location)
+                stored_role["map_timeline"] = deepcopy(normalize_map_timeline(timeline))
+                stored_role["has_map_history"] = bool(timeline)
+                session.data["maps"] = deepcopy(working_maps)
+                saved = self.save_session(session)
+                self.maps = list(saved.get("maps", []))
+                self.locations = sorted(
+                    saved.get("locations", []),
+                    key=lambda item: str(item.get("name", "")).casefold(),
+                )
+                self.has_map_history_value.set(bool(timeline))
+                self.render_catalog()
+                self.status_value.set(f"{len(timeline)} dated map change{'s' if len(timeline) != 1 else ''} saved")
+                dialog.destroy()
+            except Exception as error:
+                messagebox.showerror("Cannot save dated maps", str(error), parent=dialog)
+
+        buttons = ttk.Frame(body)
+        buttons.pack(fill="x", pady=(7, 0))
+        ttk.Button(buttons, text="+", width=3, command=add).pack(side="left")
+        ttk.Button(buttons, text="Edit date", command=edit_date).pack(side="left", padx=4)
+        ttk.Button(buttons, text="−", width=3, command=remove).pack(side="left")
+        ttk.Button(buttons, text="Cancel", command=dialog.destroy).pack(side="right")
+        ttk.Button(buttons, text="Apply", command=apply).pack(side="right", padx=(0, 5))
+        tree.bind("<Double-Button-1>", lambda _event: edit_date())
+        render()
 
     def manage_floors(self) -> None:
         """Rename, order, and map stable floor records for one location."""
@@ -1432,6 +1759,7 @@ class MapperWindow(tk.Tk):
             return
         try:
             session = self.edit_session()
+            catalog = self.shared_store.load("db.json").data
         except Exception as error:
             messagebox.showerror("Cannot load addresses", str(error), parent=self)
             return
@@ -1457,6 +1785,7 @@ class MapperWindow(tk.Tk):
         AddressManagerDialog(
             self,
             session.data,
+            catalog,
             self.selected_location_id,
             apply,
             selected_address_id=selected_address_id,
@@ -1690,7 +2019,11 @@ class MapperWindow(tk.Tk):
             ):
                 record_floor_id = existing_floor_id
             record.update(
-                name=map_name_for_floor(location, record_floor_id),
+                name=(
+                    str(record.get("name", "") or map_name_for_floor(location, record_floor_id))
+                    if self.selected_map_history_entry_id
+                    else map_name_for_floor(location, record_floor_id)
+                ),
                 location_id=location_id,
                 floor_id=record_floor_id,
                 asset=asset,
@@ -1699,10 +2032,13 @@ class MapperWindow(tk.Tk):
                 last_updated=now,
             )
             location["has_floors"] = bool(location.get("has_floors", False) or self.has_floors_value.get())
-            if not floor_id:
+            if not floor_id and not self.selected_map_history_entry_id:
                 location["default_map_id"] = map_id
             for floor in location.get("floors", []) or []:
-                if str(floor.get("record_id")) == floor_id:
+                if (
+                    str(floor.get("record_id")) == floor_id
+                    and not self.selected_map_history_entry_id
+                ):
                     floor["primary_map_id"] = map_id
             saved_document = self.save_session(session)
             if asset:
@@ -1886,14 +2222,15 @@ class MapperWindow(tk.Tk):
                 label_offset = region.get("label_offset", {}) or {}
                 cx += float(label_offset.get("x", 0.0)) * self.map_width * self.scale
                 cy += float(label_offset.get("y", 0.0)) * self.map_height * self.scale
-                self.canvas.create_text(
-                    cx,
-                    cy,
-                    text=region["name"],
-                    fill="#000000",
-                    font=("Segoe UI", 10, "bold"),
-                    tags=(f"region-label:{region['record_id']}", "region-label"),
-                )
+                if str(region.get("behavior_type", "")) != "address":
+                    self.canvas.create_text(
+                        cx,
+                        cy,
+                        text=region["name"],
+                        fill="#000000",
+                        font=("Segoe UI", 10, "bold"),
+                        tags=(f"region-label:{region['record_id']}", "region-label"),
+                    )
                 if self.mode == "edit":
                     for index, point in enumerate(region["points"]):
                         x, y = self.normal_to_canvas(point)
@@ -2556,7 +2893,7 @@ class MapperWindow(tk.Tk):
                 self.region_name.set(region["name"])
                 self.region_behavior.set(BEHAVIOR_LABELS.get(region.get("behavior_type"), "Area"))
                 self.region_address.set(
-                    self.mapped_address_name(region.get("address_id", ""))
+                    self.mapped_address_label(region.get("address_id", ""))
                 )
                 self.hover_text.delete("1.0", "end")
                 self.hover_text.insert("1.0", region.get("hover_text", ""))
@@ -2588,7 +2925,7 @@ class MapperWindow(tk.Tk):
         try:
             self.region_name.set("")
             self.region_behavior.set("Area")
-            self.region_address.set("")
+            self.region_address.set("No address linked")
             if hasattr(self, "hover_text"):
                 self.hover_text.delete("1.0", "end")
                 self.hover_text.edit_modified(False)
@@ -2642,15 +2979,28 @@ class MapperWindow(tk.Tk):
 
     def render_target_controls(self) -> None:
         behavior = next((key for key, label in BEHAVIOR_LABELS.items() if label == self.region_behavior.get()), "area")
+        self.region_name_heading.pack_forget()
+        self.region_name_entry.pack_forget()
         self.address_frame.pack_forget()
+        self.hover_heading.pack_forget()
+        self.hover_text.pack_forget()
         self.secret_frame.pack_forget()
         self.contents_button.pack_forget()
         if behavior == "address":
             self.address_frame.pack(
                 fill="x",
                 pady=(5, 0),
-                before=self.hover_heading,
+                before=self.region_help_label,
             )
+        else:
+            self.region_name_heading.pack(anchor="w", before=self.behavior_heading)
+            self.region_name_entry.pack(fill="x", before=self.behavior_heading)
+            self.hover_heading.pack(
+                anchor="w",
+                pady=(5, 0),
+                before=self.region_help_label,
+            )
+            self.hover_text.pack(fill="x", before=self.region_help_label)
         if behavior == "secret":
             self.secret_frame.pack(fill="x", pady=(6, 0), before=self.region_help_label)
         if behavior in {"secret", "library", "storeroom", "shop"}:
@@ -2700,95 +3050,60 @@ class MapperWindow(tk.Tk):
             "",
         ))
 
-    def commit_inline_address(self) -> bool:
-        """Create or rename the canonical address linked to an Address polygon."""
+    def mapped_address_label(self, address_id: object) -> str:
+        name = self.mapped_address_name(address_id)
+        return f"Linked: {name}" if name else "No address linked"
 
-        behavior = next(
-            (
-                key for key, label in BEHAVIOR_LABELS.items()
-                if label == self.region_behavior.get()
-            ),
-            "area",
+    def link_region_address(self, address: dict) -> bool:
+        """Link one canonical location address to the selected polygon."""
+
+        region = self.selected_region()
+        address_id = str(address.get("record_id", "") or "")
+        address_name = str(address.get("name", "") or "").strip()
+        if region is None or not address_id or not address_name:
+            return False
+        if str(address.get("location_id", "")) != self.selected_location_id:
+            messagebox.showerror(
+                "Wrong location",
+                "Choose an address belonging to this map's location.",
+                parent=self,
+            )
+            return False
+        if not self.metadata_history_pending:
+            self.record_history()
+        region["address_id"] = address_id
+        # Name remains an internal authoring label. Address regions never
+        # publish it as their date-effective display text.
+        region["name"] = address_name
+        self.region_name.set(address_name)
+        self.region_address.set(f"Linked: {address_name}")
+        self.metadata_history_pending = True
+        self.editor_dirty = True
+        self.addresses = deepcopy(
+            self.edit_session().data.get("addresses", []) or []
         )
-        if behavior != "address":
-            return True
+        self.region_metadata_changed()
+        saved = self.flush_metadata_save()
+        if saved:
+            self.render_region_list()
+            self.render_canvas()
+        return saved
+
+    def choose_region_address(self) -> None:
         region = self.selected_region()
         if region is None:
-            return True
-        address_name = self.region_address.get().strip()
-        if not address_name:
-            region["address_id"] = ""
-            self.status_value.set(
-                "Enter the mapped address to finish the automatic save"
-            )
-            return False
+            return
         try:
-            session = self.edit_session()
-            addresses = session.data.setdefault("addresses", [])
-            address_id = str(region.get("address_id", "") or "")
-            original_address_id = address_id
-            address_changed = False
-            address = next(
-                (
-                    item for item in addresses
-                    if isinstance(item, dict)
-                    and str(item.get("record_id", "")) == address_id
-                ),
-                None,
-            )
-            if address is None:
-                address = next(
-                    (
-                        item for item in addresses
-                        if isinstance(item, dict)
-                        and str(item.get("location_id", ""))
-                        == self.selected_location_id
-                        and str(item.get("name", "")).strip().casefold()
-                        == address_name.casefold()
-                    ),
-                    None,
-                )
-            now = utc_now()
-            if address is None:
-                address = {
-                    "record_id": str(uuid4()),
-                    "location_id": self.selected_location_id,
-                    "name": address_name,
-                    "notes": "",
-                    "created_at": now,
-                    "last_updated": now,
-                }
-                addresses.append(address)
-                address_changed = True
-            elif str(address.get("name", "")) != address_name:
-                address["name"] = address_name
-                address["last_updated"] = now
-                address_changed = True
-            resolved_address_id = str(address["record_id"])
-            address_changed = (
-                address_changed
-                or original_address_id != resolved_address_id
-            )
-            if address_changed:
-                if not self.metadata_history_pending:
-                    self.record_history()
-                self.metadata_history_pending = True
-                self.editor_dirty = True
-            region["address_id"] = resolved_address_id
-            current_region_name = self.region_name.get().strip()
-            if (
-                not current_region_name
-                or (
-                    current_region_name.startswith("Area ")
-                    and current_region_name[5:].isdigit()
-                )
-            ):
-                self.region_name.set(address_name)
-            self.addresses = deepcopy(addresses)
-            return True
+            world = self.edit_session().data
         except Exception as error:
-            messagebox.showerror("Cannot save address", str(error), parent=self)
-            return False
+            messagebox.showerror("Cannot load addresses", str(error), parent=self)
+            return
+        AddressChooser(
+            self,
+            world,
+            self.selected_location_id,
+            self.link_region_address,
+        )
 
     def choose_destination(self) -> None:
         choices = warp_destination_choices(
@@ -2994,18 +3309,19 @@ class MapperWindow(tk.Tk):
     def hover_text_focus_out(self, _event: tk.Event | None = None) -> None:
         self.region_property_focus_out()
 
-    def address_focus_out(self, _event: tk.Event | None = None) -> None:
-        self.region_property_focus_out()
-
     def open_selected_address_history(self) -> None:
-        if not self.commit_inline_address():
-            return
         region = self.selected_region()
         if region is None:
             return
-        if not self.region_property_focus_out():
+        address_id = str(region.get("address_id", "") or "")
+        if not address_id:
+            messagebox.showinfo(
+                "Link an address",
+                "Use Link address first, then add its history.",
+                parent=self,
+            )
             return
-        self.manage_addresses(str(region.get("address_id", "") or ""))
+        self.manage_addresses(address_id)
 
     def region_behavior_changed(self, _event: tk.Event | None = None) -> None:
         self.render_target_controls()
@@ -3018,11 +3334,21 @@ class MapperWindow(tk.Tk):
         """Commit region metadata only after the edited control loses focus."""
 
         self.region_metadata_changed()
-        if not self.commit_inline_address():
+        region = self.selected_region()
+        behavior = next(
+            (
+                key for key, label in BEHAVIOR_LABELS.items()
+                if label == self.region_behavior.get()
+            ),
+            "area",
+        )
+        if (
+            behavior == "address"
+            and region is not None
+            and not str(region.get("address_id", "") or "")
+        ):
+            self.status_value.set("Use Link address to finish this Address area")
             return False
-        # The inline address commit supplies the stable reference used by the
-        # map region, so fold it into the same map/world save.
-        self.region_metadata_changed()
         saved = self.flush_metadata_save()
         if saved:
             self.metadata_form_dirty = False
@@ -3050,7 +3376,11 @@ class MapperWindow(tk.Tk):
         changes = {
             "name": name,
             "behavior_type": behavior,
-            "hover_text": self.hover_text.get("1.0", "end-1c").strip(),
+            "hover_text": (
+                ""
+                if behavior == "address"
+                else self.hover_text.get("1.0", "end-1c").strip()
+            ),
             "address_id": (
                 str(region.get("address_id", "") or "")
                 if behavior in {"address", "shop"}

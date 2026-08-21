@@ -101,6 +101,9 @@ class PeriodsPage(tk.Frame):
         self.period_error = ""
         self.region_lock_id = ""
         self.pages = {}
+        self.events_view = None
+        self.people_view = None
+        self.stale_detail_views = {"events", "people"}
         self.navigation_buttons = {}
         self.active_view_name = "overview"
         self.save_feedback_after_id = None
@@ -173,28 +176,65 @@ class PeriodsPage(tk.Frame):
         self.content.grid_rowconfigure(0, weight=1)
         self.content.grid_columnconfigure(0, weight=1)
         self.build_overview_page()
-        self.events_view = UnifiedPeriodEventsView(
-            self.content,
-            self.controller,
-            self.event_controller,
-            self.status_command,
-            self.navigate_person_command,
-            self.navigate_location_command,
-            self.event_saved,
-        )
-        self.events_view.grid(row=0, column=0, sticky="nsew")
-        self.pages["events"] = self.events_view
-        self.people_view = PeriodPeopleView(
-            self.content,
-            self.controller,
-            self.status_command,
-            self.navigate_person_command,
-            self.people_scope_changed,
-        )
-        self.people_view.grid(row=0, column=0, sticky="nsew")
-        self.pages["people"] = self.people_view
         workspace.add(content_card, minsize=760)
         self.show_view("overview")
+
+    def ensure_detail_view(self, view_name):
+        """Construct expensive period views only when they are requested."""
+
+        if view_name in self.pages:
+            return self.pages[view_name]
+
+        if view_name == "events":
+            page = UnifiedPeriodEventsView(
+                self.content,
+                self.controller,
+                self.event_controller,
+                self.status_command,
+                self.navigate_person_command,
+                self.navigate_location_command,
+                self.event_saved,
+            )
+            self.events_view = page
+        elif view_name == "people":
+            page = PeriodPeopleView(
+                self.content,
+                self.controller,
+                self.status_command,
+                self.navigate_person_command,
+                self.people_scope_changed,
+            )
+            self.people_view = page
+        else:
+            return None
+
+        page.grid(row=0, column=0, sticky="nsew")
+        self.pages[view_name] = page
+        return page
+
+    def refresh_detail_view(self, view_name, force=False):
+        if view_name not in ("events", "people"):
+            return False
+
+        page = self.ensure_detail_view(view_name)
+        if page is None:
+            return False
+        if not force and view_name not in self.stale_detail_views:
+            return False
+
+        period = self.selected_period_definition()
+        if view_name == "events":
+            page.set_period(period)
+        else:
+            # Populate locations and calculate the selected period once.  The
+            # old sequence calculated the complete people catalogue as many
+            # as three times while merely opening this page.
+            page.set_period(period, calculate=False)
+            page.refresh(calculate=False)
+            page.set_region_lock(self.region_lock_id)
+
+        self.stale_detail_views.discard(view_name)
+        return True
 
     def build_view_navigation(self, parent):
         navigation = tk.Frame(parent, bg=SURFACE, padx=18, pady=14)
@@ -368,8 +408,13 @@ class PeriodsPage(tk.Frame):
             self.selected_period_name = ""
             self.period_sidebar.set_periods([], "")
             self.update_overview()
-            self.events_view.set_period(None)
-            self.people_view.set_period(None)
+            self.stale_detail_views.update(("events", "people"))
+            if self.events_view is not None:
+                self.events_view.set_period(None)
+                self.stale_detail_views.discard("events")
+            if self.people_view is not None:
+                self.people_view.set_period(None)
+                self.stale_detail_views.discard("people")
             return False
 
         self.period_definitions = definitions
@@ -396,7 +441,6 @@ class PeriodsPage(tk.Frame):
 
     def refresh(self):
         self.load_definitions(self.selected_period_name)
-        self.people_view.set_region_lock(self.region_lock_id)
         return True
 
     def selected_period_definition(self):
@@ -425,10 +469,10 @@ class PeriodsPage(tk.Frame):
         return True
 
     def update_selected_period_views(self):
-        period = self.selected_period_definition()
         self.update_overview()
-        self.events_view.set_period(period)
-        self.people_view.set_period(period)
+        self.stale_detail_views.update(("events", "people"))
+        if self.active_view_name in ("events", "people"):
+            self.refresh_detail_view(self.active_view_name)
 
     def update_overview(self):
         period = self.selected_period_definition()
@@ -464,7 +508,7 @@ class PeriodsPage(tk.Frame):
         self.save_period_button.set_enabled(True)
 
     def show_view(self, view_name):
-        if view_name not in self.pages:
+        if view_name not in ("overview", "events", "people"):
             return False
 
         if (
@@ -474,7 +518,11 @@ class PeriodsPage(tk.Frame):
         ):
             return False
 
+        if view_name in ("events", "people"):
+            self.ensure_detail_view(view_name)
+
         self.active_view_name = view_name
+        self.refresh_detail_view(view_name)
         self.pages[view_name].tkraise()
 
         for name, button in self.navigation_buttons.items():
@@ -486,11 +534,6 @@ class PeriodsPage(tk.Frame):
                     BUTTON_SOFT_HOVER,
                     TEXT_DARK,
                 )
-
-        if view_name == "events":
-            self.events_view.refresh()
-        elif view_name == "people":
-            self.people_view.refresh()
 
         return True
 
@@ -589,7 +632,9 @@ class PeriodsPage(tk.Frame):
 
     def set_region_lock(self, location_id="", notify=False):
         self.region_lock_id = str(location_id or "").strip()
-        self.people_view.set_region_lock(self.region_lock_id)
+        self.stale_detail_views.add("people")
+        if self.active_view_name == "people":
+            self.refresh_detail_view("people")
 
         if notify and self.scope_change_command is not None:
             self.scope_change_command(self.region_lock_id)
@@ -617,12 +662,16 @@ class PeriodsPage(tk.Frame):
                 )
                 self.update_selected_period_views()
 
+            self.ensure_detail_view("events")
             self.events_view.refresh(event.get("record_id", ""))
+            self.stale_detail_views.discard("events")
             self.status_command(
                 f"Saved event {event.get('title', 'Event')}"
             )
         else:
+            self.ensure_detail_view("events")
             self.events_view.refresh()
+            self.stale_detail_views.discard("events")
 
     def open_event(self, record_id):
         event = self.event_controller.get_event(record_id)
@@ -1906,11 +1955,12 @@ class PeriodPeopleView(tk.Frame):
 
         workspace.add(results, minsize=690)
 
-    def set_period(self, period):
+    def set_period(self, period, calculate=True):
         self.period = deepcopy(period) if isinstance(period, dict) else None
-        self.calculate(silent=True)
+        if calculate:
+            self.calculate(silent=True)
 
-    def refresh(self):
+    def refresh(self, calculate=True):
         retained_location_id = self.selected_location_id
         self.location_records = self.controller.list_locations()
         available_ids = {
@@ -1934,9 +1984,10 @@ class PeriodPeopleView(tk.Frame):
             else self.region_lock_id
         )
         self.refresh_location_choices()
-        self.calculate(silent=True)
+        if calculate:
+            self.calculate(silent=True)
 
-    def set_region_lock(self, location_id=""):
+    def set_region_lock(self, location_id="", calculate=True):
         requested_id = str(location_id or "").strip()
 
         if self.location_records:
@@ -1958,7 +2009,8 @@ class PeriodPeopleView(tk.Frame):
             self.selected_location_id = self.region_lock_id
 
         self.refresh_location_choices()
-        self.calculate(silent=True)
+        if calculate:
+            self.calculate(silent=True)
 
     def region_scope_changed(self, location_id):
         self.region_lock_id = str(location_id or "").strip()

@@ -27,6 +27,7 @@ from mage_maker.sections.development.models import (
 from mage_maker.sections.development.page import DevelopmentView
 from mage_maker.sections.family_tree.page import FamilyTreeView
 from mage_maker.sections.events.models import death_event_person_ids
+from mage_maker.sections.events.types import canonical_event_type
 from mage_maker.sections.names.details import NameDetailsDialog, NameEntryDialog
 from mage_maker.sections.names.history import (
     new_name_entry,
@@ -98,6 +99,8 @@ class PersonForm(tk.Frame):
         ("can_give_birth", "Can give birth"),
         ("does_not_have_children", "Does not have children"),
         ("famous_person", "This is a famous person"),
+        ("animagus", "Animagus"),
+        ("parseltongue", "Parseltongue"),
         ("unfinished", "Mark as unfinished"),
     )
 
@@ -859,6 +862,16 @@ class PersonForm(tk.Frame):
             update_person_command=update_person_command,
             refresh_people_command=refresh_people_command,
             navigate_command=navigate_command,
+            locations_provider=(
+                self.event_controller.location_records
+                if self.event_controller is not None
+                else None
+            ),
+            event_provider=(
+                self.event_controller.events_for_person
+                if self.event_controller is not None
+                else None
+            ),
         )
         self.family_tree.grid(row=0, column=0, sticky="nsew")
 
@@ -936,6 +949,7 @@ class PersonForm(tk.Frame):
             people_provider=self.people_summary_provider,
             event_controller=self.event_controller,
             navigate_command=self.navigate_command,
+            event_saved_command=self.shared_event_saved,
         )
         page.grid(row=0, column=0, sticky="nsew")
         self.relationships = page
@@ -1578,7 +1592,6 @@ class PersonForm(tk.Frame):
         )
 
     def save_name_details(self, name_details):
-        self.ensure_timeline_loaded()
         normalized_details = normalize_name_details(name_details)
         birth_date = format_date_parts(
             self.variables["birth_year"].get(),
@@ -1596,9 +1609,13 @@ class PersonForm(tk.Frame):
                 entry["date"] = birth_date
 
         normalized_details = normalize_name_details(normalized_details)
-        timeline_person = self.current_profile_values()
+        # Applying a name must not force the Timeline section to hydrate every
+        # linked event.  The selected person's compact snapshot already owns
+        # the embedded profile events needed for name synchronization.
+        timeline_person = self.person_for_timeline_load()
         timeline_person["name_details"] = deepcopy(normalized_details)
-        timeline_person["timeline_events"] = self.timeline.get_events()
+        existing_events = self.current_timeline_events()
+        timeline_person["timeline_events"] = existing_events
         synchronized_events = synchronize_name_change_events(
             normalized_details,
             ensure_life_start_events(timeline_person),
@@ -1606,12 +1623,13 @@ class PersonForm(tk.Frame):
 
         if (
             normalized_details == self.name_details
-            and synchronized_events == self.timeline.get_events()
+            and synchronized_events == existing_events
         ):
-            return
+            return True
 
         self.name_details = deepcopy(normalized_details)
-        self.timeline.set_events(synchronized_events)
+        if self.section_is_current("timeline"):
+            self.timeline.set_events(synchronized_events)
         self.person_snapshot["name_details"] = deepcopy(
             self.name_details
         )
@@ -1624,16 +1642,15 @@ class PersonForm(tk.Frame):
 
         if not self.loading:
             self.change_command()
+        return True
 
     def save_life_start_event(self, values, original_event):
         event_type = str(
             original_event.get("event_type", "") or ""
         ).strip()
 
-        if event_type not in ("starting_location", "born"):
-            raise ValueError(
-                "Only Starting location and Born can be edited here."
-            )
+        if event_type != "born":
+            raise ValueError("Only the Birth event can be edited here.")
 
         location_ids = [
             str(location_id or "").strip()
@@ -1666,14 +1683,6 @@ class PersonForm(tk.Frame):
             raise ValueError("The selected birth location needs a name.")
 
         events = deepcopy(self.timeline.get_events())
-        starting_event = next(
-            (
-                event
-                for event in events
-                if event.get("event_type") == "starting_location"
-            ),
-            None,
-        )
         born_event = next(
             (
                 event
@@ -1683,93 +1692,69 @@ class PersonForm(tk.Frame):
             None,
         )
 
-        if starting_event is None or born_event is None:
-            raise ValueError(
-                "The required opening events could not be found."
-            )
+        if born_event is None:
+            raise ValueError("The required Birth event could not be found.")
 
-        starting_event["detail"] = location_name
-        starting_event["location_ids"] = [location_id]
-        starting_event["locked_location_ids"] = []
-        starting_event["birth_location_source"] = "manual"
+        born_event["detail"] = location_name
         born_event["location_ids"] = [location_id]
         born_event["locked_location_ids"] = []
         born_event["birth_location_source"] = "manual"
+        born_event["time"] = str(values.get("time", "") or "").strip()
+        birth_year, birth_month, birth_day = split_partial_date(
+            values.get("date", ""),
+            "Birth date",
+        )
+        previous_loading = self.loading
+        self.loading = True
+        self.variables["birth_year"].set(
+            str(int(birth_year)) if birth_year else ""
+        )
+        self.variables["birth_month"].set(
+            str(int(birth_month)) if birth_month else ""
+        )
+        self.variables["birth_day"].set(
+            str(int(birth_day)) if birth_day else ""
+        )
+        self.loading = previous_loading
+        if hasattr(self, "person_snapshot"):
+            self.person_snapshot.update(
+                {
+                    "birth_year": self.variables["birth_year"].get(),
+                    "birth_month": self.variables["birth_month"].get(),
+                    "birth_day": self.variables["birth_day"].get(),
+                }
+            )
+        PersonForm.update_birth_date_display(self)
+        PersonForm.update_death_overview(self)
+        born_event["note"] = str(
+            values.get("description", "") or ""
+        ).strip()
+        updated_name_details = deepcopy(self.name_details)
 
-        if event_type == "starting_location":
-            starting_event["time"] = str(
-                values.get("time", "") or ""
-            ).strip()
-            starting_event["note"] = str(
-                values.get("description", "") or ""
-            ).strip()
-        else:
-            born_event["time"] = str(
-                values.get("time", "") or ""
-            ).strip()
-            birth_year, birth_month, birth_day = split_partial_date(
-                values.get("date", ""),
-                "Birth date",
+        for entry in updated_name_details.get("entries", []):
+            name_type = " ".join(
+                str(entry.get("name_type", "") or "")
+                .strip()
+                .casefold()
+                .split()
             )
-            previous_loading = self.loading
-            self.loading = True
-            self.variables["birth_year"].set(
-                str(int(birth_year)) if birth_year else ""
-            )
-            self.variables["birth_month"].set(
-                str(int(birth_month)) if birth_month else ""
-            )
-            self.variables["birth_day"].set(
-                str(int(birth_day)) if birth_day else ""
-            )
-            self.loading = previous_loading
-            if hasattr(self, "person_snapshot"):
-                self.person_snapshot.update(
-                    {
-                        "birth_year": self.variables[
-                            "birth_year"
-                        ].get(),
-                        "birth_month": self.variables[
-                            "birth_month"
-                        ].get(),
-                        "birth_day": self.variables[
-                            "birth_day"
-                        ].get(),
-                    }
-                )
-            PersonForm.update_birth_date_display(self)
-            PersonForm.update_death_overview(self)
-            born_event["note"] = str(
-                values.get("description", "") or ""
-            ).strip()
-            updated_name_details = deepcopy(self.name_details)
 
-            for entry in updated_name_details.get("entries", []):
-                name_type = " ".join(
-                    str(entry.get("name_type", "") or "")
-                    .strip()
-                    .casefold()
-                    .split()
-                )
-
-                if name_type in ("birth name", "birthname"):
-                    entry["date"] = (
-                        ""
-                        if not birth_year
-                        else "-".join(
-                            date_part
-                            for date_part in (
-                                birth_year,
-                                birth_month,
-                                birth_day,
-                            )
-                            if date_part
+            if name_type in ("birth name", "birthname"):
+                entry["date"] = (
+                    ""
+                    if not birth_year
+                    else "-".join(
+                        date_part
+                        for date_part in (
+                            birth_year,
+                            birth_month,
+                            birth_day,
                         )
+                        if date_part
                     )
+                )
 
-            self.name_details = normalize_name_details(
-                updated_name_details
-            )
+        self.name_details = normalize_name_details(updated_name_details)
 
         timeline_person = self.current_profile_values()
         timeline_person["name_details"] = deepcopy(self.name_details)
@@ -1777,6 +1762,7 @@ class PersonForm(tk.Frame):
         synchronized_events = ensure_life_start_events(
             timeline_person,
             starting_location=location_name,
+            starting_location_id=location_id,
             born_note=str(born_event.get("note", "") or "").strip(),
             long_distance_parent_ids=born_long_distance_parent_ids(
                 events
@@ -2096,6 +2082,8 @@ class PersonForm(tk.Frame):
                 "does_not_have_children"
             ].get(),
             "famous_person": self.variables["famous_person"].get(),
+            "animagus": self.variables["animagus"].get(),
+            "parseltongue": self.variables["parseltongue"].get(),
             "unfinished": self.variables["unfinished"].get(),
             "mage_group_id": self.selected_mage_group_id(),
             "school": development_values["school"],
@@ -2174,7 +2162,10 @@ class PersonForm(tk.Frame):
 
         if not self.loading:
             self.change_command()
-            self.schedule_person_autosave()
+            # Family links are part of the ordinary profile edit session.
+            # A full canonical save here used to run immediately after the
+            # picker closed, freezing the UI for large worlds.  Navigation,
+            # explicit Save, and application close already commit dirty forms.
 
     def timeline_changed(self):
         if not self.loading:
@@ -2336,7 +2327,7 @@ class PersonForm(tk.Frame):
         if not self.loading:
             self.change_command()
 
-    def refresh_linked_events(self):
+    def refresh_linked_events(self, refresh_timeline=True):
         if not self.current_record_id:
             return
 
@@ -2348,7 +2339,7 @@ class PersonForm(tk.Frame):
             else []
         )
 
-        if self.section_is_current("timeline"):
+        if refresh_timeline and self.section_is_current("timeline"):
             self.timeline.set_linked_events(
                 self.linked_events_snapshot
             )
@@ -2455,19 +2446,68 @@ class PersonForm(tk.Frame):
         return str(self.current_record_id or "")
 
     def shared_event_saved(self, event):
-        self.refresh_linked_events()
+        # TimelineView has already replaced its linked-event collection and
+        # rendered the saved row before invoking this callback.  Reapplying
+        # the same collection here used to clear and rebuild the entire Events
+        # list a second time, which produced a very visible flash on every
+        # save.  Refresh the dependent person fields without repainting the
+        # open Timeline.
+        self.refresh_linked_events(refresh_timeline=False)
         self.timeline_event_selected(
             event.get("record_id", "")
             if isinstance(event, dict)
             else ""
         )
 
-        if self.events_changed_command is not None:
-            self.events_changed_command()
+        if (
+            isinstance(event, dict)
+            and canonical_event_type(event.get("event_type"))
+            == "foster_child"
+            and getattr(self, "family_tree", None) is not None
+        ):
+            self.family_tree.reload_people(
+                redraw=self.active_page_name == "family_tree",
+                refresh_provider=False,
+            )
 
-        if not self.loading:
-            self.change_command()
-            self.schedule_person_autosave()
+        if self.events_changed_command is not None:
+            event_id = (
+                str(event.get("record_id", "") or "").strip()
+                if isinstance(event, dict)
+                else ""
+            )
+            self.events_changed_command(
+                "events",
+                (event_id,) if event_id else (),
+            )
+
+        # Shared events are already committed by EventController, including
+        # any synchronized person fields.  Marking the whole person form dirty
+        # here scheduled a second canonical save, reloaded the selected person,
+        # and blanked/rebuilt the Events page.  The freshly read person snapshot
+        # above is sufficient and keeps the editor stable.
+
+    def accept_saved_person(self, person):
+        """Adopt a successful save without reconstructing the open section."""
+        person_values = dict(person) if isinstance(person, dict) else {}
+        record_id = str(person_values.get("record_id", "") or "").strip()
+
+        if not record_id or record_id != str(self.current_record_id or ""):
+            return False
+
+        self.person_snapshot = person_values
+        self.board_state = normalize_person_board(person_values.get("board"))
+        name_details = person_values.get("name_details", {})
+        self.name_details = (
+            deepcopy(name_details)
+            if isinstance(name_details, dict)
+            else {"entries": []}
+        )
+        self.update_school_summary_from_person(person_values)
+        self.update_birth_date_display()
+        self.update_death_date_visibility()
+        self.update_death_overview()
+        return True
 
     def deceased_changed(self, *arguments):
         if self.loading:

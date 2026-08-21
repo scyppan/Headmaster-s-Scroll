@@ -16,14 +16,14 @@
           "name": "Dawn of Civilization",
           "start_year": -3500,
           "end_year": -1276,
-          "descriptor": "The first magical communities develop especially in Mesopotamia",
+          "descriptor": "The first magical communities develop especially in Mesopotamia\n\nmedian year: -2388 BCE\n\ntotal global pop: 22M\ntotal magical pop: 1,071\n\nBritish Isles Pop: 50,000\nBritish magical 2",
           "record_id": "7080a68b-0c7b-5d05-a9d9-43a58e10a432"
         },
         {
           "name": "Herpo & the Sea Peoples",
           "start_year": -1275,
           "end_year": -1126,
-          "descriptor": "Bronze age collapse led by Herpo and his Sea Peoples",
+          "descriptor": "Bronze age collapse led by Herpo and his Sea Peoples\n\nmedian year: -1200\n\ntotal global pop: 50M\ntotal magical pop: 2435\n\nBritish Isles Pop: 40,000\nBritish Witches/Wizards: 19\n\n1 birth every five years.",
           "record_id": "bac1ead7-49a5-5862-a96f-7953e2cfae0e"
         }
       ],
@@ -37,49 +37,49 @@
           "name": "Western Seedings",
           "start_year": -1125,
           "end_year": -951,
-          "descriptor": "Wizarding communities migrate into Western Europe, West Africa, and Arabia.",
+          "descriptor": "Wizarding communities migrate into Western Europe, West Africa, and Arabia.\n\nmedian year: -1038\n\ntotal global pop: 50M\ntotal magical pop: 2435\n\nBritish Isles Pop: 40,000\nBritish Witches/Wizards: 19\n\n1 birth every five years",
           "record_id": "0fc0b165-f2e9-5e6b-9bb6-375910d3cf5a"
         },
         {
           "name": "The Great Outrush",
           "start_year": -950,
           "end_year": -751,
-          "descriptor": "Wizards migrate into the Baltic, Danube, Greece, Rome, India, Southeast Asia, and southern Africa",
+          "descriptor": "Wizards migrate into the Baltic, Danube, Greece, Rome, India, Southeast Asia, and southern Africa\n\nmedian year: -851\n\ntotal global pop: 70M\ntotal magical pop: 3410\n\nBritish Isles Pop: 600,000\nBritish Witches/Wizards: 29\n\n1 birth every 3.5 years",
           "record_id": "9df25911-a4d0-505e-be4f-6a5abda6a081"
         },
         {
           "name": "First Eastward Push",
           "start_year": -750,
           "end_year": -601,
-          "descriptor": "Wizards migrate into Central Asia, the Tarim Basin, the Himalayas, and the western Pacific islands",
+          "descriptor": "Wizards migrate into Central Asia, the Tarim Basin, the Himalayas, and the western Pacific islands.\n\nmedian year: -675\n\ntotal global pop: 100M\ntotal magical pop: 4870\n\nBritish Isles Pop: 1m\nBritish Witches/Wizards: 49\n\n1 birth every 2 years",
           "record_id": "f84c058d-d0a7-587e-b292-620e34e43b95"
         },
         {
           "name": "Second Eastward Push",
           "start_year": -600,
           "end_year": -451,
-          "descriptor": "Wizards migrate into Korea and Japan along the Liaodong corridor and Yayoi routes.",
+          "descriptor": "Wizards migrate into Korea and Japan along the Liaodong corridor and Yayoi routes.\n\nmedian year: -525\n\ntotal global pop: 150M\ntotal magical pop: 7305\n\nBritish Isles Pop: 1m\nBritish Witches/Wizards: 49\n\n1 birth every 2 years",
           "record_id": "2efd94bd-f07b-58ab-b4fc-17f21c2f313c"
         },
         {
           "name": "Final Great Migration",
           "start_year": -450,
           "end_year": 99,
-          "descriptor": "All regions of the world have a wizarding presence",
+          "descriptor": "All regions of the world have a wizarding presence.\n\nmedian year: -175\n\ntotal global pop: 165M\ntotal magical pop: 8035\n\nBritish Isles Pop: 1m\nBritish Witches/Wizards: 49\n\n1 birth every 2 years",
           "record_id": "8da3b92c-0ae4-5ba4-810b-163ad671655c"
         },
         {
           "name": "Early Global Period",
           "start_year": 100,
           "end_year": 377,
-          "descriptor": "Teotihuacan begins radiating influence becoming the “arcane metropole of Mesoamerica.”",
+          "descriptor": "Teotihuacan begins radiating influence becoming the “arcane metropole of Mesoamerica.”\n\nmedian year: 238\n\ntotal global pop: 200M\ntotal magical pop: 9,740\n\nBritish Isles Pop: 2.5M\nBritish Witches/Wizards: 122\n\n1.22 births per year",
           "record_id": "e206633d-0172-52b2-981e-4349ce2d2966"
         },
         {
           "name": "Period of Consolidation",
           "start_year": 378,
           "end_year": 989,
-          "descriptor": "First of the Wizarding schools are built (Uagadou & Hogwarts)",
+          "descriptor": "First of the Wizarding schools are built (Uagadou & Hogwarts)\n\nmedian year: 683\n\ntotal global pop: 250M\ntotal magical pop: 12175\n\nBritish Isles Pop: 2M\nBritish magical: 97\n\n0.97 births per year",
           "record_id": "c08929c6-b577-53c2-828a-2cfd2a12c866"
         }
       ],
@@ -93,21 +93,21 @@
           "name": "Early Educational Period",
           "start_year": 990,
           "end_year": 1051,
-          "descriptor": "The last of the early educational institutions is built",
+          "descriptor": "The last of the early educational institutions is built\n\nmedian year: 1020\n\ntotal global pop: 180M\ntotal magical pop: 13,636\n\nBritish Isles Pop: 2M\nBritish magical: 97\n\n0.97 births per year",
           "record_id": "a46d9bb9-f9be-5082-9780-247bdf4bd89c"
         },
         {
           "name": "Early Period of Institutionalization",
           "start_year": 1052,
           "end_year": 1169,
-          "descriptor": "Normans invade Ireland and the Founding of the Council of Warlocks",
+          "descriptor": "Normans invade Ireland and the Founding of the Council of Warlocks\n\n\nmedian year: 1110\n\ntotal global pop: 300M\ntotal magical pop: 14,611\n\nBritish Isles Pop: 2M\nBritish magical: 97\n\n0.97 births per year",
           "record_id": "9540ab56-f86e-5735-a30a-f059ea6665a9"
         },
         {
           "name": "Late Period of Institutionalization",
           "start_year": 1170,
           "end_year": 1205,
-          "descriptor": "End when Ghengis Khan unifies the Mongol tribes",
+          "descriptor": "End when Ghengis Khan unifies the Mongol tribes\n\nmedian year: 1187\n\ntotal global pop: 350M\ntotal magical pop: 17046\n\nBritish Isles Pop: 2M\nBritish magical: 97\n\n0.97 births per year",
           "record_id": "b910c420-ee95-523c-8031-dec8ae761451"
         }
       ],
@@ -121,56 +121,56 @@
           "name": "Mongol Period",
           "start_year": 1206,
           "end_year": 1227,
-          "descriptor": "Begins when Ghengis Khan unifies the Mongol Tribes and Ends when Ghengis Khan dies",
+          "descriptor": "Begins when Ghengis Khan unifies the Mongol Tribes and Ends when Ghengis Khan dies\n\nmedian year: 1216.5\n\ntotal global pop: 360\ntotal magical pop: 17,533\n\nBritish Isles Pop: 2.5M\nBritish magical: 122\n\n1.22 births per year",
           "record_id": "f91988bd-6300-5515-82d0-5ccc1dea5dd1"
         },
         {
           "name": "First Epoch of Persecution",
           "start_year": 1228,
           "end_year": 1319,
-          "descriptor": "Begins immediately after Khan's death and ends when the Pope authorizes the inquisition to prosecute witchcraft as a form of heresy. This period marks a the beginning of formal persecution of magical folk.",
+          "descriptor": "Begins immediately after Khan's death and ends when the Pope authorizes the inquisition to prosecute witchcraft as a form of heresy. This period marks a the beginning of formal persecution of magical folk.\n\nmedian year: 1273\n\ntotal global pop: 370M\ntotal magical pop: 18019\n\nBritish Isles Pop: 3.5M\nBritish magical: 170\n\n1.7 births per year",
           "record_id": "a3a0382f-84a6-5865-883f-3c7b3fe5ad5c"
         },
         {
           "name": "Second Epoch of Persecution",
           "start_year": 1320,
           "end_year": 1347,
-          "descriptor": "Ends when the Black Death Begins",
+          "descriptor": "Ends when the Black Death Begins\n\nmedian year: 1333\n\ntotal global pop: 370M\ntotal magical pop: 18020\n\nBritish Isles Pop: 4.5M\nBritish magical: 219\n\n2.19 births per year",
           "record_id": "0ea5fd42-bc57-5085-858d-4c081882d2fe"
         },
         {
           "name": "Period of Muggle Mortality",
           "start_year": 1348,
           "end_year": 1368,
-          "descriptor": "Red Turban Rebellion establishes the Ming Dynasty",
+          "descriptor": "Red Turban Rebellion establishes the Ming Dynasty\n\nmedian year: 1358\n\ntotal global pop: 360M\ntotal magical pop: 17533\n\nBritish Isles Pop: 3.5M\nBritish magical: 170\n\n1.7 births per year",
           "record_id": "ad0774d8-8a43-5983-9066-23672e5f862f"
         },
         {
           "name": "Period of the Ming and Ottomans",
           "start_year": 1369,
           "end_year": 1473,
-          "descriptor": "Wizards improve protection and alarm spells and begin to fear Muggles somewhat less",
+          "descriptor": "Wizards improve protection and alarm spells and begin to fear Muggles somewhat less\n\nmedian year: 1421\n\ntotal global pop: 370M\ntotal magical pop: 18,019\n\nBritish Isles Pop: 3.5M\nBritish magical: 170\n\n1.7 births per year",
           "record_id": "185345bb-6782-5bca-bc93-fc34c3b8f7de"
         },
         {
           "name": "Period of Commercialization & Sport",
           "start_year": 1474,
           "end_year": 1539,
-          "descriptor": "Ordinance of Villers-Cotterêts & Wizengamot Established",
+          "descriptor": "Ordinance of Villers-Cotterêts & Wizengamot Established\n\nmedian year: 1506\n\ntotal global pop: 425M\ntotal magical pop: 20698\n\nBritish Isles Pop: 3.5M\nBritish magical: 170\n\n1.7 births per year",
           "record_id": "e1c585ed-ae5c-5115-9d58-d6be83ac3716"
         },
         {
           "name": "Nominal Period",
           "start_year": 1540,
           "end_year": 1612,
-          "descriptor": "St Mungos & Gringotts founded; First Goblin Rebellion",
+          "descriptor": "St Mungos & Gringotts founded; First Goblin Rebellion\n\nmedian year: 1576\n\ntotal global pop: 500M\ntotal magical pop: 24351\n\nBritish Isles Pop: 5M\nBritish magical: 244\n\n2.44 births per year",
           "record_id": "eb1c8a21-8aa6-54a6-8877-ee9508862321"
         },
         {
           "name": "Period of Goblin and Muggle Upheaval",
           "start_year": 1613,
           "end_year": 1692,
-          "descriptor": "Statute of Secrecy is fully enacted",
+          "descriptor": "Statute of Secrecy is fully enacted\n\nmedian year: 1652\n\ntotal global pop: 550M\ntotal magical pop: 26,786\n\nBritish Isles Pop: 6M\nBritish magical: 292\n\n2.92 births per year",
           "record_id": "0dbe694b-80f2-504e-85eb-c732f900b7f0"
         }
       ],
@@ -184,35 +184,35 @@
           "name": "Interregnum of Secrecy",
           "start_year": 1693,
           "end_year": 1707,
-          "descriptor": "Ministry of Magic is established to aid in the organization of secrecy efforts",
+          "descriptor": "Ministry of Magic is established to aid in the organization of secrecy efforts\n\nmedian year: 1700\n\ntotal global pop: 600M\ntotal magical pop: 29221\n\nBritish Isles Pop: 6.5\nBritish magical: 317\n\n3.17 births per year",
           "record_id": "9fee81c4-bf83-5435-9e12-603cb8ae73a0"
         },
         {
           "name": "Quinquagenary of the Veil",
           "start_year": 1708,
           "end_year": 1753,
-          "descriptor": "End of the Second Goblin Rebellion",
+          "descriptor": "End of the Second Goblin Rebellion\n\nmedian year: 1730\n\ntotal global pop: 650M\ntotal magical pop: 31656\n\nBritish Isles Pop: 7M\nBritish magical: 341\n\n3.41 births per year",
           "record_id": "addf838d-e0dd-5695-b2a2-5985eeec50ae"
         },
         {
           "name": "Quadrancentennial of the Veil",
           "start_year": 1754,
           "end_year": 1790,
-          "descriptor": "Rappaport’s Law passed in the US",
+          "descriptor": "Rappaport’s Law passed in the US\n\n\nmedian year: 1772\n\ntotal global pop: 750M\ntotal magical pop: 36526\n\nBritish Isles Pop: 10M\nBritish magical: 487\n\n4.87 births per year",
           "record_id": "5dfe82f3-d1e1-5a7d-ae23-cf42ce4c1634"
         },
         {
           "name": "Age of Estrangement",
           "start_year": 1791,
           "end_year": 1891,
-          "descriptor": "End of the Ranrok Rebellion",
+          "descriptor": "End of the Ranrok Rebellion\n\n\nmedian year: 1841\n\ntotal global pop: 1.25B\ntotal magical pop: 60878\n\nBritish Isles Pop: 25M\nBritish magical: 1218\n\n12 births per year",
           "record_id": "d5fb1e38-8ad9-5fbe-a002-671de5846f31"
         },
         {
           "name": "Interbellum of Shadows",
           "start_year": 1892,
           "end_year": 1926,
-          "descriptor": "Start of the Global Wizarding War",
+          "descriptor": "Start of the Global Wizarding War\n\n\nmedian year: 1909\n\ntotal global pop: 1.7B\ntotal magical pop: 82793\n\nBritish Isles Pop: 47M\nBritish magical: 2,289\n\n23 births per year",
           "record_id": "74ef419c-1f58-54ba-bad0-609f10ad883b"
         }
       ],
@@ -226,56 +226,56 @@
           "name": "The Period of the Global Wizarding War",
           "start_year": 1927,
           "end_year": 1945,
-          "descriptor": "Grindelwald defeated by Dumbledore",
+          "descriptor": "Grindelwald defeated by Dumbledore\n\nmedian year: 1936\n\ntotal global pop: 2.2B\ntotal magical pop: 107,144\n\nBritish Isles Pop: 50M\nBritish magical: 2435\n\n24 births per year",
           "record_id": "b44ac2af-eb01-51cd-8bf1-baaf7aa9f522"
         },
         {
           "name": "The Vicennial of Peace",
           "start_year": 1946,
           "end_year": 1965,
-          "descriptor": "Repeal of rappaport's law",
+          "descriptor": "Repeal of rappaport's law\n\n\nmedian year: 1955\n\ntotal global pop: 2.75B\ntotal magical pop: 133930\n\nBritish Isles Pop: 55M\nBritish magical: 2679\n\n27 births per year",
           "record_id": "808b4780-d881-51d9-abb5-a9f2cbdb89f4"
         },
         {
           "name": "The Lustrum of Unveiling",
           "start_year": 1966,
           "end_year": 1970,
-          "descriptor": "Disappearances begin",
+          "descriptor": "Disappearances begin\n\n\nmedian year: 1968\n\ntotal global pop: 3.53B\ntotal magical pop: 171918\n\nBritish Isles Pop: 56M\nBritish magical: 2727\n\n27 births per year",
           "record_id": "27b59324-13c9-5f88-a6a5-7b2e12ac9230"
         },
         {
           "name": "The Period of the First Wizarding War",
           "start_year": 1971,
           "end_year": 1981,
-          "descriptor": "Voldemort is \"killed\" the first time",
+          "descriptor": "Voldemort is \"killed\" the first time\n\n\nmedian year: 1976\n\ntotal global pop: 4.14B\ntotal magical pop: 201626\n\nBritish Isles Pop: 56M\nBritish magical: 2727\n\n27 births per year",
           "record_id": "f7cc6cb6-3cde-530d-b171-06fc39759e09"
         },
         {
           "name": "The Respite of the Recessional",
           "start_year": 1982,
           "end_year": 1995,
-          "descriptor": "Return of Voldemort",
+          "descriptor": "Return of Voldemort\n\n\nmedian year: 1988\n\ntotal global pop: 5.1B\ntotal magical pop: 248380\n\nBritish Isles Pop: 57M\nBritish magical: 2776\n\n28 births per year",
           "record_id": "d5c60cd3-610d-51a4-9c4b-75ec82e13336"
         },
         {
           "name": "The Period of the Second Wizarding War",
           "start_year": 1996,
           "end_year": 1998,
-          "descriptor": "Fall of Voldemort",
+          "descriptor": "Fall of Voldemort\n\n\nmedian year: 1997\n\ntotal global pop: 5.9B\ntotal magical pop: 287342\n\nBritish Isles Pop: 62M\nBritish magical: 2971\n\n30 births per year",
           "record_id": "bc5959c1-4808-501b-9178-99cd859ed41b"
         },
         {
           "name": "The Naïve Interlude",
           "start_year": 1999,
           "end_year": 2000,
-          "descriptor": "The Council of the Seven is formed",
+          "descriptor": "The Council of the Seven is formed\n\ntotal global pop: 6.07B\ntotal magical pop: 295621\n\nBritish Isles Pop: 63M\nBritish magical: 3068\n\n31 births per year",
           "record_id": "1bc4473a-611e-5515-b8cc-656390ef9cde"
         },
         {
           "name": "The Period of the Third Wizarding War",
           "start_year": 2001,
           "end_year": "future",
-          "descriptor": "The Third Wizarding War",
+          "descriptor": "The Third Wizarding War\n\ntotal global pop: 6.51B\ntotal magical pop: 317049\n\nBritish Isles Pop: 65M\nBritish magical: 3166\n\n32 births per year",
           "record_id": "81dffd36-3da2-553a-be28-5e12db7fbdca"
         }
       ],

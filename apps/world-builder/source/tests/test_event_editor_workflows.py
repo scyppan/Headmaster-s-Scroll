@@ -1190,40 +1190,9 @@ class TimelineAssociationSaveTests(unittest.TestCase):
 
 
 class LifeStartSynchronizationTests(unittest.TestCase):
-    def test_starting_location_updates_born_location_and_keeps_birth_date(self):
+    def test_birth_updates_date_required_location_note_and_name_date(self):
         form = PersonLifeStartHarness()
-        starting_event = form.timeline.get_events()[0]
-        saved_events = PersonForm.save_life_start_event(
-            form,
-            {
-                "location_ids": ["limerick"],
-                "description": "The family began here.",
-                "date": "0901",
-            },
-            starting_event,
-        )
-
-        self.assertEqual("Limerick", saved_events[0]["detail"])
-        self.assertEqual(
-            ["limerick"],
-            saved_events[0]["location_ids"],
-        )
-        self.assertEqual(
-            ["limerick"],
-            saved_events[1]["location_ids"],
-        )
-        self.assertEqual(
-            "The family began here.",
-            saved_events[0]["note"],
-        )
-        self.assertEqual(
-            ["0901", "0901", "0901"],
-            [event["date"] for event in saved_events[:3]],
-        )
-
-    def test_born_updates_profile_and_all_three_opening_dates_and_locations(self):
-        form = PersonLifeStartHarness()
-        born_event = form.timeline.get_events()[1]
+        birth_event = form.timeline.get_events()[0]
         saved_events = PersonForm.save_life_start_event(
             form,
             {
@@ -1231,25 +1200,18 @@ class LifeStartSynchronizationTests(unittest.TestCase):
                 "description": "Born during a storm.",
                 "date": "905-2-3",
             },
-            born_event,
+            birth_event,
         )
 
+        self.assertEqual(["born"], [event["event_type"] for event in saved_events])
+        self.assertEqual("Limerick", saved_events[0]["detail"])
         self.assertEqual("905", form.variables["birth_year"].get())
         self.assertEqual("2", form.variables["birth_month"].get())
         self.assertEqual("3", form.variables["birth_day"].get())
-        self.assertEqual(
-            ["0905-02-03", "0905-02-03", "0905-02-03"],
-            [event["date"] for event in saved_events[:3]],
-        )
-        self.assertEqual("Limerick", saved_events[0]["detail"])
-        self.assertEqual(
-            [["limerick"], ["limerick"]],
-            [
-                saved_events[0]["location_ids"],
-                saved_events[1]["location_ids"],
-            ],
-        )
-        self.assertEqual("Born during a storm.", saved_events[1]["note"])
+        self.assertEqual("0905-02-03", saved_events[0]["date"])
+        self.assertEqual(["limerick"], saved_events[0]["location_ids"])
+        self.assertEqual("Born during a storm.", saved_events[0]["note"])
+        self.assertEqual("Maeve ingen Ailella", saved_events[0]["birth_name"])
         self.assertEqual(
             "0905-02-03",
             form.name_details["entries"][0]["date"],

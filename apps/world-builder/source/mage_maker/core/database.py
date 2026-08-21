@@ -108,6 +108,7 @@ from mage_maker.sections.books.models import (
     normalize_book_readings,
     normalize_book_record,
     normalize_book_records,
+    synchronize_book_publication_events,
 )
 from mage_maker.core.world_index import (
     WorldIndexCache,
@@ -1001,20 +1002,19 @@ class JsonDatabase:
 
         schema_version = metadata.get("schema_version")
 
-        if not isinstance(schema_version, int) or schema_version > 38:
+        if not isinstance(schema_version, int) or schema_version > 39:
             return False
+
+        if schema_version in (36, 37, 38):
+            synchronize_book_publication_events(database_data)
+            metadata["schema_version"] = 39
+            metadata["database_version"] = "0.39.0"
+            database_data["_database"] = metadata
+            return True
 
         # Schema 37 is produced only by the explicit, backed-up reference
         # migration.  Ordinary startup must never delete embedded legacy data.
-        if schema_version in (37, 38):
-            return False
-
-        # Schema 36 is the current canonical format.  This branch used to run
-        # a repair/normalization pass on every launch, including clean files.
-        # Besides marking the database dirty, that caused millions of repeated
-        # cross-event calls.  Repairs belong to a versioned migration, not the
-        # steady-state load path.
-        if schema_version == 36:
+        if schema_version == 39:
             return False
 
         if schema_version == 36:
@@ -2257,8 +2257,9 @@ class JsonDatabase:
             schema_version = 36
             migrated = True
 
-        metadata["schema_version"] = 36
-        metadata["database_version"] = "0.36.0"
+        synchronize_book_publication_events(database_data)
+        metadata["schema_version"] = 39
+        metadata["database_version"] = "0.39.0"
         database_data["_database"] = metadata
 
         return migrated
@@ -2750,6 +2751,11 @@ class JsonDatabase:
             for organization in database_data["organizations"]
             if isinstance(organization, dict)
         }
+        events_by_id = {
+            str(event.get("record_id", "") or "").strip(): event
+            for event in database_data["events"]
+            if isinstance(event, dict)
+        }
 
         for book in database_data["books"]:
             if (
@@ -2769,6 +2775,21 @@ class JsonDatabase:
                     "Every book publication location must exist."
                 )
 
+            publication_event = events_by_id.get(
+                book["publication_event_id"]
+            )
+            if not isinstance(publication_event, dict):
+                raise ValueError(
+                    "Every book must have a Published book event."
+                )
+            if publication_event.get("event_type") != "published_book":
+                raise ValueError(
+                    "A book publication event must use Published book."
+                )
+            if publication_event.get("book_ids") != [book["record_id"]]:
+                raise ValueError(
+                    "A Published book event must reference its book."
+                )
             for holding in book["holdings"]:
                 if (
                     holding["organization_id"]

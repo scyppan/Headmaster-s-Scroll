@@ -6,9 +6,20 @@ from mage_maker.sections.family_tree.relationships import (
     maiden_name_for,
 )
 from mage_maker.sections.family_tree.page import FamilyTreeView
+from mage_maker.sections.relationships.page import foster_relationship_text
 
 
 class FamilyRelationshipMapTests(unittest.TestCase):
+    def test_foster_relationship_text_names_both_roles(self):
+        self.assertEqual(
+            "Parent is foster parent of Child",
+            foster_relationship_text("Parent", ["Child"], True),
+        )
+        self.assertEqual(
+            "Parent is foster parent of Child",
+            foster_relationship_text("Child", ["Parent"], False),
+        )
+
     def setUp(self):
         self.people = [
             {
@@ -317,6 +328,101 @@ class FamilyRelationshipMapTests(unittest.TestCase):
         self.assertEqual(
             [],
             relationships.child_candidates("focus", "unknown-age-parent"),
+        )
+
+    def test_foster_relatives_use_the_right_generations_without_blood_edges(self):
+        people = self.people + [
+            {
+                "record_id": "foster-parent",
+                "displayed_name": "Foster Parent",
+            },
+            {
+                "record_id": "foster-child",
+                "displayed_name": "Foster Child",
+            },
+        ]
+        events = [
+            {
+                "record_id": "foster-event-parent",
+                "event_type": "foster_child",
+                "person_ids": ["foster-parent", "focus"],
+                "foster_parent_person_ids": ["foster-parent"],
+                "foster_child_person_ids": ["focus"],
+            },
+            {
+                "record_id": "foster-event-child",
+                "event_type": "foster_child",
+                "person_ids": ["focus", "foster-child"],
+                "foster_parent_person_ids": ["focus"],
+                "foster_child_person_ids": ["foster-child"],
+            },
+        ]
+        relationships = FamilyRelationshipMap(people, foster_events=events)
+        generations = relationships.build_generations("focus")
+        parent_relations = {
+            node["person"]["record_id"]: node["relation"]
+            for node in generations[1]
+        }
+        child_relations = {
+            node["person"]["record_id"]: node["relation"]
+            for node in generations[3]
+        }
+
+        self.assertEqual("Foster parent", parent_relations["foster-parent"])
+        self.assertEqual("Foster child", child_relations["foster-child"])
+        visible_ids = {
+            node["person"]["record_id"]
+            for generation in generations
+            for node in generation
+        }
+        edges = relationships.visible_parent_child_edges(visible_ids)
+        self.assertNotIn(("foster-parent", "focus"), edges)
+        self.assertNotIn(("focus", "foster-child"), edges)
+
+    def test_foster_child_is_positioned_outside_biological_children(self):
+        class RelationshipLayoutStub:
+            def parents_of(self, record_id):
+                return ["focus"] if record_id.startswith("child") else []
+
+        view = object.__new__(FamilyTreeView)
+        view.relationship_map = RelationshipLayoutStub()
+        view.node_coordinates = {
+            "focus": (300, 180, 132, 64),
+        }
+        nodes = [
+            {
+                "person": {"record_id": "child-a"},
+                "relation": "Child",
+            },
+            {
+                "person": {"record_id": "foster-child"},
+                "relation": "Foster child",
+            },
+            {
+                "person": {"record_id": "child-b"},
+                "relation": "Child",
+            },
+        ]
+        positions = FamilyTreeView.positions_for_row(
+            view,
+            nodes,
+            3,
+            0,
+            700,
+            300,
+            "focus",
+        )
+        positions_by_id = {
+            node["person"]["record_id"]: x_position
+            for node, x_position, *_ in positions
+        }
+
+        self.assertGreater(
+            positions_by_id["foster-child"],
+            max(
+                positions_by_id["child-a"],
+                positions_by_id["child-b"],
+            ),
         )
 
 

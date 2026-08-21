@@ -15,7 +15,7 @@ from pathlib import Path
 from uuid import uuid4
 
 
-INDEX_FORMAT_VERSION = 6
+INDEX_FORMAT_VERSION = 7
 INDEXED_COLLECTIONS = (
     "people",
     "locations",
@@ -149,7 +149,10 @@ def record_summary(collection: str, record: dict) -> dict:
         "book_readings": ("reading_id", "record_id", "person_id", "book_id", "date"),
         "maps": ("record_id", "name", "location_id", "floor_id"),
         "board_groups": ("record_id", "name", "location_id"),
-        "named_creatures": ("record_id", "name", "species_id", "location_id"),
+        "named_creatures": (
+            "record_id", "name", "species_record_id", "species_name",
+            "birth_date", "death_date", "location_id",
+        ),
     }.get(collection, ("record_id", "name"))
     summary = {field: record.get(field) for field in field_names if field in record}
     summary.setdefault("record_id", _record_id(record))
@@ -227,6 +230,8 @@ class WorldIndexCache:
             "addresses": defaultdict(list),
             "organizations": defaultdict(list),
             "items": defaultdict(list),
+            "books": defaultdict(list),
+            "named_creatures": defaultdict(list),
             "types": defaultdict(list),
             "dates": defaultdict(list),
         }
@@ -248,6 +253,15 @@ class WorldIndexCache:
                 event_links["organizations"][organization_id].append(event_id)
             for item_id in _linked_ids(event, "item_id", "item_ids"):
                 event_links["items"][item_id].append(event_id)
+            for book_id in _linked_ids(event, "book_id", "book_ids"):
+                event_links["books"][book_id].append(event_id)
+            named_creature_id = str(
+                event.get("named_creature_id", "") or ""
+            ).strip()
+            if named_creature_id:
+                event_links["named_creatures"][named_creature_id].append(
+                    event_id
+                )
             event_type = str(event.get("event_type", "") or "").strip()
             event_date = str(event.get("date", "") or "").strip()
             if event_type:

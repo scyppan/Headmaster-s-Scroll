@@ -1,4 +1,5 @@
 from copy import deepcopy
+from random import randrange
 
 from mage_maker.core.dates import (
     format_date_parts,
@@ -75,6 +76,7 @@ from mage_maker.ui.colored_tags import normalize_colored_tags
 RECENT_PERSON_STORAGE_KEY = "_recent_people"
 RECENT_PERSON_STORAGE_LIMIT = 12
 MARRIAGE_EVENT_SOURCE = "spouse_relationship"
+ANIMAGUS_CHANCE_DENOMINATOR = 1000
 
 
 class PeopleController:
@@ -99,6 +101,8 @@ class PeopleController:
         "can_give_birth",
         "does_not_have_children",
         "famous_person",
+        "animagus",
+        "parseltongue",
         "unfinished",
     )
     number_fields = (
@@ -125,6 +129,8 @@ class PeopleController:
         "can_give_birth",
         "does_not_have_children",
         "famous_person",
+        "animagus",
+        "parseltongue",
         "unfinished",
         "mage_group_id",
         "school",
@@ -374,6 +380,8 @@ class PeopleController:
             "can_give_birth": False,
             "does_not_have_children": False,
             "famous_person": False,
+            "animagus": False,
+            "parseltongue": False,
             "unfinished": True,
             "biological_mother_id": "",
             "biological_father_id": "",
@@ -436,6 +444,19 @@ class PeopleController:
         )
 
         if normalized["non_magical"]:
+            normalized["animagus"] = False
+            normalized["parseltongue"] = False
+        else:
+            normalized["parseltongue"] = bool(
+                normalized.get("parseltongue")
+                or self.has_parseltongue_parent(normalized)
+            )
+            if "animagus" not in creation_values:
+                normalized["animagus"] = (
+                    randrange(ANIMAGUS_CHANCE_DENOMINATOR) == 0
+                )
+
+        if normalized["non_magical"]:
             normalized["school"] = ""
             normalized["development_plan"] = (
                 non_magical_development_plan(
@@ -493,6 +514,7 @@ class PeopleController:
         record_id,
         values,
         synchronize_birth_event=True,
+        save_database=True,
     ):
         current_person = self.get_person(record_id)
 
@@ -565,12 +587,23 @@ class PeopleController:
         )
 
         if prospective_person.get("non_magical"):
+            prospective_person["animagus"] = False
+            prospective_person["parseltongue"] = False
             prospective_person["school"] = ""
             prospective_person["development_plan"] = (
                 non_magical_development_plan(
                     prospective_person.get("development_plan")
                 )
             )
+        else:
+            prospective_person["parseltongue"] = bool(
+                prospective_person.get("parseltongue")
+                or self.has_parseltongue_parent(prospective_person)
+            )
+        normalized["animagus"] = bool(prospective_person.get("animagus"))
+        normalized["parseltongue"] = bool(
+            prospective_person.get("parseltongue")
+        )
 
         normalize_historical_date_parts(
             prospective_person.get("birth_year"),
@@ -669,6 +702,10 @@ class PeopleController:
         non_magical_changed = bool(
             current_person.get("non_magical")
         ) != bool(prospective_person.get("non_magical"))
+        parseltongue_gained = (
+            not bool(current_person.get("parseltongue"))
+            and bool(prospective_person.get("parseltongue"))
+        )
         updated_person = self.database.update_person(record_id, normalized)
 
         if non_magical_changed and updated_person.get("non_magical"):
@@ -676,6 +713,8 @@ class PeopleController:
 
         if non_magical_changed:
             self.reconcile_child_blood_statuses(record_id)
+        if parseltongue_gained:
+            self.reconcile_child_parseltongue_statuses(record_id)
         self.synchronize_spouses(
             record_id,
             old_spouse_relationships,
@@ -703,7 +742,8 @@ class PeopleController:
                 (record_id,),
             )
 
-        self.database.save()
+        if save_database:
+            self.database.save()
         return self.database.read_person(record_id)
 
     def delete_person(self, record_id):
@@ -727,6 +767,40 @@ class PeopleController:
             normalized_person_id in death_event_person_ids(event)
             for event in self.database.list_records("events")
         )
+
+    def has_parseltongue_parent(self, person):
+        """Return whether either linked biological parent is a Parseltongue."""
+
+        for field_name in (
+            "biological_mother_id",
+            "biological_father_id",
+        ):
+            parent_id = str(person.get(field_name, "") or "").strip()
+            if not parent_id:
+                continue
+            parent = self.database.read_person(parent_id)
+            if parent is not None and bool(parent.get("parseltongue")):
+                return True
+        return False
+
+    def reconcile_child_parseltongue_statuses(self, parent_id):
+        """Apply the hereditary trait to existing magical children."""
+
+        normalized_parent_id = str(parent_id or "").strip()
+        if not normalized_parent_id:
+            return
+        for child in self.list_people_summaries():
+            if normalized_parent_id not in (
+                str(child.get("biological_mother_id", "") or ""),
+                str(child.get("biological_father_id", "") or ""),
+            ):
+                continue
+            if child.get("non_magical") or child.get("parseltongue"):
+                continue
+            self.database.update_person(
+                child["record_id"],
+                {"parseltongue": True},
+            )
 
     def normalize_values(self, values):
         normalized = deepcopy(values)

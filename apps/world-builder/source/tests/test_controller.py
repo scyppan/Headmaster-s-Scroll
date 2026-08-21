@@ -2,6 +2,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from mage_maker.core.controller import PeopleController
 from mage_maker.core.database import JsonDatabase
@@ -103,6 +104,99 @@ class PeopleControllerTests(unittest.TestCase):
         self.assertEqual("The Keeper", entry["name_entry"])
         self.assertEqual("1998", entry["date"])
         self.assertEqual("Used at school.", entry["note"])
+
+    @patch("mage_maker.core.controller.randrange", return_value=0)
+    def test_new_magical_person_has_one_in_one_thousand_animagus_chance(
+        self,
+        mocked_randrange,
+    ):
+        created = self.controller.create_person(
+            {"displayed_name": "Rare Animagus"}
+        )
+        self.assertTrue(created["animagus"])
+        mocked_randrange.assert_called_once_with(1000)
+
+    @patch("mage_maker.core.controller.randrange", return_value=1)
+    def test_animagus_chance_is_rolled_only_during_creation(
+        self,
+        mocked_randrange,
+    ):
+        created = self.controller.create_person(
+            {"displayed_name": "Ordinary Magician"}
+        )
+        self.assertFalse(created["animagus"])
+        self.controller.update_person(
+            created["record_id"],
+            {"notes": "Updated later."},
+        )
+        mocked_randrange.assert_called_once_with(1000)
+
+    @patch("mage_maker.core.controller.randrange", return_value=0)
+    def test_non_magical_person_cannot_become_animagus(
+        self,
+        mocked_randrange,
+    ):
+        created = self.controller.create_person(
+            {"displayed_name": "Non-magical Person", "non_magical": True}
+        )
+        self.assertFalse(created["animagus"])
+        mocked_randrange.assert_not_called()
+
+    def test_magical_child_inherits_parseltongue_from_either_parent(self):
+        mother = self.controller.create_person(
+            {
+                "displayed_name": "Parseltongue Mother",
+                "can_give_birth": True,
+                "parseltongue": True,
+            }
+        )
+        child = self.controller.create_person(
+            {
+                "displayed_name": "Parseltongue Child",
+                "biological_mother_id": mother["record_id"],
+            }
+        )
+        self.assertTrue(child["parseltongue"])
+
+    def test_non_magical_child_does_not_inherit_parseltongue(self):
+        father = self.controller.create_person(
+            {
+                "displayed_name": "Parseltongue Father",
+                "can_give_birth": False,
+                "parseltongue": True,
+            }
+        )
+        child = self.controller.create_person(
+            {
+                "displayed_name": "Non-magical Child",
+                "non_magical": True,
+                "biological_father_id": father["record_id"],
+            }
+        )
+        self.assertFalse(child["parseltongue"])
+
+    def test_existing_magical_child_inherits_when_parent_is_marked_later(self):
+        mother = self.controller.create_person(
+            {
+                "displayed_name": "Later Parseltongue Mother",
+                "can_give_birth": True,
+            }
+        )
+        child = self.controller.create_person(
+            {
+                "displayed_name": "Existing Magical Child",
+                "biological_mother_id": mother["record_id"],
+            }
+        )
+        self.assertFalse(child["parseltongue"])
+
+        self.controller.update_person(
+            mother["record_id"],
+            {"parseltongue": True},
+        )
+
+        updated_child = self.controller.get_person(child["record_id"])
+        self.assertTrue(updated_child["parseltongue"])
 
     def test_family_assignments_and_mates_are_reciprocal(self):
         mother = self.controller.create_person(

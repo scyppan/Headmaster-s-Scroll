@@ -451,9 +451,22 @@ class NameDetailsDialog(tk.Toplevel):
             self.listbox.itemconfigure(index, background=background)
 
     def save_details(self):
-        self.save_command({"entries": deepcopy(self.entries)})
+        try:
+            saved = self.save_command({"entries": deepcopy(self.entries)})
+        except Exception as error:
+            messagebox.showerror(
+                "Cannot apply name details",
+                str(error),
+                parent=self,
+            )
+            return False
+
+        if saved is False:
+            return False
+
         self.dirty = False
         self.destroy()
+        return True
 
     def close_dialog(self, event=None):
         if self.dirty and not messagebox.askyesno(

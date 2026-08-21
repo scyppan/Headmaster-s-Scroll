@@ -909,6 +909,7 @@ class EventPersonPickerDialog(tk.Toplevel):
         locked_person_ids=None,
         suggested_people_options=None,
         reference_date=None,
+        locations=None,
     ):
         super().__init__(parent)
         self.allow_multiple = bool(allow_multiple)
@@ -1013,6 +1014,11 @@ class EventPersonPickerDialog(tk.Toplevel):
             deepcopy(group)
             for group in mage_groups or []
             if isinstance(group, dict)
+        ]
+        self.locations = [
+            deepcopy(location)
+            for location in locations or []
+            if isinstance(location, dict)
         ]
         self.search_value = tk.StringVar()
         self.group_filter_value = tk.StringVar(
@@ -1917,6 +1923,7 @@ class EventPersonPickerDialog(tk.Toplevel):
             self.mage_groups,
             self.create_person_command,
             self.quick_person_created,
+            locations=self.locations,
         )
 
     def quick_person_created(self, person):
@@ -2012,6 +2019,7 @@ class QuickEventPersonDialog(tk.Toplevel):
         mage_groups,
         create_command,
         saved_command,
+        locations=None,
     ):
         super().__init__(parent)
         self.mage_groups = [
@@ -2021,19 +2029,21 @@ class QuickEventPersonDialog(tk.Toplevel):
         ]
         self.create_command = create_command
         self.saved_command = saved_command
+        self.locations = [
+            deepcopy(location)
+            for location in locations or []
+            if isinstance(location, dict)
+        ]
+        self.starting_location_id = ""
+        self.starting_location_value = tk.StringVar(
+            value="Choose a starting location"
+        )
         self.name_value = tk.StringVar()
         self.birth_year_value = tk.StringVar()
         self.birth_month_value = tk.StringVar()
         self.birth_day_value = tk.StringVar()
         self.can_give_birth_value = tk.BooleanVar(value=False)
         self.non_magical_value = tk.BooleanVar(value=False)
-        group_names = [
-            str(group.get("name", "") or "").strip()
-            for group in self.mage_groups
-            if str(group.get("name", "") or "").strip()
-        ]
-        self.group_names = group_names or ["Unassigned"]
-        self.group_value = tk.StringVar(value=self.group_names[0])
         self.title("New person")
         self.geometry("560x500")
         self.minsize(500, 460)
@@ -2168,35 +2178,54 @@ class QuickEventPersonDialog(tk.Toplevel):
             pady=(0, 10),
         )
 
-        group_label = tk.Label(
+        location_label = tk.Label(
             body,
-            text="Group",
+            text="Starting location",
             bg=SURFACE,
             fg=TEXT_MUTED,
             font=app_font(9, "bold"),
             anchor="w",
         )
-        group_label.grid(
+        location_label.grid(
             row=6,
             column=0,
             columnspan=3,
             sticky="ew",
         )
-        group_select = RoundedSelect(
-            body,
-            self.group_value,
-            self.group_names,
-            background=SURFACE,
-            height=38,
-            font=app_font(10),
-        )
-        group_select.grid(
+        location_row = tk.Frame(body, bg=SURFACE)
+        location_row.grid(
             row=7,
             column=0,
             columnspan=3,
             sticky="ew",
             pady=(5, 14),
         )
+        location_row.grid_columnconfigure(0, weight=1)
+        location_display = tk.Label(
+            location_row,
+            textvariable=self.starting_location_value,
+            bg=FIELD_BACKGROUND,
+            fg=TEXT_DARK,
+            font=app_font(9),
+            anchor="w",
+            padx=9,
+            pady=8,
+        )
+        location_display.grid(row=0, column=0, sticky="ew")
+        choose_location = SoftButton(
+            location_row,
+            text="Choose…",
+            command=self.choose_starting_location,
+            background=SURFACE,
+            width=88,
+            height=36,
+        )
+        choose_location.grid(row=0, column=1, padx=(7, 0))
+
+        if not self.locations:
+            self.starting_location_value.set("No locations available")
+            choose_location.set_enabled(False)
+
         flags = tk.Frame(body, bg=SURFACE)
         flags.grid(
             row=8,
@@ -2281,18 +2310,15 @@ class QuickEventPersonDialog(tk.Toplevel):
 
         return number
 
-    def selected_group_id(self):
-        return next(
-            (
-                str(group.get("group_id", "") or "")
-                for group in self.mage_groups
-                if str(group.get("name", "") or "")
-                == self.group_value.get()
-            ),
-            "unassigned",
-        )
-
     def create_person(self):
+        if self.locations and not self.starting_location_id:
+            messagebox.showerror(
+                "Starting location required",
+                "Choose the new person's starting location.",
+                parent=self,
+            )
+            return
+
         try:
             person = self.create_command(
                 {
@@ -2315,7 +2341,12 @@ class QuickEventPersonDialog(tk.Toplevel):
                         1,
                         31,
                     ),
-                    "mage_group_id": self.selected_group_id(),
+                    "starting_location_id": self.starting_location_id,
+                    "starting_location": (
+                        self.starting_location_value.get()
+                        if self.starting_location_id
+                        else ""
+                    ),
                     "can_give_birth": self.can_give_birth_value.get(),
                     "non_magical": self.non_magical_value.get(),
                 }
@@ -2330,6 +2361,30 @@ class QuickEventPersonDialog(tk.Toplevel):
 
         self.saved_command(person)
         self.destroy()
+
+    def choose_starting_location(self):
+        if not self.locations:
+            return
+
+        EventLocationPickerDialog(
+            self,
+            self.locations,
+            self.starting_location_id,
+            self.starting_location_selected,
+            dialog_title="Choose starting location",
+            action_text="Use location",
+        )
+
+    def starting_location_selected(self, location_id):
+        self.starting_location_id = str(location_id or "").strip()
+        self.starting_location_value.set(
+            recent_location_label(
+                self.starting_location_id,
+                self.locations,
+            )
+            if self.starting_location_id
+            else "Choose a starting location"
+        )
 
     def close_dialog(self, event=None):
         self.destroy()

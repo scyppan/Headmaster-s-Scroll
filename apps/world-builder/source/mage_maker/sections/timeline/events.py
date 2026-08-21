@@ -75,6 +75,12 @@ def normalize_timeline_event(event):
     normalized["automatic_source"] = str(
         normalized.get("automatic_source") or ""
     ).strip()
+    if normalized["event_type"] == "born":
+        normalized["birth_name"] = str(
+            normalized.get("birth_name") or ""
+        ).strip()
+    else:
+        normalized.pop("birth_name", None)
 
     if "person_ids" in normalized:
         normalized["person_ids"] = normalize_association_values(
@@ -156,9 +162,7 @@ def sort_timeline_events(events):
 def timeline_event_sort_key(event):
     event_type = str(event.get("event_type") or "custom")
     life_start_priority = {
-        "starting_location": 0,
-        "born": 1,
-        "birth_name": 2,
+        "born": 0,
     }.get(event_type)
     event_date = str(event.get("date") or "")
 
@@ -236,7 +240,18 @@ def timeline_event_summary(event):
         return f"Starting location: {detail or 'Unknown'}"
 
     if event_type == "born":
-        return "Born"
+        location = str(
+            event.get("birth_location_name")
+            or event.get("detail")
+            or ""
+        ).strip()
+        birth_name = str(event.get("birth_name") or "").strip()
+        summary = f"Born at {location}" if location else "Born"
+
+        if birth_name:
+            summary += f" · Birth name: {birth_name}"
+
+        return summary
 
     if event_type == "birth_name":
         return f"Birth name: {detail}" if detail else "Birth name"
@@ -374,7 +389,7 @@ def birth_timeline_summary(event, current_person_id, people):
     baby_label = murder_people_label(baby_ids, people)
 
     if selected_person_id in baby_ids:
-        return "Born"
+        return timeline_event_summary(event_values)
 
     if selected_person_id in birthing_parent_ids:
         return f"Bore a child: {baby_label}"

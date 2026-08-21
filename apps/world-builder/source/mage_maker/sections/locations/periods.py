@@ -243,7 +243,11 @@ def person_location_periods(person):
     for event in events if isinstance(events, list) else []:
         if (
             not isinstance(event, dict)
-            or event.get("event_type") not in ("starting_location", "relocated")
+            or event.get("event_type") not in (
+                "born",
+                "starting_location",
+                "relocated",
+            )
         ):
             continue
 

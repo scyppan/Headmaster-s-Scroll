@@ -47,6 +47,10 @@ from mage_maker.sections.family_tree.relationships import (
     FamilyRelationshipMap,
     person_can_give_birth,
 )
+from mage_maker.sections.books.models import (
+    book_publication_event_id,
+    normalize_book_record,
+)
 from mage_maker.sections.events.types import (
     canonical_event_type,
     event_type_label,
@@ -141,6 +145,7 @@ class EventController:
         self._events_by_person_id = {}
         self._events_by_location_id = {}
         self._events_by_item_id = {}
+        self._events_by_named_creature_id = {}
         self._eminence_points_by_person_id = {}
         self._people_options_cache = None
         self._people_options_by_id_cache = {}
@@ -184,7 +189,100 @@ class EventController:
                         "collection": "named_creatures",
                         "search_text": " ".join((name, str(record.get("species_name", "") or ""))),
                     })
+        elif event_type == "published_book":
+            for record in self.database.list_records("books"):
+                record_id = str(record.get("record_id", "") or "").strip()
+                title = str(record.get("title", "") or "").strip()
+                if record_id and title:
+                    options.append({
+                        "value": record_id,
+                        "label": title,
+                        "group": "Books",
+                        "collection": "books",
+                        "search_text": " ".join(
+                            str(record.get(key, "") or "")
+                            for key in (
+                                "title",
+                                "author_name",
+                                "description",
+                                "primary_category",
+                            )
+                        ),
+                    })
         return sorted(options, key=lambda item: (item["label"].casefold(), item["value"]))
+
+    def upsert_book_publication_event(self, event, save_database=True):
+        """Make the selected book's single publication event authoritative."""
+        book_ids = list(event.get("book_ids", []) or [])
+        if len(book_ids) != 1:
+            raise ValueError(
+                "A Published a book event must link exactly one book."
+            )
+
+        book_id = str(book_ids[0] or "").strip()
+        book = self.database.read_record("books", book_id)
+        if book is None:
+            raise ValueError("The selected book no longer exists.")
+
+        prepared_book = deepcopy(book)
+        prepared_book["publication_date"] = str(
+            event.get("date", "") or ""
+        ).strip()
+        prepared_book["publication_event_id"] = (
+            book_publication_event_id(book_id)
+        )
+
+        author_ids = list(event.get("person_ids", []) or [])
+        if author_ids:
+            author_id = str(author_ids[0] or "").strip()
+            author = self.database.read_record("people", author_id)
+            if author is None:
+                raise ValueError("The selected author no longer exists.")
+            prepared_book["author_person_id"] = author_id
+            prepared_book["author_name"] = str(
+                author.get("displayed_name", "") or ""
+            ).strip()
+
+        location_ids = list(event.get("location_ids", []) or [])
+        prepared_book["publication_location_id"] = (
+            str(location_ids[0] or "").strip() if location_ids else ""
+        )
+        prepared_book = normalize_book_record(prepared_book)
+        self.database.update_record("books", book_id, prepared_book)
+
+        event_id = prepared_book["publication_event_id"]
+        prepared_event = deepcopy(event)
+        prepared_event.update(
+            {
+                "record_id": event_id,
+                "event_type": "published_book",
+                "book_ids": [book_id],
+                "book_title": prepared_book["title"],
+                "book_author_name": prepared_book["author_name"],
+            }
+        )
+        if str(prepared_event.get("title", "") or "").strip() in (
+            "",
+            "Published a book",
+            "Published book",
+        ):
+            prepared_event["title"] = (
+                f"Published {prepared_book['title']}"
+            )
+        prepared_event = normalize_world_event(prepared_event)
+        current = self.get_event(event_id)
+        self.validate_associations(prepared_event, current)
+        if current is None:
+            stored = self.database.create_record("events", prepared_event)
+        else:
+            stored = self.database.update_record(
+                "events", event_id, prepared_event
+            )
+        self.invalidate_event_cache()
+        self.remember_associations(stored)
+        if save_database:
+            self.database.save()
+        return normalize_world_event(stored)
 
     def people_summaries(self):
         if callable(self.people_summary_provider):
@@ -221,6 +319,7 @@ class EventController:
         self._events_by_person_id = {}
         self._events_by_location_id = {}
         self._events_by_item_id = {}
+        self._events_by_named_creature_id = {}
         self._eminence_points_by_person_id = {}
         self._eminence_eligible_ids_cache = None
         self._eminence_eligible_ids_cache_revision = None
@@ -251,6 +350,7 @@ class EventController:
         events_by_person_id = {}
         events_by_location_id = {}
         events_by_item_id = {}
+        events_by_named_creature_id = {}
         eminence_points_by_person_id = {}
 
         for event in normalized_events:
@@ -284,11 +384,20 @@ class EventController:
             for item_id in event.get("item_ids", []):
                 events_by_item_id.setdefault(item_id, []).append(event)
 
+            named_creature_id = str(
+                event.get("named_creature_id", "") or ""
+            ).strip()
+            if named_creature_id:
+                events_by_named_creature_id.setdefault(
+                    named_creature_id, []
+                ).append(event)
+
         self._event_cache = normalized_events
         self._events_by_record_id = events_by_record_id
         self._events_by_person_id = events_by_person_id
         self._events_by_location_id = events_by_location_id
         self._events_by_item_id = events_by_item_id
+        self._events_by_named_creature_id = events_by_named_creature_id
         self._eminence_points_by_person_id = eminence_points_by_person_id
         self._event_cache_revision = database_revision
 
@@ -323,6 +432,27 @@ class EventController:
         self.ensure_event_cache()
         matching_events = list(
             self._events_by_item_id.get(selected_item_id, [])
+        )
+        matching_events.sort(key=world_event_sort_key)
+        return deepcopy(matching_events)
+
+    def events_for_named_creature(self, named_creature_id):
+        selected_id = str(named_creature_id or "").strip()
+        if not selected_id:
+            return []
+        linked_reader = getattr(self.database, "get_linked_records", None)
+        if callable(linked_reader):
+            matching_events = [
+                normalize_world_event(self.apply_title_rules(event))
+                for event in linked_reader(
+                    "events", selected_id, "named_creatures"
+                )
+            ]
+            matching_events.sort(key=world_event_sort_key)
+            return deepcopy(matching_events)
+        self.ensure_event_cache()
+        matching_events = list(
+            self._events_by_named_creature_id.get(selected_id, [])
         )
         matching_events.sort(key=world_event_sort_key)
         return deepcopy(matching_events)
@@ -1248,6 +1378,11 @@ class EventController:
                 self.apply_event_rules(prepared)
             )
         )
+        if normalized["event_type"] == "published_book":
+            return self.upsert_book_publication_event(
+                normalized,
+                save_database=save_database,
+            )
         self.validate_associations(
             normalized,
             allow_death_replacement=replace_existing_death,
@@ -1344,6 +1479,13 @@ class EventController:
                 self.apply_event_rules(prospective, current)
             )
         )
+        if current.get("event_type") == "published_book":
+            if normalized["event_type"] != "published_book":
+                raise ValueError(
+                    "A book's publication event cannot be changed into "
+                    "another event type."
+                )
+            return self.upsert_book_publication_event(normalized)
         self.validate_associations(
             normalized,
             current,
@@ -1438,6 +1580,14 @@ class EventController:
             raise ValueError(
                 "A Birth event is a required part of the baby's Timeline "
                 "and cannot be removed."
+            )
+
+        if canonical_event_type(
+            current.get("event_type")
+        ) == "published_book":
+            raise ValueError(
+                "A Published a book event is required by its book and "
+                "cannot be removed."
             )
 
         self.validate_ghost_event_dependencies(
@@ -3030,7 +3180,11 @@ class EventController:
         ):
             event_type = str(event.get("event_type", "") or "").strip()
 
-            if event_type not in ("starting_location", "relocated"):
+            if event_type not in (
+                "born",
+                "starting_location",
+                "relocated",
+            ):
                 continue
 
             location_id = next(
@@ -3609,8 +3763,9 @@ class EventController:
             str(option.get("value", "") or ""),
         )
 
-    def association_labels(self, event):
-        normalized = normalize_world_event(event)
+    def association_label_context(self):
+        """Build shared lookup tables for rendering a collection of events."""
+
         people_by_id = {
             str(person.get("record_id", "") or ""): str(
                 person.get("displayed_name", "") or "Unnamed magician"
@@ -3627,11 +3782,33 @@ class EventController:
             for location in locations
         }
         return {
+            "people_by_id": people_by_id,
+            "locations": locations,
+            "organizations": organizations,
+            "location_labels": location_labels,
+            "periods": self.period_provider(),
+        }
+
+    def association_labels(self, event, context=None):
+        normalized = normalize_world_event(event)
+        resolved_context = (
+            context
+            if isinstance(context, dict)
+            else self.association_label_context()
+        )
+        people_by_id = resolved_context.get("people_by_id", {})
+        locations = resolved_context.get("locations", [])
+        organizations = resolved_context.get("organizations", [])
+        location_labels = resolved_context.get("location_labels", {})
+        return {
             "people": [
                 people_by_id.get(person_id, "Missing person")
                 for person_id in normalized["person_ids"]
             ],
-            "periods": self.period_names_for_event(normalized),
+            "periods": self.period_names_for_date(
+                normalized.get("date"),
+                resolved_context.get("periods"),
+            ),
             "locations": [
                 location_labels.get(location_id, "Missing location")
                 for location_id in normalized["location_ids"]
@@ -3658,7 +3835,7 @@ class EventController:
         normalized = normalize_world_event(event)
         return self.period_names_for_date(normalized.get("date"))
 
-    def period_names_for_date(self, date_value):
+    def period_names_for_date(self, date_value, period_definitions=None):
         event_year = world_event_year(date_value)
 
         if event_year is None:
@@ -3666,7 +3843,12 @@ class EventController:
 
         matching_names = []
 
-        for period in self.period_provider():
+        definitions = (
+            period_definitions
+            if isinstance(period_definitions, list)
+            else self.period_provider()
+        )
+        for period in definitions:
             try:
                 start_year = int(period.get("calculation_start_year"))
                 end_year = int(period.get("calculation_end_year"))
@@ -3791,6 +3973,25 @@ class EventController:
             raise ValueError(
                 f"A {event_label} event needs at least two people."
             )
+
+        if event.get("event_type") == "foster_child":
+            foster_parent_ids = list(
+                event.get("foster_parent_person_ids", []) or []
+            )
+            foster_child_ids = list(
+                event.get("foster_child_person_ids", []) or []
+            )
+
+            if len(foster_parent_ids) != 1 or len(foster_child_ids) != 1:
+                raise ValueError(
+                    "A foster-child event needs one foster parent and one "
+                    "foster child."
+                )
+
+            if foster_parent_ids[0] == foster_child_ids[0]:
+                raise ValueError(
+                    "A person cannot be their own foster parent."
+                )
 
         linked_person_ids = event_linked_person_ids(event)
         raw_item_new_owners = event.get("item_new_owners", {})
@@ -3997,6 +4198,11 @@ class EventController:
         if len(baby_ids) != 1:
             raise ValueError(
                 "A Birth event needs exactly one baby."
+            )
+
+        if len((event or {}).get("location_ids", []) or []) != 1:
+            raise ValueError(
+                "A Birth event needs exactly one starting location."
             )
 
         if len(birthing_parent_ids) > 1:

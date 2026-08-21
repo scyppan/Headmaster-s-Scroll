@@ -64,6 +64,7 @@ EVENT_COLORS = {
     "birth_name": "#E2D6ED",
     "gave_birth": "#F7F0C9",
     "had_child": "#F7F0C9",
+    "foster_child": "#F7F0C9",
     "got_married": "#D5EAD9",
     "romance": "#F7E7EE",
     "breakup": "#F7E7EE",
@@ -85,11 +86,26 @@ EVENT_COLORS = {
     "other": "#E0D2E8",
 }
 LIFE_START_PRIORITIES = {
-    "starting_location": 0,
-    "born": 1,
-    "birth_name": 2,
+    "born": 0,
 }
 TIMELINE_SECTION_DASHES = "-" * 32
+
+
+def profile_events_without_promoted_copies(profile_events, linked_events):
+    """Hide legacy profile rows already represented by canonical events."""
+    promoted_event_ids = {
+        str(event.get("profile_timeline_event_id", "") or "").strip()
+        for event in linked_events
+        if isinstance(event, dict)
+        and str(event.get("profile_timeline_event_id", "") or "").strip()
+    }
+    return [
+        deepcopy(event)
+        for event in profile_events
+        if isinstance(event, dict)
+        and str(event.get("event_id", "") or "").strip()
+        not in promoted_event_ids
+    ]
 
 
 def format_timeline_date(value):
@@ -706,12 +722,22 @@ class TimelineView(tk.Frame):
         return deepcopy(self.events)
 
     def set_linked_events(self, events, refresh=True):
-        self.linked_events = [
-            deepcopy(event)
-            for event in events
-            if isinstance(event, dict)
-            and str(event.get("record_id", "") or "").strip()
-        ]
+        linked_events = []
+        seen_record_ids = set()
+
+        for event in events:
+            if not isinstance(event, dict):
+                continue
+
+            record_id = str(event.get("record_id", "") or "").strip()
+
+            if not record_id or record_id in seen_record_ids:
+                continue
+
+            seen_record_ids.add(record_id)
+            linked_events.append(deepcopy(event))
+
+        self.linked_events = linked_events
         available_ids = {
             event["event_id"]
             for event in self.events
@@ -784,7 +810,17 @@ class TimelineView(tk.Frame):
             None,
         )
         self.render_person_id = current_person_id
-        candidate_events = [deepcopy(event) for event in self.events]
+        candidate_events = [
+            event
+            for event in profile_events_without_promoted_copies(
+                self.events,
+                self.linked_events,
+            )
+            if not (
+                event.get("automatic_source") == "life_start"
+                and event.get("event_type") != "born"
+            )
+        ]
         linked_birth_for_current_person = any(
             linked_event.get("event_type") == "born"
             and current_person_id in linked_event.get("baby_person_ids", [])
@@ -808,6 +844,43 @@ class TimelineView(tk.Frame):
             display_event["detail"] = display_event.get("title", "")
             display_event["note"] = display_event.get("description", "")
             candidate_events.append(display_event)
+
+        location_names_by_id = {}
+        birth_location_ids = {
+            str(location_id or "").strip()
+            for event in candidate_events
+            if event.get("event_type") == "born"
+            for location_id in event.get("location_ids", []) or []
+            if str(location_id or "").strip()
+        }
+
+        if self.event_controller is not None and birth_location_ids:
+            location_names_by_id = {
+                str(location.get("record_id", "") or "").strip(): str(
+                    location.get("name", "") or ""
+                ).strip()
+                for location in self.event_controller.location_records()
+                if isinstance(location, dict)
+                and str(location.get("record_id", "") or "").strip()
+                in birth_location_ids
+            }
+
+        for event in candidate_events:
+            if event.get("event_type") != "born":
+                continue
+
+            location_id = next(
+                (
+                    str(value or "").strip()
+                    for value in reversed(event.get("location_ids", []) or [])
+                    if str(value or "").strip()
+                ),
+                "",
+            )
+            location_name = location_names_by_id.get(location_id, "")
+
+            if location_name:
+                event["birth_location_name"] = location_name
 
         if self.draft_event is not None:
             candidate_events.append(deepcopy(self.draft_event))
@@ -1338,14 +1411,6 @@ class TimelineView(tk.Frame):
             self.hide_event_editor()
             return
 
-        if (
-            selected_event is not None
-            and selected_event.get("automatic_source") == "life_start"
-            and selected_event.get("event_type") == "birth_name"
-        ):
-            self.show_name_details_panel()
-            return
-
         event_editor = self.ensure_event_editor()
         comparison_command = getattr(
             event_editor,
@@ -1437,13 +1502,9 @@ class TimelineView(tk.Frame):
             selected_event.get("event_type", "") or ""
         )
 
-        if automatic_source == "life_start" and event_type == "birth_name":
-            self.show_name_details_panel()
-            return
-
         if (
             automatic_source == "life_start"
-            and event_type in ("starting_location", "born")
+            and event_type == "born"
         ):
             location_ids = [
                 str(location_id or "").strip()
@@ -1453,31 +1514,6 @@ class TimelineView(tk.Frame):
             location_name = str(
                 selected_event.get("detail", "") or ""
             ).strip()
-
-            if event_type == "born":
-                starting_event = next(
-                    (
-                        event
-                        for event in self.events
-                        if event.get("event_type") == "starting_location"
-                    ),
-                    {},
-                )
-
-                if not location_ids:
-                    location_ids = [
-                        str(location_id or "").strip()
-                        for location_id in starting_event.get(
-                            "location_ids",
-                            [],
-                        )
-                        if str(location_id or "").strip()
-                    ]
-
-                if not location_name:
-                    location_name = str(
-                        starting_event.get("detail", "") or ""
-                    ).strip()
 
             if (
                 not location_ids
@@ -1511,25 +1547,16 @@ class TimelineView(tk.Frame):
                 location_ids=location_ids,
                 read_only=False,
                 explanation=(
-                    "Changing the location updates both Starting location "
-                    "and Born."
-                    if event_type == "starting_location"
-                    else (
-                        "Changing the birth date updates the person and all "
-                        "three opening events. Changing the location also "
-                        "updates Starting location."
-                    )
+                    "This one event records the person's birth date and "
+                    "required starting location. An optional Birth name is "
+                    "managed in Name Details."
                 ),
                 lock_title=True,
-                lock_date=event_type == "starting_location",
+                lock_date=False,
                 lock_people=True,
                 single_location=True,
-                title_from_location=event_type == "starting_location",
-                display_title=(
-                    location_name
-                    if event_type == "starting_location"
-                    else "Born"
-                ),
+                title_from_location=False,
+                display_title="Born",
             )
             return
 
@@ -1690,8 +1717,7 @@ class TimelineView(tk.Frame):
         if (
             storage_kind == "timeline"
             and original_event.get("automatic_source") == "life_start"
-            and original_event.get("event_type")
-            in ("starting_location", "born")
+            and original_event.get("event_type") == "born"
         ):
             if self.life_start_save_command is None:
                 raise ValueError(

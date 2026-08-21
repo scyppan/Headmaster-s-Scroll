@@ -2,7 +2,9 @@ import uuid
 from copy import deepcopy
 
 from mage_maker.sections.events.models import (
+    normalize_world_event,
     normalize_world_event_date,
+    normalize_world_events,
     split_world_event_date,
 )
 
@@ -36,6 +38,119 @@ BOOK_READING_SOURCE_TYPES = (
     "Owned copy",
     "Other",
 )
+BOOK_PUBLICATION_EVENT_TYPE = "published_book"
+
+
+def book_publication_event_id(book_id):
+    normalized_book_id = str(book_id or "").strip()
+    return f"book-publication:{normalized_book_id}"
+
+
+def publication_event_book_ids(event):
+    if not isinstance(event, dict):
+        return []
+    return [
+        str(book_id or "").strip()
+        for book_id in event.get("book_ids", []) or []
+        if str(book_id or "").strip()
+    ]
+
+
+def publication_event_from_book(book, existing_event=None):
+    normalized_book = normalize_book_record(book)
+    event = (
+        deepcopy(existing_event)
+        if isinstance(existing_event, dict)
+        else {}
+    )
+    author_id = normalized_book["author_person_id"]
+    location_id = normalized_book["publication_location_id"]
+    event.update(
+        {
+            "record_id": normalized_book["publication_event_id"],
+            "event_type": BOOK_PUBLICATION_EVENT_TYPE,
+            "title": f"Published {normalized_book['title']}",
+            "date": normalized_book["publication_date"],
+            "time": "",
+            "description": str(event.get("description", "") or ""),
+            "person_ids": [author_id] if author_id else [],
+            "book_ids": [normalized_book["record_id"]],
+            "book_author_name": normalized_book["author_name"],
+            "period_names": [],
+            "location_ids": [location_id] if location_id else [],
+            "locked_location_ids": [],
+            "eminence_person_ids": [],
+            "eminence_skills": {},
+            "organization_id": "",
+            "organization_name": "",
+            "item_ids": [],
+            "item_link_types": {},
+            "item_new_owners": {},
+            "address_ids": [],
+        }
+    )
+    return normalize_world_event(event)
+
+
+def synchronize_book_publication_events(database_data):
+    """Create one canonical publication event for every stored book."""
+    if not isinstance(database_data, dict):
+        return False
+
+    books = normalize_book_records(database_data.get("books", []))
+    events = normalize_world_events(database_data.get("events", []))
+    people_by_name = {}
+    duplicate_names = set()
+    for person in database_data.get("people", []) or []:
+        if not isinstance(person, dict):
+            continue
+        person_id = str(person.get("record_id", "") or "").strip()
+        name = str(person.get("displayed_name", "") or "").strip()
+        key = name.casefold()
+        if not person_id or not key:
+            continue
+        if key in people_by_name:
+            duplicate_names.add(key)
+        else:
+            people_by_name[key] = person_id
+    for key in duplicate_names:
+        people_by_name.pop(key, None)
+
+    events_by_id = {
+        str(event.get("record_id", "") or "").strip(): event
+        for event in events
+    }
+    publication_event_ids = set()
+    normalized_books = []
+    for book in books:
+        if not book["author_person_id"]:
+            book["author_person_id"] = people_by_name.get(
+                book["author_name"].casefold(), ""
+            )
+        event_id = book_publication_event_id(book["record_id"])
+        book["publication_event_id"] = event_id
+        existing = events_by_id.get(event_id)
+        publication = publication_event_from_book(book, existing)
+        events_by_id[event_id] = publication
+        publication_event_ids.add(event_id)
+        normalized_books.append(book)
+
+    retained = [
+        event
+        for event in events
+        if str(event.get("record_id", "") or "").strip()
+        not in publication_event_ids
+    ]
+    retained.extend(events_by_id[event_id] for event_id in publication_event_ids)
+    normalized_events = normalize_world_events(retained)
+    changed = (
+        database_data.get("books", []) != normalized_books
+        or database_data.get("events", []) != normalized_events
+    )
+    if changed:
+        database_data["books"] = normalized_books
+        database_data["events"] = normalized_events
+    return changed
 
 
 def normalize_compact_text(value):
@@ -304,6 +419,10 @@ def normalize_book_record(value):
     normalized = deepcopy(value)
     normalized["record_id"] = str(
         normalized.get("record_id") or uuid.uuid4()
+    ).strip()
+    normalized["publication_event_id"] = str(
+        normalized.get("publication_event_id")
+        or book_publication_event_id(normalized["record_id"])
     ).strip()
     normalized["title"] = normalize_compact_text(normalized.get("title"))
 

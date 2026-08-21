@@ -47,7 +47,7 @@ def mage_location_names(people):
 
             event_type = str(event.get("event_type", "") or "").strip()
 
-            if event_type in ("starting_location", "relocated"):
+            if event_type in ("born", "starting_location", "relocated"):
                 candidates.append(event.get("detail"))
 
             candidates.append(event.get("location"))
@@ -261,7 +261,7 @@ class LocationController:
                 if (
                     not isinstance(event, dict)
                     or str(event.get("event_type", "") or "")
-                    != "starting_location"
+                    not in ("born", "starting_location")
                 ):
                     continue
 

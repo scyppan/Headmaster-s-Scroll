@@ -133,7 +133,7 @@ class BookDialog(tk.Toplevel):
         date_fields.grid(row=0, column=0, sticky="w")
         self.publication_year_field = LabeledEntry(
             date_fields,
-            "Publication year",
+            "Published book event year",
             self.publication_year_value,
             background=SURFACE,
         )

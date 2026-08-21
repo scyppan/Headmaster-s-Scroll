@@ -9,6 +9,7 @@ from mage_maker.sections.development.initial_values import (
     allowed_parent_magic_states,
     person_magic_state,
 )
+from mage_maker.sections.events.types import canonical_event_type
 
 
 def person_can_give_birth(person):
@@ -30,9 +31,12 @@ def person_can_give_birth(person):
 
 
 class FamilyRelationshipMap:
-    def __init__(self, people, current_person=None):
+    def __init__(self, people, current_person=None, foster_events=()):
+        # Family-tree providers already return compact, disposable summaries.
+        # Shallow copies protect the provider without recursively copying every
+        # nested field for thousands of people.
         self.people_by_id = {
-            str(person.get("record_id")): deepcopy(person)
+            str(person.get("record_id")): dict(person)
             for person in people
             if isinstance(person, dict) and person.get("record_id")
         }
@@ -44,6 +48,32 @@ class FamilyRelationshipMap:
             self.people_by_id[current_id] = merged_person
 
         self.children_by_parent = {}
+        self.foster_children_by_parent = {}
+        self.foster_parents_by_child = {}
+        self._assigned_parent_ids = {"mother": [], "father": []}
+        self._mate_ids_by_person = {
+            record_id: [] for record_id in self.people_by_id
+        }
+
+        def remember_mate(first_id, second_id):
+            first_id = str(first_id or "").strip()
+            second_id = str(second_id or "").strip()
+            if (
+                not first_id
+                or not second_id
+                or first_id == second_id
+                or first_id not in self.people_by_id
+                or second_id not in self.people_by_id
+            ):
+                return
+            mates = self._mate_ids_by_person.setdefault(first_id, [])
+            if second_id not in mates:
+                mates.append(second_id)
+
+        for person_id, person in self.people_by_id.items():
+            for mate_id in person.get("mate_ids", []) or []:
+                remember_mate(person_id, mate_id)
+                remember_mate(mate_id, person_id)
 
         for person in self.people_by_id.values():
             for field_name in ("biological_mother_id", "biological_father_id"):
@@ -53,6 +83,64 @@ class FamilyRelationshipMap:
                     self.children_by_parent.setdefault(parent_id, []).append(
                         person["record_id"]
                     )
+                    role = (
+                        "mother"
+                        if field_name == "biological_mother_id"
+                        else "father"
+                    )
+                    if parent_id not in self._assigned_parent_ids[role]:
+                        self._assigned_parent_ids[role].append(parent_id)
+
+            parent_ids = self.unique_ids(
+                (
+                    person.get("biological_mother_id"),
+                    person.get("biological_father_id"),
+                )
+            )
+            if len(parent_ids) == 2:
+                remember_mate(parent_ids[0], parent_ids[1])
+                remember_mate(parent_ids[1], parent_ids[0])
+
+        for event in foster_events or ():
+            if (
+                not isinstance(event, dict)
+                or canonical_event_type(event.get("event_type"))
+                != "foster_child"
+            ):
+                continue
+
+            parent_ids = self.unique_ids(
+                event.get("foster_parent_person_ids", [])
+            )
+            child_ids = self.unique_ids(
+                event.get("foster_child_person_ids", [])
+            )
+
+            for parent_id in parent_ids:
+                if parent_id not in self.people_by_id:
+                    continue
+
+                for child_id in child_ids:
+                    if (
+                        child_id not in self.people_by_id
+                        or child_id == parent_id
+                    ):
+                        continue
+
+                    children = self.foster_children_by_parent.setdefault(
+                        parent_id,
+                        [],
+                    )
+                    parents = self.foster_parents_by_child.setdefault(
+                        child_id,
+                        [],
+                    )
+
+                    if child_id not in children:
+                        children.append(child_id)
+
+                    if parent_id not in parents:
+                        parents.append(parent_id)
 
     def person(self, record_id):
         return self.people_by_id.get(str(record_id or ""))
@@ -72,6 +160,16 @@ class FamilyRelationshipMap:
 
     def children_of(self, record_id):
         return self.unique_ids(self.children_by_parent.get(str(record_id or ""), []))
+
+    def foster_children_of(self, record_id):
+        return self.unique_ids(
+            self.foster_children_by_parent.get(str(record_id or ""), [])
+        )
+
+    def foster_parents_of(self, record_id):
+        return self.unique_ids(
+            self.foster_parents_by_child.get(str(record_id or ""), [])
+        )
 
     def siblings_of(self, record_id):
         sibling_ids = []
@@ -107,35 +205,9 @@ class FamilyRelationshipMap:
         return "Sibling"
 
     def mates_of(self, record_id):
-        person = self.person(record_id)
-
-        if person is None:
-            return []
-
-        mate_ids = list(person.get("mate_ids", []) or [])
-
-        for possible_mate in self.people_by_id.values():
-            if record_id in (possible_mate.get("mate_ids", []) or []):
-                mate_ids.append(possible_mate["record_id"])
-
-        for child in self.people_by_id.values():
-            parent_ids = self.unique_ids(
-                (
-                    child.get("biological_mother_id"),
-                    child.get("biological_father_id"),
-                )
-            )
-
-            if record_id in parent_ids:
-                mate_ids.extend(
-                    parent_id for parent_id in parent_ids if parent_id != record_id
-                )
-
-        return [
-            mate_id
-            for mate_id in self.unique_ids(mate_ids)
-            if mate_id != record_id and self.person(mate_id) is not None
-        ]
+        return list(
+            self._mate_ids_by_person.get(str(record_id or ""), [])
+        )
 
     def step_parent_mates_of(self, focus_id):
         parent_ids = self.parents_of(focus_id)
@@ -160,11 +232,7 @@ class FamilyRelationshipMap:
                 "Parent role must be birthing parent or non-birthing parent."
             )
 
-        field_name = f"biological_{parent_role}_id"
-        return self.unique_ids(
-            person.get(field_name)
-            for person in self.people_by_id.values()
-        )
+        return list(self._assigned_parent_ids[parent_role])
 
     def parent_candidates(self, focus_id, parent_role, alternate_role=False):
         if parent_role not in ("mother", "father"):
@@ -194,7 +262,7 @@ class FamilyRelationshipMap:
 
         allowed_magic_states = allowed_parent_magic_states(
             focus,
-            self.people_by_id.values(),
+            self.people_by_id,
             parent_role,
         )
         candidates = []
@@ -415,14 +483,16 @@ class FamilyRelationshipMap:
 
     def descendants_of(self, record_id):
         descendants = []
+        seen = set()
         pending = list(self.children_of(record_id))
 
         while pending:
             descendant_id = pending.pop(0)
 
-            if descendant_id in descendants:
+            if descendant_id in seen:
                 continue
 
+            seen.add(descendant_id)
             descendants.append(descendant_id)
             pending.extend(self.children_of(descendant_id))
 
@@ -449,6 +519,16 @@ class FamilyRelationshipMap:
             paternal_cousins.extend(self.children_of(relative_id))
 
         children = self.children_of(focus_id)
+        foster_children = [
+            child_id
+            for child_id in self.foster_children_of(focus_id)
+            if child_id not in children
+        ]
+        foster_parents = [
+            parent_id
+            for parent_id in self.foster_parents_of(focus_id)
+            if parent_id not in (mother_id, father_id)
+        ]
         nieces_nephews = []
         grandchildren = []
 
@@ -465,11 +545,14 @@ class FamilyRelationshipMap:
             maternal_aunts_uncles
             + [mother_id, father_id]
             + paternal_aunts_uncles
+            + foster_parents
         )
         focus_generation = self.unique_ids(
             maternal_cousins + siblings + [focus_id] + paternal_cousins
         )
-        child_generation = self.unique_ids(nieces_nephews + children)
+        child_generation = self.unique_ids(
+            nieces_nephews + children + foster_children
+        )
         grandchild_generation = self.unique_ids(grandchildren)
 
         return [
@@ -480,6 +563,7 @@ class FamilyRelationshipMap:
                 father_id,
                 maternal_aunts_uncles,
                 paternal_aunts_uncles,
+                foster_parents,
             ),
             self.nodes_for_focus_generation(
                 focus_generation,
@@ -492,6 +576,7 @@ class FamilyRelationshipMap:
                 child_generation,
                 children,
                 nieces_nephews,
+                foster_children,
             ),
             self.nodes_for(grandchild_generation, "Grandchild"),
         ]
@@ -510,6 +595,7 @@ class FamilyRelationshipMap:
         father_id,
         maternal_aunts_uncles,
         paternal_aunts_uncles,
+        foster_parents=(),
     ):
         nodes = []
 
@@ -522,6 +608,8 @@ class FamilyRelationshipMap:
                 relation = "Birthing parent's pibbling"
             elif record_id in paternal_aunts_uncles:
                 relation = "Non-birthing parent's pibbling"
+            elif record_id in foster_parents:
+                relation = "Foster parent"
             else:
                 relation = "Pibbling"
 
@@ -555,11 +643,22 @@ class FamilyRelationshipMap:
 
         return nodes
 
-    def nodes_for_child_generation(self, record_ids, children, nieces_nephews):
+    def nodes_for_child_generation(
+        self,
+        record_ids,
+        children,
+        nieces_nephews,
+        foster_children=(),
+    ):
         nodes = []
 
         for record_id in record_ids:
-            relation = "Child" if record_id in children else "Nibbling"
+            if record_id in children:
+                relation = "Child"
+            elif record_id in foster_children:
+                relation = "Foster child"
+            else:
+                relation = "Nibbling"
             nodes.append({"person": self.person(record_id), "relation": relation})
 
         return nodes

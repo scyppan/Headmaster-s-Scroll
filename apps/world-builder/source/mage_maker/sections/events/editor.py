@@ -653,6 +653,11 @@ class EventAssociationPicker(tk.Frame):
                     if hasattr(self.controller, "location_records")
                     else []
                 ),
+                schools=(
+                    self.controller.school_records()
+                    if hasattr(self.controller, "school_records")
+                    else []
+                ),
             )
         elif self.association_kind == "locations":
             location_records = (
@@ -1806,7 +1811,7 @@ class EventEditor(tk.Frame):
         self.update_unnamed_victim_controls()
         self.murder_additional_people_button = SoftButton(
             self.murder_additional_people_panel,
-            text="Edit witnesses / affected by",
+            text="Edit witnesses / affected people",
             command=self.open_murder_additional_people_dialog,
             background=self.background,
             fill=FIELD_BACKGROUND,
@@ -3190,15 +3195,12 @@ class EventEditor(tk.Frame):
         self.victims_picker.set_enabled(
             field_editable and not self.lock_people
         )
-        self.witnesses_picker.set_enabled(
-            field_editable and not self.lock_people
-        )
-        self.affected_picker.set_enabled(
-            field_editable and not self.lock_people
-        )
-        self.murder_additional_people_button.set_enabled(
-            field_editable and not self.lock_people
-        )
+        # ``lock_people`` protects the event's primary people (for example,
+        # the deceased person in the profile-owned death event).  Witnesses
+        # and affected people are independent roles and must remain editable.
+        self.witnesses_picker.set_enabled(field_editable)
+        self.affected_picker.set_enabled(field_editable)
+        self.murder_additional_people_button.set_enabled(field_editable)
         self.unnamed_victims_checkbox.configure(
             state=(
                 "normal"
@@ -3370,7 +3372,7 @@ class EventEditor(tk.Frame):
         )
 
     def open_murder_additional_people_dialog(self):
-        if not self.controls_enabled or self.lock_people:
+        if not self.controls_enabled:
             return False
 
         MurderAdditionalPeopleDialog(

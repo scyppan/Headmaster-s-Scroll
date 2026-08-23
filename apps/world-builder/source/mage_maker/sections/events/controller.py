@@ -49,6 +49,11 @@ from mage_maker.sections.family_tree.relationships import (
     FamilyRelationshipMap,
     person_can_give_birth,
 )
+from mage_maker.sections.family_tree.spouse_relationships import (
+    empty_spouse_relationship,
+    normalize_spouse_relationships,
+    relationship_ids,
+)
 from mage_maker.sections.books.models import (
     book_publication_event_id,
     normalize_book_record,
@@ -1430,6 +1435,93 @@ class EventController:
         self.invalidate_event_cache()
         return self.events_for_item(normalized_item_id)
 
+    def synchronize_marriage_relationships(self, event):
+        """Mirror a Marriage event into both people's family-tree records."""
+        normalized = normalize_world_event(event)
+
+        if canonical_event_type(normalized.get("event_type")) != "got_married":
+            return False
+
+        person_ids = [
+            str(person_id or "").strip()
+            for person_id in normalized.get("person_ids", [])
+            if str(person_id or "").strip()
+        ]
+
+        if len(person_ids) != 2 or person_ids[0] == person_ids[1]:
+            return False
+
+        year_text, month_text, day_text = split_world_event_date(
+            normalized.get("date", "")
+        )
+
+        def integer_or_none(value):
+            try:
+                return int(value) if str(value or "").strip() else None
+            except (TypeError, ValueError):
+                return None
+
+        marriage_date = {
+            "marriage_year": integer_or_none(year_text),
+            "marriage_month": integer_or_none(month_text),
+            "marriage_day": integer_or_none(day_text),
+        }
+        changed = False
+
+        for person_id, spouse_id in (
+            (person_ids[0], person_ids[1]),
+            (person_ids[1], person_ids[0]),
+        ):
+            person = self.database.read_record("people", person_id)
+
+            if not isinstance(person, dict):
+                continue
+
+            relationships = normalize_spouse_relationships(
+                person.get("spouse_relationships", [])
+            )
+            relationship = next(
+                (
+                    candidate
+                    for candidate in relationships
+                    if candidate.get("person_id") == spouse_id
+                ),
+                empty_spouse_relationship(spouse_id),
+            )
+            updated_relationship = deepcopy(relationship)
+            updated_relationship["married"] = True
+            updated_relationship.update(marriage_date)
+            updated_relationship = normalize_spouse_relationships(
+                [updated_relationship]
+            )[0]
+            updated_relationships = [
+                candidate
+                for candidate in relationships
+                if candidate.get("person_id") != spouse_id
+            ]
+            updated_relationships.append(updated_relationship)
+            mate_ids = relationship_ids(updated_relationships)
+
+            if (
+                updated_relationships
+                == normalize_spouse_relationships(
+                    person.get("spouse_relationships", [])
+                )
+                and mate_ids == list(person.get("mate_ids", []) or [])
+            ):
+                continue
+
+            self.database.update_person(
+                person_id,
+                {
+                    "mate_ids": mate_ids,
+                    "spouse_relationships": updated_relationships,
+                },
+            )
+            changed = True
+
+        return changed
+
     def create_event(
         self,
         values,
@@ -1472,6 +1564,7 @@ class EventController:
             (*retained_replacement_events, normalized),
         )
         created = self.database.create_record("events", normalized)
+        self.synchronize_marriage_relationships(created)
         self.synchronize_started_job_assignments((), (created,))
         self.synchronize_birth_event_people((), (created,))
         self.synchronize_death_event_people(
@@ -1599,6 +1692,7 @@ class EventController:
             record_id,
             normalized,
         )
+        self.synchronize_marriage_relationships(updated)
         self.synchronize_started_job_assignments(
             (current,),
             (updated,),
@@ -3463,6 +3557,16 @@ class EventController:
         )
         return normalize_mage_groups(stored_groups)
 
+    def school_records(self):
+        game_database = getattr(self, "game_database", None)
+
+        if game_database is not None and bool(
+            getattr(game_database, "loaded", False)
+        ):
+            return game_database.schools()
+
+        return []
+
     def create_event_person(self, values):
         if self.people_creator is None:
             raise ValueError("The people collection is unavailable.")
@@ -3880,11 +3984,10 @@ class EventController:
         preferred_ids = self.recent_interaction_ids(
             RECENT_PERSON_STORAGE_KEY,
         )
-        candidate_ids = [
-            *preferred_ids,
-            *self.recent_association_ids("person_ids"),
-        ]
-        options = self.people_options_for_ids(candidate_ids)
+        # "Recently viewed" means profiles the user actually opened.  Event
+        # participants are not a substitute; using them as a fallback made
+        # this list look like an arbitrary collection of famous people.
+        options = self.people_options_for_ids(preferred_ids)
         options_by_id = {
             str(option.get("value", "") or "").strip(): option
             for option in options
@@ -3996,7 +4099,14 @@ class EventController:
         return recent_options
 
     def recent_interaction_ids(self, storage_key, excluded_ids=()):
-        stored_history = self.database.data.get(storage_key, [])
+        preference_reader = getattr(self.database, "get_preference", None)
+        if (
+            storage_key == RECENT_PERSON_STORAGE_KEY
+            and callable(preference_reader)
+        ):
+            stored_history = preference_reader(storage_key, [])
+        else:
+            stored_history = self.database.data.get(storage_key, [])
 
         if not isinstance(stored_history, list):
             return []
@@ -4228,6 +4338,14 @@ class EventController:
             current_event,
             allow_death_replacement,
         )
+
+        if (
+            event.get("event_type") == "got_married"
+            and len(event.get("person_ids", [])) != 2
+        ):
+            raise ValueError(
+                "A Marriage event needs exactly two people."
+            )
 
         if (
             event.get("event_type") == "relocated"

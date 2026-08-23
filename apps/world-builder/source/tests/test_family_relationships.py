@@ -405,6 +405,31 @@ class FamilyRelationshipMapTests(unittest.TestCase):
         self.assertEqual({"mate"}, existing_mate_ids)
         self.assertNotIn("mate", new_parent_ids)
 
+    def test_relatives_through_third_cousins_find_shared_great_great_grandparent(self):
+        people = [
+            {"record_id": "root"},
+            {"record_id": "branch-a", "biological_mother_id": "root"},
+            {"record_id": "branch-b", "biological_mother_id": "root"},
+            {"record_id": "a-2", "biological_mother_id": "branch-a"},
+            {"record_id": "b-2", "biological_mother_id": "branch-b"},
+            {"record_id": "a-3", "biological_mother_id": "a-2"},
+            {"record_id": "b-3", "biological_mother_id": "b-2"},
+            {"record_id": "focus", "biological_mother_id": "a-3"},
+            {
+                "record_id": "third-cousin",
+                "biological_mother_id": "b-3",
+            },
+            {"record_id": "unrelated"},
+        ]
+        relationships = FamilyRelationshipMap(people)
+
+        related_ids = set(
+            relationships.relatives_through_third_cousins("focus")
+        )
+
+        self.assertIn("third-cousin", related_ids)
+        self.assertNotIn("unrelated", related_ids)
+
     def test_parent_role_children_are_reported_for_checkbox_locking(self):
         birthing_child_ids = {
             child["record_id"]
@@ -589,6 +614,52 @@ class FamilyRelationshipMapTests(unittest.TestCase):
             ),
         )
 
+    def test_selected_sibling_does_not_change_birth_order(self):
+        view = object.__new__(FamilyTreeView)
+        nodes = [
+            {
+                "person": {
+                    "record_id": "youngest",
+                    "displayed_name": "Youngest",
+                    "birth_year": 1051,
+                },
+                "relation": "Sibling",
+            },
+            {
+                "person": {
+                    "record_id": "oldest",
+                    "displayed_name": "Oldest",
+                    "birth_year": 1045,
+                },
+                "relation": "Selected person",
+            },
+            {
+                "person": {
+                    "record_id": "middle",
+                    "displayed_name": "Middle",
+                    "birth_year": 1047,
+                },
+                "relation": "Sibling",
+            },
+        ]
+
+        positions = FamilyTreeView.positions_for_row(
+            view,
+            nodes,
+            2,
+            0,
+            700,
+            300,
+            "oldest",
+        )
+
+        self.assertEqual(
+            ["oldest", "middle", "youngest"],
+            [node["person"]["record_id"] for node, *_ in positions],
+        )
+        self.assertLess(positions[0][1], positions[1][1])
+        self.assertLess(positions[1][1], positions[2][1])
+
 
 class BasicParentQuickAddTests(unittest.TestCase):
     class Variable:
@@ -672,6 +743,45 @@ class AddChildPersonDialogTests(unittest.TestCase):
         )
 
         self.assertEqual("orkney", location_id)
+
+    def test_parent_latest_relocation_is_used_as_the_default(self):
+        dialog = object.__new__(AddChildDialog)
+        dialog.current_person = {
+            "record_id": "parent",
+            "displayed_name": "Parent",
+            "starting_location_id": "hungary",
+        }
+        dialog.other_parent_kind = "unknown"
+        dialog.other_parent_id = ""
+        dialog.people_provider = lambda: [dialog.current_person]
+        dialog.event_provider = lambda person_id: [
+            {
+                "record_id": "birth-event",
+                "event_type": "born",
+                "baby_person_ids": [person_id],
+                "person_ids": [person_id],
+                "location_ids": ["hungary"],
+                "date": "900",
+            },
+            {
+                "record_id": "relocation-event",
+                "event_type": "relocated",
+                "person_ids": [person_id],
+                "location_ids": ["scotland"],
+                "date": "930",
+            },
+        ]
+        dialog.location_events_cache = {}
+
+        location_id = AddChildDialog.preferred_parent_starting_location_id(
+            dialog,
+            [
+                {"record_id": "hungary", "name": "Hungary"},
+                {"record_id": "scotland", "name": "Scotland"},
+            ],
+        )
+
+        self.assertEqual("scotland", location_id)
 
     def test_new_child_profile_keeps_the_chosen_starting_location(self):
         class Variable:

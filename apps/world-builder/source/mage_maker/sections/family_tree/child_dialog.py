@@ -46,6 +46,7 @@ class AddChildDialog(tk.Toplevel):
         locations_provider=None,
         event_provider=None,
         create_location_command=None,
+        school_records_provider=None,
     ):
         super().__init__(parent)
         self.current_person = current_person
@@ -56,6 +57,7 @@ class AddChildDialog(tk.Toplevel):
         self.locations_provider = locations_provider
         self.event_provider = event_provider
         self.create_location_command = create_location_command
+        self.school_records_provider = school_records_provider
         self.existing_mates = [
             person
             for person in existing_mates or []
@@ -1005,6 +1007,11 @@ class AddChildDialog(tk.Toplevel):
                 locations
             ),
             create_location_command=self.create_location_command,
+            schools=(
+                self.school_records_provider()
+                if callable(self.school_records_provider)
+                else []
+            ),
         )
         self.new_child_dialog.lift()
         return self.new_child_dialog
@@ -1040,20 +1047,46 @@ class AddChildDialog(tk.Toplevel):
             for person in self.people_provider() or ()
             if isinstance(person, dict)
         }
+        location_ids_by_name = {
+            normalize_location(location.get("name", "")): str(
+                location.get("record_id", "") or ""
+            ).strip()
+            for location in location_records
+            if normalize_location(location.get("name", ""))
+            and str(location.get("record_id", "") or "").strip()
+        }
 
         for parent_id in parent_ids:
             parent = people_by_id.get(parent_id, self.current_person)
+            events = self.events_for_location_lookup(parent_id)
+
+            if not events and isinstance(parent.get("timeline_events"), list):
+                events = list(parent.get("timeline_events") or ())
+
+            # A new child's suggested birthplace follows where the parent
+            # most recently lives, not where that parent was born.  Passing
+            # no target date asks location_at_date for the latest recorded
+            # birth/starting-location/relocation event.
+            current_location = location_at_date(
+                parent,
+                None,
+                shared_events=events,
+                locations=location_records,
+            )
+            current_location_id = location_ids_by_name.get(
+                normalize_location(current_location),
+                "",
+            )
+
+            if current_location_id:
+                return current_location_id
+
             direct_location_id = str(
                 parent.get("starting_location_id", "") or ""
             ).strip()
 
             if direct_location_id in location_ids:
                 return direct_location_id
-
-            events = self.events_for_location_lookup(parent_id)
-
-            if not events and isinstance(parent.get("timeline_events"), list):
-                events = list(parent.get("timeline_events") or ())
 
             life_start_events = sorted(
                 (

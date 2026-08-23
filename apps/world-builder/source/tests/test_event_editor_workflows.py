@@ -8,6 +8,7 @@ from mage_maker.sections.events.editor import (
     EventAssociationPicker,
     EventEditor,
 )
+from mage_maker.sections.events.controller import EventController
 from mage_maker.sections.events.dialog import EventLocationPickerDialog
 from mage_maker.sections.events.period_view import PeriodEventsView
 from mage_maker.sections.locations.page import LocationPage
@@ -724,6 +725,98 @@ class EventAssociationPickerStateTests(unittest.TestCase):
         picker.toggle_selected()
         self.assertEqual(["maeve"], picker.get_values())
 
+    def test_unlocked_profile_person_is_checked_and_can_be_replaced(self):
+        picker = EventAssociationPickerFactory.build()
+        picker.set_values(("maeve",), ())
+
+        self.assertEqual("✓ Maeve", picker.listbox.rows[0])
+        picker.listbox.selection_set(0)
+        picker.toggle_selected()
+
+        self.assertEqual([], picker.get_values())
+
+
+class RecentlyViewedPeopleTests(unittest.TestCase):
+    def test_recent_people_come_from_view_history_not_event_links(self):
+        class FakeDatabase:
+            data = {
+                "_recent_people": ["random-event-person"],
+                "_recent_event_associations": {
+                    "person_ids": ["random-event-person"],
+                },
+            }
+
+            @staticmethod
+            def get_preference(key, default=None):
+                if key == "_recent_people":
+                    return ["maeve", "merlin"]
+                return default
+
+        controller = object.__new__(EventController)
+        controller.database = FakeDatabase()
+        labels = {
+            "maeve": "Maeve",
+            "merlin": "Merlin",
+            "random-event-person": "Random event person",
+        }
+        controller.people_options_for_ids = lambda person_ids: [
+            {"value": person_id, "label": labels[person_id]}
+            for person_id in person_ids
+            if person_id in labels
+        ]
+
+        self.assertEqual(
+            ["maeve", "merlin"],
+            [
+                option["value"]
+                for option in controller.recent_people_options(limit=5)
+            ],
+        )
+
+    def test_marriage_event_adds_reciprocal_family_tree_spouses(self):
+        class FakeDatabase:
+            def __init__(self):
+                self.people = {
+                    "maeve": {
+                        "record_id": "maeve",
+                        "mate_ids": [],
+                        "spouse_relationships": [],
+                    },
+                    "merlin": {
+                        "record_id": "merlin",
+                        "mate_ids": [],
+                        "spouse_relationships": [],
+                    },
+                }
+
+            def read_record(self, collection, record_id):
+                return deepcopy(self.people.get(record_id))
+
+            def update_person(self, record_id, values):
+                self.people[record_id].update(deepcopy(values))
+
+        controller = object.__new__(EventController)
+        controller.database = FakeDatabase()
+
+        self.assertTrue(
+            controller.synchronize_marriage_relationships(
+                {
+                    "record_id": "marriage-1",
+                    "event_type": "got_married",
+                    "title": "Marriage",
+                    "date": "2004-06-12",
+                    "person_ids": ["maeve", "merlin"],
+                }
+            )
+        )
+        maeve = controller.database.people["maeve"]
+        merlin = controller.database.people["merlin"]
+        self.assertEqual(["merlin"], maeve["mate_ids"])
+        self.assertEqual(["maeve"], merlin["mate_ids"])
+        self.assertEqual(2004, maeve["spouse_relationships"][0]["marriage_year"])
+        self.assertEqual(6, merlin["spouse_relationships"][0]["marriage_month"])
+        self.assertEqual(12, merlin["spouse_relationships"][0]["marriage_day"])
+
     def test_selected_location_has_a_checkmark(self):
         picker = EventAssociationPickerFactory.build()
         picker.association_kind = "locations"
@@ -1220,8 +1313,42 @@ class DraftRowWorkflowTests(unittest.TestCase):
             view.event_editor.start_arguments["default_person_ids"],
         )
         self.assertEqual(
-            ("maeve",),
+            (),
             view.event_editor.start_arguments["locked_person_ids"],
+        )
+
+    def test_stored_event_uses_only_its_saved_people_and_unlocks_them(self):
+        stored_event = {
+            "record_id": "event-1",
+            "event_id": "event-1",
+            "event_type": "relocated",
+            "title": "A mistaken relocation",
+            "date": "954",
+            "person_ids": ["merlin"],
+            "location_ids": ["limerick"],
+        }
+        view = PersonTimelineHarness()
+        view.visible_events = [
+            {
+                "event_id": "event-1",
+                "record_id": "event-1",
+                "_stored_event": True,
+            }
+        ]
+        view.selected_event_id = "event-1"
+        view.event_editor = FakeLoadedEditor()
+        view.event_controller = FakeEventController(stored_event)
+
+        TimelineView.refresh_editor(view)
+
+        self.assertEqual((), view.event_editor.load_values["person_ids"])
+        self.assertEqual(
+            (),
+            view.event_editor.load_values["locked_person_ids"],
+        )
+        self.assertEqual(
+            ["merlin"],
+            view.event_editor.loaded_event["person_ids"],
         )
 
     def test_location_add_event_creates_a_selected_locked_draft(self):

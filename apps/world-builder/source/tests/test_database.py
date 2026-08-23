@@ -40,6 +40,21 @@ class JsonDatabaseTests(unittest.TestCase):
         self.assertEqual("Updated Magician", deleted["displayed_name"])
         self.assertIsNone(self.database.read_person(created["record_id"]))
 
+    def test_magical_family_readiness_flags_default_and_persist(self):
+        created = self.database.create_person({"displayed_name": "Test Magician"})
+        self.assertFalse(created["ready_for_magical_spouse"])
+        self.assertFalse(created["ready_for_magical_children"])
+
+        updated = self.database.update_person(
+            created["record_id"],
+            {
+                "ready_for_magical_spouse": True,
+                "ready_for_magical_children": True,
+            },
+        )
+        self.assertTrue(updated["ready_for_magical_spouse"])
+        self.assertTrue(updated["ready_for_magical_children"])
+
     def test_unnamed_murder_victim_passes_whole_database_validation(self):
         perpetrator = self.database.create_person(
             {"displayed_name": "Unnamed Victim Test Perpetrator"}

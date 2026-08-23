@@ -4,7 +4,11 @@ from datetime import date
 from functools import partial
 from tkinter import messagebox
 
-from mage_maker.core.dates import historical_year_distance
+from mage_maker.core.dates import (
+    format_date_parts,
+    historical_year_distance,
+    person_death_age_text,
+)
 from mage_maker.sections.events.models import (
     WORLD_EVENT_LABEL_TYPES,
     WORLD_EVENT_TYPES,
@@ -18,6 +22,9 @@ from mage_maker.sections.locations.location_hierarchy import (
 from mage_maker.sections.locations.models import (
     recent_location_label,
 )
+from mage_maker.sections.profile.school_field import SchoolField
+from mage_maker.sections.names.details import NameDetailsDialog
+from mage_maker.sections.names.history import empty_name_details
 from mage_maker.shell.person_list import (
     AGE_FILTER_BOUNDS,
     AGE_FILTER_OPTIONS,
@@ -545,6 +552,12 @@ class WorldEventDialog(tk.Toplevel):
             suggested_people_options=suggested_people_options,
             reference_date=self.current_date_value(),
             action_text="Use selected",
+            locations=self.location_records,
+            schools=(
+                self.controller.school_records()
+                if hasattr(self.controller, "school_records")
+                else []
+            ),
         )
 
     def people_chosen(self, person_ids):
@@ -910,6 +923,7 @@ class EventPersonPickerDialog(tk.Toplevel):
         suggested_people_options=None,
         reference_date=None,
         locations=None,
+        schools=None,
     ):
         super().__init__(parent)
         self.allow_multiple = bool(allow_multiple)
@@ -1019,6 +1033,11 @@ class EventPersonPickerDialog(tk.Toplevel):
             deepcopy(location)
             for location in locations or []
             if isinstance(location, dict)
+        ]
+        self.schools = [
+            deepcopy(school)
+            for school in schools or []
+            if isinstance(school, dict)
         ]
         self.search_value = tk.StringVar()
         self.group_filter_value = tk.StringVar(
@@ -1924,6 +1943,7 @@ class EventPersonPickerDialog(tk.Toplevel):
             self.create_person_command,
             self.quick_person_created,
             locations=self.locations,
+            schools=self.schools,
         )
 
     def quick_person_created(self, person):
@@ -2022,6 +2042,7 @@ class QuickEventPersonDialog(tk.Toplevel):
         locations=None,
         initial_location_id="",
         create_location_command=None,
+        schools=None,
     ):
         super().__init__(parent)
         self.mage_groups = [
@@ -2038,9 +2059,15 @@ class QuickEventPersonDialog(tk.Toplevel):
         ]
         self.starting_location_id = ""
         self.create_location_command = create_location_command
+        self.schools = [
+            deepcopy(school)
+            for school in schools or []
+            if isinstance(school, dict)
+        ]
         self.starting_location_value = tk.StringVar(
             value="Choose a starting location"
         )
+        self.name_details = empty_name_details()
         self.name_value = tk.StringVar()
         self.birth_year_value = tk.StringVar()
         self.birth_month_value = tk.StringVar()
@@ -2051,10 +2078,20 @@ class QuickEventPersonDialog(tk.Toplevel):
         self.death_year_value = tk.StringVar()
         self.death_month_value = tk.StringVar()
         self.death_day_value = tk.StringVar()
+        self.death_age_value = tk.StringVar(value="Age at death: —")
         self.deceased_value.trace_add("write", self.deceased_changed)
+        for date_variable in (
+            self.birth_year_value,
+            self.birth_month_value,
+            self.birth_day_value,
+            self.death_year_value,
+            self.death_month_value,
+            self.death_day_value,
+        ):
+            date_variable.trace_add("write", self.update_death_age)
         self.title("New person")
-        self.geometry("560x625")
-        self.minsize(500, 570)
+        self.geometry("560x700")
+        self.minsize(500, 640)
         self.configure(bg=APP_BACKGROUND)
         self.transient(parent.winfo_toplevel())
         self.protocol("WM_DELETE_WINDOW", self.close_dialog)
@@ -2107,8 +2144,23 @@ class QuickEventPersonDialog(tk.Toplevel):
         self.name_entry.grid(
             row=1,
             column=0,
-            columnspan=3,
+            columnspan=2,
             sticky="ew",
+            pady=(5, 14),
+        )
+        name_details_button = SoftButton(
+            body,
+            text="Name Details",
+            command=self.open_name_details,
+            background=SURFACE,
+            width=112,
+            height=38,
+        )
+        name_details_button.grid(
+            row=1,
+            column=2,
+            sticky="e",
+            padx=(8, 0),
             pady=(5, 14),
         )
         birth_label = tk.Label(
@@ -2236,9 +2288,22 @@ class QuickEventPersonDialog(tk.Toplevel):
             self.starting_location_value.set("No locations available")
             choose_location.set_enabled(False)
 
+        self.school_field = SchoolField(
+            body,
+            self.schools,
+            background=SURFACE,
+        )
+        self.school_field.grid(
+            row=8,
+            column=0,
+            columnspan=3,
+            sticky="ew",
+            pady=(0, 14),
+        )
+
         flags = tk.Frame(body, bg=SURFACE)
         flags.grid(
-            row=8,
+            row=9,
             column=0,
             columnspan=3,
             sticky="ew",
@@ -2280,7 +2345,7 @@ class QuickEventPersonDialog(tk.Toplevel):
 
         self.death_frame = tk.Frame(body, bg=SURFACE)
         self.death_frame.grid(
-            row=9,
+            row=10,
             column=0,
             columnspan=3,
             sticky="ew",
@@ -2294,7 +2359,21 @@ class QuickEventPersonDialog(tk.Toplevel):
             fg=TEXT_MUTED,
             font=app_font(9, "bold"),
             anchor="w",
-        ).grid(row=0, column=0, columnspan=3, sticky="ew", pady=(0, 5))
+        ).grid(row=0, column=0, sticky="w", pady=(0, 5))
+        tk.Label(
+            self.death_frame,
+            textvariable=self.death_age_value,
+            bg=SURFACE,
+            fg=TEXT_DARK,
+            font=app_font(9, "bold"),
+            anchor="e",
+        ).grid(
+            row=0,
+            column=1,
+            columnspan=2,
+            sticky="e",
+            pady=(0, 5),
+        )
 
         for column, label_text, variable in (
             (0, "Year", self.death_year_value),
@@ -2399,10 +2478,19 @@ class QuickEventPersonDialog(tk.Toplevel):
             )
             return
 
+        if self.school_field.specialty_is_blank():
+            messagebox.showerror(
+                "School required",
+                "Enter the specialty school's name or choose another school.",
+                parent=self,
+            )
+            return
+
         try:
             person = self.create_command(
                 {
                     "displayed_name": self.name_value.get(),
+                    "name_details": deepcopy(self.name_details),
                     "birth_year": self.optional_integer(
                         self.birth_year_value.get(),
                         "Birth year",
@@ -2427,6 +2515,7 @@ class QuickEventPersonDialog(tk.Toplevel):
                         if self.starting_location_id
                         else ""
                     ),
+                    "school": self.school_field.get_value(),
                     "can_give_birth": self.can_give_birth_value.get(),
                     "non_magical": self.non_magical_value.get(),
                     "deceased": self.deceased_value.get(),
@@ -2473,11 +2562,52 @@ class QuickEventPersonDialog(tk.Toplevel):
         self.saved_command(person)
         self.destroy()
 
+    def open_name_details(self):
+        NameDetailsDialog(
+            self,
+            self.name_details,
+            self.name_details_saved,
+            self.name_value.get(),
+            format_date_parts(
+                self.birth_year_value.get(),
+                self.birth_month_value.get(),
+                self.birth_day_value.get(),
+                unknown="",
+            ),
+        )
+
+    def name_details_saved(self, name_details):
+        self.name_details = deepcopy(name_details)
+        return True
+
     def deceased_changed(self, *arguments):
         if self.deceased_value.get():
+            self.update_death_age()
             self.death_frame.grid()
         else:
             self.death_frame.grid_remove()
+
+    def update_death_age(self, *arguments):
+        age_text = person_death_age_text(
+            {
+                "birth_year": self.birth_year_value.get(),
+                "birth_month": self.birth_month_value.get(),
+                "birth_day": self.birth_day_value.get(),
+                "death_year": self.death_year_value.get(),
+                "death_month": self.death_month_value.get(),
+                "death_day": self.death_day_value.get(),
+            }
+        )
+        self.death_age_value.set(
+            f"Age at death: {age_text.removeprefix('age ')}"
+            if age_text.startswith("age ")
+            else (
+                "Age at death: "
+                + age_text.replace("approximately age ", "approximately ", 1)
+                if age_text
+                else "Age at death: —"
+            )
+        )
 
     def choose_starting_location(self):
         if not self.locations and self.create_location_command is None:

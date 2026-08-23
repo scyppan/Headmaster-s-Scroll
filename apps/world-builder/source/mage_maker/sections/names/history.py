@@ -12,6 +12,7 @@ NAME_ENTRY_FIELDS = (
 )
 
 NAME_TYPES = (
+    "title",
     "nickname",
     "sobriquet",
     "alias",

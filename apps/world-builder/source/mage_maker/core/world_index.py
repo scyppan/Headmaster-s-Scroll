@@ -15,7 +15,7 @@ from pathlib import Path
 from uuid import uuid4
 
 
-INDEX_FORMAT_VERSION = 7
+INDEX_FORMAT_VERSION = 8
 INDEXED_COLLECTIONS = (
     "people",
     "locations",
@@ -54,6 +54,8 @@ PEOPLE_LIST_FIELDS = (
     "biological_father_status",
     "can_give_birth",
     "does_not_have_children",
+    "ready_for_magical_spouse",
+    "ready_for_magical_children",
     "famous_person",
     "mate_ids",
     "spouse_relationships",

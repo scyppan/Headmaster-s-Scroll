@@ -245,6 +245,15 @@ def job_timeline_summary(event):
     return action
 
 
+def relocation_timeline_summary(event):
+    destination = str(
+        event.get("relocation_destination_name")
+        or event.get("detail")
+        or ""
+    ).strip()
+    return f"Relocated to {destination}" if destination else "Relocated"
+
+
 def timeline_event_summary(event):
     event_type = str(event.get("event_type") or "custom")
     detail = str(event.get("detail") or "").strip()
@@ -337,7 +346,7 @@ def timeline_event_summary(event):
         )
 
     if event_type == "relocated":
-        return f"Relocated to {detail}" if detail else "Relocated"
+        return relocation_timeline_summary(event)
 
     if event_type == "name_change":
         return f"Name change: {detail}" if detail else "Name change"

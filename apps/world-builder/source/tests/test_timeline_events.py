@@ -5,6 +5,7 @@ from mage_maker.sections.timeline.events import (
     EVENT_TYPES,
     normalize_timeline_event,
     normalize_timeline_events,
+    relocation_timeline_summary,
     timeline_event_summary,
 )
 from mage_maker.sections.timeline.locations import ensure_life_start_events
@@ -84,6 +85,20 @@ class TimelineEventTests(unittest.TestCase):
             "Had a child",
             timeline_event_summary(
                 {"event_type": "had_child", "detail": "Horace"}
+            ),
+        )
+
+    def test_stored_relocation_summary_uses_linked_destination_name(self):
+        self.assertEqual(
+            "Relocated to Orkney Islands, Scotland",
+            relocation_timeline_summary(
+                {
+                    "event_type": "relocated",
+                    "title": "Flees to Orkney",
+                    "relocation_destination_name": (
+                        "Orkney Islands, Scotland"
+                    ),
+                }
             ),
         )
 

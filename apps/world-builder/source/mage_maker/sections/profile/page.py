@@ -108,6 +108,8 @@ class PersonForm(tk.Frame):
         ("non_magical", "Non-magical"),
         ("can_give_birth", "Can give birth"),
         ("does_not_have_children", "Does not have children"),
+        ("ready_for_magical_spouse", "Ready for magical spouse"),
+        ("ready_for_magical_children", "Ready for magical children"),
         ("famous_person", "This is a famous person"),
         ("animagus", "Animagus"),
         ("parseltongue", "Parseltongue"),
@@ -890,6 +892,7 @@ class PersonForm(tk.Frame):
                 if self.event_controller is not None
                 else None
             ),
+            school_records_provider=self.available_school_records,
         )
         self.family_tree.grid(row=0, column=0, sticky="nsew")
 
@@ -2143,6 +2146,7 @@ class PersonForm(tk.Frame):
 
         self.show_page(self.active_page_name, defer_loading=True)
         self.loading = False
+        self.update_can_give_birth_control()
         self.update_idletasks()
         self.schedule_deferred_active_page()
 
@@ -2162,6 +2166,12 @@ class PersonForm(tk.Frame):
             "can_give_birth": self.variables["can_give_birth"].get(),
             "does_not_have_children": self.variables[
                 "does_not_have_children"
+            ].get(),
+            "ready_for_magical_spouse": self.variables[
+                "ready_for_magical_spouse"
+            ].get(),
+            "ready_for_magical_children": self.variables[
+                "ready_for_magical_children"
             ].get(),
             "famous_person": self.variables["famous_person"].get(),
             "animagus": self.variables["animagus"].get(),
@@ -2754,20 +2764,33 @@ class PersonForm(tk.Frame):
             tooltip.set_text("Select a magician before changing this setting.")
             return
 
-        if not self.section_is_current("family_tree"):
-            checkbutton.configure(state="disabled")
-            tooltip.set_text("Loading family links.")
-            return
-
-        relationship_map = self.family_tree.relationship_map
-        birthing_children = relationship_map.children_for_parent_role(
-            record_id,
-            "mother",
-        )
-        non_birthing_children = relationship_map.children_for_parent_role(
-            record_id,
-            "father",
-        )
+        if self.section_is_current("family_tree"):
+            relationship_map = self.family_tree.relationship_map
+            birthing_children = relationship_map.children_for_parent_role(
+                record_id,
+                "mother",
+            )
+            non_birthing_children = relationship_map.children_for_parent_role(
+                record_id,
+                "father",
+            )
+        else:
+            # The profile intentionally opens before the family graph. Compact
+            # indexed summaries already carry parent IDs, so they can decide
+            # this control immediately without loading thousands of records.
+            people = self.people_summary_provider()
+            birthing_children = [
+                person
+                for person in people
+                if str(person.get("biological_mother_id", "") or "").strip()
+                == record_id
+            ]
+            non_birthing_children = [
+                person
+                for person in people
+                if str(person.get("biological_father_id", "") or "").strip()
+                == record_id
+            ]
 
         if birthing_children:
             child_names = [
@@ -2805,35 +2828,10 @@ class PersonForm(tk.Frame):
             )
             return
 
-        mate_ids = relationship_map.mates_of(record_id)
-
-        if mate_ids:
-            mate_names = []
-
-            for mate_id in mate_ids:
-                mate = relationship_map.person(mate_id)
-                mate_names.append(
-                    str(mate.get("displayed_name", "Unnamed"))
-                    if mate
-                    else "Unnamed"
-                )
-
-            visible_names = ", ".join(mate_names[:3])
-
-            if len(mate_names) > 3:
-                visible_names += f", and {len(mate_names) - 3} more"
-
-            checkbutton.configure(state="disabled")
-            tooltip.set_text(
-                "Can give birth is locked because this person is linked as a mate "
-                f"to {visible_names}. Remove those mate links before changing it."
-            )
-            return
-
         checkbutton.configure(state="normal")
         tooltip.set_text(
-            "This setting becomes locked once the person is linked as a mate or "
-            "as a birthing or non-birthing parent."
+            "This setting becomes locked once the person is recorded as a "
+            "birthing or non-birthing parent."
         )
 
     def update_does_not_have_children_control(self):

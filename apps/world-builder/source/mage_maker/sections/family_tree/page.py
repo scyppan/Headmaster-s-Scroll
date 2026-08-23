@@ -14,6 +14,7 @@ from mage_maker.sections.family_tree.relationships import (
     FamilyRelationshipMap,
     format_person_date,
     maiden_name_for,
+    person_birth_sort_key,
     person_can_give_birth,
 )
 from mage_maker.sections.family_tree.relationship_picker import (
@@ -85,6 +86,7 @@ class FamilyTreeView(tk.Frame):
         locations_provider=None,
         create_location_command=None,
         event_provider=None,
+        school_records_provider=None,
     ):
         super().__init__(parent, bg=SURFACE)
         self.change_command = change_command
@@ -96,6 +98,7 @@ class FamilyTreeView(tk.Frame):
         self.locations_provider = locations_provider
         self.create_location_command = create_location_command
         self.event_provider = event_provider
+        self.school_records_provider = school_records_provider
         self.current_person = {}
         self.people = []
         self.relationship_map = FamilyRelationshipMap([])
@@ -879,6 +882,46 @@ class FamilyTreeView(tk.Frame):
                 return positions
 
         if row_index == 2:
+            # Keep the whole sibling/cousin generation in chronological
+            # order.  The selected person is a highlight, not an anchor:
+            # centering them used to move older siblings from one side to the
+            # other whenever the user changed profiles.
+            ordered_nodes = sorted(
+                nodes,
+                key=lambda node: person_birth_sort_key(
+                    node.get("person", {})
+                ),
+            )
+            card_gap = 12
+            available_width = max(1, graph_right - graph_left)
+            node_width = min(
+                132,
+                max(
+                    68,
+                    (
+                        available_width
+                        - card_gap * max(0, len(ordered_nodes) - 1)
+                    ) / max(1, len(ordered_nodes)),
+                ),
+            )
+            total_width = (
+                node_width * len(ordered_nodes)
+                + card_gap * max(0, len(ordered_nodes) - 1)
+            )
+            start_x = center_x - total_width / 2 + node_width / 2
+            return [
+                (
+                    node,
+                    start_x + index * (node_width + card_gap),
+                    y_position,
+                    node_width,
+                    64,
+                )
+                for index, node in enumerate(ordered_nodes)
+            ]
+
+            # Retained below only as historical context for the former
+            # selected-person-centred grouping algorithm.
             focus_node = None
             full_sibling_nodes = []
             birthing_half_sibling_nodes = []
@@ -1875,6 +1918,7 @@ class FamilyTreeView(tk.Frame):
                 else ()
             ),
             create_location_command=self.create_location_command,
+            school_records_provider=self.school_records_provider,
         )
 
     def set_parent(self, parent_role, record_id, change_birth_assignment=False):
@@ -2033,6 +2077,9 @@ class FamilyTreeView(tk.Frame):
         excluded_ids = set(self.mate_ids)
         excluded_ids.update(self.relationship_map.ancestors_of(current_id))
         excluded_ids.update(self.relationship_map.descendants_of(current_id))
+        excluded_ids.update(
+            self.relationship_map.relatives_through_third_cousins(current_id)
+        )
         candidates = spouse_candidates(
             self.current_person,
             self.people,
@@ -2245,6 +2292,7 @@ class FamilyTreeView(tk.Frame):
             locations_provider=self.locations_provider,
             event_provider=self.event_provider,
             create_location_command=self.create_location_command,
+            school_records_provider=self.school_records_provider,
         )
 
     def open_child_other_parent_picker(

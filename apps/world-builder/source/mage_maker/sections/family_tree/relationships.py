@@ -591,6 +591,64 @@ class FamilyRelationshipMap:
 
         return ancestors
 
+    def ancestor_depths(self, record_id, maximum_depth=None):
+        """Return the shortest parent-link distance to each known ancestor."""
+
+        normalized_id = str(record_id or "").strip()
+        if not normalized_id:
+            return {}
+
+        depth_limit = None
+        if maximum_depth is not None:
+            try:
+                depth_limit = max(0, int(maximum_depth))
+            except (TypeError, ValueError):
+                depth_limit = None
+
+        depths = {}
+        pending = [(parent_id, 1) for parent_id in self.parents_of(normalized_id)]
+
+        while pending:
+            ancestor_id, depth = pending.pop(0)
+            if depth_limit is not None and depth > depth_limit:
+                continue
+            previous_depth = depths.get(ancestor_id)
+            if previous_depth is not None and previous_depth <= depth:
+                continue
+            depths[ancestor_id] = depth
+            pending.extend(
+                (parent_id, depth + 1)
+                for parent_id in self.parents_of(ancestor_id)
+            )
+
+        return depths
+
+    def relatives_through_third_cousins(self, record_id):
+        """Return blood relatives no more distant than third cousins.
+
+        Third cousins share a great-great-grandparent, four parent links from
+        each person. The same depth cap also catches every closer blood
+        relationship that must be omitted from spouse selection.
+        """
+
+        normalized_id = str(record_id or "").strip()
+        focus_ancestors = self.ancestor_depths(normalized_id, maximum_depth=4)
+        if not focus_ancestors:
+            return []
+
+        related_ids = []
+        for candidate_id in self.people_by_id:
+            if candidate_id == normalized_id:
+                continue
+            candidate_ancestors = self.ancestor_depths(
+                candidate_id,
+                maximum_depth=4,
+            )
+            if set(focus_ancestors).intersection(candidate_ancestors):
+                related_ids.append(candidate_id)
+
+        return self.unique_ids(related_ids)
+
     def descendants_of(self, record_id):
         descendants = []
         seen = set()

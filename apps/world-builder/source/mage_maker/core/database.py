@@ -3495,6 +3495,8 @@ class JsonDatabase:
         person.setdefault("record_id", str(uuid.uuid4()))
         person.setdefault("unfinished", True)
         person.setdefault("does_not_have_children", False)
+        person.setdefault("ready_for_magical_spouse", False)
+        person.setdefault("ready_for_magical_children", False)
 
         if not isinstance(person["unfinished"], bool):
             raise TypeError("A person's unfinished flag must be true or false.")

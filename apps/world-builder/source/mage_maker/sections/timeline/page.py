@@ -39,6 +39,7 @@ from mage_maker.sections.timeline.events import (
     murder_timeline_summary,
     normalize_timeline_event,
     normalize_timeline_events,
+    relocation_timeline_summary,
     sort_timeline_events,
     timeline_event_summary,
 )
@@ -862,27 +863,39 @@ class TimelineView(tk.Frame):
             candidate_events.append(display_event)
 
         location_names_by_id = {}
-        birth_location_ids = {
+        summary_location_ids = {
             str(location_id or "").strip()
             for event in candidate_events
-            if event.get("event_type") == "born"
+            if event.get("event_type") in ("born", "relocated")
             for location_id in event.get("location_ids", []) or []
             if str(location_id or "").strip()
         }
 
-        if self.event_controller is not None and birth_location_ids:
+        if self.event_controller is not None and summary_location_ids:
+            location_provider = getattr(
+                self.event_controller,
+                "location_provider",
+                None,
+            )
+            locations = (
+                location_provider()
+                if callable(location_provider)
+                else self.event_controller.location_records()
+            )
             location_names_by_id = {
                 str(location.get("record_id", "") or "").strip(): str(
                     location.get("name", "") or ""
                 ).strip()
-                for location in self.event_controller.location_records()
+                for location in locations
                 if isinstance(location, dict)
                 and str(location.get("record_id", "") or "").strip()
-                in birth_location_ids
+                in summary_location_ids
             }
 
         for event in candidate_events:
-            if event.get("event_type") != "born":
+            event_type = event.get("event_type")
+
+            if event_type not in ("born", "relocated"):
                 continue
 
             location_id = next(
@@ -895,8 +908,10 @@ class TimelineView(tk.Frame):
             )
             location_name = location_names_by_id.get(location_id, "")
 
-            if location_name:
+            if location_name and event_type == "born":
                 event["birth_location_name"] = location_name
+            elif location_name and event_type == "relocated":
+                event["relocation_destination_name"] = location_name
 
         if self.draft_event is not None:
             candidate_events.append(deepcopy(self.draft_event))
@@ -1102,6 +1117,13 @@ class TimelineView(tk.Frame):
     def event_summary_text(self, event):
         if event.get("_draft_event"):
             return "New event (unsaved)"
+
+        if (
+            event.get("_stored_event")
+            and event.get("event_type") == "relocated"
+            and event.get("relocation_destination_name")
+        ):
+            return relocation_timeline_summary(event)
 
         current_person_id_command = getattr(
             self,
@@ -1429,7 +1451,12 @@ class TimelineView(tk.Frame):
                 self.event_editor.start_new(
                     context="person",
                     default_person_ids=(self.current_person_id(),),
-                    locked_person_ids=(self.current_person_id(),),
+                    # The profile owner is the useful default for a new
+                    # event, but it is not part of the event merely because
+                    # this editor was opened from their Timeline.  Keeping
+                    # it unlocked lets a mistaken participant be replaced
+                    # without deleting and recreating the shared event.
+                    locked_person_ids=(),
                     default_location_ids=(
                         self.default_location_ids_for_current_person()
                     ),
@@ -1454,32 +1481,16 @@ class TimelineView(tk.Frame):
                 self.event_editor.clear("This event no longer exists.")
                 return
 
-            current_person_is_ancillary = bool(
-                person_id
-                and (
-                    person_id
-                    in stored_event.get("witness_person_ids", [])
-                    or person_id
-                    in stored_event.get("affected_person_ids", [])
-                )
-            )
-
             self.event_editor.load_event(
                 stored_event,
                 storage_kind="shared",
                 context="person",
-                person_ids=(
-                    ()
-                    if current_person_is_ancillary
-                    else (person_id,)
-                ),
-                locked_person_ids=(
-                    ()
-                    if current_person_is_ancillary
-                    or stored_event.get("event_type")
-                    in ("born", "murder")
-                    else (person_id,)
-                ),
+                # A stored event is authoritative about all of its roles.
+                # Do not silently add or lock the profile owner: doing so
+                # made a removed person reappear on the next save and made
+                # the visible checkmarks disagree with the saved event.
+                person_ids=(),
+                locked_person_ids=(),
                 read_only=False,
             )
             return

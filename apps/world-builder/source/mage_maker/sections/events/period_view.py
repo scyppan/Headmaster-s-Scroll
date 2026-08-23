@@ -481,46 +481,17 @@ class PeriodEventsView(tk.Frame):
         return False
 
     def confirm_unsaved_event_changes(self):
-        association_guard_command = getattr(
-            getattr(self, "event_editor", None),
-            "association_selection_guard_active",
+        event_editor = getattr(self, "event_editor", None)
+        resolve_command = getattr(
+            event_editor,
+            "resolve_pending_navigation",
             None,
         )
-
-        if (
-            callable(association_guard_command)
-            and association_guard_command()
-        ):
-            return False
-
-        unsaved_changes_command = getattr(
-            getattr(self, "event_editor", None),
-            "has_unsaved_changes",
-            None,
+        return (
+            bool(resolve_command(parent=self))
+            if callable(resolve_command)
+            else True
         )
-
-        if (
-            not callable(unsaved_changes_command)
-            or not unsaved_changes_command()
-        ):
-            return True
-
-        save_choice = messagebox.askyesnocancel(
-            "Unsaved event changes",
-            "Save this event before continuing?",
-            parent=self,
-            icon="warning",
-            default="yes",
-        )
-
-        if save_choice is None:
-            return False
-
-        if save_choice:
-            return bool(self.event_editor.save())
-
-        self.event_editor.cancel()
-        return True
 
     def selected_event(self):
         for event in self.events:
@@ -686,9 +657,18 @@ class PeriodEventsView(tk.Frame):
             saved = self.event_controller.update_event(
                 record_id,
                 values,
+                save_database=False,
             )
         else:
-            saved = self.event_controller.create_event(values)
+            saved = self.event_controller.create_event(
+                values,
+                save_database=False,
+            )
+
+        self.event_controller.schedule_deferred_save(
+            self.winfo_toplevel(),
+            error_command=self.event_editor.show_error,
+        )
 
         self.draft_event = None
         self.selected_event_id = saved["record_id"]

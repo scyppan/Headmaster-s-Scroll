@@ -48,6 +48,34 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(saved["_headmasters_scroll"]["last_modified_by"], "mage-maker")
         self.assertTrue(list((self.directory / "backups" / "db").glob("*.json")))
 
+    def test_normal_save_keeps_one_editable_tree_and_lazy_merge_base(self):
+        session = self.store.load("db.json")
+        editable_tree = session.data
+        session.data["wand_woods"][0]["notes"] = "new"
+
+        self.assertTrue(self.store.save(session, "mage-maker").saved)
+
+        self.assertIs(session.data, editable_tree)
+        self.assertIsNone(session.base_data)
+        self.assertIsInstance(session.base_snapshot, bytes)
+        self.assertEqual(
+            session.merge_base()["wand_woods"][0]["notes"],
+            "new",
+        )
+
+    def test_unchanged_file_identity_skips_disk_json_read(self):
+        session = self.store.load("db.json")
+        session.data["wand_woods"][0]["notes"] = "fast path"
+
+        with patch.object(
+            self.store,
+            "_read",
+            side_effect=AssertionError("unchanged file was decoded"),
+        ):
+            outcome = self.store.save(session, "mage-maker")
+
+        self.assertTrue(outcome.saved)
+
     def test_non_overlapping_changes_merge(self):
         first, second = self.store.load("db.json"), self.store.load("db.json")
         first.data["wand_woods"][0]["name"] = "English Oak"
@@ -120,7 +148,11 @@ class StoreTests(unittest.TestCase):
         session = self.store.load("db.json")
         session.data["wand_woods"][0]["name"] = "Changed"
         before = self.path.read_bytes()
-        with patch("headmasters_scroll.store.shutil.copy2", side_effect=OSError("backup failed")):
+        with patch.object(
+            SharedJsonStore,
+            "_create_backup",
+            side_effect=OSError("backup failed"),
+        ):
             with self.assertRaises(OSError):
                 self.store.save(session, "dbm")
         self.assertEqual(self.path.read_bytes(), before)

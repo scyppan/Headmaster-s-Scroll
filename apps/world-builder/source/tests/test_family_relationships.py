@@ -1,11 +1,17 @@
 import unittest
+from unittest.mock import Mock, patch
 
 from mage_maker.sections.family_tree.relationships import (
     FamilyRelationshipMap,
     format_person_date,
     maiden_name_for,
 )
+from mage_maker.sections.family_tree.child_dialog import AddChildDialog
 from mage_maker.sections.family_tree.page import FamilyTreeView
+from mage_maker.sections.family_tree.relationship_picker import (
+    BasicRelationshipDialog,
+    RelationshipPickerDialog,
+)
 from mage_maker.sections.relationships.page import foster_relationship_text
 
 
@@ -116,10 +122,144 @@ class FamilyRelationshipMapTests(unittest.TestCase):
         self.assertEqual("Birthing parent's cousin", relations[2]["cousin"])
         self.assertEqual("Child", relations[3]["child"])
 
+    def test_siblings_are_presented_in_full_birth_order(self):
+        people = [
+            {
+                "record_id": "parent",
+                "displayed_name": "Parent",
+                "birth_year": 850,
+            },
+            {
+                "record_id": "younger",
+                "displayed_name": "Younger",
+                "birth_year": 915,
+                "birth_month": 1,
+                "biological_father_id": "parent",
+            },
+            {
+                "record_id": "focus",
+                "displayed_name": "Focus",
+                "birth_year": 895,
+                "birth_month": 12,
+                "biological_father_id": "parent",
+            },
+            {
+                "record_id": "same-year-older",
+                "displayed_name": "Same-year older",
+                "birth_year": 895,
+                "birth_month": 2,
+                "biological_father_id": "parent",
+            },
+        ]
+        relationships = FamilyRelationshipMap(people)
+        focus_generation_ids = [
+            node["person"]["record_id"]
+            for node in relationships.build_generations("focus")[2]
+        ]
+
+        self.assertEqual(
+            ["same-year-older", "focus", "younger"],
+            focus_generation_ids,
+        )
+
+    def test_default_child_candidates_exclude_parent_age_42_and_later(self):
+        people = [
+            {
+                "record_id": "haraldr",
+                "displayed_name": "Haraldr Hálfdanarson",
+                "birth_year": 850,
+            },
+            {
+                "record_id": "erik",
+                "displayed_name": "Erik Bloodaxe",
+                "birth_year": 895,
+            },
+        ]
+        relationships = FamilyRelationshipMap(people)
+
+        self.assertNotIn(
+            "erik",
+            {
+                person["record_id"]
+                for person in relationships.child_candidates("haraldr")
+            },
+        )
+
+        self.assertIn(
+            "erik",
+            {
+                person["record_id"]
+                for person in relationships.child_candidates(
+                    "haraldr",
+                    ignore_age_limits=True,
+                )
+            },
+        )
+
+    def test_default_child_candidates_include_parent_age_41(self):
+        people = [
+            {
+                "record_id": "parent",
+                "displayed_name": "Parent",
+                "birth_year": 850,
+            },
+            {
+                "record_id": "child",
+                "displayed_name": "Child",
+                "birth_year": 891,
+            },
+        ]
+
+        self.assertEqual(
+            ["child"],
+            [
+                person["record_id"]
+                for person in FamilyRelationshipMap(people).child_candidates(
+                    "parent"
+                )
+            ],
+        )
+
     def test_mates_and_lineage_are_derived(self):
         self.assertEqual(["mate"], self.relationships.mates_of("focus"))
         self.assertIn("child", self.relationships.descendants_of("focus"))
         self.assertIn("grandmother", self.relationships.ancestors_of("focus"))
+
+    def test_parent_couple_search_keeps_mixed_magic_spouse_pair(self):
+        people = [
+            {
+                "record_id": "child",
+                "displayed_name": "Child",
+                "birth_year": 950,
+                "blood_status": "Pureblood",
+            },
+            {
+                "record_id": "gunnhild",
+                "displayed_name": "Gunnhild",
+                "birth_year": 910,
+                "can_give_birth": True,
+                "mate_ids": ["erik"],
+            },
+            {
+                "record_id": "erik",
+                "displayed_name": "Erik Bloodaxe",
+                "birth_year": 895,
+                "can_give_birth": False,
+                "non_magical": True,
+                "mate_ids": ["gunnhild"],
+            },
+        ]
+        relationships = FamilyRelationshipMap(people)
+
+        self.assertEqual(
+            [("gunnhild", "erik")],
+            [
+                (mother["record_id"], father["record_id"])
+                for mother, father in relationships.parent_couple_candidates(
+                    "child"
+                )
+            ],
+        )
 
     def test_unknown_second_parent_does_not_prove_half_sibling_relationship(self):
         people = self.people + [
@@ -330,6 +470,30 @@ class FamilyRelationshipMapTests(unittest.TestCase):
             relationships.child_candidates("focus", "unknown-age-parent"),
         )
 
+    def test_child_candidates_exclude_people_who_already_have_a_parent(self):
+        people = self.people + [
+            {
+                "record_id": "available-child",
+                "displayed_name": "Available Child",
+                "birth_year": 2005,
+            },
+            {
+                "record_id": "already-parented",
+                "displayed_name": "Already Parented",
+                "birth_year": 2005,
+                "biological_father_id": "someone-else",
+            },
+        ]
+        candidate_ids = {
+            person["record_id"]
+            for person in FamilyRelationshipMap(people).child_candidates(
+                "focus"
+            )
+        }
+
+        self.assertIn("available-child", candidate_ids)
+        self.assertNotIn("already-parented", candidate_ids)
+
     def test_foster_relatives_use_the_right_generations_without_blood_edges(self):
         people = self.people + [
             {
@@ -423,6 +587,201 @@ class FamilyRelationshipMapTests(unittest.TestCase):
                 positions_by_id["child-a"],
                 positions_by_id["child-b"],
             ),
+        )
+
+
+class BasicParentQuickAddTests(unittest.TestCase):
+    class Variable:
+        def __init__(self, value=""):
+            self.value = value
+
+        def get(self):
+            return self.value
+
+    def test_parent_quick_add_submits_required_birth_year(self):
+        submitted = []
+        dialog = object.__new__(BasicRelationshipDialog)
+        dialog.displayed_name_value = self.Variable("Haraldr")
+        dialog.birth_year_value = self.Variable("850")
+        dialog.deceased_value = self.Variable(True)
+        dialog.death_year_value = self.Variable("920")
+        dialog.death_month_value = self.Variable("3")
+        dialog.death_day_value = self.Variable("14")
+        dialog.locations = [
+            {"record_id": "norway", "name": "Norway"}
+        ]
+        dialog.create_location_command = Mock()
+        dialog.starting_location_id = "norway"
+        dialog.starting_location_value = self.Variable("Norway")
+        dialog.save_command = lambda values: submitted.append(values) or values
+        dialog.destroy = Mock()
+
+        BasicRelationshipDialog.save_person(dialog)
+
+        self.assertEqual(850, submitted[0]["birth_year"])
+        self.assertTrue(submitted[0]["deceased"])
+        self.assertEqual(920, submitted[0]["death_year"])
+        self.assertEqual(3, submitted[0]["death_month"])
+        self.assertEqual(14, submitted[0]["death_day"])
+        self.assertEqual("norway", submitted[0]["starting_location_id"])
+        dialog.destroy.assert_called_once_with()
+
+    def test_quick_added_starting_location_is_available_to_parent(self):
+        created = {
+            "record_id": "new-village",
+            "name": "New village",
+        }
+        dialog = object.__new__(BasicRelationshipDialog)
+        dialog.locations = []
+        dialog.create_location_command = Mock(return_value=created)
+
+        result = BasicRelationshipDialog.create_starting_location(
+            dialog,
+            {"name": "New village"},
+        )
+
+        self.assertEqual(created, result)
+        self.assertEqual([created], dialog.locations)
+
+
+class AddChildPersonDialogTests(unittest.TestCase):
+    def test_parent_birth_location_is_used_as_the_default(self):
+        dialog = object.__new__(AddChildDialog)
+        dialog.current_person = {
+            "record_id": "parent",
+            "displayed_name": "Parent",
+        }
+        dialog.other_parent_kind = "unknown"
+        dialog.other_parent_id = ""
+        dialog.people_provider = lambda: [dialog.current_person]
+        dialog.event_provider = lambda person_id: [
+            {
+                "event_type": "born",
+                "person_ids": [person_id],
+                "location_ids": ["orkney"],
+            }
+        ]
+        dialog.location_events_cache = {}
+
+        location_id = AddChildDialog.preferred_parent_starting_location_id(
+            dialog,
+            [
+                {"record_id": "northumbria", "name": "Northumbria"},
+                {"record_id": "orkney", "name": "Orkney Islands"},
+            ],
+        )
+
+        self.assertEqual("orkney", location_id)
+
+    def test_new_child_profile_keeps_the_chosen_starting_location(self):
+        class Variable:
+            def __init__(self):
+                self.value = ""
+
+            def set(self, value):
+                self.value = value
+
+        class Listbox:
+            def selection_clear(self, start, end):
+                return None
+
+        dialog = object.__new__(AddChildDialog)
+        dialog.new_child_value = Variable()
+        dialog.child_listbox = Listbox()
+
+        result = AddChildDialog.set_new_child(
+            dialog,
+            {
+                "displayed_name": "New child",
+                "birth_year": 954,
+                "starting_location_id": "orkney",
+                "starting_location": "Orkney Islands",
+                "non_magical": True,
+            },
+        )
+
+        self.assertTrue(result)
+        self.assertEqual(
+            "orkney",
+            dialog.new_child_profile["starting_location_id"],
+        )
+        self.assertEqual(
+            "Orkney Islands",
+            dialog.new_child_profile["starting_location"],
+        )
+        self.assertTrue(dialog.new_child_profile["non_magical"])
+
+
+class ParentDisplayedNameSearchTests(unittest.TestCase):
+    @patch(
+        "mage_maker.sections.family_tree.page.parent_candidate_explanation",
+        return_value="",
+    )
+    @patch("mage_maker.sections.family_tree.page.RelationshipPickerDialog")
+    def test_parent_picker_refreshes_names_before_searching(
+        self,
+        picker_dialog,
+        explanation,
+    ):
+        view = object.__new__(FamilyTreeView)
+        view.current_person = {"record_id": "child"}
+        view.reload_people = Mock()
+        view.relationship_map = Mock()
+        view.relationship_map.people_by_id = {}
+        view.relationship_map.parent_candidates.side_effect = [[], []]
+        view.set_parent = Mock()
+        view.create_parent = Mock()
+        view.set_parent_status = Mock()
+        view.locations_provider = lambda: ()
+        view.create_location_command = Mock()
+
+        FamilyTreeView.open_parent_picker(view, "father")
+
+        view.reload_people.assert_called_once_with(redraw=False)
+        self.assertEqual(
+            [
+                (("child", "father"), {}),
+                (("child", "father"), {"alternate_role": True}),
+            ],
+            view.relationship_map.parent_candidates.call_args_list,
+        )
+        picker_dialog.assert_called_once()
+
+    def test_typed_display_name_searches_both_parent_roles(self):
+        primary = [
+            {"record_id": "haraldr", "displayed_name": "Haraldr"},
+        ]
+        alternate = [
+            {"record_id": "erik", "displayed_name": "Erik Bloodaxe"},
+        ]
+
+        results = RelationshipPickerDialog.matching_people(
+            primary,
+            alternate,
+            "erik bloodaxe",
+            show_alternate=False,
+        )
+
+        self.assertEqual(["erik"], [person["record_id"] for person in results])
+
+    def test_exact_display_name_is_ranked_before_partial_matches(self):
+        primary = [
+            {
+                "record_id": "story",
+                "displayed_name": "The Saga of Erik Bloodaxe",
+            },
+            {"record_id": "erik", "displayed_name": "Erik Bloodaxe"},
+        ]
+
+        results = RelationshipPickerDialog.matching_people(
+            primary,
+            (),
+            "erik bloodaxe",
+        )
+
+        self.assertEqual(
+            ["erik", "story"],
+            [person["record_id"] for person in results],
         )
 
 

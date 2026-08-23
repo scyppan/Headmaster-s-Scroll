@@ -24,6 +24,11 @@ from mage_maker.sections.development.models import (
     normalize_development_plan,
     school_progress_text,
 )
+from mage_maker.sections.development.initial_bonuses import (
+    allowance_sickles,
+    normalize_initial_bonuses,
+    starting_allowance_sickles,
+)
 from mage_maker.sections.development.page import DevelopmentView
 from mage_maker.sections.family_tree.page import FamilyTreeView
 from mage_maker.sections.events.models import death_event_person_ids
@@ -45,9 +50,14 @@ from mage_maker.sections.profile.famous_connections import (
 from mage_maker.sections.profile.books import BooksView
 from mage_maker.sections.profile.jobs import NonMagicalJobsView
 from mage_maker.sections.profile.portrait import choose_square_crop
+from mage_maker.sections.profile.school_dialog import SchoolSelectionDialog
 from mage_maker.sections.items.page import ItemsView
 from mage_maker.sections.relationships.page import RelationshipsView
 from mage_maker.sections.ledger.page import LedgerView
+from mage_maker.sections.ledger.models import (
+    ledger_storage_entries,
+    reconcile_development_ledger_entries,
+)
 from mage_maker.sections.settings.mage_groups import (
     default_mage_groups,
     normalize_mage_group_id,
@@ -171,6 +181,7 @@ class PersonForm(tk.Frame):
         self.boolean_widgets = {}
         self.tooltips = {}
         self.text_widgets = {}
+        self.pending_text_commit_widgets = set()
         self.name_details = {}
         self.pages = {}
         self.navigation_buttons = {}
@@ -333,14 +344,14 @@ class PersonForm(tk.Frame):
         displayed_name_value = tk.StringVar()
         displayed_name_value.trace_add("write", self.variable_changed)
         self.variables["displayed_name"] = displayed_name_value
-        displayed_name_field = LabeledEntry(
+        self.displayed_name_field = LabeledEntry(
             name_row,
             "Displayed name",
             displayed_name_value,
             background=SURFACE_MUTED,
             font_size=12,
         )
-        displayed_name_field.grid(row=0, column=0, sticky="new")
+        self.displayed_name_field.grid(row=0, column=0, sticky="new")
 
         self.name_details_button = SoftButton(
             name_row,
@@ -677,6 +688,7 @@ class PersonForm(tk.Frame):
             pady=(0, 7),
         )
         narrative_field.text.bind("<<Modified>>", self.text_changed)
+        narrative_field.text.bind("<FocusOut>", self.text_focus_out, add="+")
         self.text_widgets["narrative"] = narrative_field.text
 
         notes_field = MultilineField(
@@ -694,6 +706,7 @@ class PersonForm(tk.Frame):
             pady=(7, 0),
         )
         notes_field.text.bind("<<Modified>>", self.text_changed)
+        notes_field.text.bind("<FocusOut>", self.text_focus_out, add="+")
         self.text_widgets["notes"] = notes_field.text
         portrait_panel = SectionPanel(
             page,
@@ -864,6 +877,11 @@ class PersonForm(tk.Frame):
             navigate_command=navigate_command,
             locations_provider=(
                 self.event_controller.location_records
+                if self.event_controller is not None
+                else None
+            ),
+            create_location_command=(
+                self.event_controller.create_placeholder_location
                 if self.event_controller is not None
                 else None
             ),
@@ -1454,8 +1472,53 @@ class PersonForm(tk.Frame):
         ):
             return
 
-        self.ensure_development_loaded()
-        self.development.focus_school()
+        # Retain the lightweight adapter behavior used by isolated embedders
+        # that do not own a complete PersonForm record snapshot.
+        if not hasattr(self, "person_snapshot"):
+            self.ensure_development_loaded()
+            self.development.focus_school()
+            return
+
+        SchoolSelectionDialog(
+            self,
+            self.available_school_records(),
+            str(self.person_snapshot.get("school", "") or ""),
+            self.school_selected_from_profile,
+        )
+
+    def available_school_records(self):
+        """Return the current school catalog without loading Development."""
+        game_database = getattr(self, "game_database", None)
+        if (
+            game_database is not None
+            and game_database.loaded
+        ):
+            return game_database.schools()
+
+        return list(
+            getattr(self.development, "school_records", ()) or ()
+        )
+
+    def school_selected_from_profile(self, school_name):
+        normalized_school = str(school_name or "").strip()
+        previous_school = str(
+            self.person_snapshot.get("school", "") or ""
+        ).strip()
+
+        if normalized_school == previous_school:
+            return
+
+        self.person_snapshot["school"] = normalized_school
+
+        if self.section_is_current("development"):
+            # Keep the open Development editor synchronized, but do not make
+            # every Profile school choice pay the cost of loading that page.
+            self.development.school_field.set_value(normalized_school)
+
+        self.update_school_summary_from_person(self.person_snapshot)
+
+        if not self.loading:
+            self.change_command()
 
     def update_school_summary(self):
         if self.variables["non_magical"].get():
@@ -1563,8 +1626,24 @@ class PersonForm(tk.Frame):
                 school_attended=school_attended,
             )
         if hasattr(self, "ledger"):
-            self.ledger.set_context(
+            initial_bonuses = normalize_initial_bonuses(
+                development_values.get("initial_bonuses")
+            ) or {}
+            display_ledger_entries = reconcile_development_ledger_entries(
                 plan.get("ledger_entries", []),
+                plan.get("school_years", []),
+                plan.get("adult_years", []),
+                allowance_sickles(
+                    development_values.get("parental_values"),
+                    initial_bonuses.get("traits", []),
+                ),
+                starting_allowance_sickles(
+                    development_values.get("parental_values")
+                ),
+                academic_start_year,
+            )
+            self.ledger.set_context(
+                display_ledger_entries,
                 development_year_pages(
                     plan,
                     academic_start_year,
@@ -1986,6 +2065,9 @@ class PersonForm(tk.Frame):
                 ] = selected_timeline_event_id
 
         self.cancel_deferred_load()
+        if not hasattr(self, "pending_text_commit_widgets"):
+            self.pending_text_commit_widgets = set()
+        self.pending_text_commit_widgets.clear()
         self.load_generation += 1
         self.loading = True
         self.current_record_id = person_values.get("record_id")
@@ -2171,7 +2253,9 @@ class PersonForm(tk.Frame):
         if not self.loading:
             self.timeline_event_selected(self.timeline.selected_event_id)
             self.change_command()
-            self.schedule_person_autosave()
+            # Use the shared debounce instead of also scheduling an immediate
+            # after-idle save.  The former duplicate path could write the same
+            # large world twice for one timeline edit.
 
     def timeline_event_selected(self, event_id):
         selected_event_id = str(event_id or "").strip()
@@ -2279,7 +2363,7 @@ class PersonForm(tk.Frame):
             return
 
         plan = self.current_development_plan()
-        plan["ledger_entries"] = deepcopy(entries)
+        plan["ledger_entries"] = ledger_storage_entries(entries)
         self.person_snapshot["development_plan"] = plan
 
         if not self.loading:
@@ -2496,6 +2580,8 @@ class PersonForm(tk.Frame):
             return False
 
         self.person_snapshot = person_values
+        if hasattr(self, "pending_text_commit_widgets"):
+            self.pending_text_commit_widgets.clear()
         self.board_state = normalize_person_board(person_values.get("board"))
         name_details = person_values.get("name_details", {})
         self.name_details = (
@@ -2983,4 +3069,14 @@ class PersonForm(tk.Frame):
             event.widget.edit_modified(False)
 
             if not self.loading:
-                self.change_command()
+                if event.widget in self.pending_text_commit_widgets:
+                    return
+                self.pending_text_commit_widgets.add(event.widget)
+                self.change_command(False)
+
+    def text_focus_out(self, event):
+        if self.loading or event.widget not in self.pending_text_commit_widgets:
+            return
+
+        self.pending_text_commit_widgets.discard(event.widget)
+        self.change_command(True)

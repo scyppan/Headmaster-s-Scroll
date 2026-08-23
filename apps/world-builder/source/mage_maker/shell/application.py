@@ -179,6 +179,9 @@ class MageMakerApp(tk.Tk):
         self._external_reload_error = None
         self._index_rebuild_thread = None
         self._index_rebuild_error = None
+        self._index_rebuild_after_id = None
+        self._index_rebuild_requested = False
+        self._index_rebuild_locked_ui = False
         self._index_widget_states = []
         self._observed_world_fingerprint = source_fingerprint(
             self.database.database_path
@@ -355,13 +358,23 @@ class MageMakerApp(tk.Tk):
         )
 
     def start_background_index_rebuild(self):
-        if self._closing or self._index_rebuild_thread is not None:
+        self._index_rebuild_after_id = None
+        if self._closing:
             return
+        if self._index_rebuild_thread is not None:
+            self._index_rebuild_requested = True
+            return
+        self._index_rebuild_requested = False
         self._index_rebuild_error = None
-        self.set_status("Indexing world data... editing will unlock when ready")
-        for button in self.navigation_buttons.values():
-            button.set_enabled(False)
-        self.set_index_editing_enabled(False)
+        if not self.database.fully_loaded:
+            self._index_rebuild_locked_ui = True
+            self.set_status("Indexing world data... editing will unlock when ready")
+            for button in self.navigation_buttons.values():
+                button.set_enabled(False)
+            self.set_index_editing_enabled(False)
+        else:
+            self._index_rebuild_locked_ui = False
+            self.set_status("Updating the world search index in the background...")
         self._index_rebuild_thread = Thread(
             target=self.rebuild_index_worker,
             name="world-builder-index-rebuild",
@@ -372,7 +385,10 @@ class MageMakerApp(tk.Tk):
 
     def rebuild_index_worker(self):
         try:
-            self.database.rebuild_world_index()
+            if self.database.dirty:
+                self.database.rebuild_world_index()
+            else:
+                self.database.rebuild_world_index_from_disk()
         except Exception as error:
             self._index_rebuild_error = error
 
@@ -385,17 +401,50 @@ class MageMakerApp(tk.Tk):
         if self._closing:
             self.finish_close()
             return
-        for button in self.navigation_buttons.values():
-            button.set_enabled(True)
-        self.set_index_editing_enabled(True)
+        rebuild_locked_ui = self._index_rebuild_locked_ui
+        self._index_rebuild_locked_ui = False
+        if self._index_widget_states:
+            for button in self.navigation_buttons.values():
+                button.set_enabled(True)
+            self.set_index_editing_enabled(True)
         if self._index_rebuild_error is None and not self.database.index_dirty:
             self.set_status("World index ready")
-            self.invalidated_pages.add("mages")
-            self.refresh_page_if_needed(self.active_page_name, force=True)
+            # A warm, post-save index rebuild updates only a disposable cache.
+            # Refreshing the active page here made ordinary autosaves appear to
+            # flicker and repeated work the form had already completed.  The
+            # initial index-only startup still needs one refresh when editing
+            # is unlocked.
+            if rebuild_locked_ui:
+                self.invalidated_pages.add("mages")
+                self.refresh_page_if_needed(
+                    self.active_page_name,
+                    force=True,
+                )
         else:
             self.set_status(
                 "World index could not be rebuilt; canonical data remains safe"
             )
+        # A save that arrived while this worker was running sets
+        # ``_index_rebuild_requested`` and genuinely needs one more pass.
+        # Do not otherwise spin forever on a persistent cache-write failure:
+        # the cache is disposable and the canonical world remains valid.
+        if self._index_rebuild_requested:
+            self.schedule_background_index_rebuild()
+
+    def schedule_background_index_rebuild(self, delay=1200):
+        """Coalesce rapid saves into one disposable-index refresh."""
+        if self._closing:
+            return
+        self._index_rebuild_requested = True
+        if self._index_rebuild_after_id is not None:
+            try:
+                self.after_cancel(self._index_rebuild_after_id)
+            except tk.TclError:
+                pass
+        self._index_rebuild_after_id = self.after(
+            max(0, int(delay)),
+            self.start_background_index_rebuild,
+        )
 
     def set_index_editing_enabled(self, enabled):
         if enabled:
@@ -821,6 +870,8 @@ class MageMakerApp(tk.Tk):
             set(self.pages),
         )
         self.invalidated_pages.update(affected_pages)
+        if self.database.fully_loaded:
+            self.schedule_background_index_rebuild()
 
     def monitor_external_world_save(self):
         self._world_watch_after_id = None
@@ -832,6 +883,13 @@ class MageMakerApp(tk.Tk):
             )
         except OSError:
             current_fingerprint = self._observed_world_fingerprint
+        if (
+            current_fingerprint
+            == getattr(self.database, "last_saved_fingerprint", None)
+        ):
+            self._observed_world_fingerprint = current_fingerprint
+            if self.database.index_dirty:
+                self.schedule_background_index_rebuild()
         if (
             current_fingerprint != self._observed_world_fingerprint
             and not self.database.dirty
@@ -1156,7 +1214,11 @@ class MageMakerApp(tk.Tk):
         )
         needs_retained_sync = bool(
             changed_collections.intersection(
-                {"*", "events", "items", "people"}
+                # Profile edits already synchronize their own life events.
+                # Treating every Notes, tag, or board-position change as a
+                # possible retained-item death forced a second world scan and
+                # occasionally a second canonical save.
+                {"*", "events", "items"}
             )
         )
         ownership_changed = (
@@ -1373,6 +1435,13 @@ class MageMakerApp(tk.Tk):
 
     def cancel_deferred_editor_work(self):
         """Prevent queued refresh/autosave callbacks racing with shutdown."""
+        cancel_event_save = getattr(
+            self.event_controller,
+            "cancel_deferred_save",
+            None,
+        )
+        if callable(cancel_event_save):
+            cancel_event_save()
         mages_page = self.pages.get("mages")
         person_form = getattr(mages_page, "person_form", None)
         autosave_job = getattr(person_form, "autosave_job", None)
@@ -1386,6 +1455,7 @@ class MageMakerApp(tk.Tk):
         for attribute_name in (
             "_cross_page_refresh_after_id",
             "_world_watch_after_id",
+            "_index_rebuild_after_id",
         ):
             callback_id = getattr(self, attribute_name, None)
             if callback_id is None:

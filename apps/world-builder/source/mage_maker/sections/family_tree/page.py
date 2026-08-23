@@ -16,7 +16,10 @@ from mage_maker.sections.family_tree.relationships import (
     maiden_name_for,
     person_can_give_birth,
 )
-from mage_maker.sections.family_tree.relationship_picker import RelationshipPickerDialog
+from mage_maker.sections.family_tree.relationship_picker import (
+    ParentCouplePickerDialog,
+    RelationshipPickerDialog,
+)
 from mage_maker.sections.family_tree.spouse_candidates import (
     integer_year,
     spouse_candidates,
@@ -80,6 +83,7 @@ class FamilyTreeView(tk.Frame):
         refresh_people_command,
         navigate_command,
         locations_provider=None,
+        create_location_command=None,
         event_provider=None,
     ):
         super().__init__(parent, bg=SURFACE)
@@ -90,6 +94,7 @@ class FamilyTreeView(tk.Frame):
         self.refresh_people_command = refresh_people_command
         self.navigate_command = navigate_command
         self.locations_provider = locations_provider
+        self.create_location_command = create_location_command
         self.event_provider = event_provider
         self.current_person = {}
         self.people = []
@@ -162,6 +167,21 @@ class FamilyTreeView(tk.Frame):
         )
         self.remove_father_button.grid(row=0, column=2, padx=(6, 0), pady=5)
 
+        self.add_parent_couple_button = SoftButton(
+            toolbar,
+            text="Parents…",
+            command=self.open_parent_couple_picker,
+            background=SURFACE,
+            fill=BUTTON_SOFT,
+            hover_fill=BUTTON_SOFT_HOVER,
+            foreground=TEXT_DARK,
+            width=86,
+            height=36,
+        )
+        self.add_parent_couple_button.grid(
+            row=0, column=3, padx=(6, 0), pady=5
+        )
+
         self.add_mate_button = SoftButton(
             toolbar,
             text="Add spouse",
@@ -173,7 +193,7 @@ class FamilyTreeView(tk.Frame):
             width=104,
             height=36,
         )
-        self.add_mate_button.grid(row=0, column=3, padx=(6, 0), pady=5)
+        self.add_mate_button.grid(row=0, column=4, padx=(6, 0), pady=5)
 
         self.remove_mate_button = SoftButton(
             toolbar,
@@ -186,7 +206,7 @@ class FamilyTreeView(tk.Frame):
             width=122,
             height=36,
         )
-        self.remove_mate_button.grid(row=0, column=4, padx=(6, 0), pady=5)
+        self.remove_mate_button.grid(row=0, column=6, padx=(6, 0), pady=5)
 
         self.add_child_button = SoftButton(
             toolbar,
@@ -199,7 +219,22 @@ class FamilyTreeView(tk.Frame):
             width=102,
             height=36,
         )
-        self.add_child_button.grid(row=0, column=5, padx=(6, 0), pady=5)
+        self.add_child_button.grid(row=0, column=7, padx=(6, 0), pady=5)
+
+        self.add_spouse_child_button = SoftButton(
+            toolbar,
+            text="Child +",
+            command=self.open_add_child_with_spouse,
+            background=SURFACE,
+            fill=FAMILY_GREEN,
+            hover_fill=FAMILY_GREEN_FADED,
+            foreground=TEXT_DARK,
+            width=74,
+            height=36,
+        )
+        self.add_spouse_child_button.grid(
+            row=0, column=5, padx=(6, 0), pady=5
+        )
 
     def set_person(self, person, redraw=True):
         previous_record_id = str(
@@ -307,11 +342,15 @@ class FamilyTreeView(tk.Frame):
             self.redraw_graph()
 
     def update_add_child_control(self):
-        self.add_child_button.set_enabled(
+        can_add_child = bool(self.current_person.get("record_id")) and not bool(
+            self.current_person.get("does_not_have_children")
+        )
+        self.add_child_button.set_enabled(can_add_child)
+        self.add_parent_couple_button.set_enabled(
             bool(self.current_person.get("record_id"))
-            and not bool(
-                self.current_person.get("does_not_have_children")
-            )
+        )
+        self.add_spouse_child_button.set_enabled(
+            can_add_child and bool(self.valid_child_spouses())
         )
 
     def resize_graph(self, event=None):
@@ -1703,7 +1742,60 @@ class FamilyTreeView(tk.Frame):
         )
         self.active_spouse_owner_id = None if is_active else owner_id
         self.active_mate_id = None if is_active else mate_id
+        self.update_add_child_control()
         self.redraw_graph()
+
+    def open_parent_couple_picker(self):
+        self.reload_people(redraw=False)
+        current_id = str(self.current_person.get("record_id", "") or "")
+        couples = self.relationship_map.parent_couple_candidates(current_id)
+        if not couples:
+            messagebox.showinfo(
+                "No parent couples available",
+                (
+                    "No existing spouse pair meets this person's parent, age, "
+                    "and family requirements."
+                ),
+                parent=self,
+            )
+            return
+        ParentCouplePickerDialog(self, couples, self.set_parent_couple)
+
+    def set_parent_couple(self, mother_id, father_id):
+        valid_pairs = {
+            (
+                str(mother.get("record_id", "") or ""),
+                str(father.get("record_id", "") or ""),
+            )
+            for mother, father in self.relationship_map.parent_couple_candidates(
+                self.current_person.get("record_id", "")
+            )
+        }
+        if (mother_id, father_id) not in valid_pairs:
+            raise ValueError("That spouse pair is no longer available as parents.")
+
+        replacing = any(
+            current_id and current_id != requested_id
+            for current_id, requested_id in (
+                (self.mother_id, mother_id),
+                (self.father_id, father_id),
+            )
+        )
+        if replacing and not messagebox.askyesno(
+            "Replace current parents?",
+            "Replace the current parent assignment with this couple?",
+            parent=self,
+            default="no",
+        ):
+            return False
+
+        self.mother_id = mother_id
+        self.mother_status = "person"
+        self.father_id = father_id
+        self.father_status = "person"
+        self.reload_people(refresh_provider=False)
+        self.change_command()
+        return True
 
     def open_mother_picker(self, event=None):
         self.open_parent_picker("mother")
@@ -1712,6 +1804,11 @@ class FamilyTreeView(tk.Frame):
         self.open_parent_picker("father")
 
     def open_parent_picker(self, parent_role):
+        # Parent choices must reflect newly created and newly renamed people.
+        # The family graph deliberately caches compact summaries for speed, so
+        # refresh that lightweight list at the moment the searchable chooser
+        # opens rather than searching a stale snapshot.
+        self.reload_people(redraw=False)
         current_id = str(self.current_person.get("record_id", "") or "")
         primary_candidates = self.relationship_map.parent_candidates(
             current_id,
@@ -1760,7 +1857,8 @@ class FamilyTreeView(tk.Frame):
             create_command=partial(self.create_parent, parent_role),
             new_profile_label=f"Enter a new {role_label}",
             new_profile_explanation=(
-                "Enter the displayed name and starting location. Can give "
+                "Enter the displayed name, birth year, and starting location. "
+                "Can give "
                 f"birth will be {required_setting}."
             ),
             status_options=(
@@ -1776,6 +1874,7 @@ class FamilyTreeView(tk.Frame):
                 if callable(self.locations_provider)
                 else ()
             ),
+            create_location_command=self.create_location_command,
         )
 
     def set_parent(self, parent_role, record_id, change_birth_assignment=False):
@@ -2050,7 +2149,53 @@ class FamilyTreeView(tk.Frame):
         self.reload_people()
         self.change_command()
 
-    def open_add_child_dialog(self):
+    def valid_child_spouses(self):
+        current_id = str(self.current_person.get("record_id", "") or "")
+        if not current_id:
+            return []
+        current_can_give_birth = person_can_give_birth(self.current_person)
+        return [
+            self.relationship_map.person(mate_id)
+            for mate_id in self.relationship_map.mates_of(current_id)
+            if self.relationship_map.person(mate_id) is not None
+            and not bool(
+                self.relationship_map.person(mate_id).get(
+                    "does_not_have_children"
+                )
+            )
+            and person_can_give_birth(self.relationship_map.person(mate_id))
+            != current_can_give_birth
+        ]
+
+    def preferred_child_spouse_id(self):
+        current_id = str(self.current_person.get("record_id", "") or "")
+        valid_ids = [
+            str(person.get("record_id", "") or "")
+            for person in self.valid_child_spouses()
+        ]
+        if (
+            self.active_spouse_owner_id == current_id
+            and self.active_mate_id in valid_ids
+        ):
+            return self.active_mate_id
+        return valid_ids[0] if len(valid_ids) == 1 else ""
+
+    def open_add_child_with_spouse(self):
+        spouse_id = self.preferred_child_spouse_id()
+        if not spouse_id:
+            # Multiple spouses remain an explicit choice in the normal first
+            # step; a sole spouse skips that redundant screen.
+            return self.open_add_child_dialog()
+        return self.open_add_child_dialog(
+            preselected_other_parent_id=spouse_id,
+            start_on_child=True,
+        )
+
+    def open_add_child_dialog(
+        self,
+        preselected_other_parent_id=None,
+        start_on_child=False,
+    ):
         current_id = str(self.current_person.get("record_id", "") or "")
 
         if not current_id:
@@ -2079,19 +2224,7 @@ class FamilyTreeView(tk.Frame):
             if person.get("record_id") != current_id
             and person.get("record_id") not in ancestors
         ]
-        existing_mates = [
-            self.relationship_map.person(mate_id)
-            for mate_id in self.relationship_map.mates_of(current_id)
-            if self.relationship_map.person(mate_id) is not None
-            and not bool(
-                self.relationship_map.person(mate_id).get(
-                    "does_not_have_children"
-                )
-            )
-            and person_can_give_birth(
-                self.relationship_map.person(mate_id)
-            ) != current_can_give_birth
-        ]
+        existing_mates = self.valid_child_spouses()
         AddChildDialog(
             self,
             self.current_person,
@@ -2101,10 +2234,17 @@ class FamilyTreeView(tk.Frame):
             self.open_child_other_parent_picker,
             existing_mates=existing_mates,
             active_other_parent_id=(
-                self.active_mate_id
-                if self.active_spouse_owner_id == current_id
-                else None
+                preselected_other_parent_id
+                or (
+                    self.active_mate_id
+                    if self.active_spouse_owner_id == current_id
+                    else None
+                )
             ),
+            start_on_child=start_on_child,
+            locations_provider=self.locations_provider,
+            event_provider=self.event_provider,
+            create_location_command=self.create_location_command,
         )
 
     def open_child_other_parent_picker(
@@ -2164,7 +2304,8 @@ class FamilyTreeView(tk.Frame):
             ),
             new_profile_label=f"Enter a new {required_role_label}",
             new_profile_explanation=(
-                "Enter the displayed name and starting location. Can give "
+                "Enter the displayed name, birth year, and starting location. "
+                "Can give "
                 f"birth will be {required_setting}."
             ),
             locations=(
@@ -2172,6 +2313,7 @@ class FamilyTreeView(tk.Frame):
                 if callable(self.locations_provider)
                 else ()
             ),
+            create_location_command=self.create_location_command,
         )
 
     def create_child_other_parent(self, selection_command, profile_values):

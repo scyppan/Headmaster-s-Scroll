@@ -10,11 +10,16 @@ from .catalog import validate_catalog
 from .region_interactions import validate_gathering_database
 
 
-TEACHING_EVENT_TYPES = {
+KNOWLEDGE_EVENT_TYPES = {
     "taught_spell": ("spells",),
     "taught_proficiency": ("proficiencies",),
     "taught_recipe": ("recipes", "potions", "preparations", "foods_and_drinks"),
+    "invented_spell": ("spells",),
+    "invented_proficiency": ("proficiencies",),
+    "invented_recipe": ("recipes", "potions", "preparations", "foods_and_drinks"),
 }
+TEACHING_EVENT_TYPES = KNOWLEDGE_EVENT_TYPES
+FRIEND_GROUP_EVENT_TYPES = {"joined_friend_group", "left_friend_group"}
 CREATURE_RELATIONSHIP_EVENT_TYPES = {
     "tamed_creature", "bonded_creature", "irked_creature"
 }
@@ -36,7 +41,7 @@ def _validate_world_character_control_links(data: dict[str, Any]) -> None:
             )
     for index, event in enumerate(data.get("events", []) or []):
         event_type = str(event.get("event_type", "") or "")
-        if event_type in TEACHING_EVENT_TYPES:
+        if event_type in KNOWLEDGE_EVENT_TYPES:
             record_id = str(
                 event.get("knowledge_record_id")
                 or event.get("target_record_id")
@@ -45,11 +50,23 @@ def _validate_world_character_control_links(data: dict[str, Any]) -> None:
             collection = str(event.get("knowledge_collection", "") or "").strip()
             if not record_id:
                 raise DataValidationError(
-                    f"events[{index}] {event_type} requires a stable taught-record ID"
+                    f"events[{index}] {event_type} requires a stable knowledge-record ID"
                 )
-            if collection and collection not in TEACHING_EVENT_TYPES[event_type]:
+            if collection and collection not in KNOWLEDGE_EVENT_TYPES[event_type]:
                 raise DataValidationError(
-                    f"events[{index}] taught record uses the wrong collection"
+                    f"events[{index}] knowledge record uses the wrong collection"
+                )
+        if event_type in FRIEND_GROUP_EVENT_TYPES:
+            group_id = str(event.get("friend_group_id", "") or "").strip()
+            group_name = str(event.get("friend_group_name", "") or "").strip()
+            person_ids = [
+                str(value or "").strip()
+                for value in event.get("person_ids", []) or []
+                if str(value or "").strip()
+            ]
+            if not group_id or not group_name or len(person_ids) != 1:
+                raise DataValidationError(
+                    f"events[{index}] {event_type} requires one person and one friend group"
                 )
         if event_type in CREATURE_RELATIONSHIP_EVENT_TYPES:
             creature_id = str(event.get("named_creature_id", "") or "").strip()

@@ -19,7 +19,7 @@ from mage_maker.core.wizarding_currency import (
 from mage_maker.sections.development.mortality import (
     normalize_mortality_checked_through_age,
 )
-from mage_maker.sections.ledger.models import normalize_ledger_entries
+from mage_maker.sections.ledger.models import ledger_storage_entries
 
 
 DEVELOPMENT_SCHEMA_OPTIONS = (
@@ -1392,7 +1392,7 @@ def normalize_development_plan(value, default_schema=None):
     plan["school_years"] = normalize_school_year_records(
         plan.get("school_years", [])
     )
-    plan["ledger_entries"] = normalize_ledger_entries(
+    plan["ledger_entries"] = ledger_storage_entries(
         plan.get("ledger_entries", [])
     )
     plan["initial_eminence"] = normalize_eminence_records(

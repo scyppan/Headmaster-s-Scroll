@@ -1,8 +1,10 @@
 import tkinter as tk
-from tkinter import messagebox, simpledialog
+from tkinter import messagebox
 
-from mage_maker.core.dates import normalize_date_parts
+from mage_maker.core.dates import format_date_parts, normalize_date_parts
+from mage_maker.sections.events.dialog import QuickEventPersonDialog
 from mage_maker.sections.family_tree.relationships import FamilyRelationshipMap, format_person_date
+from mage_maker.sections.timeline.locations import location_at_date, normalize_location
 from mage_maker.ui.theme import (
     APP_BACKGROUND,
     BORDER,
@@ -40,6 +42,10 @@ class AddChildDialog(tk.Toplevel):
         open_other_parent_command,
         existing_mates=None,
         active_other_parent_id=None,
+        start_on_child=False,
+        locations_provider=None,
+        event_provider=None,
+        create_location_command=None,
     ):
         super().__init__(parent)
         self.current_person = current_person
@@ -47,6 +53,9 @@ class AddChildDialog(tk.Toplevel):
         self.people_provider = people_provider
         self.save_command = save_command
         self.open_other_parent_command = open_other_parent_command
+        self.locations_provider = locations_provider
+        self.event_provider = event_provider
+        self.create_location_command = create_location_command
         self.existing_mates = [
             person
             for person in existing_mates or []
@@ -55,6 +64,9 @@ class AddChildDialog(tk.Toplevel):
         ]
         self.visible_children = []
         self.eligible_children = []
+        self.all_eligible_children = []
+        self.location_events_cache = {}
+        self.location_value_cache = {}
         self.new_child_name = ""
         self.new_child_can_give_birth = False
         self.new_child_profile = {}
@@ -69,6 +81,8 @@ class AddChildDialog(tk.Toplevel):
         self.new_parent_value = tk.StringVar(value="No new person selected.")
         self.new_child_value = tk.StringVar(value="No new child entered")
         self.age_rule_value = tk.StringVar()
+        self.search_all_ages_value = tk.BooleanVar(value=False)
+        self.search_all_areas_value = tk.BooleanVar(value=False)
         self.search_value.trace_add("write", self.filter_children)
 
         self.title("Add child")
@@ -100,7 +114,10 @@ class AddChildDialog(tk.Toplevel):
         if active_other_parent_id:
             self.set_other_parent(active_other_parent_id)
 
-        self.show_partner_screen()
+        if start_on_child and self.other_parent_kind == "person":
+            self.show_child_screen()
+        else:
+            self.show_partner_screen()
         self.bind("<Escape>", self.close_dialog)
 
     def build_partner_screen(self):
@@ -395,8 +412,12 @@ class AddChildDialog(tk.Toplevel):
         )
         change_parent_button.grid(row=0, column=1, padx=(8, 8))
 
+        eligibility_row = tk.Frame(self.child_screen, bg=SURFACE)
+        eligibility_row.grid(row=3, column=0, sticky="ew", pady=(0, 9))
+        eligibility_row.grid_columnconfigure(0, weight=1)
+
         age_rule = tk.Label(
-            self.child_screen,
+            eligibility_row,
             textvariable=self.age_rule_value,
             bg=SURFACE,
             fg=TEXT_MUTED,
@@ -405,7 +426,40 @@ class AddChildDialog(tk.Toplevel):
             justify="left",
             wraplength=650,
         )
-        age_rule.grid(row=3, column=0, sticky="ew", pady=(0, 9))
+        age_rule.grid(row=0, column=0, sticky="ew")
+
+        search_options = tk.Frame(eligibility_row, bg=SURFACE)
+        search_options.grid(row=0, column=1, sticky="e", padx=(10, 0))
+
+        all_ages = tk.Checkbutton(
+            search_options,
+            text="Search all ages",
+            variable=self.search_all_ages_value,
+            command=self.refresh_child_candidates,
+            bg=SURFACE,
+            fg=TEXT_DARK,
+            activebackground=SURFACE,
+            activeforeground=TEXT_DARK,
+            selectcolor=FIELD_BACKGROUND,
+            font=app_font(8, "bold"),
+            cursor="hand2",
+        )
+        all_ages.pack(side="left")
+
+        all_areas = tk.Checkbutton(
+            search_options,
+            text="Search all areas",
+            variable=self.search_all_areas_value,
+            command=self.apply_child_area_filter,
+            bg=SURFACE,
+            fg=TEXT_DARK,
+            activebackground=SURFACE,
+            activeforeground=TEXT_DARK,
+            selectcolor=FIELD_BACKGROUND,
+            font=app_font(8, "bold"),
+            cursor="hand2",
+        )
+        all_areas.pack(side="left", padx=(10, 0))
 
         search = RoundedEntry(
             self.child_screen,
@@ -449,7 +503,10 @@ class AddChildDialog(tk.Toplevel):
         )
         self.child_listbox.grid(row=0, column=0, sticky="nsew")
         self.child_listbox.bind("<<ListboxSelect>>", self.existing_child_selected)
-        self.child_listbox.bind("<Double-Button-1>", self.save_child)
+        self.child_listbox.bind(
+            "<Double-Button-1>",
+            self.existing_child_double_clicked,
+        )
 
         scrollbar = tk.Scrollbar(list_frame, command=self.child_listbox.yview)
         scrollbar.grid(row=0, column=1, sticky="ns")
@@ -460,7 +517,7 @@ class AddChildDialog(tk.Toplevel):
 
         enter_new_button = SoftButton(
             footer,
-            text="Enter new",
+            text="Add person",
             command=self.open_new_child_dialog,
             background=SURFACE,
             fill=BUTTON_SOFT,
@@ -470,18 +527,6 @@ class AddChildDialog(tk.Toplevel):
             height=36,
         )
         enter_new_button.pack(side="left")
-        quick_add_button = SoftButton(
-            footer,
-            text="Quick add person",
-            command=self.quick_add_child,
-            background=SURFACE,
-            fill=BUTTON_SOFT,
-            hover_fill=BUTTON_SOFT_HOVER,
-            foreground=TEXT_DARK,
-            width=128,
-            height=36,
-        )
-        quick_add_button.pack(side="left", padx=(6, 0))
 
         back_button = SoftButton(
             footer,
@@ -735,10 +780,12 @@ class AddChildDialog(tk.Toplevel):
             self.people_provider(),
             self.current_person,
         )
-        self.eligible_children = relationship_map.child_candidates(
+        self.all_eligible_children = relationship_map.child_candidates(
             current_id,
             other_parent_id,
             minimum_age_gap=18,
+            maximum_age_gap=41,
+            ignore_age_limits=self.search_all_ages_value.get(),
             other_parent_status=self.other_parent_kind,
         )
         minimum_child_year = relationship_map.minimum_child_birth_year(
@@ -746,18 +793,137 @@ class AddChildDialog(tk.Toplevel):
             other_parent_id,
             minimum_age_gap=18,
         )
+        maximum_child_year = relationship_map.maximum_child_birth_year(
+            current_id,
+            other_parent_id,
+            maximum_age_gap=41,
+        )
 
         if minimum_child_year is None:
             self.age_rule_value.set(
                 "No existing people are shown because a selected parent's birth "
                 "year is unknown. Enter a new child or add that birth year first."
             )
+        self.minimum_child_year = minimum_child_year
+        self.maximum_child_year = maximum_child_year
+        self.location_events_cache.clear()
+        self.location_value_cache.clear()
+        self.apply_child_area_filter()
+
+    def person_birth_date(self, person):
+        try:
+            return format_date_parts(
+                person.get("birth_year"),
+                person.get("birth_month"),
+                person.get("birth_day"),
+                unknown="",
+            )
+        except (TypeError, ValueError):
+            return ""
+
+    def events_for_location_lookup(self, person_id):
+        normalized_id = str(person_id or "").strip()
+        if normalized_id not in self.location_events_cache:
+            self.location_events_cache[normalized_id] = (
+                list(self.event_provider(normalized_id) or ())
+                if normalized_id and callable(self.event_provider)
+                else []
+            )
+        return self.location_events_cache[normalized_id]
+
+    def person_location_on_date(self, person, date_value, locations):
+        person_id = str(person.get("record_id", "") or "").strip()
+        cache_key = (person_id, str(date_value or ""))
+        if cache_key not in self.location_value_cache:
+            self.location_value_cache[cache_key] = normalize_location(
+                location_at_date(
+                    person,
+                    date_value,
+                    shared_events=self.events_for_location_lookup(person_id),
+                    locations=locations,
+                )
+            )
+        return self.location_value_cache[cache_key]
+
+    def child_is_in_selected_parent_area(self, child, locations, people_by_id):
+        birth_date = self.person_birth_date(child)
+        if not birth_date:
+            return False
+        child_location = self.person_location_on_date(
+            child,
+            birth_date,
+            locations,
+        )
+        if not child_location:
+            return False
+        parent_ids = [str(self.current_person.get("record_id", "") or "")]
+        if self.other_parent_kind == "person" and self.other_parent_id:
+            parent_ids.append(self.other_parent_id)
+        parent_locations = {
+            self.person_location_on_date(
+                people_by_id[parent_id],
+                birth_date,
+                locations,
+            )
+            for parent_id in parent_ids
+            if parent_id in people_by_id
+        }
+        parent_locations.discard("")
+        return child_location in parent_locations
+
+    def apply_child_area_filter(self):
+        if self.search_all_areas_value.get():
+            self.eligible_children = list(self.all_eligible_children)
+        else:
+            people = list(self.people_provider() or ())
+            people_by_id = {
+                str(person.get("record_id", "") or "").strip(): person
+                for person in people
+                if isinstance(person, dict)
+                and str(person.get("record_id", "") or "").strip()
+            }
+            locations = (
+                list(self.locations_provider() or ())
+                if callable(self.locations_provider)
+                else []
+            )
+            self.eligible_children = [
+                child
+                for child in self.all_eligible_children
+                if self.child_is_in_selected_parent_area(
+                    child,
+                    locations,
+                    people_by_id,
+                )
+            ]
+
+        minimum_child_year = getattr(self, "minimum_child_year", None)
+        maximum_child_year = getattr(self, "maximum_child_year", None)
+        all_ages = self.search_all_ages_value.get()
+        if not all_ages and (
+            minimum_child_year is None or maximum_child_year is None
+        ):
+            self.age_rule_value.set(
+                "No existing people are shown because a selected parent's birth "
+                "year is unknown. Enter a new child or add that birth year first."
+            )
+        elif all_ages and self.search_all_areas_value.get():
+            self.age_rule_value.set("Unparented people of all ages · all areas.")
+        elif all_ages:
+            self.age_rule_value.set(
+                "Unparented people of all ages · in a selected parent's area at birth."
+            )
+        elif self.search_all_areas_value.get():
+            self.age_rule_value.set(
+                f"Unparented people born from {minimum_child_year} through "
+                f"{maximum_child_year} · all areas."
+            )
         else:
             self.age_rule_value.set(
-                f"Showing only people born in {minimum_child_year} or later · at least "
-                "18 years younger than the youngest selected parent."
+                f"Unparented people born from {minimum_child_year} through "
+                f"{maximum_child_year} · "
+                "in a selected parent's area at birth."
             )
-
         self.filter_children()
 
     def filter_children(self, *arguments):
@@ -799,6 +965,19 @@ class AddChildDialog(tk.Toplevel):
         self.new_child_profile = {}
         self.new_child_value.set("Using the selected existing child")
 
+    def existing_child_double_clicked(self, event=None):
+        if event is not None:
+            selected_index = self.child_listbox.nearest(event.y)
+
+            if 0 <= selected_index < len(self.visible_children):
+                self.child_listbox.selection_clear(0, "end")
+                self.child_listbox.selection_set(selected_index)
+                self.child_listbox.activate(selected_index)
+
+        self.existing_child_selected()
+        self.after_idle(self.save_child)
+        return "break"
+
     def open_new_child_dialog(self):
         if self.new_child_dialog is not None:
             try:
@@ -811,36 +990,95 @@ class AddChildDialog(tk.Toplevel):
 
             self.new_child_dialog = None
 
-        self.new_child_dialog = BasicChildDialog(
+        locations = (
+            list(self.locations_provider() or ())
+            if callable(self.locations_provider)
+            else []
+        )
+        self.new_child_dialog = QuickEventPersonDialog(
             self,
+            (),
+            self.stage_new_child_profile,
             self.set_new_child,
+            locations=locations,
+            initial_location_id=self.preferred_parent_starting_location_id(
+                locations
+            ),
+            create_location_command=self.create_location_command,
         )
         self.new_child_dialog.lift()
         return self.new_child_dialog
 
-    def quick_add_child(self):
-        displayed_name = simpledialog.askstring(
-            "Quick add person",
-            "Displayed name for the new child:",
-            parent=self,
-        )
+    def stage_new_child_profile(self, values):
+        profile = dict(values or {})
 
-        if displayed_name is None or not displayed_name.strip():
-            return False
+        if not str(profile.get("displayed_name", "") or "").strip():
+            raise ValueError("Enter a displayed name for the child.")
 
-        return self.set_new_child(
-            {
-                "displayed_name": displayed_name.strip(),
-                "can_give_birth": False,
-                "birth_year": None,
-                "birth_month": None,
-                "birth_day": None,
-                "deceased": False,
-                "death_year": None,
-                "death_month": None,
-                "death_day": None,
-            }
-        )
+        return profile
+
+    def preferred_parent_starting_location_id(self, locations):
+        location_records = [
+            location
+            for location in locations or ()
+            if isinstance(location, dict)
+        ]
+        location_ids = {
+            str(location.get("record_id", "") or "").strip()
+            for location in location_records
+            if str(location.get("record_id", "") or "").strip()
+        }
+        parent_ids = [
+            str(self.current_person.get("record_id", "") or "").strip()
+        ]
+
+        if self.other_parent_kind == "person" and self.other_parent_id:
+            parent_ids.append(self.other_parent_id)
+
+        people_by_id = {
+            str(person.get("record_id", "") or "").strip(): person
+            for person in self.people_provider() or ()
+            if isinstance(person, dict)
+        }
+
+        for parent_id in parent_ids:
+            parent = people_by_id.get(parent_id, self.current_person)
+            direct_location_id = str(
+                parent.get("starting_location_id", "") or ""
+            ).strip()
+
+            if direct_location_id in location_ids:
+                return direct_location_id
+
+            events = self.events_for_location_lookup(parent_id)
+
+            if not events and isinstance(parent.get("timeline_events"), list):
+                events = list(parent.get("timeline_events") or ())
+
+            life_start_events = sorted(
+                (
+                    event
+                    for event in events
+                    if isinstance(event, dict)
+                    and str(event.get("event_type", "") or "").casefold()
+                    in ("born", "birth", "starting_location")
+                ),
+                key=lambda event: (
+                    0
+                    if str(event.get("event_type", "") or "").casefold()
+                    in ("born", "birth")
+                    else 1
+                ),
+            )
+
+            for event in life_start_events:
+                for location_id in event.get("location_ids", []) or ():
+                    normalized_id = str(location_id or "").strip()
+
+                    if normalized_id in location_ids:
+                        return normalized_id
+
+        return ""
 
     def set_new_child(self, profile_values):
         values = dict(profile_values or {})
@@ -854,6 +1092,13 @@ class AddChildDialog(tk.Toplevel):
             "death_year": values.get("death_year"),
             "death_month": values.get("death_month"),
             "death_day": values.get("death_day"),
+            "starting_location_id": str(
+                values.get("starting_location_id", "") or ""
+            ).strip(),
+            "starting_location": str(
+                values.get("starting_location", "") or ""
+            ).strip(),
+            "non_magical": bool(values.get("non_magical")),
         }
         birth_capability_text = (
             "can give birth"
@@ -904,7 +1149,7 @@ class AddChildDialog(tk.Toplevel):
         if not child_record_id and not self.new_child_name:
             messagebox.showerror(
                 "Child required",
-                "Choose an existing child or use Enter new.",
+                "Choose an existing child or use Add person.",
                 parent=self,
             )
             return

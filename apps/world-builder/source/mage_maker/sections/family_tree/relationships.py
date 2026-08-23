@@ -293,6 +293,56 @@ class FamilyRelationshipMap:
         candidates.sort(key=person_name_sort_key)
         return candidates
 
+    def parent_couple_candidates(self, focus_id):
+        """Return existing spouse pairs that can jointly parent ``focus_id``.
+
+        Choosing a couple replaces both biological-parent fields at once, so
+        the current parent links must not exclude either half of an otherwise
+        valid pair. Keep the ancestry, age and fertility rules used by the
+        individual parent pickers. Do not pre-filter a complete couple using
+        the child's current blood status: assigning both parents at once is
+        what determines the child's resulting blood status.
+        """
+        focus = self.person(focus_id)
+        if focus is None:
+            return []
+
+        excluded_ids = {str(focus_id), *self.descendants_of(focus_id)}
+        eligible_by_role = {"mother": {}, "father": {}}
+
+        for parent_role in ("mother", "father"):
+            required_birth_capability = parent_role == "mother"
+            for person in self.people_by_id.values():
+                record_id = str(person.get("record_id", "") or "").strip()
+                if not record_id or record_id in excluded_ids:
+                    continue
+                if bool(person.get("does_not_have_children")):
+                    continue
+                if person_can_give_birth(person) != required_birth_capability:
+                    continue
+                if is_at_least_age(person, focus, 18) is False:
+                    continue
+                eligible_by_role[parent_role][record_id] = person
+
+        couples = []
+        seen_pairs = set()
+        for mother_id, mother in eligible_by_role["mother"].items():
+            for father_id in self.mates_of(mother_id):
+                father = eligible_by_role["father"].get(father_id)
+                pair_key = (mother_id, father_id)
+                if father is None or pair_key in seen_pairs:
+                    continue
+                seen_pairs.add(pair_key)
+                couples.append((mother, father))
+
+        couples.sort(
+            key=lambda pair: (
+                person_name_sort_key(pair[0]),
+                person_name_sort_key(pair[1]),
+            )
+        )
+        return couples
+
     def partner_candidates(
         self,
         focus_id,
@@ -357,7 +407,7 @@ class FamilyRelationshipMap:
             for person in self.people_by_id.values()
             if str(person.get(field_name, "") or "") == normalized_id
         ]
-        children.sort(key=person_name_sort_key)
+        children.sort(key=person_birth_sort_key)
         return children
 
     def child_candidates(
@@ -365,6 +415,8 @@ class FamilyRelationshipMap:
         focus_id,
         other_parent_id="",
         minimum_age_gap=18,
+        maximum_age_gap=41,
+        ignore_age_limits=False,
         other_parent_status="unknown",
     ):
         focus_id = str(focus_id or "")
@@ -388,8 +440,19 @@ class FamilyRelationshipMap:
             other_parent_id,
             minimum_age_gap,
         )
+        maximum_child_birth_year = self.maximum_child_birth_year(
+            focus_id,
+            other_parent_id,
+            maximum_age_gap,
+        )
 
-        if minimum_child_birth_year is None:
+        if (
+            not ignore_age_limits
+            and (
+                minimum_child_birth_year is None
+                or maximum_child_birth_year is None
+            )
+        ):
             return []
 
         if self.person(focus_id) is None:
@@ -403,10 +466,23 @@ class FamilyRelationshipMap:
             if record_id in excluded_ids:
                 continue
 
+            if str(person.get("biological_mother_id", "") or "").strip():
+                continue
+
+            if str(person.get("biological_father_id", "") or "").strip():
+                continue
+
             birth_year = self.integer_year(person.get("birth_year"))
 
-            if birth_year is None or birth_year < minimum_child_birth_year:
-                continue
+            if not ignore_age_limits:
+                if birth_year is None:
+                    continue
+
+                if birth_year < minimum_child_birth_year:
+                    continue
+
+                if birth_year > maximum_child_birth_year:
+                    continue
 
             candidates.append(person)
 
@@ -440,6 +516,40 @@ class FamilyRelationshipMap:
             birth_years.append(birth_year)
 
         return max(birth_years) + int(minimum_age_gap)
+
+    def maximum_child_birth_year(
+        self,
+        focus_id,
+        other_parent_id="",
+        maximum_age_gap=41,
+    ):
+        """Return the latest default birth year for a selected parent pair.
+
+        The chooser's ordinary family-planning window treats every selected
+        parent as no older than ``maximum_age_gap`` when the child is born.
+        An explicit all-ages search bypasses this limit.
+        """
+        parent_ids = self.unique_ids((focus_id, other_parent_id))
+
+        if not parent_ids:
+            return None
+
+        birth_years = []
+
+        for parent_id in parent_ids:
+            person = self.person(parent_id)
+
+            if person is None:
+                return None
+
+            birth_year = self.integer_year(person.get("birth_year"))
+
+            if birth_year is None:
+                return None
+
+            birth_years.append(birth_year)
+
+        return min(birth_years) + int(maximum_age_gap)
 
     def youngest_known_parent_birth_year(self, focus_id, other_parent_id=""):
         birth_years = []
@@ -508,7 +618,7 @@ class FamilyRelationshipMap:
         father_id = str(focus.get("biological_father_id", "") or "")
         maternal_aunts_uncles = self.siblings_of(mother_id)
         paternal_aunts_uncles = self.siblings_of(father_id)
-        siblings = self.siblings_of(focus_id)
+        siblings = self.sort_ids_by_birth(self.siblings_of(focus_id))
         maternal_cousins = []
         paternal_cousins = []
 
@@ -518,7 +628,7 @@ class FamilyRelationshipMap:
         for relative_id in paternal_aunts_uncles:
             paternal_cousins.extend(self.children_of(relative_id))
 
-        children = self.children_of(focus_id)
+        children = self.sort_ids_by_birth(self.children_of(focus_id))
         foster_children = [
             child_id
             for child_id in self.foster_children_of(focus_id)
@@ -538,22 +648,24 @@ class FamilyRelationshipMap:
         for child_id in children:
             grandchildren.extend(self.children_of(child_id))
 
-        grandparents = self.unique_ids(
+        grandparents = self.sort_ids_by_birth(self.unique_ids(
             self.parents_of(mother_id) + self.parents_of(father_id)
-        )
+        ))
         parent_generation = self.unique_ids(
             maternal_aunts_uncles
             + [mother_id, father_id]
             + paternal_aunts_uncles
             + foster_parents
         )
-        focus_generation = self.unique_ids(
+        focus_generation = self.sort_ids_by_birth(self.unique_ids(
             maternal_cousins + siblings + [focus_id] + paternal_cousins
-        )
-        child_generation = self.unique_ids(
+        ))
+        child_generation = self.sort_ids_by_birth(self.unique_ids(
             nieces_nephews + children + foster_children
+        ))
+        grandchild_generation = self.sort_ids_by_birth(
+            self.unique_ids(grandchildren)
         )
-        grandchild_generation = self.unique_ids(grandchildren)
 
         return [
             self.nodes_for(grandparents, "Grandparent"),
@@ -689,6 +801,14 @@ class FamilyRelationshipMap:
 
         return unique
 
+    def sort_ids_by_birth(self, record_ids):
+        return sorted(
+            self.unique_ids(record_ids),
+            key=lambda record_id: person_birth_sort_key(
+                self.person(record_id) or {}
+            ),
+        )
+
 
 def format_person_date(person):
     if not isinstance(person, dict):
@@ -714,9 +834,24 @@ def person_birth_sort_key(person):
     try:
         birth_year = int(person.get("birth_year"))
     except (TypeError, ValueError):
-        birth_year = 10000
+        return 10000, 13, 32, person_name_sort_key(person)
 
-    return birth_year, person_name_sort_key(person)
+    try:
+        birth_month = int(person.get("birth_month"))
+    except (TypeError, ValueError):
+        birth_month = 0
+
+    try:
+        birth_day = int(person.get("birth_day"))
+    except (TypeError, ValueError):
+        birth_day = 0
+
+    return (
+        birth_year,
+        birth_month,
+        birth_day,
+        person_name_sort_key(person),
+    )
 
 
 def maiden_name_for(person):

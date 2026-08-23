@@ -2,7 +2,7 @@
   "_database": {
     "schema_version": 9,
     "database_version": "26.7.22.001",
-    "last_saved": "2026-08-17T13:07:32.731573+00:00"
+    "last_saved": "2026-08-22T00:10:57.213908+00:00"
   },
   "wand_woods": [
     {
@@ -87232,6 +87232,54 @@
       "dbnotes": "",
       "record_id": "01617fef-4358-45a2-a729-e16f8193eb42",
       "last_updated": "2026-08-17T09:40:15.864156+00:00"
+    },
+    {
+      "name": "Raven Transformation",
+      "incantation": "gáranas",
+      "tradition": "",
+      "skill": "Transfiguration",
+      "subtype": "Alteration",
+      "threshold": 20,
+      "target_scope": "self",
+      "description": "Turns oneself into a raven. This is a highly stable transfiguration last about a half hour.",
+      "history": "",
+      "rationale": "",
+      "tags": [],
+      "dbnotes": "",
+      "record_id": "02f92f03-ab58-4c76-9c84-96a2f883906c",
+      "last_updated": "2026-08-21T23:28:47.433649+00:00"
+    },
+    {
+      "name": "Spirit Walking",
+      "incantation": "Vuoigŋavázza",
+      "tradition": "",
+      "skill": "Charms",
+      "subtype": "Concealing",
+      "threshold": 32,
+      "target_scope": "self",
+      "description": "Allows one to detach their spirit allowing their spirit to travel away from their body and observe the outside world relatively unimpeded. The spell cast value creates a set value that detection spells, arithmancy or perception spells must better to detect this spirit. \n\nAdditionally, this spell renders spirits slightly more forthcoming and communicative with the spell caster. \n\nLastly, this allows for brief communication with those who have recently died if the spirit is in close proximity to the spirit of the dead individual. If the individual's spirit has traveled away from their dead body, proximity to the body will not facilitate communication.",
+      "history": "",
+      "rationale": "",
+      "tags": [],
+      "dbnotes": "",
+      "record_id": "6c0fef3b-b0ec-4cef-b28f-ab44c401fffd",
+      "last_updated": "2026-08-21T23:35:18.341854+00:00"
+    },
+    {
+      "name": "Restlessness Curse",
+      "incantation": "Eirleysisðarlausa",
+      "tradition": "",
+      "skill": "Dark Arts",
+      "subtype": "Curse",
+      "threshold": 30,
+      "target_scope": "other",
+      "description": "Binds the target to the caster. They can never find true peace until they settle any discord with the caster.",
+      "history": "",
+      "rationale": "",
+      "tags": [],
+      "dbnotes": "",
+      "record_id": "cb58d604-daf4-4d3d-b2ea-78a4914816b3",
+      "last_updated": "2026-08-22T00:10:57.213892+00:00"
     }
   ],
   "schools": [
@@ -96393,9 +96441,9 @@
     }
   ],
   "_headmasters_scroll": {
-    "revision_id": "e583a0a3-1012-4bb0-9c5b-2a415c7d9f67",
-    "last_modified_at": "2026-08-18T04:24:07.377738Z",
-    "last_modified_by": "database-normalizer"
+    "revision_id": "a4561610-7367-4303-8cc8-5f7f39ff2590",
+    "last_modified_at": "2026-08-22T00:10:57.264662Z",
+    "last_modified_by": "dbm"
   },
   "tag_catalog": [
     {

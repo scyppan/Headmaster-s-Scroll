@@ -18,6 +18,10 @@ from mage_maker.sections.events.editor import (
     NEW_EVENT_DRAFT_ID,
     EventEditor,
 )
+from mage_maker.sections.events.link_dialog import (
+    EventLinkDialog,
+    link_person_to_event,
+)
 from mage_maker.sections.events.controller import (
     DeathEventReplacementRequired,
 )
@@ -252,6 +256,18 @@ class TimelineView(tk.Frame):
             height=36,
         )
         self.add_button.grid(row=0, column=1, padx=(6, 0), pady=4)
+        self.link_button = SoftButton(
+            toolbar,
+            text="Link event...",
+            command=self.open_link_event_dialog,
+            background=SURFACE,
+            fill=BUTTON_SOFT,
+            hover_fill=BUTTON_SOFT_HOVER,
+            foreground=TEXT_DARK,
+            width=108,
+            height=36,
+        )
+        self.link_button.grid(row=0, column=2, padx=(6, 0), pady=4)
         self.duplicate_button = SoftButton(
             toolbar,
             text="Duplicate event",
@@ -262,7 +278,7 @@ class TimelineView(tk.Frame):
         )
         self.duplicate_button.grid(
             row=0,
-            column=2,
+            column=3,
             padx=(6, 0),
             pady=4,
         )
@@ -276,7 +292,7 @@ class TimelineView(tk.Frame):
         )
         self.duplicate_many_button.grid(
             row=0,
-            column=3,
+            column=4,
             padx=(6, 0),
             pady=4,
         )
@@ -288,7 +304,7 @@ class TimelineView(tk.Frame):
             width=118,
             height=36,
         )
-        self.remove_button.grid(row=0, column=4, padx=(6, 0), pady=4)
+        self.remove_button.grid(row=0, column=5, padx=(6, 0), pady=4)
 
     def build_workspace(self):
         self.workspace = tk.Frame(self, bg=SURFACE)
@@ -1345,44 +1361,17 @@ class TimelineView(tk.Frame):
         return False
 
     def confirm_unsaved_event_changes(self):
-        association_guard_command = getattr(
-            getattr(self, "event_editor", None),
-            "association_selection_guard_active",
+        event_editor = getattr(self, "event_editor", None)
+        resolve_command = getattr(
+            event_editor,
+            "resolve_pending_navigation",
             None,
         )
-
-        if (
-            callable(association_guard_command)
-            and association_guard_command()
-        ):
-            return False
-
-        unsaved_changes_command = getattr(
-            getattr(self, "event_editor", None),
-            "has_unsaved_changes",
-            None,
+        return (
+            bool(resolve_command(parent=self))
+            if callable(resolve_command)
+            else True
         )
-
-        if (
-            not callable(unsaved_changes_command)
-            or not unsaved_changes_command()
-        ):
-            return True
-
-        save_choice = messagebox.askyesnocancel(
-            "Unsaved event changes",
-            "Save this event before continuing?",
-            parent=self,
-        )
-
-        if save_choice is None:
-            return False
-
-        if save_choice:
-            return self.event_editor.save()
-
-        self.event_editor.cancel()
-        return True
 
     def selected_event(self):
         for event in self.visible_events:
@@ -1631,6 +1620,76 @@ class TimelineView(tk.Frame):
     def open_add_dialog(self):
         self.start_add_event()
 
+    def open_link_event_dialog(self):
+        person_id = self.current_person_id()
+        if self.event_controller is None or not person_id:
+            self.show_editor_error(
+                "Save this person before linking an existing event."
+            )
+            return False
+        if not self.confirm_unsaved_event_changes():
+            return False
+
+        current_person = self.current_person()
+        current_person_name = str(
+            current_person.get("displayed_name", "")
+            or "Current person"
+        ).strip()
+        EventLinkDialog(
+            self,
+            people_options=self.event_controller.people_summaries(),
+            current_person_id=person_id,
+            current_person_name=current_person_name,
+            events_provider=self.event_controller.events_for_person,
+            save_command=self.link_current_person_to_event,
+        )
+        return True
+
+    def link_current_person_to_event(self, record_id, role_field):
+        person_id = self.current_person_id()
+        if self.event_controller is None or not person_id:
+            return False
+        stored_event = self.event_controller.get_event(record_id)
+        if stored_event is None:
+            messagebox.showerror(
+                "Cannot link event",
+                "That event no longer exists.",
+                parent=self,
+            )
+            return False
+
+        try:
+            linked_values = link_person_to_event(
+                stored_event,
+                person_id,
+                role_field,
+            )
+            saved = self.event_controller.update_event(
+                record_id,
+                linked_values,
+                save_database=False,
+            )
+        except (KeyError, OSError, TypeError, ValueError) as error:
+            messagebox.showerror(
+                "Cannot link event",
+                str(error),
+                parent=self,
+            )
+            return False
+
+        self.event_controller.schedule_deferred_save(
+            self.winfo_toplevel(),
+            error_command=self.show_editor_error,
+        )
+        self.linked_events = self.event_controller.events_for_person(
+            person_id
+        )
+        self.selected_event_id = saved["record_id"]
+        self.filter_events()
+        if self.linked_events_changed_command is not None:
+            self.linked_events_changed_command(saved)
+        return saved
+
     def edit_selected_event(self, event=None):
         selected_event = self.selected_event()
 
@@ -1669,9 +1728,13 @@ class TimelineView(tk.Frame):
                     saved = self.event_controller.update_event(
                         record_id,
                         values,
+                        save_database=False,
                     )
                 else:
-                    saved = self.event_controller.create_event(values)
+                    saved = self.event_controller.create_event(
+                        values,
+                        save_database=False,
+                    )
             except DeathEventReplacementRequired as error:
                 replace_existing = messagebox.askyesno(
                     "Replace existing Death event?",
@@ -1692,12 +1755,19 @@ class TimelineView(tk.Frame):
                         record_id,
                         values,
                         replace_existing_death=True,
+                        save_database=False,
                     )
                 else:
                     saved = self.event_controller.create_event(
                         values,
                         replace_existing_death=True,
+                        save_database=False,
                     )
+
+            self.event_controller.schedule_deferred_save(
+                self.winfo_toplevel(),
+                error_command=self.event_editor.show_error,
+            )
 
             self.draft_event = None
             self.selected_event_id = saved["record_id"]
@@ -1926,6 +1996,12 @@ class TimelineView(tk.Frame):
 
         if hasattr(self, "duplicate_many_button"):
             self.duplicate_many_button.set_enabled(can_duplicate)
+
+        if hasattr(self, "link_button"):
+            self.link_button.set_enabled(
+                bool(self.current_person_id())
+                and self.event_controller is not None
+            )
 
     def duplicate_event(self):
         selected_event = self.selected_event()

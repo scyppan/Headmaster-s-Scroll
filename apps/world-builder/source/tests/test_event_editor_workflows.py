@@ -1,12 +1,14 @@
+import inspect
 import unittest
 from copy import deepcopy
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from mage_maker.sections.events.editor import (
     NEW_EVENT_DRAFT_ID,
     EventAssociationPicker,
     EventEditor,
 )
+from mage_maker.sections.events.dialog import EventLocationPickerDialog
 from mage_maker.sections.events.period_view import PeriodEventsView
 from mage_maker.sections.locations.page import LocationPage
 from mage_maker.sections.locations.models import recent_location_label
@@ -663,6 +665,31 @@ class EventAssociationPickerFactory:
 
 
 class EventAssociationPickerStateTests(unittest.TestCase):
+    def test_quick_added_location_is_linked_immediately(self):
+        dialog = object.__new__(EventLocationPickerDialog)
+        dialog.locations = [
+            {"record_id": "limerick", "name": "Limerick"}
+        ]
+        dialog.selected_location_id = ""
+        dialog.location_tree = Mock()
+        dialog.location_selected = Mock()
+        dialog.selection_history_command = Mock()
+        dialog.save_command = Mock()
+        dialog.destroy = Mock()
+        dialog.after_idle = lambda callback: callback()
+
+        created = {
+            "record_id": "new-location",
+            "name": "New location",
+        }
+
+        self.assertTrue(dialog.placeholder_location_created(created))
+        dialog.selection_history_command.assert_called_once_with(
+            "new-location"
+        )
+        dialog.save_command.assert_called_once_with("new-location")
+        dialog.destroy.assert_called_once_with()
+
     def test_read_only_picker_can_repopulate_without_tk_item_error(self):
         picker = EventAssociationPickerFactory.build()
 
@@ -734,6 +761,10 @@ class EventAssociationPickerStateTests(unittest.TestCase):
         self.assertTrue(picker.selector_chosen("salazar"))
         self.assertEqual(["maeve", "salazar"], picker.get_values())
         self.assertIn("✓ Salazar", picker.listbox.rows)
+        self.assertEqual(
+            "Linked people and recently viewed",
+            picker.result_heading_value.get(),
+        )
 
     @patch(
         "mage_maker.sections.events.editor.EventPersonPickerDialog"
@@ -773,6 +804,87 @@ class EventAssociationPickerStateTests(unittest.TestCase):
 
 
 class EventEditorStateTests(unittest.TestCase):
+    @patch("mage_maker.sections.events.editor.messagebox.askyesno")
+    def test_navigation_autosaves_valid_event_without_prompt(self, prompt):
+        editor = object.__new__(EventEditor)
+        editor.association_selection_guard_active = Mock(return_value=False)
+        editor.has_unsaved_changes = Mock(return_value=True)
+        editor.autosave = Mock()
+        editor.autosave_event = Mock(return_value=True)
+        editor.cancel = Mock()
+
+        self.assertTrue(
+            EventEditor.resolve_pending_navigation(editor, parent=Mock())
+        )
+        editor.autosave.cancel.assert_called_once_with()
+        editor.autosave_event.assert_called_once_with()
+        prompt.assert_not_called()
+        editor.cancel.assert_not_called()
+
+    @patch(
+        "mage_maker.sections.events.editor.messagebox.askyesno",
+        return_value=False,
+    )
+    def test_navigation_keeps_incomplete_event_when_discard_declined(
+        self,
+        prompt,
+    ):
+        editor = object.__new__(EventEditor)
+        editor.association_selection_guard_active = Mock(return_value=False)
+        editor.has_unsaved_changes = Mock(return_value=True)
+        editor.autosave = Mock()
+        editor.autosave_event = Mock(return_value=False)
+        editor.cancel = Mock()
+
+        self.assertFalse(
+            EventEditor.resolve_pending_navigation(editor, parent=Mock())
+        )
+        prompt.assert_called_once()
+        editor.cancel.assert_not_called()
+
+    @patch(
+        "mage_maker.sections.events.editor.messagebox.askyesno",
+        return_value=True,
+    )
+    def test_navigation_discards_incomplete_event_when_confirmed(
+        self,
+        prompt,
+    ):
+        editor = object.__new__(EventEditor)
+        editor.association_selection_guard_active = Mock(return_value=False)
+        editor.has_unsaved_changes = Mock(return_value=True)
+        editor.autosave = Mock()
+        editor.autosave_event = Mock(return_value=False)
+        editor.cancel = Mock()
+
+        self.assertTrue(
+            EventEditor.resolve_pending_navigation(editor, parent=Mock())
+        )
+        prompt.assert_called_once()
+        editor.cancel.assert_called_once_with()
+
+    def test_typing_does_not_schedule_event_autosave(self):
+        source = inspect.getsource(EventEditor.__init__)
+
+        self.assertIn('"<FocusOut>"', source)
+        self.assertIn('"<<ComboboxSelected>>"', source)
+        self.assertNotIn('"<KeyRelease>"', source)
+        self.assertNotIn('"<ButtonRelease-1>"', source)
+
+    def test_typing_in_the_next_field_cancels_the_pending_save(self):
+        class ChildWidget:
+            def __init__(self, master):
+                self.master = master
+
+        editor = object.__new__(EventEditor)
+        editor.autosave = Mock()
+        event = Mock()
+        event.widget = ChildWidget(editor)
+
+        EventEditor.editor_typing_started(editor, event)
+
+        editor.autosave.cancel.assert_called_once_with()
+
     def test_selected_editable_event_opens_with_every_field_unlocked(self):
         editor = EventEditorFactory.build()
         editor.load_event(

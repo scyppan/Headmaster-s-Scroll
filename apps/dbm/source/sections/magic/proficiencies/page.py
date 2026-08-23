@@ -17,11 +17,12 @@ from theme import (
 
 
 class ProficienciesPage(tk.Frame):
-    def __init__(self, parent, database):
+    def __init__(self, parent, database, record_saved_command=None):
         super().__init__(parent, bg=APP_BACKGROUND)
         bind_theme(self, background="APP_BACKGROUND")
 
         self.database = database
+        self.record_saved_command = record_saved_command
         self.controller = ProficiencyController(database)
         self.records = []
         self.current_record_id = None
@@ -220,6 +221,9 @@ class ProficienciesPage(tk.Frame):
         self.form_dirty = False
         self.toolbar.set_record_state(dirty=False, has_record=True)
         self.status_value.set(f"Saved {saved_record['name']}")
+
+        if callable(self.record_saved_command):
+            self.record_saved_command(saved_record)
 
         return True
 

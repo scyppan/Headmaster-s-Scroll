@@ -372,6 +372,15 @@ class RoundedEntry(tk.Frame):
         self.canvas.itemconfigure(self.shape, fill=fill)
         self.entry.configure(bg=fill)
 
+    def set_invalid(self, invalid, color="#A32626"):
+        self.border_outline = color if invalid else BORDER
+        if not self.has_focus:
+            self.canvas.itemconfigure(
+                self.shape,
+                outline=self.border_outline,
+                width=2 if invalid else 1,
+            )
+
     def set_enabled(self, enabled):
         self.is_enabled = bool(enabled)
         self.entry.configure(state="normal" if enabled else "disabled")

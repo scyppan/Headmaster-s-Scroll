@@ -52,6 +52,49 @@ class PeopleControllerTests(unittest.TestCase):
         record_ids = [person["record_id"] for person in self.controller.list_people()]
         self.assertEqual(["old", "young", "unknown"], record_ids)
 
+    def test_notes_update_uses_record_scoped_fast_path(self):
+        with patch.object(
+            self.controller,
+            "synchronize_spouses",
+            side_effect=AssertionError("family reconciliation ran"),
+        ), patch.object(
+            self.controller,
+            "synchronize_family_parental_values",
+            side_effect=AssertionError("parent reconciliation ran"),
+        ), patch(
+            "mage_maker.core.controller.synchronize_birth_events_from_people",
+            side_effect=AssertionError("birth reconciliation ran"),
+        ), patch.object(self.controller.database, "save") as save_database:
+            updated = self.controller.update_person(
+                "young",
+                {"notes": "A focused note edit."},
+            )
+
+        self.assertEqual("A focused note edit.", updated["notes"])
+        self.assertEqual(frozenset({"notes"}), self.controller.last_changed_fields)
+        save_database.assert_called_once_with(rebuild_indexes=False)
+
+    def test_semantic_no_op_creates_no_database_change(self):
+        current = self.controller.get_person("young")
+        revision = self.controller.database.revision
+        with patch.object(
+            self.controller.database,
+            "update_person",
+        ) as update_person, patch.object(
+            self.controller.database,
+            "save",
+        ) as save_database:
+            returned = self.controller.update_person(
+                "young",
+                {"notes": current.get("notes", "")},
+            )
+
+        self.assertEqual("young", returned["record_id"])
+        self.assertEqual(revision, self.controller.database.revision)
+        self.assertEqual(frozenset(), self.controller.last_changed_fields)
+        update_person.assert_not_called()
+        save_database.assert_not_called()
+
     def test_recent_people_follow_view_order_without_duplicates(self):
         self.assertTrue(self.controller.remember_person_interaction("young"))
         self.assertTrue(self.controller.remember_person_interaction("old"))

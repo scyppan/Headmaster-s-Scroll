@@ -2,6 +2,7 @@ import tkinter as tk
 from copy import deepcopy
 from tkinter import messagebox
 
+from mage_maker.core.autosave import DebouncedAutosave
 from mage_maker.dialogs.creation import CreationWizardDialog
 from mage_maker.sections.development.models import (
     DEVELOPMENT_ASSIGNMENT_PROMPT,
@@ -75,6 +76,12 @@ class MagesPage(tk.Frame):
         self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(0, weight=1)
         self.build_workspace()
+        self.autosave = DebouncedAutosave(
+            self,
+            self.autosave_person,
+            lambda: self.form_dirty,
+            delay_ms=700,
+        )
         self.refresh_people()
 
         if self.people:
@@ -225,7 +232,7 @@ class MagesPage(tk.Frame):
         self.editor_title_value = tk.StringVar(
             value="Magician Profile"
         )
-        label = tk.Label(
+        self.editor_title_label = tk.Label(
             toolbar,
             textvariable=self.editor_title_value,
             bg=PRIMARY_DARK,
@@ -233,8 +240,13 @@ class MagesPage(tk.Frame):
             font=app_font(16, "bold"),
             anchor="w",
             padx=16,
+            cursor="hand2",
         )
-        label.grid(row=0, column=1, sticky="nsew")
+        self.editor_title_label.grid(row=0, column=1, sticky="nsew")
+        self.editor_title_label.bind(
+            "<Button-1>",
+            self.copy_editor_name,
+        )
         self.new_button = SoftButton(
             toolbar,
             text="New",
@@ -282,8 +294,23 @@ class MagesPage(tk.Frame):
             width=92,
             height=38,
         )
-        self.save_button.grid(row=0, column=5, padx=(4, 16), pady=13)
+        self.save_button.grid_remove()
         self.set_editor_state(False)
+
+    def copy_editor_name(self, event=None):
+        if self.current_record_id is None:
+            return "break"
+
+        displayed_name = self.editor_title_value.get().strip()
+        if not displayed_name or displayed_name == "Magician Profile":
+            return "break"
+
+        self.clipboard_clear()
+        self.clipboard_append(displayed_name)
+        # Keep the clipboard contents after focus leaves this widget.
+        self.update_idletasks()
+        self.status_command(f"Copied {displayed_name}")
+        return "break"
 
     def refresh_people(self, selected_record_id=None):
         summary_provider = getattr(
@@ -312,6 +339,7 @@ class MagesPage(tk.Frame):
         self.controller.remember_person_interaction(record_id)
         self.update_editor_identity(person)
         self.person_form.set_person(person)
+        self.update_required_field_highlights()
         self.people_list.set_selected_record(record_id)
         self.form_dirty = False
         self.set_editor_state(True)
@@ -344,7 +372,10 @@ class MagesPage(tk.Frame):
         created_person = self.controller.create_person(creation_values)
         self.refresh_people(created_person["record_id"])
         self.load_person(created_person["record_id"])
-        self.records_changed_command()
+        self.records_changed_command(
+            "people",
+            (created_person["record_id"],),
+        )
         self.status_command(f"Created {created_person['displayed_name']}")
         return created_person
 
@@ -352,7 +383,10 @@ class MagesPage(tk.Frame):
         creation_values = self.prepare_creation_values(values)
         created_person = self.controller.create_person(creation_values)
         self.refresh_people(self.current_record_id)
-        self.records_changed_command()
+        self.records_changed_command(
+            "people",
+            (created_person["record_id"],),
+        )
         self.status_command(
             f"Created {created_person['displayed_name']} as a relative"
         )
@@ -426,7 +460,10 @@ class MagesPage(tk.Frame):
     def update_related_person(self, record_id, values):
         updated_person = self.controller.update_person(record_id, values)
         self.refresh_people(self.current_record_id)
-        self.records_changed_command()
+        self.records_changed_command(
+            "people",
+            (updated_person["record_id"],),
+        )
         self.status_command(
             f"Updated family links for {updated_person['displayed_name']}"
         )
@@ -441,23 +478,86 @@ class MagesPage(tk.Frame):
     def refresh_period_filters(self):
         self.people_list.refresh_periods()
 
-    def save_person(self, save_database=True, refresh_after=True):
+    def autosave_person(self):
+        focused_widget = self.focus_get()
+        record_id = self.current_record_id
+        saved = self.save_person(refresh_after=False, silent=True)
+        focus_after_save = self.focus_get()
+
+        if (
+            saved
+            and focused_widget is not None
+            and record_id == self.current_record_id
+            and focus_after_save is not focused_widget
+        ):
+            self.after_idle(
+                lambda: self.restore_autosave_focus(
+                    focused_widget,
+                    focus_after_save,
+                    record_id,
+                )
+            )
+
+        return saved
+
+    def restore_autosave_focus(
+        self,
+        focused_widget,
+        focus_after_save,
+        record_id,
+    ):
+        """Undo focus changes caused by saving, without fighting the user."""
+        if record_id != self.current_record_id:
+            return False
+
+        try:
+            if (
+                not focused_widget.winfo_exists()
+                or self.focus_get() is not focus_after_save
+            ):
+                return False
+            focused_widget.focus_set()
+            return True
+        except (AttributeError, tk.TclError):
+            return False
+
+    def update_required_field_highlights(self):
+        displayed_name = self.person_form.variables[
+            "displayed_name"
+        ].get().strip()
+        displayed_name_field = getattr(
+            self.person_form,
+            "displayed_name_field",
+            None,
+        )
+        if displayed_name_field is not None:
+            displayed_name_field.control.set_invalid(not displayed_name)
+        return bool(displayed_name) and not self.person_form.specialty_school_is_blank()
+
+    def save_person(
+        self,
+        save_database=True,
+        refresh_after=True,
+        silent=False,
+    ):
         if self.current_record_id is None:
+            return False
+        if not self.update_required_field_highlights():
+            self.status_command("Complete the required fields outlined in red")
             return False
 
         root = self.winfo_toplevel()
-        self.save_button.set_enabled(False)
-        self.save_button.set_text("Saving...")
-        self.status_command("Saving magician...")
+        self.status_command("Saving changes…")
+        revision_before_save = getattr(
+            self.controller.database,
+            "revision",
+            None,
+        )
         try:
             root.configure(cursor="wait")
-            self.update_idletasks()
         except tk.TclError:
             pass
         try:
-            if self.person_form.specialty_school_is_blank():
-                raise ValueError("Enter the specialty school name.")
-
             values = self.person_form.get_values()
             saved_person = self.controller.update_person(
                 self.current_record_id,
@@ -465,11 +565,12 @@ class MagesPage(tk.Frame):
                 save_database=save_database,
             )
         except ParentLocationConflict as error:
+            if silent:
+                self.status_command(str(error))
+                return False
             if not self.confirm_long_distance_parent_override(error):
                 return False
-
             values["long_distance_parent_override"] = True
-
             try:
                 saved_person = self.controller.update_person(
                     self.current_record_id,
@@ -484,40 +585,65 @@ class MagesPage(tk.Frame):
                 )
                 return False
         except Exception as error:
-            messagebox.showerror(
-                "Cannot save magician",
-                str(error),
-                parent=self,
-            )
+            if silent:
+                self.status_command(f"Could not save changes: {error}")
+            else:
+                messagebox.showerror(
+                    "Cannot save magician",
+                    str(error),
+                    parent=self,
+                )
             return False
         finally:
-            self.save_button.set_text("Save")
-            self.save_button.set_enabled(
-                self.current_record_id is not None
-            )
             try:
                 root.configure(cursor="")
             except tk.TclError:
                 pass
 
         self.form_dirty = False
+        self.current_record_id = saved_person["record_id"]
+        self.person_form.accept_saved_person(saved_person)
+        self.people_list.set_selected_record(saved_person["record_id"])
+        self.update_editor_identity(saved_person)
+        self.revert_button.set_enabled(False)
         if refresh_after:
             self.refresh_people(saved_person["record_id"])
-            # The form already contains the values that were just committed.
-            # Reloading the same person reset every lazily built section and
-            # made the open Events page disappear and repaint.  Adopt the
-            # canonical saved snapshot in place instead.
-            self.current_record_id = saved_person["record_id"]
-            self.person_form.accept_saved_person(saved_person)
-            self.people_list.set_selected_record(saved_person["record_id"])
-            self.update_editor_identity(saved_person)
-            self.records_changed_command(
-                "people",
-                (saved_person["record_id"],),
+        record_changed = (
+            revision_before_save is None
+            or getattr(
+                self.controller.database,
+                "revision",
+                revision_before_save,
             )
-        self.status_command(f"Saved {saved_person['displayed_name']}")
+            != revision_before_save
+        )
+        if record_changed:
+            changed_fields = frozenset(
+                getattr(
+                    self.controller,
+                    "last_changed_fields",
+                    (),
+                )
+            )
+            # These fields do not alter list summaries or any linked record.
+            # The database notification has already marked dependent views as
+            # stale for their next visit; rebuilding the active Mages page now
+            # only makes a FocusOut autosave visibly jump or flicker.
+            quiet_profile_fields = {
+                "narrative",
+                "notes",
+                "tags",
+                "board",
+            }
+            if not changed_fields or not changed_fields <= quiet_profile_fields:
+                self.records_changed_command(
+                    "people",
+                    (saved_person["record_id"],),
+                )
+            self.status_command(f"Saved {saved_person['displayed_name']}")
+        else:
+            self.status_command("Up to date")
         return True
-
     def confirm_long_distance_parent_override(self, error):
         return messagebox.askyesno(
             "Parents are in different locations",
@@ -571,7 +697,7 @@ class MagesPage(tk.Frame):
         self.load_person(self.current_record_id)
         self.status_command("Changes reverted")
 
-    def mark_form_dirty(self):
+    def mark_form_dirty(self, schedule_autosave=True):
         if self.current_record_id is None:
             return
 
@@ -582,9 +708,11 @@ class MagesPage(tk.Frame):
             self.person_form.variables["unfinished"].get(),
         )
         self.update_editor_identity_from_form()
-        self.save_button.set_enabled(True)
         self.revert_button.set_enabled(True)
-        self.status_command("Unsaved changes")
+        self.update_required_field_highlights()
+        self.status_command("Changes will save automatically")
+        if schedule_autosave:
+            self.autosave.schedule()
 
     def set_editor_state(self, has_person):
         self.delete_button.set_enabled(has_person)
@@ -641,6 +769,10 @@ class MagesPage(tk.Frame):
         if not self.person_form.confirm_unsaved_event_changes():
             return False
 
+        if not self.form_dirty:
+            return True
+
+        self.autosave.flush()
         if not self.form_dirty:
             return True
 

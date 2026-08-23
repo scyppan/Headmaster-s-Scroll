@@ -3,6 +3,7 @@ from copy import deepcopy
 from tkinter import messagebox, simpledialog, ttk
 from uuid import uuid4
 
+from mage_maker.core.autosave import DebouncedAutosave
 from mage_maker.core.dates import (
     format_historical_display_date,
     format_line_item_date,
@@ -1039,6 +1040,12 @@ class OrganizationPage(tk.Frame):
         self.grid_columnconfigure(0, weight=1)
         self.build_toolbar()
         self.build_workspace()
+        self.autosave = DebouncedAutosave(
+            self,
+            self.autosave_organization,
+            lambda: self.form_dirty,
+            delay_ms=700,
+        )
         self.name_value.trace_add("write", self.form_value_changed)
         self.type_value.trace_add("write", self.form_value_changed)
         self.faction_color_value.trace_add("write", self.form_value_changed)
@@ -1081,6 +1088,8 @@ class OrganizationPage(tk.Frame):
             self.refresh()
 
     def form_value_changed(self, *arguments):
+        if hasattr(self, "name_field"):
+            self.update_organization_required_fields()
         self.mark_form_dirty()
 
     def narrative_changed(self, event):
@@ -1096,8 +1105,9 @@ class OrganizationPage(tk.Frame):
 
         self.form_dirty = True
         self.revert_button.set_enabled(True)
-        self.save_button.set_enabled(True)
-        self.status_command("Unsaved organization changes")
+        self.update_organization_required_fields()
+        self.status_command("Changes will save automatically")
+        self.autosave.schedule()
 
     def build_filter_menu(self):
         self.filter_menu = tk.Menu(
@@ -1344,12 +1354,7 @@ class OrganizationPage(tk.Frame):
             width=92,
             height=38,
         )
-        self.save_button.grid(
-            row=0,
-            column=4,
-            padx=(4, 16),
-            pady=13,
-        )
+        self.save_button.grid_remove()
 
     def build_workspace(self):
         workspace = tk.PanedWindow(
@@ -3849,6 +3854,10 @@ class OrganizationPage(tk.Frame):
         if not self.form_dirty:
             return True
 
+        self.autosave.flush()
+        if not self.form_dirty:
+            return True
+
         save_choice = messagebox.askyesnocancel(
             "Unsaved organization changes",
             "Save changes before continuing?",
@@ -4564,7 +4573,15 @@ class OrganizationPage(tk.Frame):
             True,
         )
 
-    def save_organization(self):
+    def update_organization_required_fields(self):
+        valid = bool(self.name_value.get().strip())
+        self.name_field.control.set_invalid(not valid)
+        return valid
+
+    def autosave_organization(self):
+        return self.save_organization(silent=True, refresh_after=False)
+
+    def save_organization(self, silent=False, refresh_after=True):
         if (
             self.link_school_value.get()
             and not self.selected_school_id
@@ -4602,16 +4619,22 @@ class OrganizationPage(tk.Frame):
             None,
         )
 
+        if not self.update_organization_required_fields():
+            self.status_command("Complete the required fields outlined in red")
+            return False
         try:
             extinction_date = OrganizationPage.extinction_date_from_form(
                 self
             )
         except ValueError as error:
-            messagebox.showerror(
-                "Cannot save organization",
-                str(error),
-                parent=self,
-            )
+            if silent:
+                self.status_command(f"Could not save organization: {error}")
+            else:
+                messagebox.showerror(
+                    "Cannot save organization",
+                    str(error),
+                    parent=self,
+                )
             return False
 
         values = {
@@ -4705,11 +4728,14 @@ class OrganizationPage(tk.Frame):
                     values
                 )
         except (KeyError, TypeError, ValueError) as error:
-            messagebox.showerror(
-                "Cannot save organization",
-                str(error),
-                parent=self,
-            )
+            if silent:
+                self.status_command(f"Could not save organization: {error}")
+            else:
+                messagebox.showerror(
+                    "Cannot save organization",
+                    str(error),
+                    parent=self,
+                )
             return False
 
         if hasattr(self, "search_value"):
@@ -4741,17 +4767,20 @@ class OrganizationPage(tk.Frame):
                 self.scope_change_command("")
 
         self.form_dirty = False
-        self.refresh(updated["record_id"], force_load=True)
-
-        events_changed_command = getattr(
-            self,
-            "events_changed_command",
-            None,
-        )
-
-        if events_changed_command is not None:
-            events_changed_command()
-
+        self.current_organization_id = updated["record_id"]
+        self.loaded_parent_organization_id = str(
+            updated.get("parent_organization_id", "") or ""
+        ).strip()
+        self.revert_button.set_enabled(False)
+        if refresh_after or parent_changed:
+            self.refresh(updated["record_id"], force_load=True)
+            events_changed_command = getattr(
+                self,
+                "events_changed_command",
+                None,
+            )
+            if events_changed_command is not None:
+                events_changed_command()
         self.status_command(f"Saved organization {updated['name']}")
         return True
 

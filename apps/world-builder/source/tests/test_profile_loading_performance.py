@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, call
 
 from mage_maker.sections.profile.page import PersonForm
 from mage_maker.shell.person_list import PeopleList
@@ -16,7 +16,43 @@ class FakeVariable:
         self.value = value
 
 
+class FakeText:
+    def __init__(self):
+        self.modified = True
+
+    def edit_modified(self, value=None):
+        if value is None:
+            return self.modified
+        self.modified = bool(value)
+
+
+class FakeEvent:
+    def __init__(self, widget):
+        self.widget = widget
+
+
 class ProfileLoadingPerformanceTests(unittest.TestCase):
+    def test_multiline_text_saves_only_after_the_field_loses_focus(self):
+        form = object.__new__(PersonForm)
+        form.loading = False
+        form.pending_text_commit_widgets = set()
+        form.change_command = Mock()
+        text = FakeText()
+        event = FakeEvent(text)
+
+        PersonForm.text_changed(form, event)
+
+        form.change_command.assert_called_once_with(False)
+        self.assertIn(text, form.pending_text_commit_widgets)
+
+        PersonForm.text_focus_out(form, event)
+
+        self.assertEqual(
+            [call(False), call(True)],
+            form.change_command.call_args_list,
+        )
+        self.assertNotIn(text, form.pending_text_commit_widgets)
+
     def test_mage_list_keeps_only_birth_data_on_the_second_line(self):
         people_list = object.__new__(PeopleList)
 

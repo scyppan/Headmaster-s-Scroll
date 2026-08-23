@@ -19,10 +19,11 @@ from theme import APP_BACKGROUND, BORDER, SURFACE, SURFACE_MUTED, TEXT_DARK, TEX
 
 
 class RecipesPage(tk.Frame):
-    def __init__(self, parent, database):
+    def __init__(self, parent, database, record_saved_command=None):
         super().__init__(parent, bg=APP_BACKGROUND)
         bind_theme(self, background="APP_BACKGROUND")
         self.database = database
+        self.record_saved_command = record_saved_command
         self.controller = RecipeController(database)
         self.records = []
         self.current_record_id = None
@@ -204,7 +205,12 @@ class RecipesPage(tk.Frame):
                 parent=self,
             )
             return False
-        self.current_record_id = record["record_id"]; self.refresh_records(self.current_record_id); self.load_record(self.current_record_id); return True
+        self.current_record_id = record["record_id"]
+        self.refresh_records(self.current_record_id)
+        self.load_record(self.current_record_id)
+        if callable(self.record_saved_command):
+            self.record_saved_command(record)
+        return True
 
     def delete_record(self):
         if self.current_record_id is None: return self.new_record()

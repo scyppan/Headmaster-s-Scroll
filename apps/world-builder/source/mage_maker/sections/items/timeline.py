@@ -293,25 +293,16 @@ class ItemTimelineView(tk.Frame):
         if not hasattr(self, "event_editor"):
             return True
 
-        if not self.event_editor.has_unsaved_changes():
-            return True
-
-        choice = messagebox.askyesnocancel(
-            "Unsaved event changes",
-            "Save this event before continuing?",
-            parent=self,
-            icon="warning",
-            default="yes",
+        resolve_command = getattr(
+            self.event_editor,
+            "resolve_pending_navigation",
+            None,
         )
-
-        if choice is None:
-            return False
-
-        if choice:
-            return bool(self.event_editor.save())
-
-        self.cancel_editor()
-        return True
+        return (
+            bool(resolve_command(parent=self))
+            if callable(resolve_command)
+            else True
+        )
 
     def search_changed(self, *arguments):
         self.refresh_event_list(reload_editor=False)

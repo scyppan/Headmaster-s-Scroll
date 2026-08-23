@@ -29,8 +29,24 @@ WORLD_EVENT_DATE_PATTERN = re.compile(
 WORLD_EVENT_TIME_PATTERN = re.compile(r"^(?:[01]\d|2[0-3])[0-5]\d$")
 WORLD_EVENT_COLON_TIME_PATTERN = re.compile(r"^((?:[01]\d|2[0-3])):([0-5]\d)$")
 JOB_EVENT_TYPES = frozenset(("started_job", "received_raise"))
+FRIEND_GROUP_EVENT_TYPES = frozenset(
+    ("joined_friend_group", "left_friend_group")
+)
 DEATH_EVENT_TYPES = frozenset(("died", "murder"))
 BIRTH_EVENT_TYPE = "born"
+
+
+def normalize_unnamed_victim_count(value):
+    """Return a safe non-negative count without accepting booleans."""
+    if isinstance(value, bool):
+        return 0
+
+    try:
+        return max(0, int(str(value or "0").strip() or "0"))
+    except (TypeError, ValueError):
+        return 0
+
+
 BIRTH_EVENT_SOURCE = "birth_event"
 GHOST_EVENT_TYPE = "returns_as_ghost"
 BIRTH_ROLE_FIELDS = (
@@ -137,16 +153,25 @@ def normalize_character_control_event_metadata(event):
 
     normalized = deepcopy(event) if isinstance(event, dict) else {}
     event_type = canonical_event_type(normalized.get("event_type"))
-    teaching_collections = {
+    knowledge_event_collections = {
         "taught_spell": ("spells",),
         "taught_proficiency": ("proficiencies",),
         "taught_recipe": (
+            "recipes",
+            "potions",
+            "preparations",
+            "foods_and_drinks",
+        ),
+        "invented_spell": ("spells",),
+        "invented_proficiency": ("proficiencies",),
+        "invented_recipe": (
+            "recipes",
             "potions",
             "preparations",
             "foods_and_drinks",
         ),
     }
-    if event_type in teaching_collections:
+    if event_type in knowledge_event_collections:
         normalized["knowledge_record_id"] = str(
             normalized.get("knowledge_record_id", "") or ""
         ).strip()
@@ -157,13 +182,17 @@ def normalize_character_control_event_metadata(event):
             str(normalized.get("knowledge_name", "") or "").strip().split()
         )
         if not normalized["knowledge_record_id"]:
-            raise ValueError("A teaching event needs a linked record.")
+            raise ValueError(
+                "A teaching or invention event needs a linked record."
+            )
         if (
             normalized["knowledge_collection"]
             and normalized["knowledge_collection"]
-            not in teaching_collections[event_type]
+            not in knowledge_event_collections[event_type]
         ):
-            raise ValueError("The taught record uses the wrong collection.")
+            raise ValueError(
+                "The linked knowledge record uses the wrong collection."
+            )
     else:
         normalized.pop("knowledge_record_id", None)
         normalized.pop("knowledge_collection", None)
@@ -190,6 +219,42 @@ def normalize_character_control_event_metadata(event):
     return normalized
 
 
+def normalize_friend_group_event_metadata(event):
+    """Keep friend-group history referential and event-driven."""
+
+    normalized = deepcopy(event) if isinstance(event, dict) else {}
+    event_type = canonical_event_type(normalized.get("event_type"))
+
+    if event_type not in FRIEND_GROUP_EVENT_TYPES:
+        normalized.pop("friend_group_id", None)
+        normalized.pop("friend_group_name", None)
+        return normalized
+
+    group_name = " ".join(
+        str(normalized.get("friend_group_name", "") or "")
+        .strip()
+        .split()
+    )
+    if not group_name:
+        raise ValueError("Choose or enter the friend group.")
+
+    group_id = str(
+        normalized.get("friend_group_id", "") or ""
+    ).strip()
+    if not group_id:
+        group_id = str(
+            uuid.uuid5(
+                uuid.NAMESPACE_URL,
+                "headmasters-scroll:friend-group:"
+                + group_name.casefold(),
+            )
+        )
+
+    normalized["friend_group_id"] = group_id
+    normalized["friend_group_name"] = group_name
+    return normalized
+
+
 def normalize_world_event(event):
     if not isinstance(event, dict):
         raise TypeError("Every event must be an object.")
@@ -203,6 +268,7 @@ def normalize_world_event(event):
     )
     normalized = normalize_job_event_metadata(normalized)
     normalized = normalize_character_control_event_metadata(normalized)
+    normalized = normalize_friend_group_event_metadata(normalized)
     normalized["title"] = " ".join(
         str(normalized.get("title", "") or "").strip().split()
     )
@@ -228,6 +294,20 @@ def normalize_world_event(event):
     normalized["person_ids"] = normalize_association_values(
         normalized.get("person_ids")
     )
+    if normalized["event_type"] == "relocated":
+        # Keep the people deliberately selected for the move separate from
+        # children added by the relocation household rule.  Without this
+        # small reference list, reopening and saving an event could treat an
+        # auto-added child as a new household head and begin adding that
+        # child's children as well.
+        normalized["relocation_primary_person_ids"] = (
+            normalize_association_values(
+                normalized.get("relocation_primary_person_ids")
+                or normalized["person_ids"]
+            )
+        )
+    else:
+        normalized.pop("relocation_primary_person_ids", None)
     if normalized["event_type"] == "foster_child":
         normalized["foster_parent_person_ids"] = (
             normalize_association_values(
@@ -322,6 +402,16 @@ def normalize_world_event(event):
         normalized["victim_person_ids"] = normalize_association_values(
             normalized.get("victim_person_ids")
         )
+        normalized["unnamed_muggle_victim_count"] = (
+            normalize_unnamed_victim_count(
+                normalized.get("unnamed_muggle_victim_count")
+            )
+        )
+        normalized["unnamed_mage_victim_count"] = (
+            normalize_unnamed_victim_count(
+                normalized.get("unnamed_mage_victim_count")
+            )
+        )
         normalized["witness_person_ids"] = normalize_association_values(
             normalized.get("witness_person_ids")
         )
@@ -342,6 +432,8 @@ def normalize_world_event(event):
 
         normalized.pop("perpetrator_person_ids", None)
         normalized.pop("victim_person_ids", None)
+        normalized.pop("unnamed_muggle_victim_count", None)
+        normalized.pop("unnamed_mage_victim_count", None)
     requested_eminence_person_ids = normalize_association_values(
         normalized.get("eminence_person_ids")
     )

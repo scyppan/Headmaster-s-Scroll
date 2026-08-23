@@ -209,6 +209,24 @@ class SchoolSelectionTests(unittest.TestCase):
         self.assertEqual("", SchoolField.get_value(field))
         self.assertEqual("none", field.display_value.get())
 
+    def test_profile_school_choice_updates_snapshot_without_loading_development(self):
+        changes = []
+        form = object.__new__(PersonForm)
+        form.person_snapshot = {
+            "record_id": "mage-1",
+            "school": "",
+        }
+        form.current_record_id = "mage-1"
+        form.loaded_section_record_ids = {}
+        form.loading = False
+        form.change_command = lambda: changes.append(True)
+        form.update_school_summary_from_person = lambda person: None
+
+        PersonForm.school_selected_from_profile(form, "Hogwarts")
+
+        self.assertEqual("Hogwarts", form.person_snapshot["school"])
+        self.assertEqual([True], changes)
+
     def test_school_dialog_displays_casting_and_yearly_curriculum(self):
         dialog = object.__new__(SchoolSelectionDialog)
         dialog.selected_school = {

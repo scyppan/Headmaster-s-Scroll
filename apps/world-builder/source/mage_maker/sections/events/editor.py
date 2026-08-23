@@ -1,7 +1,9 @@
 import tkinter as tk
 from copy import deepcopy
 from time import monotonic
+from tkinter import messagebox
 
+from mage_maker.core.autosave import DebouncedAutosave
 from mage_maker.core.wizarding_currency import (
     currency_component_input_is_valid,
 )
@@ -55,6 +57,9 @@ from mage_maker.ui.widgets import (
     RoundedText,
     SoftButton,
 )
+from mage_maker.sections.events.catalog_detail_dialog import (
+    CatalogDetailDialog,
+)
 
 
 NEW_EVENT_DRAFT_ID = "__new-event-draft__"
@@ -69,7 +74,30 @@ EVENT_TYPE_DEFAULT_TITLES = {
     "item_event": "Item event",
     "joined_faction": "Joined a faction",
     "left_faction": "Left a faction",
+    "joined_friend_group": "+ to friend group",
+    "left_friend_group": "− to friend group",
+    "invented_spell": "Invented a spell",
+    "invented_proficiency": "Invented a proficiency",
+    "invented_recipe": "Invented a recipe",
     "published_book": "Published a book",
+}
+
+KNOWLEDGE_EVENT_TYPES = {
+    "taught_spell",
+    "taught_proficiency",
+    "taught_recipe",
+    "invented_spell",
+    "invented_proficiency",
+    "invented_recipe",
+}
+INVENTION_EVENT_TYPES = {
+    "invented_spell",
+    "invented_proficiency",
+    "invented_recipe",
+}
+FRIEND_GROUP_EVENT_TYPES = {
+    "joined_friend_group",
+    "left_friend_group",
 }
 
 
@@ -454,6 +482,17 @@ class EventAssociationPicker(tk.Frame):
             and not self.include_recent
         ):
             self.result_heading_value.set("Current person")
+        elif (
+            self.association_kind == "people"
+            and self.selected_ids
+            and any(
+                association_id not in self.locked_ids
+                for association_id in self.selected_ids
+            )
+        ):
+            self.result_heading_value.set(
+                "Linked people and recently viewed"
+            )
         elif self.association_kind == "people" and self.locked_ids:
             self.result_heading_value.set(
                 "Current person and recently viewed"
@@ -926,6 +965,8 @@ class EventEditor(tk.Frame):
         self.previous_event_type = ""
         self.saved_editor_values = None
         self.saving = False
+        self._autosave_silent = False
+        self._autosave_bindings = []
         self.association_selection_guard_until = 0.0
         self.job_event_options = []
         self.job_event_options_by_label = {}
@@ -949,6 +990,9 @@ class EventEditor(tk.Frame):
         self.murder_affected_summary_value = tk.StringVar(
             value="Affected by: None"
         )
+        self.unnamed_victims_enabled_value = tk.BooleanVar(value=False)
+        self.unnamed_muggle_victim_count_value = tk.StringVar(value="0")
+        self.unnamed_mage_victim_count_value = tk.StringVar(value="0")
         self.selected_item_ids = []
         self.locked_item_ids = []
         self.selected_item_link_types = {}
@@ -964,6 +1008,7 @@ class EventEditor(tk.Frame):
         self.character_control_link_id = ""
         self.character_control_link_collection = ""
         self.character_control_link_name = tk.StringVar(value="No linked record")
+        self.friend_group_name = tk.StringVar()
         self.adjusting_year = False
         self.year_value.trace_add("write", self.update_period_display)
         self.month_value.trace_add("write", self.update_period_display)
@@ -1009,6 +1054,33 @@ class EventEditor(tk.Frame):
             self.job_event_selection_changed,
         )
         self.clear()
+        self.autosave = DebouncedAutosave(
+            self,
+            self.autosave_event,
+            self.has_unsaved_changes,
+            delay_ms=750,
+        )
+        # Text entry is intentionally committed only when the user leaves the
+        # field.  Binding KeyRelease (and every mouse release) made a large
+        # world save start while the next field was being typed, which could
+        # repeatedly stall the editor.  Discrete choices still commit through
+        # ComboboxSelected and the picker-specific change callbacks below.
+        for sequence in (
+            "<<ComboboxSelected>>",
+            "<FocusOut>",
+        ):
+            binding_id = self.bind_all(
+                sequence,
+                self.editor_input_changed,
+                add="+",
+            )
+            self._autosave_bindings.append((sequence, binding_id))
+        typing_binding_id = self.bind_all(
+            "<KeyPress>",
+            self.editor_typing_started,
+            add="+",
+        )
+        self._autosave_bindings.append(("<KeyPress>", typing_binding_id))
 
     def build_scrollable_form(self):
         self.canvas = tk.Canvas(
@@ -1652,6 +1724,86 @@ class EventEditor(tk.Frame):
             sticky="ew",
             padx=(6, 0),
         )
+        self.unnamed_victims_checkbox = tk.Checkbutton(
+            self.murder_additional_people_panel,
+            text="Unnamed individual(s) as victim",
+            variable=self.unnamed_victims_enabled_value,
+            command=self.unnamed_victims_changed,
+            bg=self.background,
+            fg=TEXT_DARK,
+            activebackground=self.background,
+            selectcolor=FIELD_BACKGROUND,
+            font=app_font(8, "bold"),
+            anchor="w",
+        )
+        self.unnamed_victims_checkbox.grid(
+            row=1,
+            column=0,
+            sticky="w",
+            pady=(4, 0),
+        )
+        self.unnamed_victim_counts_panel = tk.Frame(
+            self.murder_additional_people_panel,
+            bg=self.background,
+        )
+        unnamed_counts = self.unnamed_victim_counts_panel
+        unnamed_counts.grid(
+            row=1,
+            column=1,
+            columnspan=2,
+            sticky="e",
+            pady=(4, 0),
+        )
+        tk.Label(
+            unnamed_counts,
+            text="Muggles",
+            bg=self.background,
+            fg=TEXT_DARK,
+            font=app_font(8),
+        ).grid(row=0, column=0, padx=(0, 3))
+        self.unnamed_muggle_victim_count_entry = tk.Spinbox(
+            unnamed_counts,
+            from_=0,
+            to=999999,
+            textvariable=self.unnamed_muggle_victim_count_value,
+            width=5,
+            bg=FIELD_BACKGROUND,
+            fg=TEXT_DARK,
+            relief="flat",
+            command=self.murder_people_selection_changed,
+        )
+        self.unnamed_muggle_victim_count_entry.grid(row=0, column=1)
+        tk.Label(
+            unnamed_counts,
+            text="Mages",
+            bg=self.background,
+            fg=TEXT_DARK,
+            font=app_font(8),
+        ).grid(row=0, column=2, padx=(8, 3))
+        self.unnamed_mage_victim_count_entry = tk.Spinbox(
+            unnamed_counts,
+            from_=0,
+            to=999999,
+            textvariable=self.unnamed_mage_victim_count_value,
+            width=5,
+            bg=FIELD_BACKGROUND,
+            fg=TEXT_DARK,
+            relief="flat",
+            command=self.murder_people_selection_changed,
+        )
+        self.unnamed_mage_victim_count_entry.grid(row=0, column=3)
+        for unnamed_entry in (
+            self.unnamed_muggle_victim_count_entry,
+            self.unnamed_mage_victim_count_entry,
+        ):
+            unnamed_entry.bind(
+                "<KeyRelease>",
+                lambda event: self.murder_people_selection_changed(
+                    schedule_save=False
+                ),
+                add="+",
+            )
+        self.update_unnamed_victim_controls()
         self.murder_additional_people_button = SoftButton(
             self.murder_additional_people_panel,
             text="Edit witnesses / affected by",
@@ -1721,7 +1873,7 @@ class EventEditor(tk.Frame):
             font=app_font(9, "bold"),
             anchor="w",
         ).grid(row=0, column=0, sticky="ew")
-        SoftButton(
+        self.character_control_choose_button = SoftButton(
             self.character_control_link_panel,
             text="Choose...",
             command=self.open_character_control_link,
@@ -1732,8 +1884,41 @@ class EventEditor(tk.Frame):
             width=84,
             height=24,
             font=app_font(8, "bold"),
-        ).grid(row=0, column=1, padx=(6, 0))
-        SoftButton(
+        )
+        self.character_control_choose_button.grid(
+            row=0, column=1, padx=(6, 0)
+        )
+        self.character_control_create_button = SoftButton(
+            self.character_control_link_panel,
+            text="Create details...",
+            command=self.create_character_control_details,
+            background=self.background,
+            fill=FIELD_BACKGROUND,
+            hover_fill=LIST_SELECTED,
+            foreground=TEXT_DARK,
+            width=108,
+            height=24,
+            font=app_font(8, "bold"),
+        )
+        self.character_control_create_button.grid(
+            row=0, column=2, padx=(4, 0)
+        )
+        self.character_control_edit_button = SoftButton(
+            self.character_control_link_panel,
+            text="Edit details...",
+            command=self.edit_character_control_details,
+            background=self.background,
+            fill=FIELD_BACKGROUND,
+            hover_fill=LIST_SELECTED,
+            foreground=TEXT_DARK,
+            width=98,
+            height=24,
+            font=app_font(8, "bold"),
+        )
+        self.character_control_edit_button.grid(
+            row=0, column=3, padx=(4, 0)
+        )
+        self.character_control_clear_button = SoftButton(
             self.character_control_link_panel,
             text="Clear",
             command=self.clear_character_control_link,
@@ -1744,8 +1929,38 @@ class EventEditor(tk.Frame):
             width=62,
             height=24,
             font=app_font(8, "bold"),
-        ).grid(row=0, column=2, padx=(4, 0))
+        )
+        self.character_control_clear_button.grid(
+            row=0, column=4, padx=(4, 0)
+        )
         self.character_control_link_panel.grid_remove()
+        self.friend_group_panel = tk.Frame(
+            self.association_panel,
+            bg=self.background,
+            highlightbackground=BORDER_SOFT,
+            highlightthickness=1,
+            padx=5,
+            pady=3,
+        )
+        self.friend_group_panel.grid_columnconfigure(1, weight=1)
+        tk.Label(
+            self.friend_group_panel,
+            text="Friend group",
+            bg=self.background,
+            fg=TEXT_DARK,
+            font=app_font(8, "bold"),
+            anchor="w",
+        ).grid(row=0, column=0, sticky="w", padx=(0, 7))
+        self.friend_group_entry = RoundedEntry(
+            self.friend_group_panel,
+            textvariable=self.friend_group_name,
+            background=self.background,
+            fill=FIELD_BACKGROUND,
+            height=26,
+            font=app_font(9),
+        )
+        self.friend_group_entry.grid(row=0, column=1, sticky="ew")
+        self.friend_group_panel.grid_remove()
         footer = tk.Frame(self.form, bg=self.background)
         footer.grid(
             row=7,
@@ -1810,7 +2025,9 @@ class EventEditor(tk.Frame):
             height=24,
             font=app_font(8, "bold"),
         )
-        self.save_button.grid(row=0, column=4, padx=(5, 0))
+        # Record persistence is automatic. Cancel remains available to discard
+        # a draft, while the status line reports autosave progress.
+        self.save_button.grid_remove()
 
     def form_resized(self, event=None):
         self.canvas.configure(scrollregion=self.canvas.bbox("all"))
@@ -2246,7 +2463,7 @@ class EventEditor(tk.Frame):
             str(self.event.get("time", "") or "").strip()
         )
         loaded_type = str(self.event.get("event_type", "") or "")
-        if loaded_type in ("taught_spell", "taught_proficiency", "taught_recipe"):
+        if loaded_type in KNOWLEDGE_EVENT_TYPES:
             self.character_control_link_id = str(self.event.get("knowledge_record_id", "") or "")
             self.character_control_link_collection = str(self.event.get("knowledge_collection", "") or "")
             self.character_control_link_name.set(str(self.event.get("knowledge_name", "") or "Linked taught record"))
@@ -2264,6 +2481,11 @@ class EventEditor(tk.Frame):
             self.character_control_link_name.set(str(self.event.get("named_creature_name", "") or "Linked named creature"))
         else:
             self.clear_character_control_link()
+        self.friend_group_name.set(
+            str(self.event.get("friend_group_name", "") or "")
+            if loaded_type in FRIEND_GROUP_EVENT_TYPES
+            else ""
+        )
         self.load_job_event_values()
         self.update_job_event_panel()
         self.description_control.text.configure(state="normal")
@@ -2272,6 +2494,8 @@ class EventEditor(tk.Frame):
             "1.0",
             self.loaded_description(),
         )
+        # These are the event's primary participants. Witnesses and affected
+        # people remain in their dedicated role picker below.
         stored_person_ids = self.event.get("person_ids", [])
         stored_location_ids = self.event.get("location_ids", [])
         stored_locked_location_ids = self.event.get(
@@ -2341,6 +2565,22 @@ class EventEditor(tk.Frame):
         affected_ids = list(
             self.event.get("affected_person_ids", []) or ()
         )
+        unnamed_muggle_count = max(
+            0,
+            int(self.event.get("unnamed_muggle_victim_count", 0) or 0),
+        )
+        unnamed_mage_count = max(
+            0,
+            int(self.event.get("unnamed_mage_victim_count", 0) or 0),
+        )
+        self.unnamed_muggle_victim_count_value.set(
+            str(unnamed_muggle_count)
+        )
+        self.unnamed_mage_victim_count_value.set(str(unnamed_mage_count))
+        self.unnamed_victims_enabled_value.set(
+            bool(unnamed_muggle_count or unnamed_mage_count)
+        )
+        self.update_unnamed_victim_controls()
         locked_role_ids = set()
         self.perpetrators_picker.set_values(
             perpetrator_ids,
@@ -2731,6 +2971,8 @@ class EventEditor(tk.Frame):
         self.witnesses_picker.grid_remove()
         self.affected_picker.grid_remove()
         self.murder_additional_people_panel.grid_remove()
+        self.unnamed_victims_checkbox.grid_remove()
+        self.unnamed_victim_counts_panel.grid_remove()
         self.locations_picker.grid_remove()
         if hasattr(self, "organizations_picker"):
             self.organizations_picker.grid_remove()
@@ -2739,6 +2981,19 @@ class EventEditor(tk.Frame):
             self.eminence_picker.grid_remove()
 
         if event_type == "murder":
+            self.unnamed_victims_checkbox.grid(
+                row=1,
+                column=0,
+                sticky="w",
+                pady=(4, 0),
+            )
+            self.unnamed_victim_counts_panel.grid(
+                row=1,
+                column=1,
+                columnspan=2,
+                sticky="e",
+                pady=(4, 0),
+            )
             self.perpetrators_picker.grid(
                 row=0,
                 column=0,
@@ -2944,6 +3199,14 @@ class EventEditor(tk.Frame):
         self.murder_additional_people_button.set_enabled(
             field_editable and not self.lock_people
         )
+        self.unnamed_victims_checkbox.configure(
+            state=(
+                "normal"
+                if field_editable and not self.lock_people
+                else "disabled"
+            )
+        )
+        self.update_unnamed_victim_controls()
         if hasattr(self, "eminence_picker"):
             self.eminence_picker.set_enabled(field_editable)
 
@@ -3014,7 +3277,23 @@ class EventEditor(tk.Frame):
 
         self.fixed_baby_value.set(label or "Current person")
 
-    def murder_people_selection_changed(self):
+    def unnamed_victims_changed(self):
+        self.update_unnamed_victim_controls()
+        self.murder_people_selection_changed()
+
+    def update_unnamed_victim_controls(self):
+        enabled = bool(self.unnamed_victims_enabled_value.get())
+        state = "normal" if enabled and not self.read_only else "disabled"
+        for entry in (
+            getattr(self, "unnamed_muggle_victim_count_entry", None),
+            getattr(self, "unnamed_mage_victim_count_entry", None),
+        ):
+            if entry is not None:
+                entry.configure(state=state)
+
+    def murder_people_selection_changed(self, schedule_save=True):
+        if schedule_save and hasattr(self, "autosave"):
+            self.autosave.schedule()
         self.update_murder_additional_people_summary()
         selected_type = event_type_from_label(
             self.event_type_value.get(),
@@ -3325,9 +3604,13 @@ class EventEditor(tk.Frame):
             self.selected_item_link_types,
         )
         self.update_items_summary()
+        if hasattr(self, "autosave"):
+            self.autosave.schedule()
         return True
 
     def location_selection_changed(self):
+        if hasattr(self, "autosave"):
+            self.autosave.schedule()
         if getattr(self, "controls_enabled", False):
             self.association_selection_guard_until = monotonic() + 0.35
 
@@ -3383,6 +3666,8 @@ class EventEditor(tk.Frame):
         return False
 
     def organization_selection_changed(self):
+        if hasattr(self, "autosave"):
+            self.autosave.schedule()
         if (
             event_type_from_label(
                 self.event_type_value.get(),
@@ -3397,6 +3682,23 @@ class EventEditor(tk.Frame):
         self.character_control_link_collection = ""
         if hasattr(self, "character_control_link_name"):
             self.character_control_link_name.set("No linked record")
+        self.update_character_control_detail_buttons()
+
+    def update_character_control_detail_buttons(self, selected_type=None):
+        if not hasattr(self, "character_control_create_button"):
+            return
+        selected_type = selected_type or event_type_from_label(
+            self.event_type_value.get(), "other"
+        )
+        if selected_type in INVENTION_EVENT_TYPES:
+            self.character_control_create_button.grid()
+            if self.character_control_link_id:
+                self.character_control_edit_button.grid()
+            else:
+                self.character_control_edit_button.grid_remove()
+        else:
+            self.character_control_create_button.grid_remove()
+            self.character_control_edit_button.grid_remove()
 
     def update_character_control_link_panel(self, selected_type=None):
         if not hasattr(self, "character_control_link_panel"):
@@ -3405,7 +3707,7 @@ class EventEditor(tk.Frame):
             self.event_type_value.get(), "other"
         )
         supported = selected_type in {
-            "taught_spell", "taught_proficiency", "taught_recipe",
+            *KNOWLEDGE_EVENT_TYPES,
             "tamed_creature", "bonded_creature", "irked_creature",
             "published_book",
         }
@@ -3415,6 +3717,19 @@ class EventEditor(tk.Frame):
             )
         else:
             self.character_control_link_panel.grid_remove()
+        self.update_character_control_detail_buttons(selected_type)
+
+        if hasattr(self, "friend_group_panel"):
+            if selected_type in FRIEND_GROUP_EVENT_TYPES:
+                self.friend_group_panel.grid(
+                    row=1,
+                    column=0,
+                    columnspan=2,
+                    sticky="ew",
+                    pady=(4, 0),
+                )
+            else:
+                self.friend_group_panel.grid_remove()
 
     def open_character_control_link(self):
         selected_type = event_type_from_label(
@@ -3446,6 +3761,83 @@ class EventEditor(tk.Frame):
         )
         return True
 
+    def invention_collection(self, selected_type=None):
+        selected_type = selected_type or event_type_from_label(
+            self.event_type_value.get(), "other"
+        )
+        return {
+            "invented_spell": "spells",
+            "invented_proficiency": "proficiencies",
+            "invented_recipe": "recipes",
+        }.get(selected_type, "")
+
+    def create_character_control_details(self):
+        return self.open_character_control_details("")
+
+    def edit_character_control_details(self):
+        if not self.character_control_link_id:
+            self.show_error("Choose or create the invented record first.")
+            return False
+        return self.open_character_control_details(
+            self.character_control_link_id
+        )
+
+    def open_character_control_details(self, record_id=""):
+        collection_name = self.invention_collection()
+        if not collection_name:
+            self.show_error(
+                "Detailed catalog creation is available for invented spells, "
+                "proficiencies, and recipes."
+            )
+            return False
+        game_database = getattr(self.controller, "game_database", None)
+        database_path = getattr(game_database, "database_path", None)
+        if not database_path:
+            self.show_error(
+                "The game catalog is unavailable, so its details cannot be "
+                "edited."
+            )
+            return False
+        if (
+            record_id
+            and self.character_control_link_collection
+            and self.character_control_link_collection != collection_name
+        ):
+            self.show_error(
+                "The linked record does not match this invention type."
+            )
+            return False
+
+        dialog = CatalogDetailDialog(
+            self,
+            database_path,
+            collection_name,
+            record_id,
+        )
+        self.wait_window(dialog)
+        result = dialog.result
+        if not result:
+            return False
+
+        try:
+            game_database.load()
+        except (OSError, ValueError) as error:
+            self.show_error(
+                "The details were saved, but World Builder could not refresh "
+                f"the game catalog: {error}"
+            )
+            return False
+
+        self.character_control_link_id = result["record_id"]
+        self.character_control_link_collection = result["collection"]
+        self.character_control_link_name.set(
+            result["name"] or "Linked invented record"
+        )
+        self.update_character_control_detail_buttons()
+        if hasattr(self, "autosave"):
+            self.autosave.schedule()
+        return True
+
     def character_control_link_chosen(self, selected_ids, *_unused):
         selected_id = str((selected_ids or [""])[0] or "")
         option = getattr(self, "_character_control_link_options", {}).get(
@@ -3459,6 +3851,9 @@ class EventEditor(tk.Frame):
             option.get("collection", "") or ""
         )
         self.character_control_link_name.set(str(option.get("label", "Linked record")))
+        self.update_character_control_detail_buttons()
+        if hasattr(self, "autosave"):
+            self.autosave.schedule()
 
     def event_type_changed(self, *arguments):
         self.update_job_event_panel()
@@ -3517,6 +3912,7 @@ class EventEditor(tk.Frame):
         self.people_picker.single_selection = selected_type in (
             "died",
             "returns_as_ghost",
+            *FRIEND_GROUP_EVENT_TYPES,
         )
         self.locations_picker.single_selection = (
             selected_type
@@ -4060,6 +4456,32 @@ class EventEditor(tk.Frame):
             if event_type == "murder"
             else []
         )
+        unnamed_muggle_victim_count = 0
+        unnamed_mage_victim_count = 0
+        if (
+            event_type == "murder"
+            and self.unnamed_victims_enabled_value.get()
+        ):
+            try:
+                unnamed_muggle_victim_count = max(
+                    0,
+                    int(
+                        self.unnamed_muggle_victim_count_value.get().strip()
+                        or "0"
+                    ),
+                )
+            except ValueError:
+                unnamed_muggle_victim_count = 0
+            try:
+                unnamed_mage_victim_count = max(
+                    0,
+                    int(
+                        self.unnamed_mage_victim_count_value.get().strip()
+                        or "0"
+                    ),
+                )
+            except ValueError:
+                unnamed_mage_victim_count = 0
         witness_person_ids = self.witnesses_picker.get_values()
         affected_person_ids = self.affected_picker.get_values()
         selected_person_ids = (
@@ -4141,6 +4563,8 @@ class EventEditor(tk.Frame):
             ),
             "perpetrator_person_ids": perpetrator_person_ids,
             "victim_person_ids": victim_person_ids,
+            "unnamed_muggle_victim_count": unnamed_muggle_victim_count,
+            "unnamed_mage_victim_count": unnamed_mage_victim_count,
             "witness_person_ids": witness_person_ids,
             "affected_person_ids": affected_person_ids,
             "eminence_person_ids": (
@@ -4256,18 +4680,28 @@ class EventEditor(tk.Frame):
             ),
             "knowledge_record_id": (
                 self.character_control_link_id
-                if event_type in ("taught_spell", "taught_proficiency", "taught_recipe")
+                if event_type in KNOWLEDGE_EVENT_TYPES
                 else ""
             ),
             "knowledge_collection": (
                 self.character_control_link_collection
-                if event_type in ("taught_spell", "taught_proficiency", "taught_recipe")
+                if event_type in KNOWLEDGE_EVENT_TYPES
                 else ""
             ),
             "knowledge_name": (
                 self.character_control_link_name.get()
-                if event_type in ("taught_spell", "taught_proficiency", "taught_recipe")
+                if event_type in KNOWLEDGE_EVENT_TYPES
                 and self.character_control_link_id
+                else ""
+            ),
+            "friend_group_id": (
+                str(self.event.get("friend_group_id", "") or "").strip()
+                if event_type in FRIEND_GROUP_EVENT_TYPES
+                else ""
+            ),
+            "friend_group_name": (
+                self.friend_group_name.get().strip()
+                if event_type in FRIEND_GROUP_EVENT_TYPES
                 else ""
             ),
             "named_creature_id": (
@@ -4301,6 +4735,7 @@ class EventEditor(tk.Frame):
 
         self.clamp_year_to_editor_bounds()
         values = self.values()
+        self.update_required_field_highlights(values)
 
         if (
             self.storage_kind == "shared"
@@ -4329,11 +4764,25 @@ class EventEditor(tk.Frame):
             return False
 
         if values["event_type"] in (
-            "taught_spell", "taught_proficiency", "taught_recipe",
+            *KNOWLEDGE_EVENT_TYPES,
             "tamed_creature", "bonded_creature", "irked_creature",
             "published_book",
         ) and not self.character_control_link_id:
             self.show_error("Choose the record linked to this event.")
+            return False
+
+        if (
+            values["event_type"] in FRIEND_GROUP_EVENT_TYPES
+            and not values["friend_group_name"]
+        ):
+            self.show_error("Enter the friend group's name.")
+            return False
+
+        if (
+            values["event_type"] in FRIEND_GROUP_EVENT_TYPES
+            and len(values["person_ids"]) != 1
+        ):
+            self.show_error("Choose exactly one person for this friend-group event.")
             return False
 
         if self.context == "person" and values["item_ids"]:
@@ -4539,7 +4988,10 @@ class EventEditor(tk.Frame):
                 )
                 return False
 
-            if not values["victim_person_ids"]:
+            if not values["victim_person_ids"] and not (
+                values["unnamed_muggle_victim_count"]
+                or values["unnamed_mage_victim_count"]
+            ):
                 self.show_error(
                     "A Murder event needs at least one victim."
                 )
@@ -4643,6 +5095,153 @@ class EventEditor(tk.Frame):
         self.show_saved()
         return True
 
+    def editor_input_changed(self, event=None):
+        widget = getattr(event, "widget", None)
+        while widget is not None:
+            if widget is self:
+                cancel_write = getattr(
+                    getattr(self, "event_controller", None),
+                    "cancel_deferred_save",
+                    None,
+                )
+                if callable(cancel_write):
+                    cancel_write()
+                self.autosave.schedule()
+                return
+            widget = getattr(widget, "master", None)
+
+    def editor_typing_started(self, event=None):
+        widget = getattr(event, "widget", None)
+        while widget is not None:
+            if widget is self:
+                # A FocusOut from the previous field may have queued a save.
+                # If the user immediately starts the next field, coalesce both
+                # edits and wait for that field's FocusOut instead of freezing
+                # the form in the middle of a word.
+                self.autosave.cancel()
+                cancel_write = getattr(
+                    getattr(self, "event_controller", None),
+                    "cancel_deferred_save",
+                    None,
+                )
+                if callable(cancel_write):
+                    cancel_write()
+                return
+            widget = getattr(widget, "master", None)
+
+    def autosave_event(self):
+        if self.saving or self.read_only or self.editor_mode == "empty":
+            return False
+        self._autosave_silent = True
+        self.feedback_value.set("Saving changes…")
+        try:
+            return self.save()
+        finally:
+            self._autosave_silent = False
+
+    @staticmethod
+    def set_rounded_required_state(field, invalid):
+        control = getattr(field, "control", field)
+        canvas = getattr(control, "canvas", None)
+        shape = getattr(control, "shape", None)
+        if canvas is None or shape is None:
+            return
+        outline = "#A32626" if invalid else BORDER_SOFT
+        control.border_outline = outline
+        if not bool(getattr(control, "has_focus", False)):
+            try:
+                canvas.itemconfigure(
+                    shape,
+                    outline=outline,
+                    width=2 if invalid else 1,
+                )
+            except tk.TclError:
+                pass
+
+    def update_required_field_highlights(self, values=None):
+        values = values if isinstance(values, dict) else self.values()
+        event_type = values.get("event_type", "other")
+        needs_date = self.storage_kind == "shared" and event_type != "born"
+        self.set_rounded_required_state(
+            self.year_field,
+            bool(needs_date and not values.get("date")),
+        )
+        self.set_rounded_required_state(
+            self.title_field,
+            not str(values.get("title", "") or "").strip(),
+        )
+
+        for picker, invalid in (
+            (
+                self.people_picker,
+                event_type in ("died", "returns_as_ghost")
+                and len(values.get("person_ids", [])) != 1,
+            ),
+            (
+                self.baby_picker,
+                event_type == "born"
+                and len(values.get("baby_person_ids", [])) != 1,
+            ),
+            (
+                self.locations_picker,
+                event_type == "born"
+                and len(values.get("location_ids", [])) != 1,
+            ),
+            (
+                self.perpetrators_picker,
+                event_type == "murder"
+                and not values.get("perpetrator_person_ids"),
+            ),
+            (
+                self.victims_picker,
+                event_type == "murder"
+                and not values.get("victim_person_ids")
+                and not values.get("unnamed_muggle_victim_count")
+                and not values.get("unnamed_mage_victim_count"),
+            ),
+        ):
+            try:
+                picker.configure(
+                    highlightbackground=(
+                        "#A32626" if invalid else BORDER_SOFT
+                    ),
+                    highlightthickness=2 if invalid else 1,
+                )
+            except tk.TclError:
+                pass
+
+        if hasattr(self, "character_control_link_panel"):
+            linked_required = event_type in (
+                *KNOWLEDGE_EVENT_TYPES,
+                "tamed_creature",
+                "bonded_creature",
+                "irked_creature",
+                "published_book",
+            )
+            self.character_control_link_panel.configure(
+                highlightbackground=(
+                    "#A32626"
+                    if linked_required and not self.character_control_link_id
+                    else BORDER_SOFT
+                ),
+                highlightthickness=(
+                    2
+                    if linked_required and not self.character_control_link_id
+                    else 1
+                ),
+            )
+        if hasattr(self, "friend_group_panel"):
+            group_invalid = (
+                event_type in FRIEND_GROUP_EVENT_TYPES
+                and not values.get("friend_group_name")
+            )
+            self.friend_group_panel.configure(
+                highlightbackground=(
+                    "#A32626" if group_invalid else BORDER_SOFT
+                ),
+                highlightthickness=2 if group_invalid else 1,
+            )
+
     def has_unsaved_changes(self):
         if self.read_only or self.editor_mode == "empty":
             return False
@@ -4653,6 +5252,41 @@ class EventEditor(tk.Frame):
             return self.is_new_event()
 
         return self.values() != saved_values
+
+    def resolve_pending_navigation(self, parent=None):
+        """Autosave a usable draft or offer to discard an incomplete one."""
+        if self.association_selection_guard_active():
+            return False
+
+        if not self.has_unsaved_changes():
+            return True
+
+        # Navigation is an explicit commit boundary.  Do not ask the user to
+        # choose "Save" now that events autosave; try the same quiet save used
+        # by field focus changes first.
+        if hasattr(self, "autosave"):
+            self.autosave.cancel()
+
+        if self.autosave_event():
+            return True
+
+        discard = messagebox.askyesno(
+            "Discard incomplete event?",
+            (
+                "This event cannot be saved yet because required information "
+                "is missing or invalid.\n\n"
+                "Discard it and continue?"
+            ),
+            parent=parent or self,
+            icon="warning",
+            default="no",
+        )
+
+        if not discard:
+            return False
+
+        self.cancel()
+        return True
 
     def association_selection_guard_active(self):
         return monotonic() < float(
@@ -4672,7 +5306,14 @@ class EventEditor(tk.Frame):
 
     def show_error(self, message):
         self.clear_feedback()
-        self.feedback_value.set(str(message or "Cannot save this event."))
+        if self._autosave_silent:
+            self.feedback_value.set(
+                "Complete the required fields outlined in red."
+            )
+        else:
+            self.feedback_value.set(
+                str(message or "Cannot save this event.")
+            )
 
     def show_saved(self):
         self.clear_feedback()

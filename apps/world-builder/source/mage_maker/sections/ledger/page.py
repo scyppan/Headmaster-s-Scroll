@@ -616,14 +616,22 @@ class LedgerView(tk.Frame):
         )
 
     def update_entry_buttons(self, event=None):
-        has_selection = self.selected_entry() is not None
-        self.edit_entry_button.set_enabled(has_selection)
-        self.delete_entry_button.set_enabled(has_selection)
+        selected_entry = self.selected_entry()
+        is_manual_fact = bool(
+            selected_entry
+            and not selected_entry.get("automatic_source")
+        )
+        self.edit_entry_button.set_enabled(is_manual_fact)
+        self.delete_entry_button.set_enabled(is_manual_fact)
 
     def open_edit_entry_dialog(self, event=None):
         entry = self.selected_entry()
 
-        if entry is None or not self.year_pages:
+        if (
+            entry is None
+            or entry.get("automatic_source")
+            or not self.year_pages
+        ):
             return
 
         LedgerEntryDialog(
@@ -636,7 +644,7 @@ class LedgerView(tk.Frame):
     def delete_selected_entry(self):
         entry = self.selected_entry()
 
-        if entry is None:
+        if entry is None or entry.get("automatic_source"):
             return
 
         if not messagebox.askyesno(

@@ -681,7 +681,7 @@ class BooksPage(tk.Frame):
     def save_new_book(self, values):
         created = self.controller.create_book(values)
         self.refresh(created["record_id"])
-        self.notify_changed()
+        self.notify_changed(created["record_id"])
         self.status_command(f"Created book: {created['title']}")
         return created
 
@@ -699,7 +699,7 @@ class BooksPage(tk.Frame):
             values,
         )
         self.refresh(updated["record_id"])
-        self.notify_changed()
+        self.notify_changed(updated["record_id"])
         self.status_command(f"Updated book: {updated['title']}")
         return updated
 
@@ -728,7 +728,7 @@ class BooksPage(tk.Frame):
 
         self.selected_book_id = None
         self.refresh()
-        self.notify_changed()
+        self.notify_changed(book["record_id"])
         self.status_command(f"Deleted book: {book['title']}")
 
     def open_add_content_dialog(self):
@@ -747,7 +747,7 @@ class BooksPage(tk.Frame):
             values,
         )
         self.refresh(updated["record_id"])
-        self.notify_changed()
+        self.notify_changed(updated["record_id"])
         self.status_command(f"Added {values['name']} to {updated['title']}.")
         return updated
 
@@ -771,7 +771,7 @@ class BooksPage(tk.Frame):
             return
 
         self.refresh(updated["record_id"])
-        self.notify_changed()
+        self.notify_changed(updated["record_id"])
 
     def open_add_holding_dialog(self):
         if self.selected_book() is None:
@@ -790,7 +790,7 @@ class BooksPage(tk.Frame):
             values,
         )
         self.refresh(updated["record_id"])
-        self.notify_changed()
+        self.notify_changed(updated["record_id"])
         self.status_command(f"Added a holding for {updated['title']}.")
         return updated
 
@@ -831,7 +831,7 @@ class BooksPage(tk.Frame):
             values,
         )
         self.refresh(updated["record_id"])
-        self.notify_changed()
+        self.notify_changed(updated["record_id"])
         self.status_command(f"Updated a holding for {updated['title']}.")
         return updated
 
@@ -855,11 +855,15 @@ class BooksPage(tk.Frame):
             return
 
         self.refresh(updated["record_id"])
-        self.notify_changed()
+        self.notify_changed(updated["record_id"])
 
-    def notify_changed(self):
+    def notify_changed(self, record_id=""):
         if callable(self.records_changed_command):
-            self.records_changed_command()
+            normalized_record_id = str(record_id or "").strip()
+            self.records_changed_command(
+                "books",
+                (normalized_record_id,) if normalized_record_id else (),
+            )
 
     def create_shortcut(self):
         self.open_new_book_dialog()

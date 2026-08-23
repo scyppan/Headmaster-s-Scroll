@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from headmasters_scroll.store import SharedJsonStore
+from headmasters_scroll.locking import FileLock
 from headmasters_scroll.board import ensure_board_collections, validate_world_board
 from mage_maker.sections.development.models import (
     DEVELOPMENT_ASSIGNMENT_SETTING_KEY,
@@ -56,9 +57,11 @@ from mage_maker.sections.events.models import (
     DEATH_EVENT_TYPES,
     GHOST_EVENT_TYPE,
     birth_event_baby_ids,
+    birth_event_from_person,
     birth_event_person_ids,
     death_event_person_ids,
     event_linked_person_ids,
+    normalize_unnamed_victim_count,
     normalize_world_event,
     normalize_world_events,
     split_world_event_date,
@@ -92,6 +95,7 @@ from mage_maker.sections.locations.models import (
     synchronize_location_extinction_records,
 )
 from mage_maker.sections.ledger.models import (
+    ledger_storage_entries,
     normalize_ledger_entries,
     reconcile_development_ledger_entries,
 )
@@ -116,6 +120,7 @@ from mage_maker.core.world_index import (
     record_summary,
     read_indexed_record,
     scan_record_locations,
+    source_fingerprint,
 )
 from mage_maker.core.reference_storage import (
     colored_tag_record_id,
@@ -151,6 +156,7 @@ class JsonDatabase:
         self.record_cache = OrderedDict()
         self.record_cache_limit = 96
         self.index_dirty = False
+        self.last_saved_fingerprint = None
         self.fully_loaded = False
         self.change_subscribers = []
         if shared_directory and self.database_path.resolve() == (Path(shared_directory) / "world.json").resolve():
@@ -361,6 +367,82 @@ class JsonDatabase:
         except (OSError, TypeError, ValueError, json.JSONDecodeError):
             # A disposable cache must never prevent canonical data opening.
             self.world_index.build(self.data)
+            self.index_dirty = True
+            return False
+
+    def rebuild_world_index_from_disk(self):
+        """Rebuild the disposable index from one stable canonical revision.
+
+        Autosaves can continue to update the editable in-memory world while
+        this worker parses the last committed file.  Fingerprint checks before
+        and after construction prevent a stale worker from publishing an
+        index for a revision that has already been replaced.
+        """
+        try:
+            starting_fingerprint = source_fingerprint(self.database_path)
+            with self.database_path.open("r", encoding="utf-8") as stream:
+                committed_data = json.load(stream)
+            if source_fingerprint(self.database_path) != starting_fingerprint:
+                self.index_dirty = True
+                return False
+
+            record_ids_by_collection = {
+                collection_name: [
+                    (
+                        str(
+                            record.get("record_id")
+                            or record.get("event_id")
+                            or record.get("reading_id")
+                            or ""
+                        ).strip()
+                        if isinstance(record, dict)
+                        else ""
+                    )
+                    for record in records
+                ]
+                for collection_name, records in committed_data.items()
+                if isinstance(records, list)
+            }
+            locations = scan_record_locations(
+                self.database_path,
+                record_ids_by_collection,
+            )
+            if source_fingerprint(self.database_path) != starting_fingerprint:
+                self.index_dirty = True
+                return False
+
+            cache_path = self.world_index.cache_path
+            staging_path = cache_path.with_name(
+                f".{cache_path.name}.{uuid.uuid4().hex}.staging"
+            )
+            rebuilt_index = WorldIndexCache(
+                self.database_path,
+                cache_path=staging_path,
+            )
+            try:
+                rebuilt_index.build(committed_data, locations)
+                rebuilt_index.write()
+                # Keep the previous valid index until the replacement is
+                # ready.  The short final lock closes the race between the
+                # fingerprint check and publishing the new cache without
+                # blocking canonical saves during the expensive scan/build.
+                with FileLock(self.database_path, timeout=5.0):
+                    if (
+                        source_fingerprint(self.database_path)
+                        != starting_fingerprint
+                    ):
+                        self.index_dirty = True
+                        return False
+                    cache_path.parent.mkdir(parents=True, exist_ok=True)
+                    os.replace(staging_path, cache_path)
+            finally:
+                staging_path.unlink(missing_ok=True)
+
+            rebuilt_index.cache_path = cache_path
+            self.world_index = rebuilt_index
+            self.index_dirty = False
+            return True
+        except (OSError, TypeError, ValueError, json.JSONDecodeError):
             self.index_dirty = True
             return False
 
@@ -1002,19 +1084,30 @@ class JsonDatabase:
 
         schema_version = metadata.get("schema_version")
 
-        if not isinstance(schema_version, int) or schema_version > 39:
+        if not isinstance(schema_version, int) or schema_version > 40:
             return False
 
-        if schema_version in (36, 37, 38):
+        if schema_version in (36, 37, 38, 39):
             synchronize_book_publication_events(database_data)
-            metadata["schema_version"] = 39
-            metadata["database_version"] = "0.39.0"
+            for person in database_data.get("people", []) or []:
+                if not isinstance(person, dict):
+                    continue
+                development_plan = person.get("development_plan")
+                if not isinstance(development_plan, dict):
+                    continue
+                development_plan["ledger_entries"] = (
+                    ledger_storage_entries(
+                        development_plan.get("ledger_entries", [])
+                    )
+                )
+            metadata["schema_version"] = 40
+            metadata["database_version"] = "0.40.0"
             database_data["_database"] = metadata
             return True
 
         # Schema 37 is produced only by the explicit, backed-up reference
         # migration.  Ordinary startup must never delete embedded legacy data.
-        if schema_version == 39:
+        if schema_version == 40:
             return False
 
         if schema_version == 36:
@@ -2258,8 +2351,17 @@ class JsonDatabase:
             migrated = True
 
         synchronize_book_publication_events(database_data)
-        metadata["schema_version"] = 39
-        metadata["database_version"] = "0.39.0"
+        for person in database_data.get("people", []) or []:
+            if not isinstance(person, dict):
+                continue
+            development_plan = person.get("development_plan")
+            if not isinstance(development_plan, dict):
+                continue
+            development_plan["ledger_entries"] = ledger_storage_entries(
+                development_plan.get("ledger_entries", [])
+            )
+        metadata["schema_version"] = 40
+        metadata["database_version"] = "0.40.0"
         database_data["_database"] = metadata
 
         return migrated
@@ -3277,9 +3379,24 @@ class JsonDatabase:
             witness_ids = event.get("witness_person_ids", [])
             affected_ids = event.get("affected_person_ids", [])
 
-            if not perpetrator_ids or not victim_ids:
+            unnamed_victim_count = sum(
+                normalize_unnamed_victim_count(
+                    event.get(field_name, 0)
+                )
+                for field_name in (
+                    "unnamed_muggle_victim_count",
+                    "unnamed_mage_victim_count",
+                )
+            )
+
+            if not perpetrator_ids:
                 raise ValueError(
-                    "A Murder event needs perpetrators and victims."
+                    "A Murder event needs at least one perpetrator."
+                )
+
+            if not victim_ids and not unnamed_victim_count:
+                raise ValueError(
+                    "A Murder event needs at least one victim."
                 )
 
             all_role_ids = [
@@ -3454,6 +3571,12 @@ class JsonDatabase:
 
         self.ensure_unique_displayed_name(person.get("displayed_name"))
 
+        # Capture the canonical Birth event while the quick-add form's born
+        # row still carries its chosen location.  Derived profile rows are
+        # intentionally stripped below, so waiting until after storage loses
+        # the location on newly created people.
+        pending_birth_event = birth_event_from_person(person)
+
         person = self._store_person_support_references(
             person["record_id"], person
         )
@@ -3469,6 +3592,13 @@ class JsonDatabase:
         person.setdefault("created_at", current_time)
         person["last_updated"] = current_time
         self.data["people"].append(person)
+        if pending_birth_event is not None:
+            event_id = pending_birth_event["record_id"]
+            self.data.setdefault("events", []).append(pending_birth_event)
+            self.record_indexes.setdefault("events", {})[
+                event_id
+            ] = pending_birth_event
+            self.notify_changed("events", (event_id,))
         self.dirty = True
         self.revision += 1
         self.record_indexes.setdefault("people", {})[
@@ -3486,7 +3616,15 @@ class JsonDatabase:
         if "record_id" in values and values["record_id"] != record_id:
             raise ValueError("A person record_id cannot be changed.")
 
-        for person in self.data["people"]:
+        indexed_person = self.record_indexes.get("people", {}).get(
+            record_id
+        )
+        candidate_people = (
+            (indexed_person,)
+            if isinstance(indexed_person, dict)
+            else self.data["people"]
+        )
+        for person in candidate_people:
             if person.get("record_id") != record_id:
                 continue
 
@@ -3563,10 +3701,15 @@ class JsonDatabase:
                 prospective_person,
                 self.data["people"],
             )
-            self.ensure_unique_displayed_name(
-                prospective_person.get("displayed_name"),
-                excluded_record_id=record_id,
-            )
+            if (
+                "displayed_name" in values
+                and prospective_person.get("displayed_name")
+                != person.get("displayed_name")
+            ):
+                self.ensure_unique_displayed_name(
+                    prospective_person.get("displayed_name"),
+                    excluded_record_id=record_id,
+                )
             stored_values = self._store_person_support_references(
                 record_id, values
             )
@@ -4671,12 +4814,13 @@ class JsonDatabase:
             except OSError:
                 continue
 
-    def save(self):
+    def save(self, rebuild_indexes=True):
         if not self.fully_loaded:
             raise RuntimeError(
                 "World data is still loading and cannot be saved yet."
             )
         if self.shared_store and self.shared_session:
+            working_data = self.data
             self.data["_database"]["last_saved"] = datetime.now(
                 timezone.utc
             ).isoformat()
@@ -4689,8 +4833,22 @@ class JsonDatabase:
                 )
             self.data = self.shared_session.data
             self.dirty = False
-            self.rebuild_record_indexes()
-            self.rebuild_world_index()
+            # Record-scoped profile patches mutate the indexed record objects
+            # in place and cannot alter reverse relationships.  Rebuilding
+            # every collection after those saves merely rescans the whole
+            # world.  A concurrent merge can replace the working tree, in
+            # which case all indexes must still be rebuilt.
+            if rebuild_indexes or self.data is not working_data:
+                self.rebuild_record_indexes()
+            # The compact byte-offset/search index is disposable.  Rewriting
+            # its multi-megabyte JSON synchronously after every field blur
+            # made the canonical save appear to hang.  Keep the in-memory
+            # indexes current and let the shell rebuild the disk cache after a
+            # quiet period.
+            self.index_dirty = True
+            self.last_saved_fingerprint = source_fingerprint(
+                self.database_path
+            )
             return
         self.validate_database(self.data)
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
@@ -4717,5 +4875,6 @@ class JsonDatabase:
         os.replace(temporary_path, self.database_path)
         self.prune_backups()
         self.dirty = False
-        self.rebuild_record_indexes()
+        if rebuild_indexes:
+            self.rebuild_record_indexes()
         self.rebuild_world_index()

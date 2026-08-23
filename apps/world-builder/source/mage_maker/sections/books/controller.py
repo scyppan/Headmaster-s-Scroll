@@ -24,6 +24,11 @@ from mage_maker.sections.development.models import (
     normalize_development_plan,
     school_year_calendar_year_range,
 )
+from mage_maker.sections.development.initial_bonuses import (
+    allowance_sickles,
+    normalize_initial_bonuses,
+    starting_allowance_sickles,
+)
 from mage_maker.sections.events.models import (
     normalize_world_event_date,
     split_world_event_date,
@@ -32,6 +37,7 @@ from mage_maker.sections.events.models import (
 from mage_maker.sections.ledger.models import (
     LEDGER_KIND_BOUGHT,
     LEDGER_KIND_EARNED,
+    reconcile_development_ledger_entries,
     visible_ledger_entries,
 )
 from mage_maker.sections.locations.models import (
@@ -894,9 +900,29 @@ class BookController:
 
         target_key = book_date_end_key(target_date)
         plan = normalize_development_plan(person.get("development_plan"))
+        initial_bonuses = normalize_initial_bonuses(
+            person.get("initial_bonuses")
+        ) or {}
+        academic_start_year = calculate_development_start_year(
+            person.get("birth_year"),
+            person.get("birth_month"),
+            person.get("birth_day"),
+            school_attended=bool(str(person.get("school", "") or "").strip()),
+        )
+        ledger_entries = reconcile_development_ledger_entries(
+            plan.get("ledger_entries", []),
+            plan.get("school_years", []),
+            plan.get("adult_years", []),
+            allowance_sickles(
+                person.get("parental_values"),
+                initial_bonuses.get("traits", []),
+            ),
+            starting_allowance_sickles(person.get("parental_values")),
+            academic_start_year,
+        )
         balance = 0
 
-        for entry in visible_ledger_entries(plan.get("ledger_entries", [])):
+        for entry in visible_ledger_entries(ledger_entries):
             calendar_year = entry.get("calendar_year")
 
             if calendar_year is None:

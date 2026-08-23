@@ -112,6 +112,7 @@ from mage_maker.sections.development.school_years import (
 )
 from mage_maker.sections.ledger.models import (
     normalize_ledger_entries,
+    ledger_storage_entries,
     reconcile_development_ledger_entries,
 )
 from mage_maker.sections.development.traits import trait_effect_text
@@ -2392,7 +2393,7 @@ class DevelopmentView(tk.Frame):
         plan["adult_years"] = deepcopy(
             getattr(self, "adult_year_records", [])
         )
-        plan["ledger_entries"] = deepcopy(
+        plan["ledger_entries"] = ledger_storage_entries(
             getattr(self, "ledger_entries", [])
         )
         plan["initial_eminence"] = deepcopy(
@@ -4535,7 +4536,7 @@ class DevelopmentView(tk.Frame):
             self.development_plan["school_years"] = deepcopy(
                 generated_records
             )
-            self.development_plan["ledger_entries"] = deepcopy(
+            self.development_plan["ledger_entries"] = ledger_storage_entries(
                 self.ledger_entries
             )
 
@@ -4552,7 +4553,7 @@ class DevelopmentView(tk.Frame):
             return
 
         self.ledger_entries = normalized_entries
-        self.development_plan["ledger_entries"] = deepcopy(
+        self.development_plan["ledger_entries"] = ledger_storage_entries(
             normalized_entries
         )
         self.notify_change()

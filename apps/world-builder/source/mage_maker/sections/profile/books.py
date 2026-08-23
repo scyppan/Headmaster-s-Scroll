@@ -490,7 +490,10 @@ class BooksView(tk.Frame):
         self.refresh_catalog_entries()
 
         if callable(self.records_changed_command):
-            self.records_changed_command()
+            self.records_changed_command(
+                "people",
+                (self.person_id,),
+            )
 
         if callable(self.status_command):
             self.status_command(
@@ -537,4 +540,7 @@ class BooksView(tk.Frame):
         self.refresh_catalog_entries()
 
         if callable(self.records_changed_command):
-            self.records_changed_command()
+            self.records_changed_command(
+                "people",
+                (self.person_id,),
+            )

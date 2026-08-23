@@ -40,6 +40,26 @@ class JsonDatabaseTests(unittest.TestCase):
         self.assertEqual("Updated Magician", deleted["displayed_name"])
         self.assertIsNone(self.database.read_person(created["record_id"]))
 
+    def test_unnamed_murder_victim_passes_whole_database_validation(self):
+        perpetrator = self.database.create_person(
+            {"displayed_name": "Unnamed Victim Test Perpetrator"}
+        )
+        self.database.create_record(
+            "events",
+            {
+                "title": "Murdered an unnamed muggle",
+                "event_type": "murder",
+                "date": "2000",
+                "person_ids": [perpetrator["record_id"]],
+                "perpetrator_person_ids": [perpetrator["record_id"]],
+                "victim_person_ids": [],
+                "unnamed_muggle_victim_count": 1,
+                "unnamed_mage_victim_count": 0,
+            },
+        )
+
+        self.database.validate_database(self.database.data)
+
     def test_delete_repairs_only_linked_people_and_recent_events(self):
         parent = self.database.create_person(
             {"displayed_name": "Deleted Parent"}

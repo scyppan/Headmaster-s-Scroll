@@ -242,6 +242,8 @@ def timeline_event_to_world(person_id, event, record_id=None):
         "affected_person_ids",
         "perpetrator_person_ids",
         "victim_person_ids",
+        "unnamed_muggle_victim_count",
+        "unnamed_mage_victim_count",
     ):
         if field_name in normalized:
             world[field_name] = normalized[field_name]
@@ -273,6 +275,18 @@ def world_event_to_timeline(event, person_id, overrides=None):
         "person_ids": event.get("person_ids", []),
         "location_ids": event.get("location_ids", []),
         "locked_location_ids": event.get("locked_location_ids", []),
+        "witness_person_ids": event.get("witness_person_ids", []),
+        "affected_person_ids": event.get("affected_person_ids", []),
+        "perpetrator_person_ids": event.get("perpetrator_person_ids", []),
+        "victim_person_ids": event.get("victim_person_ids", []),
+        "unnamed_muggle_victim_count": event.get(
+            "unnamed_muggle_victim_count",
+            0,
+        ),
+        "unnamed_mage_victim_count": event.get(
+            "unnamed_mage_victim_count",
+            0,
+        ),
         "_canonical_event_id": event.get("record_id", ""),
     }
     if isinstance(overrides, dict):

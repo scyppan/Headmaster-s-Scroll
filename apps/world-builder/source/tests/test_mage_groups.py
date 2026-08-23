@@ -298,6 +298,23 @@ class MageGroupPresentationTests(unittest.TestCase):
             page.editor_group_bar.values["bg"],
         )
 
+    def test_clicking_profile_header_copies_display_name(self):
+        clipboard = []
+        statuses = []
+        page = object.__new__(MagesPage)
+        page.current_record_id = "mage"
+        page.editor_title_value = FakeVariable("Maeve")
+        page.clipboard_clear = clipboard.clear
+        page.clipboard_append = clipboard.append
+        page.update_idletasks = lambda: None
+        page.status_command = statuses.append
+
+        result = MagesPage.copy_editor_name(page)
+
+        self.assertEqual("break", result)
+        self.assertEqual(["Maeve"], clipboard)
+        self.assertEqual(["Copied Maeve"], statuses)
+
     def test_classification_group_selector_maps_name_to_stable_id(self):
         form = object.__new__(PersonForm)
         form.loading = False

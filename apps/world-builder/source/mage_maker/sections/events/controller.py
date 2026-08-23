@@ -3,6 +3,7 @@ from copy import deepcopy
 from mage_maker.core.dates import (
     format_date_parts,
     format_line_item_date,
+    historical_year_distance,
     historical_days_in_month,
     historical_year_after,
     is_at_least_age,
@@ -34,6 +35,7 @@ from mage_maker.sections.events.models import (
     death_event_person_ids,
     event_linked_person_ids,
     normalize_world_event,
+    normalize_unnamed_victim_count,
     normalize_world_event_date,
     normalize_world_events,
     split_world_event_date,
@@ -154,6 +156,64 @@ class EventController:
         self._organization_records_cache_revision = None
         self._eminence_eligible_ids_cache = None
         self._eminence_eligible_ids_cache_revision = None
+        self._deferred_save_owner = None
+        self._deferred_save_after_id = None
+        self._deferred_save_error_command = None
+
+    def cancel_deferred_save(self):
+        """Cancel only the timer; already-applied edits remain database-dirty."""
+        owner = self._deferred_save_owner
+        after_id = self._deferred_save_after_id
+        self._deferred_save_owner = None
+        self._deferred_save_after_id = None
+        self._deferred_save_error_command = None
+        if owner is None or after_id is None:
+            return
+        try:
+            owner.after_cancel(after_id)
+        except Exception:
+            pass
+
+    def schedule_deferred_save(
+        self,
+        owner,
+        error_command=None,
+        delay_ms=3000,
+    ):
+        """Coalesce event edits into one full canonical world-file write."""
+        self.cancel_deferred_save()
+        self._deferred_save_owner = owner
+        self._deferred_save_error_command = error_command
+        try:
+            self._deferred_save_after_id = owner.after(
+                max(500, int(delay_ms)),
+                self.flush_deferred_save,
+            )
+        except Exception:
+            self._deferred_save_owner = None
+            self._deferred_save_after_id = None
+            self._deferred_save_error_command = None
+
+    def flush_deferred_save(self):
+        owner = self._deferred_save_owner
+        error_command = self._deferred_save_error_command
+        self._deferred_save_owner = None
+        self._deferred_save_after_id = None
+        self._deferred_save_error_command = None
+        if not getattr(self.database, "dirty", False):
+            return True
+        try:
+            self.database.save()
+        except Exception as error:
+            # Keep the database dirty so centralized shutdown still offers a
+            # retry. Surface the failure without restoring a hot retry loop.
+            if callable(error_command):
+                try:
+                    error_command(f"Could not save event changes: {error}")
+                except Exception:
+                    pass
+            return False
+        return True
 
     def character_control_link_options(self, event_type):
         """Searchable stable-ID choices for teaching and creature events."""
@@ -161,7 +221,14 @@ class EventController:
         collection_map = {
             "taught_spell": ("spells",),
             "taught_proficiency": ("proficiencies",),
-            "taught_recipe": ("potions", "preparations", "foods_and_drinks"),
+            "taught_recipe": (
+                "recipes", "potions", "preparations", "foods_and_drinks"
+            ),
+            "invented_spell": ("spells",),
+            "invented_proficiency": ("proficiencies",),
+            "invented_recipe": (
+                "recipes", "potions", "preparations", "foods_and_drinks"
+            ),
         }
         options = []
         if event_type in collection_map and self.game_database is not None:
@@ -1389,7 +1456,10 @@ class EventController:
         )
 
         if normalized["event_type"] == "organization_founding":
-            return self.create_organization_founding_event(normalized)
+            return self.create_organization_founding_event(
+                normalized,
+                save_database=save_database,
+            )
 
         replaced_events, retained_replacement_events = (
             self.replace_death_event_conflicts(normalized)
@@ -1437,7 +1507,11 @@ class EventController:
 
         return normalize_world_event(created)
 
-    def create_organization_founding_event(self, values):
+    def create_organization_founding_event(
+        self,
+        values,
+        save_database=True,
+    ):
         organization = self.database.read_record(
             "organizations",
             values["organization_id"],
@@ -1457,13 +1531,18 @@ class EventController:
         prepared["record_id"] = current["record_id"]
         prepared["organization_event"] = True
         prepared["organization_event_id"] = founding_event["record_id"]
-        return self.update_organization_event(current, prepared)
+        return self.update_organization_event(
+            current,
+            prepared,
+            save_database=save_database,
+        )
 
     def update_event(
         self,
         record_id,
         values,
         replace_existing_death=False,
+        save_database=True,
     ):
         current = self.get_event(record_id)
 
@@ -1485,7 +1564,10 @@ class EventController:
                     "A book's publication event cannot be changed into "
                     "another event type."
                 )
-            return self.upsert_book_publication_event(normalized)
+            return self.upsert_book_publication_event(
+                normalized,
+                save_database=save_database,
+            )
         self.validate_associations(
             normalized,
             current,
@@ -1496,6 +1578,7 @@ class EventController:
             return self.update_organization_event(
                 current,
                 normalized,
+                save_database=save_database,
             )
 
         replaced_events, retained_replacement_events = (
@@ -1562,7 +1645,8 @@ class EventController:
         if death_state_may_have_changed or item_ownership_may_have_changed:
             self.synchronize_retained_item_events_for_deaths()
 
-        self.database.save()
+        if save_database:
+            self.database.save()
         return normalize_world_event(updated)
 
     def delete_event(self, record_id):
@@ -1762,7 +1846,12 @@ class EventController:
 
         return changed
 
-    def update_organization_event(self, current, values):
+    def update_organization_event(
+        self,
+        current,
+        values,
+        save_database=True,
+    ):
         organization_id = str(
             current.get("organization_id", "") or ""
         ).strip()
@@ -1838,7 +1927,8 @@ class EventController:
         if current.get("item_ids") or updated_world_event.get("item_ids"):
             self.synchronize_item_ownership_from_events()
             self.synchronize_retained_item_events_for_deaths()
-        self.database.save()
+        if save_database:
+            self.database.save()
         return organization_event_as_world_event(
             updated_organization,
             updated_event,
@@ -2017,6 +2107,12 @@ class EventController:
             prepared.get("event_type")
         )
 
+        if event_type == "relocated":
+            prepared = self.apply_relocation_household_rules(
+                prepared,
+                current_event,
+            )
+
         if event_type == BIRTH_EVENT_TYPE:
             prepared["title"] = "Birth"
             prepared["automatic_source"] = BIRTH_EVENT_SOURCE
@@ -2123,6 +2219,228 @@ class EventController:
                 else ""
             )
 
+        return prepared
+
+    @staticmethod
+    def unique_person_ids(values):
+        return list(
+            dict.fromkeys(
+                str(person_id or "").strip()
+                for person_id in values or ()
+                if str(person_id or "").strip()
+            )
+        )
+
+    def relocation_primary_person_ids(self, event, current_event=None):
+        """Return deliberately selected movers, excluding generated links."""
+        requested_ids = self.unique_person_ids(
+            (event or {}).get("person_ids", [])
+        )
+        current = current_event if isinstance(current_event, dict) else {}
+        current_full_ids = self.unique_person_ids(
+            current.get("person_ids", [])
+        )
+        current_primary_ids = self.unique_person_ids(
+            current.get("relocation_primary_person_ids")
+            or current_full_ids
+        )
+
+        if current and requested_ids == current_full_ids:
+            return current_primary_ids
+
+        if current:
+            retained_primary_ids = [
+                person_id
+                for person_id in current_primary_ids
+                if person_id in requested_ids
+            ]
+            newly_selected_ids = [
+                person_id
+                for person_id in requested_ids
+                if person_id not in current_full_ids
+            ]
+            primary_ids = self.unique_person_ids(
+                [*retained_primary_ids, *newly_selected_ids]
+            )
+            if primary_ids:
+                return primary_ids
+
+        return requested_ids
+
+    @staticmethod
+    def person_birth_date(person):
+        if not isinstance(person, dict) or person.get("birth_year") in (
+            None,
+            "",
+        ):
+            return ""
+        try:
+            return format_date_parts(
+                person.get("birth_year"),
+                person.get("birth_month"),
+                person.get("birth_day"),
+                unknown="",
+            )
+        except (TypeError, ValueError):
+            return ""
+
+    def person_exists_by_event_date(self, person, event_date):
+        birth_date = self.person_birth_date(person)
+        if not birth_date or not str(event_date or "").strip():
+            return True
+        try:
+            return world_event_date_is_on_or_after(
+                event_date,
+                birth_date,
+            )
+        except (TypeError, ValueError):
+            # Normal event validation will surface a malformed date.  The
+            # household helper should not hide the rest of the edit first.
+            return True
+
+    def person_is_under_age_on_event_date(
+        self,
+        person,
+        event_date,
+        maximum_age,
+    ):
+        """Return True only when the person's age is known to be below the limit."""
+        birth_date = self.person_birth_date(person)
+        if not birth_date or not str(event_date or "").strip():
+            return False
+        try:
+            birth_year, birth_month, birth_day = split_world_event_date(
+                birth_date
+            )
+            event_year, event_month, event_day = split_world_event_date(
+                event_date
+            )
+            age = historical_year_distance(birth_year, event_year)
+        except (TypeError, ValueError):
+            return False
+
+        if (
+            birth_month
+            and birth_day
+            and event_month
+            and event_day
+            and (int(event_month), int(event_day))
+            < (int(birth_month), int(birth_day))
+        ):
+            age -= 1
+        return 0 <= age < int(maximum_age)
+
+    def person_birth_sort_key(self, person):
+        birth_date = self.person_birth_date(person)
+        if not birth_date:
+            return (100000, 13, 32)
+        try:
+            year, month, day = split_world_event_date(birth_date)
+            return (
+                int(year),
+                int(month) if month else 0,
+                int(day) if day else 0,
+            )
+        except (TypeError, ValueError):
+            return (100000, 13, 32)
+
+    def foster_children_on_date(self, parent_id, event_date):
+        database = self.database
+        if database is None:
+            return []
+        linked_reader = getattr(database, "get_linked_records", None)
+        if callable(linked_reader):
+            events = linked_reader("events", parent_id, "people")
+        else:
+            events = database.list_records("events")
+
+        child_ids = []
+        for event in events:
+            if (
+                not isinstance(event, dict)
+                or canonical_event_type(event.get("event_type"))
+                != "foster_child"
+                or parent_id
+                not in self.unique_person_ids(
+                    event.get("foster_parent_person_ids", [])
+                )
+            ):
+                continue
+            foster_date = str(event.get("date", "") or "").strip()
+            if foster_date and str(event_date or "").strip():
+                try:
+                    if not world_event_date_is_on_or_after(
+                        event_date,
+                        foster_date,
+                    ):
+                        continue
+                except (TypeError, ValueError):
+                    continue
+            child_ids.extend(
+                self.unique_person_ids(
+                    event.get("foster_child_person_ids", [])
+                )
+            )
+        return self.unique_person_ids(child_ids)
+
+    def apply_relocation_household_rules(self, event, current_event=None):
+        """Add direct and foster children under 17 to a relocation."""
+        prepared = deepcopy(event) if isinstance(event, dict) else {}
+        primary_ids = self.relocation_primary_person_ids(
+            prepared,
+            current_event,
+        )
+        prepared["relocation_primary_person_ids"] = primary_ids
+        if not primary_ids:
+            prepared["person_ids"] = []
+            return prepared
+
+        people = [
+            person
+            for person in self.people_summaries()
+            if isinstance(person, dict)
+            and str(person.get("record_id", "") or "").strip()
+        ]
+        people_by_id = {
+            str(person.get("record_id", "") or "").strip(): person
+            for person in people
+        }
+        relationships = FamilyRelationshipMap(people)
+        event_date = str(prepared.get("date", "") or "").strip()
+        child_ids = []
+        for parent_id in primary_ids:
+            child_ids.extend(relationships.children_of(parent_id))
+            child_ids.extend(
+                self.foster_children_on_date(parent_id, event_date)
+            )
+
+        eligible_child_ids = [
+            child_id
+            for child_id in self.unique_person_ids(child_ids)
+            if child_id not in primary_ids
+            and child_id in people_by_id
+            and self.person_exists_by_event_date(
+                people_by_id[child_id],
+                event_date,
+            )
+            and self.person_is_under_age_on_event_date(
+                people_by_id[child_id],
+                event_date,
+                17,
+            )
+        ]
+        eligible_child_ids.sort(
+            key=lambda child_id: (
+                self.person_birth_sort_key(people_by_id[child_id]),
+                str(
+                    people_by_id[child_id].get("displayed_name", "") or ""
+                ).casefold(),
+                child_id,
+            )
+        )
+        prepared["person_ids"] = self.unique_person_ids(
+            [*primary_ids, *eligible_child_ids]
+        )
         return prepared
 
     def organization_job_options(self):
@@ -2977,6 +3295,27 @@ class EventController:
         complete searchable catalogue is still built by ``people_options``
         when the user explicitly opens the person chooser.
         """
+        requested_ids = self.unique_person_ids(person_ids)
+        summaries = self.people_summaries_by_ids(requested_ids)
+        found_ids = {
+            str(person.get("record_id", "") or "").strip()
+            for person in summaries
+            if isinstance(person, dict)
+        }
+        # A disposable index can briefly lag a newly created/edited person.
+        # Compact event pickers must still show every linked participant, so
+        # use a few targeted canonical reads rather than silently dropping
+        # those rows or scanning all people.
+        record_reader = getattr(self.database, "read_record", None)
+        if callable(record_reader):
+            for person_id in requested_ids:
+                if person_id in found_ids:
+                    continue
+                person = record_reader("people", person_id)
+                if isinstance(person, dict):
+                    summaries.append(person)
+                    found_ids.add(person_id)
+
         groups = self.mage_groups()
         options = [
             {
@@ -2990,7 +3329,7 @@ class EventController:
                     groups,
                 )["name"],
             }
-            for person in self.people_summaries_by_ids(person_ids)
+            for person in summaries
             if str(person.get("record_id", "") or "").strip()
         ]
         options.sort(key=self.association_option_sort_key)
@@ -4383,7 +4722,17 @@ class EventController:
                 "A Murder event needs at least one perpetrator."
             )
 
-        if not victim_ids:
+        unnamed_victim_count = sum(
+            normalize_unnamed_victim_count(
+                (event or {}).get(field_name, 0)
+            )
+            for field_name in (
+                "unnamed_muggle_victim_count",
+                "unnamed_mage_victim_count",
+            )
+        )
+
+        if not victim_ids and not unnamed_victim_count:
             raise ValueError("A Murder event needs at least one victim.")
 
         if set(perpetrator_ids).intersection(victim_ids):

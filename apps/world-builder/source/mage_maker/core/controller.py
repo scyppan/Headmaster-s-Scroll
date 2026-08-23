@@ -80,6 +80,27 @@ ANIMAGUS_CHANCE_DENOMINATOR = 1000
 
 
 class PeopleController:
+    # These fields belong only to the selected person's presentation or
+    # development state.  They do not alter family links, life events, blood
+    # inheritance, or any other record.  Keeping this list explicit lets
+    # ordinary autosaves avoid the intentionally expensive structural
+    # reconciliation path below.
+    local_profile_fields = frozenset(
+        {
+            "narrative",
+            "notes",
+            "canon",
+            "player_character",
+            "famous_person",
+            "unfinished",
+            "mage_group_id",
+            "tags",
+            "board",
+            "development_plan",
+            "initial_bonuses",
+            "characteristics",
+        }
+    )
     text_fields = (
         "displayed_name",
         "narrative",
@@ -151,6 +172,7 @@ class PeopleController:
 
     def __init__(self, database):
         self.database = database
+        self.last_changed_fields = frozenset()
 
     def list_people(self):
         people = self.database.list_people()
@@ -533,6 +555,59 @@ class PeopleController:
         )
         normalized = self.normalize_values(update_values)
         normalized = self.reconcile_spouse_fields(normalized, current_person)
+
+        # Forms submit a complete snapshot, but most autosaves alter only one
+        # field.  Compare normalized values so harmless UI representations
+        # such as ``"910"`` versus ``910`` do not create false changes.
+        current_comparable = self.normalize_values(
+            {
+                field_name: deepcopy(current_person.get(field_name))
+                for field_name in normalized
+            }
+        )
+        current_comparable = self.reconcile_spouse_fields(
+            current_comparable,
+            current_person,
+        )
+        changed_fields = {
+            field_name
+            for field_name, value in normalized.items()
+            if current_comparable.get(field_name) != value
+        }
+        life_start_requested = any(
+            value not in (None, "")
+            for value in (
+                starting_location,
+                starting_location_id,
+            )
+        ) or long_distance_override
+
+        # A focus change with no semantic edit should not create a revision,
+        # backup, index rebuild, or cross-page refresh.
+        if not changed_fields and not life_start_requested:
+            self.last_changed_fields = frozenset()
+            return current_person
+
+        self.last_changed_fields = frozenset(changed_fields)
+
+        # Notes, narrative, tags, board presentation, and basic classification
+        # cannot affect another record.  Updating only the actual patch makes
+        # these common saves O(one person) instead of repeatedly scanning and
+        # normalizing the entire world.
+        if (
+            changed_fields
+            and changed_fields <= self.local_profile_fields
+            and not life_start_requested
+        ):
+            patch = {
+                field_name: normalized[field_name]
+                for field_name in changed_fields
+            }
+            updated_person = self.database.update_person(record_id, patch)
+            if save_database:
+                self.database.save(rebuild_indexes=False)
+            return self.database.read_person(record_id)
+
         prospective_person = deepcopy(current_person)
         prospective_person.update(normalized)
         prospective_person = self.canonicalize_parent_states(prospective_person)

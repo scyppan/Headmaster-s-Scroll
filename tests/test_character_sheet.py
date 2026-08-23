@@ -83,6 +83,26 @@ class CharacterSheetTests(unittest.TestCase):
         self.assertEqual([item["record_id"] for item in later["spells"]], ["spell-1"])
         self.assertEqual(later["spells"][0]["source"], "Unknown teacher")
 
+    def test_invention_event_grants_the_invented_record(self):
+        self.world["events"].append({
+            "record_id": "invention",
+            "event_type": "invented_spell",
+            "date": "2002-05-01",
+            "person_ids": ["person-1"],
+            "knowledge_record_id": "spell-1",
+            "knowledge_collection": "spells",
+        })
+
+        sheet = build_character_sheet(
+            self.person,
+            self.world,
+            self.database,
+            self.campaign(),
+        )
+
+        self.assertEqual(["spell-1"], [item["record_id"] for item in sheet["spells"]])
+        self.assertEqual("Invented by Ada", sheet["spells"][0]["source"])
+
     def test_ownership_or_assignment_without_completed_reading_grants_nothing(self):
         self.world["book_readings"] = []
         self.person["assigned_book_ids"] = ["book-1"]

@@ -2020,6 +2020,8 @@ class QuickEventPersonDialog(tk.Toplevel):
         create_command,
         saved_command,
         locations=None,
+        initial_location_id="",
+        create_location_command=None,
     ):
         super().__init__(parent)
         self.mage_groups = [
@@ -2035,6 +2037,7 @@ class QuickEventPersonDialog(tk.Toplevel):
             if isinstance(location, dict)
         ]
         self.starting_location_id = ""
+        self.create_location_command = create_location_command
         self.starting_location_value = tk.StringVar(
             value="Choose a starting location"
         )
@@ -2044,15 +2047,22 @@ class QuickEventPersonDialog(tk.Toplevel):
         self.birth_day_value = tk.StringVar()
         self.can_give_birth_value = tk.BooleanVar(value=False)
         self.non_magical_value = tk.BooleanVar(value=False)
+        self.deceased_value = tk.BooleanVar(value=False)
+        self.death_year_value = tk.StringVar()
+        self.death_month_value = tk.StringVar()
+        self.death_day_value = tk.StringVar()
+        self.deceased_value.trace_add("write", self.deceased_changed)
         self.title("New person")
-        self.geometry("560x500")
-        self.minsize(500, 460)
+        self.geometry("560x625")
+        self.minsize(500, 570)
         self.configure(bg=APP_BACKGROUND)
         self.transient(parent.winfo_toplevel())
         self.protocol("WM_DELETE_WINDOW", self.close_dialog)
         self.grid_rowconfigure(1, weight=1)
         self.grid_columnconfigure(0, weight=1)
         self.build_dialog()
+        if str(initial_location_id or "").strip():
+            self.starting_location_selected(initial_location_id)
         self.grab_set()
         self.after_idle(self.name_entry.focus_set)
 
@@ -2222,7 +2232,7 @@ class QuickEventPersonDialog(tk.Toplevel):
         )
         choose_location.grid(row=0, column=1, padx=(7, 0))
 
-        if not self.locations:
+        if not self.locations and self.create_location_command is None:
             self.starting_location_value.set("No locations available")
             choose_location.set_enabled(False)
 
@@ -2255,6 +2265,74 @@ class QuickEventPersonDialog(tk.Toplevel):
             font=app_font(9),
         )
         non_magical.pack(side="left", padx=(20, 0))
+
+        deceased = tk.Checkbutton(
+            flags,
+            text="Dead",
+            variable=self.deceased_value,
+            bg=SURFACE,
+            fg=TEXT_DARK,
+            activebackground=SURFACE,
+            selectcolor=FIELD_BACKGROUND,
+            font=app_font(9),
+        )
+        deceased.pack(side="left", padx=(20, 0))
+
+        self.death_frame = tk.Frame(body, bg=SURFACE)
+        self.death_frame.grid(
+            row=9,
+            column=0,
+            columnspan=3,
+            sticky="ew",
+            pady=(12, 0),
+        )
+        self.death_frame.grid_columnconfigure((0, 1, 2), weight=1)
+        tk.Label(
+            self.death_frame,
+            text="Date of death",
+            bg=SURFACE,
+            fg=TEXT_MUTED,
+            font=app_font(9, "bold"),
+            anchor="w",
+        ).grid(row=0, column=0, columnspan=3, sticky="ew", pady=(0, 5))
+
+        for column, label_text, variable in (
+            (0, "Year", self.death_year_value),
+            (1, "Month", self.death_month_value),
+            (2, "Day", self.death_day_value),
+        ):
+            field = LabeledEntry(
+                self.death_frame,
+                label_text,
+                variable,
+                background=SURFACE,
+            )
+            field.grid(
+                row=1,
+                column=column,
+                sticky="ew",
+                padx=((0, 5) if column == 0 else ((5, 0) if column == 2 else 5)),
+            )
+
+        death_calendar_notice = CalendarAdoptionNotice(
+            self.death_frame,
+            background=SURFACE,
+            wraplength=500,
+            date_variables=(
+                self.death_year_value,
+                self.death_month_value,
+                self.death_day_value,
+            ),
+        )
+        death_calendar_notice.grid(
+            row=2,
+            column=0,
+            columnspan=3,
+            sticky="w",
+            pady=(5, 0),
+        )
+        self.death_frame.grid_remove()
+
         footer = tk.Frame(self, bg=APP_BACKGROUND)
         footer.grid(
             row=2,
@@ -2311,7 +2389,9 @@ class QuickEventPersonDialog(tk.Toplevel):
         return number
 
     def create_person(self):
-        if self.locations and not self.starting_location_id:
+        if (
+            self.locations or self.create_location_command is not None
+        ) and not self.starting_location_id:
             messagebox.showerror(
                 "Starting location required",
                 "Choose the new person's starting location.",
@@ -2349,6 +2429,37 @@ class QuickEventPersonDialog(tk.Toplevel):
                     ),
                     "can_give_birth": self.can_give_birth_value.get(),
                     "non_magical": self.non_magical_value.get(),
+                    "deceased": self.deceased_value.get(),
+                    "death_year": (
+                        self.optional_integer(
+                            self.death_year_value.get(),
+                            "Death year",
+                            -99999,
+                            99999,
+                        )
+                        if self.deceased_value.get()
+                        else None
+                    ),
+                    "death_month": (
+                        self.optional_integer(
+                            self.death_month_value.get(),
+                            "Death month",
+                            1,
+                            12,
+                        )
+                        if self.deceased_value.get()
+                        else None
+                    ),
+                    "death_day": (
+                        self.optional_integer(
+                            self.death_day_value.get(),
+                            "Death day",
+                            1,
+                            31,
+                        )
+                        if self.deceased_value.get()
+                        else None
+                    ),
                 }
             )
         except (TypeError, ValueError) as error:
@@ -2362,8 +2473,14 @@ class QuickEventPersonDialog(tk.Toplevel):
         self.saved_command(person)
         self.destroy()
 
+    def deceased_changed(self, *arguments):
+        if self.deceased_value.get():
+            self.death_frame.grid()
+        else:
+            self.death_frame.grid_remove()
+
     def choose_starting_location(self):
-        if not self.locations:
+        if not self.locations and self.create_location_command is None:
             return
 
         EventLocationPickerDialog(
@@ -2373,7 +2490,31 @@ class QuickEventPersonDialog(tk.Toplevel):
             self.starting_location_selected,
             dialog_title="Choose starting location",
             action_text="Use location",
+            create_location_command=(
+                self.create_starting_location
+                if self.create_location_command is not None
+                else None
+            ),
         )
+
+    def create_starting_location(self, values):
+        created = self.create_location_command(values)
+
+        if not isinstance(created, dict):
+            return created
+
+        record_id = str(created.get("record_id", "") or "").strip()
+
+        if record_id:
+            self.locations = [
+                location
+                for location in self.locations
+                if str(location.get("record_id", "") or "").strip()
+                != record_id
+            ]
+            self.locations.append(deepcopy(created))
+
+        return created
 
     def starting_location_selected(self, location_id):
         self.starting_location_id = str(location_id or "").strip()
@@ -2616,10 +2757,10 @@ class EventLocationPickerDialog(tk.Toplevel):
         if self.create_location_command is not None:
             new_location_button = SoftButton(
                 footer,
-                text="New location",
+                text="Quick add location",
                 command=self.open_placeholder_location,
                 background=SURFACE,
-                width=112,
+                width=138,
                 height=36,
             )
             new_location_button.pack(side="left", padx=(0, 6))
@@ -2720,6 +2861,13 @@ class EventLocationPickerDialog(tk.Toplevel):
             self.selected_location_id,
         )
         self.location_selected(self.selected_location_id)
+        # Quick add means create *and* link.  Previously the newly created
+        # location was merely highlighted in this chooser and required a
+        # second, easy-to-miss Add location click.
+        if callable(self.selection_history_command):
+            self.selection_history_command(record_id)
+        self.save_command(record_id)
+        self.after_idle(self.destroy)
         return True
 
     def choose_location(self):

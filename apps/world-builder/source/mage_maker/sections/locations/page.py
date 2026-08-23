@@ -3,6 +3,7 @@ from copy import deepcopy
 from tkinter import messagebox, simpledialog
 from uuid import uuid4
 
+from mage_maker.core.autosave import DebouncedAutosave
 from mage_maker.core.dates import (
     format_historical_display_date,
     format_line_item_date,
@@ -142,6 +143,19 @@ class LocationPage(tk.Frame):
         self.grid_columnconfigure(0, weight=1)
         self.build_toolbar()
         self.build_content()
+        self.autosave = DebouncedAutosave(
+            self,
+            self.autosave_location,
+            self.has_unsaved_location_changes,
+            delay_ms=700,
+        )
+        self.name_value.trace_add("write", self.location_value_changed)
+        self.has_floors_value.trace_add("write", self.location_value_changed)
+        self.notes_control.text.bind(
+            "<<Modified>>",
+            self.location_notes_changed,
+            add="+",
+        )
         self.refresh()
 
     def build_toolbar(self):
@@ -488,44 +502,16 @@ class LocationPage(tk.Frame):
             return True
 
         event_editor = getattr(self, "event_editor", None)
-        association_guard_command = getattr(
+        resolve_command = getattr(
             event_editor,
-            "association_selection_guard_active",
+            "resolve_pending_navigation",
             None,
         )
-
-        if (
-            callable(association_guard_command)
-            and association_guard_command()
-        ):
-            return False
-
-        unsaved_changes_command = getattr(
-            event_editor,
-            "has_unsaved_changes",
-            None,
+        return (
+            bool(resolve_command(parent=self))
+            if callable(resolve_command)
+            else True
         )
-
-        if (
-            not callable(unsaved_changes_command)
-            or not unsaved_changes_command()
-        ):
-            return True
-
-        save_choice = messagebox.askyesnocancel(
-            "Unsaved event changes",
-            "Save this event before continuing?",
-            parent=self,
-        )
-
-        if save_choice is None:
-            return False
-
-        if save_choice:
-            return event_editor.save()
-
-        event_editor.cancel()
-        return True
 
     def discard_location_changes(self):
         current_location_id = str(
@@ -566,10 +552,32 @@ class LocationPage(tk.Frame):
         self.location_tree.select_location(parent_location_id)
         return True
 
+    def location_value_changed(self, *unused):
+        self.update_location_required_fields()
+        self.autosave.schedule()
+
+    def location_notes_changed(self, event):
+        if not event.widget.edit_modified():
+            return
+        event.widget.edit_modified(False)
+        self.autosave.schedule()
+
+    def update_location_required_fields(self):
+        valid = bool(self.name_value.get().strip())
+        self.name_field.control.set_invalid(not valid)
+        return valid
+
+    def autosave_location(self):
+        return self.save_location(silent=True, refresh_after=False)
+
     def confirm_unsaved_location_changes(self):
         if not self.confirm_unsaved_event_changes():
             return False
 
+        if not self.has_unsaved_location_changes():
+            return True
+
+        self.autosave.flush()
         if not self.has_unsaved_location_changes():
             return True
 
@@ -637,12 +645,7 @@ class LocationPage(tk.Frame):
             width=126,
             height=34,
         )
-        self.save_location_button.grid(
-            row=0,
-            column=1,
-            sticky="e",
-            pady=(0, 8),
-        )
+        self.save_location_button.grid_remove()
         self.name_field = LabeledEntry(
             identity,
             "Location name",
@@ -922,6 +925,7 @@ class LocationPage(tk.Frame):
                 floor["sort_order"] = index
             self.floor_records = deepcopy(working)
             self.refresh_floor_summary()
+            self.autosave.schedule()
             dialog.destroy()
 
         footer = tk.Frame(dialog, bg=SURFACE)
@@ -2188,10 +2192,13 @@ class LocationPage(tk.Frame):
         )
         return True
 
-    def save_location(self):
+    def save_location(self, silent=False, refresh_after=True):
+        if not self.update_location_required_fields():
+            self.status_command("Complete the required fields outlined in red")
+            return False
+
         creating_new_location = not bool(self.current_location_id)
-        has_floors_value = getattr(self, "has_floors_value", None)
-        has_floors = bool(has_floors_value.get()) if has_floors_value is not None else False
+        has_floors = bool(self.has_floors_value.get())
         floor_records = deepcopy(getattr(self, "floor_records", []) or [])
         default_map_id = str(getattr(self, "default_map_id", "") or "")
         extinction_state = (
@@ -2215,16 +2222,15 @@ class LocationPage(tk.Frame):
                 else ""
             ),
         }
-
-        if not self.current_location_id:
+        if creating_new_location:
             values["demographics"] = ""
 
+        previous_parent_id = self.loaded_parent_location_id
         parent_changed = bool(
             self.current_location_id
-            and self.loaded_parent_location_id
+            and previous_parent_id
             != str(self.selected_parent_location_id or "").strip()
         )
-
         try:
             if self.current_location_id:
                 saved_location = self.controller.update_location(
@@ -2236,42 +2242,44 @@ class LocationPage(tk.Frame):
                 saved_location = self.controller.create_location(values)
                 action = "Created"
         except (KeyError, TypeError, ValueError) as error:
-            messagebox.showerror("Cannot save location", str(error), parent=self)
+            if silent:
+                self.status_command(f"Could not save location: {error}")
+            else:
+                messagebox.showerror(
+                    "Cannot save location",
+                    str(error),
+                    parent=self,
+                )
             return False
 
         self.creating_location = False
+        self.current_location_id = saved_location["record_id"]
+        self.loaded_parent_location_id = str(
+            saved_location.get("parent_location_id", "") or ""
+        ).strip()
+        self.remember_loaded_location_values()
         next_scope_id = (
             self.region_lock_id
             if creating_new_location
             else location_scope_after_parent_change(
                 self.region_lock_id,
-                self.loaded_parent_location_id,
+                previous_parent_id,
                 saved_location.get("parent_location_id", ""),
             )
         )
-
         if next_scope_id != self.region_lock_id:
             self.region_lock_id = next_scope_id
             self.location_tree.set_scope(next_scope_id, notify=False)
-
             if self.scope_change_command is not None:
                 self.scope_change_command(next_scope_id)
 
-        self.refresh(saved_location["record_id"])
-
-        if parent_changed:
-            parent_name = self.parent_path_value.get()
-            self.status_command(
-                f"Moved {saved_location['name']} within {parent_name} "
-                "and restored the full location hierarchy"
-            )
+        if refresh_after or creating_new_location or parent_changed:
+            self.refresh(saved_location["record_id"])
         else:
-            self.status_command(
-                f"{action} location {saved_location['name']}"
-            )
-
+            self.editor_heading_value.set("Location details")
+            self.location_tree.select_location(saved_location["record_id"])
+        self.status_command(f"{action} location {saved_location['name']}")
         return True
-
     def delete_location(self):
         if not self.confirm_unsaved_location_changes():
             return False

@@ -373,6 +373,21 @@ def normalize_ledger_entries(value):
     )
 
 
+def ledger_storage_entries(value):
+    """Return only authoritative ledger facts suitable for persistence.
+
+    Automatic allowance, starting-balance, and school-book rows are a view
+    calculated from development facts.  Persisting them duplicates those
+    facts and makes every person's record grow with each derived period.
+    """
+
+    return [
+        entry
+        for entry in normalize_ledger_entries(value)
+        if not entry["automatic_source"]
+    ]
+
+
 def visible_ledger_entries(value):
     return [
         entry

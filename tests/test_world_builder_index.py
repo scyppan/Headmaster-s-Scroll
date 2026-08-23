@@ -24,7 +24,7 @@ from mage_maker.shell.person_list import person_search_rank
 
 def indexed_world():
     return {
-        "_database": {"schema_version": 36},
+        "_database": {"schema_version": 40},
         "_headmasters_scroll": {"revision_id": "revision-one"},
         "people": [
             {
@@ -199,6 +199,21 @@ def test_index_rejects_stale_and_corrupt_caches(tmp_path):
     )
     source.write_text(json.dumps(changed), encoding="utf-8")
     assert WorldIndexCache(source, cache_path).load() is False
+
+
+def test_background_disk_rebuild_publishes_a_current_index(tmp_path):
+    source = tmp_path / "data" / "world.json"
+    source.parent.mkdir()
+    source.write_text(json.dumps(indexed_world(), indent=2), encoding="utf-8")
+    cache_path = tmp_path / "runtime" / "index.json"
+    database = JsonDatabase(source)
+    database.world_index = WorldIndexCache(source, cache_path)
+    database.index_dirty = True
+
+    assert database.rebuild_world_index_from_disk() is True
+    assert database.index_dirty is False
+    assert WorldIndexCache(source, cache_path).load() is True
+    assert not list(cache_path.parent.glob("*.staging"))
 
     cache_path.write_text("{broken", encoding="utf-8")
     assert WorldIndexCache(source, cache_path).load() is False

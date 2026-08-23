@@ -16,6 +16,7 @@ from mage_maker.sections.events.models import (
     event_time_sort_key,
     normalize_association_values,
     normalize_job_event_metadata,
+    normalize_unnamed_victim_count,
     normalize_world_event_time,
 )
 
@@ -106,6 +107,16 @@ def normalize_timeline_event(event):
         normalized["victim_person_ids"] = normalize_association_values(
             normalized.get("victim_person_ids")
         )
+        normalized["unnamed_muggle_victim_count"] = (
+            normalize_unnamed_victim_count(
+                normalized.get("unnamed_muggle_victim_count")
+            )
+        )
+        normalized["unnamed_mage_victim_count"] = (
+            normalize_unnamed_victim_count(
+                normalized.get("unnamed_mage_victim_count")
+            )
+        )
         normalized["witness_person_ids"] = normalize_association_values(
             normalized.get("witness_person_ids")
         )
@@ -123,6 +134,8 @@ def normalize_timeline_event(event):
     else:
         normalized.pop("perpetrator_person_ids", None)
         normalized.pop("victim_person_ids", None)
+        normalized.pop("unnamed_muggle_victim_count", None)
+        normalized.pop("unnamed_mage_victim_count", None)
 
     if (
         "location_ids" in normalized
@@ -278,6 +291,13 @@ def timeline_event_summary(event):
         return f"Death: {detail}" if detail else "Death"
 
     if event_type == "murder":
+        unnamed = unnamed_murder_victim_labels(event)
+        if unnamed:
+            if len(unnamed) == 1:
+                victims = unnamed[0]
+            else:
+                victims = ", ".join(unnamed[:-1]) + " and " + unnamed[-1]
+            return f"Murdered {victims}"
         return detail or "Murder"
 
     if event_type == "returns_as_ghost":
@@ -417,6 +437,48 @@ def marriage_timeline_summary(event, current_person_id, people):
     return str(event_values.get("title", "") or "Marriage").strip()
 
 
+def unnamed_murder_victim_labels(event):
+    event_values = event if isinstance(event, dict) else {}
+    labels = []
+    muggle_count = normalize_unnamed_victim_count(
+        event_values.get("unnamed_muggle_victim_count")
+    )
+    mage_count = normalize_unnamed_victim_count(
+        event_values.get("unnamed_mage_victim_count")
+    )
+
+    if muggle_count:
+        noun = "muggle" if muggle_count == 1 else "muggles"
+        labels.append(f"{muggle_count} unnamed {noun}")
+
+    if mage_count:
+        noun = "mage" if mage_count == 1 else "mages"
+        labels.append(f"{mage_count} unnamed {noun}")
+
+    return labels
+
+
+def murder_victims_label(event, people):
+    event_values = event if isinstance(event, dict) else {}
+    victim_ids = normalize_association_values(
+        event_values.get("victim_person_ids")
+    )
+    labels = []
+
+    if victim_ids:
+        labels.append(murder_people_label(victim_ids, people))
+
+    labels.extend(unnamed_murder_victim_labels(event_values))
+
+    if not labels:
+        return "unnamed victim"
+
+    if len(labels) == 1:
+        return labels[0]
+
+    return ", ".join(labels[:-1]) + " and " + labels[-1]
+
+
 def murder_timeline_summary(event, current_person_id, people):
     event_values = event if isinstance(event, dict) else {}
     selected_person_id = str(current_person_id or "").strip()
@@ -434,7 +496,7 @@ def murder_timeline_summary(event, current_person_id, people):
     )
 
     if selected_person_id in perpetrator_ids:
-        return f"Murders {murder_people_label(victim_ids, people)}"
+        return f"Murdered {murder_victims_label(event_values, people)}"
 
     if selected_person_id in victim_ids:
         return (
@@ -444,13 +506,13 @@ def murder_timeline_summary(event, current_person_id, people):
     if selected_person_id in witness_ids:
         return (
             "Witnessed the murder of "
-            f"{murder_people_label(victim_ids, people)}"
+            f"{murder_victims_label(event_values, people)}"
         )
 
     if selected_person_id in affected_ids:
         return (
             "Affected by death of "
-            f"{murder_people_label(victim_ids, people)}"
+            f"{murder_victims_label(event_values, people)}"
         )
 
     return str(event_values.get("title", "") or "Murder").strip()

@@ -14,6 +14,7 @@ from mage_maker.sections.ledger.models import (
     LEDGER_SOURCE_ALLOWANCE,
     LEDGER_SOURCE_SCHOOL_BOOK,
     ledger_amount_text,
+    ledger_storage_entries,
     new_manual_ledger_entry,
     reconcile_school_ledger_entries,
 )
@@ -250,6 +251,28 @@ class LedgerModelTests(unittest.TestCase):
             )
         )
 
+    def test_persistence_keeps_facts_not_derived_display_rows(self):
+        derived_entries = reconcile_school_ledger_entries(
+            [],
+            [self.year_one],
+            36,
+            1991,
+        )
+        purchase = new_manual_ledger_entry(
+            1,
+            "October",
+            "Ink",
+            5,
+            LEDGER_KIND_BOUGHT,
+            "Bought ink",
+            day=12,
+        )
+
+        stored = ledger_storage_entries([*derived_entries, purchase])
+
+        self.assertEqual([purchase["entry_id"]], [row["entry_id"] for row in stored])
+        self.assertTrue(all(not row["automatic_source"] for row in stored))
+
     def test_previous_allowances_remain_historical(self):
         original_entries = reconcile_school_ledger_entries(
             [],
@@ -373,7 +396,7 @@ class BooksLedgerPersistenceTests(unittest.TestCase):
 
         self.assertTrue(database.migrate_database(database_data))
         self.assertEqual(
-            29,
+            40,
             database_data["_database"]["schema_version"],
         )
         plan = database_data["people"][0]["development_plan"]

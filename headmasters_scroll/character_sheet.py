@@ -28,6 +28,9 @@ TEACHING_TYPES = {
     "taught_spell": "spell",
     "taught_proficiency": "proficiency",
     "taught_recipe": "recipe",
+    "invented_spell": "spell",
+    "invented_proficiency": "proficiency",
+    "invented_recipe": "recipe",
 }
 CREATURE_TYPES = {
     "tamed_creature": "pet",
@@ -44,6 +47,8 @@ RELATIONSHIP_TYPES = {
     "born": "Family",
     "family": "Family",
     "relationship": "Other",
+    "joined_friend_group": "Friend Group",
+    "left_friend_group": "Friend Group",
 }
 RECIPE_COLLECTIONS = ("recipes", "potions", "preparations", "foods_and_drinks")
 BOOK_COVER_SUBJECTS = {
@@ -345,9 +350,18 @@ def _knowledge(
         "spell": {}, "proficiency": {}, "recipe": {},
     }
     read_books: dict[str, dict[str, Any]] = {}
+    person_record = next(
+        (
+            item
+            for item in world.get("people", []) or []
+            if isinstance(item, dict)
+            and str(item.get("record_id", "")) == person_id
+        ),
+        {},
+    )
     readings = _effective_book_readings(world, campaign)
     readings.extend(_development_year_readings(
-        next((item for item in world.get("people", []) or [] if isinstance(item, dict) and str(item.get("record_id", "")) == person_id), {}),
+        person_record,
         database,
         campaign,
     ))
@@ -400,13 +414,18 @@ def _knowledge(
         elif not collection:
             collection = "potions"
         if record_id:
-            teacher = str(
-                event.get("teacher_name")
-                or event.get("instructor_name")
-                or event.get("source_name")
-                or "Unknown teacher"
+            event_type = str(event.get("event_type", "") or "")
+            source_name = (
+                f"Invented by {person_record.get('displayed_name') or person_record.get('name') or 'this character'}"
+                if event_type.startswith("invented_")
+                else str(
+                    event.get("teacher_name")
+                    or event.get("instructor_name")
+                    or event.get("source_name")
+                    or "Unknown teacher"
+                )
             )
-            grants[kind].setdefault(record_id, (collection, teacher))
+            grants[kind].setdefault(record_id, (collection, source_name))
 
     result = {
         "books": sorted(

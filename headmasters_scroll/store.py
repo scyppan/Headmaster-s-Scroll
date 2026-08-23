@@ -4,7 +4,6 @@ import json
 import os
 import shutil
 import time
-from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
@@ -31,6 +30,16 @@ class SharedJsonStore:
         stat = self._path(filename).stat()
         return stat.st_mtime_ns, stat.st_size
 
+    @staticmethod
+    def _file_identity(path: Path) -> tuple[int, int, int, int]:
+        stat = path.stat()
+        return (
+            int(getattr(stat, "st_dev", 0)),
+            int(getattr(stat, "st_ino", 0)),
+            stat.st_mtime_ns,
+            stat.st_size,
+        )
+
     def read_document(self, filename: str) -> dict:
         """Read and validate a document without creating an editable session.
 
@@ -49,31 +58,70 @@ class SharedJsonStore:
 
     def load(self, filename: str) -> DataSession:
         path = self._path(filename)
-        data = self._read(path)
+        # A writer may atomically replace the file while another application
+        # is opening it.  Pair the bytes with the exact identity they came
+        # from; otherwise a snapshot of the old file plus the fingerprint of
+        # the new file could incorrectly take the unchanged-file save path.
+        for _attempt in range(5):
+            identity_before = self._file_identity(path)
+            base_snapshot = path.read_bytes()
+            loaded_fingerprint = self._file_identity(path)
+            if identity_before == loaded_fingerprint:
+                break
+        else:
+            raise OSError(f"{path.name} changed repeatedly while loading")
+        data = json.loads(base_snapshot)
         validate_document(filename, data)
         revision = data["_headmasters_scroll"]["revision_id"]
-        # ``data`` is already a newly decoded object.  Use it as the immutable
-        # merge base and create only the editable working copy.  The previous
-        # implementation retained two additional whole-document copies, which
-        # is especially costly for the large World Builder file.
-        return DataSession(filename, path, data, deepcopy(data), revision)
+        # Keep one editable dictionary and an immutable byte snapshot.  The
+        # snapshot is decoded only if an external revision makes a three-way
+        # merge necessary.
+        return DataSession(
+            filename,
+            path,
+            None,
+            data,
+            revision,
+            base_snapshot=base_snapshot,
+            loaded_fingerprint=loaded_fingerprint,
+        )
 
     def save(self, session: DataSession, app_id: str) -> SaveOutcome:
         self._validate_app_id(app_id)
         with FileLock(session.path, timeout=self.lock_timeout):
-            disk = self._read(session.path)
-            validate_document(session.filename, disk)
-            disk_revision = disk["_headmasters_scroll"]["revision_id"]
-            if disk_revision == session.loaded_revision:
+            current_fingerprint = self._file_identity(session.path)
+            if (
+                session.loaded_fingerprint is not None
+                and current_fingerprint == session.loaded_fingerprint
+            ):
+                # The same file identity, size, and nanosecond timestamp under
+                # the suite lock means no external atomic commit occurred.
+                # Avoid reparsing and revalidating a multi-megabyte document.
+                disk_revision = session.loaded_revision
                 # The file revision proves no three-way merge is required.
                 # Committing the session's isolated working document directly
                 # avoids copying a large world merely to serialize it.
                 candidate = session.data
             else:
-                merge = merge_documents(session.filename, session.base_data, session.data, disk)
-                if merge.conflicts:
-                    return SaveOutcome("conflicts", conflicts=merge.conflicts, disk_revision=disk_revision)
-                candidate = merge.data
+                disk = self._read(session.path)
+                validate_document(session.filename, disk)
+                disk_revision = disk["_headmasters_scroll"]["revision_id"]
+                if disk_revision == session.loaded_revision:
+                    candidate = session.data
+                else:
+                    merge = merge_documents(
+                        session.filename,
+                        session.merge_base(),
+                        session.data,
+                        disk,
+                    )
+                    if merge.conflicts:
+                        return SaveOutcome(
+                            "conflicts",
+                            conflicts=merge.conflicts,
+                            disk_revision=disk_revision,
+                        )
+                    candidate = merge.data
             return self._commit(session, candidate, app_id)
 
     def save_with_resolutions(
@@ -88,7 +136,12 @@ class SharedJsonStore:
             disk = self._read(session.path)
             validate_document(session.filename, disk)
             disk_revision = disk["_headmasters_scroll"]["revision_id"]
-            merge = merge_documents(session.filename, session.base_data, session.data, disk)
+            merge = merge_documents(
+                session.filename,
+                session.merge_base(),
+                session.data,
+                disk,
+            )
             if disk_revision != expected_disk_revision:
                 if merge.conflicts:
                     return SaveOutcome("conflicts", conflicts=merge.conflicts, disk_revision=disk_revision)
@@ -116,24 +169,50 @@ class SharedJsonStore:
         backup_directory = session.path.parent / "backups" / session.path.stem
         backup_directory.mkdir(parents=True, exist_ok=True)
         backup_name = f"{now.strftime('%Y%m%dT%H%M%S%fZ')}-{session.loaded_revision}.json"
-        shutil.copy2(session.path, backup_directory / backup_name)
+        self._create_backup(
+            session.path,
+            backup_directory / backup_name,
+        )
         # Use a unique file for every commit.  A fixed ``.new.json`` (or even a
         # per-process name) can collide with a second autosave and is also a
         # tempting target for indexers and sync clients on Windows.
         temporary = session.path.with_name(
             f".{session.path.name}.{os.getpid()}.{uuid4().hex}.tmp"
         )
+        committed_snapshot = None
         try:
             with temporary.open("w", encoding="utf-8", newline="\n") as stream:
                 json.dump(candidate, stream, ensure_ascii=False, indent=2)
                 stream.write("\n")
                 stream.flush()
                 os.fsync(stream.fileno())
+            # Read the exact bytes while the private temporary still exists.
+            # This replaces the much more expensive full-tree deepcopy that
+            # previously ran after every successful commit.
+            committed_snapshot = temporary.read_bytes()
             self._replace_with_retry(temporary, session.path)
         finally:
             temporary.unlink(missing_ok=True)
-        session.reset_to(candidate, revision)
+        session.reset_to(
+            candidate,
+            revision,
+            committed_snapshot,
+            self._file_identity(session.path),
+        )
         return SaveOutcome("saved", revision_id=revision)
+
+    @staticmethod
+    def _create_backup(source: Path, destination: Path) -> None:
+        """Snapshot the old canonical file without recopying it on NTFS.
+
+        The subsequent atomic replace creates a new file at ``source``, so a
+        hard link safely retains the complete previous revision.  Filesystems
+        that do not support hard links retain the original copy fallback.
+        """
+        try:
+            os.link(source, destination)
+        except OSError:
+            shutil.copy2(source, destination)
 
     @staticmethod
     def _replace_with_retry(temporary: Path, destination: Path) -> None:

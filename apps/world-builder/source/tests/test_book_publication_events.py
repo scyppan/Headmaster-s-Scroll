@@ -78,9 +78,51 @@ class BookPublicationEventTests(unittest.TestCase):
         database = JsonDatabase("unused.json")
 
         self.assertTrue(database.migrate_database(data))
-        self.assertEqual(39, data["_database"]["schema_version"])
-        self.assertEqual("0.39.0", data["_database"]["database_version"])
+        self.assertEqual(40, data["_database"]["schema_version"])
+        self.assertEqual("0.40.0", data["_database"]["database_version"])
         self.assertEqual(1, len(data["events"]))
+
+    def test_schema_39_removes_only_derived_ledger_rows(self):
+        data = {
+            "_database": {
+                "schema_version": 39,
+                "database_version": "0.39.0",
+            },
+            "people": [{
+                "record_id": "person-1",
+                "development_plan": {
+                    "ledger_entries": [
+                        {
+                            "entry_id": "derived-1",
+                            "school_year": 1,
+                            "month": 9,
+                            "day": 1,
+                            "item": "Allowance",
+                            "kind": "earned",
+                            "amount_sickles": 10,
+                            "automatic_source": "monthly_allowance",
+                        },
+                        {
+                            "entry_id": "purchase-1",
+                            "school_year": 1,
+                            "month": 9,
+                            "day": 2,
+                            "item": "Ink",
+                            "kind": "bought",
+                            "amount_sickles": 2,
+                            "automatic_source": "",
+                        },
+                    ]
+                },
+            }],
+            "books": [],
+            "events": [],
+        }
+
+        database = JsonDatabase("unused.json")
+        self.assertTrue(database.migrate_database(data))
+        rows = data["people"][0]["development_plan"]["ledger_entries"]
+        self.assertEqual(["purchase-1"], [row["entry_id"] for row in rows])
 
 
 if __name__ == "__main__":

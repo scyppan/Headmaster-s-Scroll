@@ -1022,12 +1022,17 @@ class SectionPanel(tk.Frame):
             anchor="w",
             justify="left",
         )
-        self.description_label.grid(
-            row=1,
-            column=0,
-            sticky="ew",
-            pady=(3, 12) if description else (0, 8),
-        )
+        if description:
+            self.description_label.grid(
+                row=1,
+                column=0,
+                sticky="ew",
+                pady=(3, 12),
+            )
         self.content = tk.Frame(self, bg=SURFACE_MUTED)
-        self.content.grid(row=2, column=0, sticky="nsew")
+        self.content.grid(
+            row=2 if description else 1,
+            column=0,
+            sticky="nsew",
+        )
         self.content.grid_columnconfigure(0, weight=1)

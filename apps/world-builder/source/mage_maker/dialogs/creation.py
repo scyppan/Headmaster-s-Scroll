@@ -1,8 +1,12 @@
 import tkinter as tk
+from copy import deepcopy
 from tkinter import messagebox
 
+from mage_maker.core.dates import format_date_parts, person_death_age_text
 from mage_maker.sections.events.dialog import EventLocationPickerDialog
 from mage_maker.sections.locations.models import recent_location_label
+from mage_maker.sections.names.details import NameDetailsDialog
+from mage_maker.sections.names.history import empty_name_details
 from mage_maker.sections.profile.school_field import SchoolField
 from mage_maker.ui.theme import (
     APP_BACKGROUND,
@@ -38,9 +42,10 @@ class CreationWizardDialog(tk.Toplevel):
         self.game_database = game_database
         self.event_controller = event_controller
         self.starting_location_id = ""
+        self.name_details = empty_name_details()
         self.title("Create New Magician")
-        self.geometry("640x640")
-        self.minsize(580, 610)
+        self.geometry("640x720")
+        self.minsize(580, 680)
         self.configure(bg=APP_BACKGROUND)
         self.transient(parent)
         self.grab_set()
@@ -98,22 +103,59 @@ class CreationWizardDialog(tk.Toplevel):
             value="Select a starting location."
         )
         self.can_give_birth_value = tk.BooleanVar(value=False)
+        self.deceased_value = tk.BooleanVar(value=False)
+        self.death_year_value = tk.StringVar()
+        self.death_month_value = tk.StringVar()
+        self.death_day_value = tk.StringVar()
+        self.death_age_value = tk.StringVar(value="Age at death: —")
+        self.deceased_value.trace_add("write", self.deceased_changed)
+        for date_variable in (
+            self.birth_year_value,
+            self.birth_month_value,
+            self.birth_day_value,
+            self.death_year_value,
+            self.death_month_value,
+            self.death_day_value,
+        ):
+            date_variable.trace_add("write", self.update_death_age)
 
-        displayed_name_field = LabeledEntry(
-            card,
-            "Displayed name",
-            self.displayed_name_value,
-            background=SURFACE,
-            font_size=12,
-        )
-        displayed_name_field.grid(
+        displayed_name_row = tk.Frame(card, bg=SURFACE)
+        displayed_name_row.grid(
             row=1,
             column=0,
             sticky="ew",
             padx=16,
             pady=(0, 14),
         )
+        displayed_name_row.grid_columnconfigure(0, weight=1)
+
+        displayed_name_field = LabeledEntry(
+            displayed_name_row,
+            "Displayed name",
+            self.displayed_name_value,
+            background=SURFACE,
+            font_size=12,
+        )
+        displayed_name_field.grid(
+            row=0,
+            column=0,
+            sticky="ew",
+        )
         self.displayed_name_entry = displayed_name_field.control
+        name_details_button = SoftButton(
+            displayed_name_row,
+            text="Name Details",
+            command=self.open_name_details,
+            background=SURFACE,
+            width=112,
+            height=40,
+        )
+        name_details_button.grid(
+            row=0,
+            column=1,
+            sticky="se",
+            padx=(8, 0),
+        )
 
         birth_frame = tk.Frame(card, bg=SURFACE)
         birth_frame.grid(row=2, column=0, sticky="ew", padx=16)
@@ -249,8 +291,16 @@ class CreationWizardDialog(tk.Toplevel):
             pady=(14, 0),
         )
 
+        flags = tk.Frame(card, bg=SURFACE)
+        flags.grid(
+            row=6,
+            column=0,
+            sticky="ew",
+            padx=16,
+            pady=(14, 0),
+        )
         can_give_birth_check = tk.Checkbutton(
-            card,
+            flags,
             text="Can give birth",
             variable=self.can_give_birth_value,
             bg=SURFACE,
@@ -263,13 +313,93 @@ class CreationWizardDialog(tk.Toplevel):
             borderwidth=0,
             highlightthickness=0,
         )
-        can_give_birth_check.grid(
-            row=6,
-            column=0,
-            sticky="w",
-            padx=16,
-            pady=(14, 0),
+        can_give_birth_check.pack(side="left")
+        deceased_check = tk.Checkbutton(
+            flags,
+            text="Dead",
+            variable=self.deceased_value,
+            bg=SURFACE,
+            fg=TEXT_DARK,
+            activebackground=SURFACE,
+            activeforeground=TEXT_DARK,
+            selectcolor=SURFACE_MUTED,
+            font=app_font(10),
+            anchor="w",
+            borderwidth=0,
+            highlightthickness=0,
         )
+        deceased_check.pack(side="left", padx=(20, 0))
+
+        self.death_frame = tk.Frame(card, bg=SURFACE)
+        self.death_frame.grid(
+            row=7,
+            column=0,
+            sticky="ew",
+            padx=16,
+            pady=(12, 0),
+        )
+        self.death_frame.grid_columnconfigure((0, 1, 2), weight=1)
+        tk.Label(
+            self.death_frame,
+            text="Date of death",
+            bg=SURFACE,
+            fg=TEXT_MUTED,
+            font=app_font(9, "bold"),
+            anchor="w",
+        ).grid(row=0, column=0, sticky="w", pady=(0, 5))
+        tk.Label(
+            self.death_frame,
+            textvariable=self.death_age_value,
+            bg=SURFACE,
+            fg=TEXT_DARK,
+            font=app_font(9, "bold"),
+            anchor="e",
+        ).grid(
+            row=0,
+            column=1,
+            columnspan=2,
+            sticky="e",
+            pady=(0, 5),
+        )
+        for column, label_text, variable in (
+            (0, "Year", self.death_year_value),
+            (1, "Month", self.death_month_value),
+            (2, "Day", self.death_day_value),
+        ):
+            death_field = LabeledEntry(
+                self.death_frame,
+                label_text,
+                variable,
+                background=SURFACE,
+            )
+            death_field.grid(
+                row=1,
+                column=column,
+                sticky="ew",
+                padx=(
+                    (0, 6)
+                    if column == 0
+                    else ((6, 0) if column == 2 else 6)
+                ),
+            )
+        death_calendar_notice = CalendarAdoptionNotice(
+            self.death_frame,
+            background=SURFACE,
+            wraplength=520,
+            date_variables=(
+                self.death_year_value,
+                self.death_month_value,
+                self.death_day_value,
+            ),
+        )
+        death_calendar_notice.grid(
+            row=2,
+            column=0,
+            columnspan=3,
+            sticky="w",
+            pady=(6, 0),
+        )
+        self.death_frame.grid_remove()
 
         buttons = tk.Frame(self, bg=APP_BACKGROUND)
         buttons.grid(row=2, column=0, sticky="e", padx=22, pady=(0, 18))
@@ -347,6 +477,9 @@ class CreationWizardDialog(tk.Toplevel):
 
         values = {
             "displayed_name": self.displayed_name_value.get(),
+            "name_details": deepcopy(
+                getattr(self, "name_details", empty_name_details())
+            ),
             "birth_year": self.birth_year_value.get(),
             "birth_month": self.birth_month_value.get(),
             "birth_day": self.birth_day_value.get(),
@@ -354,6 +487,22 @@ class CreationWizardDialog(tk.Toplevel):
             "starting_location_id": self.starting_location_id,
             "school": self.school_field.get_value(),
             "can_give_birth": self.can_give_birth_value.get(),
+            "deceased": self.deceased_value.get(),
+            "death_year": (
+                self.death_year_value.get()
+                if self.deceased_value.get()
+                else ""
+            ),
+            "death_month": (
+                self.death_month_value.get()
+                if self.deceased_value.get()
+                else ""
+            ),
+            "death_day": (
+                self.death_day_value.get()
+                if self.deceased_value.get()
+                else ""
+            ),
         }
 
         try:
@@ -364,6 +513,53 @@ class CreationWizardDialog(tk.Toplevel):
 
         if created_person is not None:
             self.destroy()
+
+    def open_name_details(self):
+        NameDetailsDialog(
+            self,
+            self.name_details,
+            self.name_details_saved,
+            self.displayed_name_value.get(),
+            format_date_parts(
+                self.birth_year_value.get(),
+                self.birth_month_value.get(),
+                self.birth_day_value.get(),
+                unknown="",
+            ),
+        )
+
+    def name_details_saved(self, name_details):
+        self.name_details = deepcopy(name_details)
+        return True
+
+    def deceased_changed(self, *arguments):
+        if self.deceased_value.get():
+            self.update_death_age()
+            self.death_frame.grid()
+        else:
+            self.death_frame.grid_remove()
+
+    def update_death_age(self, *arguments):
+        age_text = person_death_age_text(
+            {
+                "birth_year": self.birth_year_value.get(),
+                "birth_month": self.birth_month_value.get(),
+                "birth_day": self.birth_day_value.get(),
+                "death_year": self.death_year_value.get(),
+                "death_month": self.death_month_value.get(),
+                "death_day": self.death_day_value.get(),
+            }
+        )
+        self.death_age_value.set(
+            f"Age at death: {age_text.removeprefix('age ')}"
+            if age_text.startswith("age ")
+            else (
+                "Age at death: "
+                + age_text.replace("approximately age ", "approximately ", 1)
+                if age_text
+                else "Age at death: —"
+            )
+        )
 
     def open_starting_location_selector(self):
         if self.event_controller is None:

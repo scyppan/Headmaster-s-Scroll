@@ -2033,6 +2033,13 @@ class EventPersonPickerDialog(tk.Toplevel):
 
 
 class QuickEventPersonDialog(tk.Toplevel):
+    """The single compact mage-creation dialog used throughout World Builder.
+
+    Contexts may customize the window copy and initial values, but the fields,
+    validation, location chooser, school chooser, and name-details workflow stay
+    identical everywhere.
+    """
+
     def __init__(
         self,
         parent,
@@ -2043,8 +2050,20 @@ class QuickEventPersonDialog(tk.Toplevel):
         initial_location_id="",
         create_location_command=None,
         schools=None,
+        initial_values=None,
+        dialog_title="Quick add mage",
+        heading_text="Quick add mage",
+        submit_text="Create and add",
     ):
         super().__init__(parent)
+        initial_values = (
+            dict(initial_values)
+            if isinstance(initial_values, dict)
+            else {}
+        )
+        self.dialog_title = str(dialog_title or "Quick add mage").strip()
+        self.heading_text = str(heading_text or self.dialog_title).strip()
+        self.submit_text = str(submit_text or "Create and add").strip()
         self.mage_groups = [
             deepcopy(group)
             for group in mage_groups or []
@@ -2067,17 +2086,39 @@ class QuickEventPersonDialog(tk.Toplevel):
         self.starting_location_value = tk.StringVar(
             value="Choose a starting location"
         )
-        self.name_details = empty_name_details()
-        self.name_value = tk.StringVar()
-        self.birth_year_value = tk.StringVar()
-        self.birth_month_value = tk.StringVar()
-        self.birth_day_value = tk.StringVar()
-        self.can_give_birth_value = tk.BooleanVar(value=False)
-        self.non_magical_value = tk.BooleanVar(value=False)
-        self.deceased_value = tk.BooleanVar(value=False)
-        self.death_year_value = tk.StringVar()
-        self.death_month_value = tk.StringVar()
-        self.death_day_value = tk.StringVar()
+        self.name_details = deepcopy(
+            initial_values.get("name_details") or empty_name_details()
+        )
+        self.name_value = tk.StringVar(
+            value=str(initial_values.get("displayed_name", "") or "")
+        )
+        self.birth_year_value = tk.StringVar(
+            value=str(initial_values.get("birth_year", "") or "")
+        )
+        self.birth_month_value = tk.StringVar(
+            value=str(initial_values.get("birth_month", "") or "")
+        )
+        self.birth_day_value = tk.StringVar(
+            value=str(initial_values.get("birth_day", "") or "")
+        )
+        self.can_give_birth_value = tk.BooleanVar(
+            value=bool(initial_values.get("can_give_birth", False))
+        )
+        self.non_magical_value = tk.BooleanVar(
+            value=bool(initial_values.get("non_magical", False))
+        )
+        self.deceased_value = tk.BooleanVar(
+            value=bool(initial_values.get("deceased", False))
+        )
+        self.death_year_value = tk.StringVar(
+            value=str(initial_values.get("death_year", "") or "")
+        )
+        self.death_month_value = tk.StringVar(
+            value=str(initial_values.get("death_month", "") or "")
+        )
+        self.death_day_value = tk.StringVar(
+            value=str(initial_values.get("death_day", "") or "")
+        )
         self.death_age_value = tk.StringVar(value="Age at death: —")
         self.deceased_value.trace_add("write", self.deceased_changed)
         for date_variable in (
@@ -2089,7 +2130,7 @@ class QuickEventPersonDialog(tk.Toplevel):
             self.death_day_value,
         ):
             date_variable.trace_add("write", self.update_death_age)
-        self.title("New person")
+        self.title(self.dialog_title)
         self.geometry("560x700")
         self.minsize(500, 640)
         self.configure(bg=APP_BACKGROUND)
@@ -2100,6 +2141,8 @@ class QuickEventPersonDialog(tk.Toplevel):
         self.build_dialog()
         if str(initial_location_id or "").strip():
             self.starting_location_selected(initial_location_id)
+        self.school_field.set_value(initial_values.get("school", ""))
+        self.deceased_changed()
         self.grab_set()
         self.after_idle(self.name_entry.focus_set)
 
@@ -2109,7 +2152,7 @@ class QuickEventPersonDialog(tk.Toplevel):
         header.grid_propagate(False)
         heading = tk.Label(
             header,
-            text="New person",
+            text=self.heading_text,
             bg=PRIMARY,
             fg=TEXT_DARK,
             font=app_font(15, "bold"),
@@ -2431,7 +2474,7 @@ class QuickEventPersonDialog(tk.Toplevel):
         cancel_button.pack(side="left", padx=(0, 7))
         create_button = SoftButton(
             footer,
-            text="Create and add",
+            text=self.submit_text,
             command=self.create_person,
             background=APP_BACKGROUND,
             fill=ADD_GREEN,

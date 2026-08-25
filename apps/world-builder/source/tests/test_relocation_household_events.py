@@ -1,15 +1,45 @@
 import unittest
 
+from mage_maker.core.controller import PeopleController
 from mage_maker.sections.events.controller import EventController
 from mage_maker.sections.events.models import normalize_world_event
 
 
 class _EventDatabase:
-    def __init__(self, events=()):
+    def __init__(self, events=(), people=()):
         self.events = list(events)
+        self.people = list(people)
+        self.data = {"people": self.people}
 
     def list_records(self, collection):
-        return list(self.events) if collection == "events" else []
+        if collection == "events":
+            return list(self.events)
+        if collection == "people":
+            return list(self.people)
+        return []
+
+    def list_people(self):
+        return list(self.people)
+
+    def list_people_list_summaries(self):
+        return list(self.people)
+
+    def read_person(self, record_id):
+        return next(
+            (
+                person
+                for person in self.people
+                if person.get("record_id") == record_id
+            ),
+            None,
+        )
+
+    def update_person(self, record_id, values):
+        person = self.read_person(record_id)
+        if person is None:
+            raise KeyError(record_id)
+        person.update(values)
+        return person
 
     def get_linked_records(self, collection, record_id, relationship):
         if collection != "events" or relationship != "people":
@@ -19,6 +49,15 @@ class _EventDatabase:
             for event in self.events
             if record_id in event.get("person_ids", [])
         ]
+
+    def update_record(self, collection, record_id, values):
+        if collection != "events":
+            raise KeyError(collection)
+        for index, event in enumerate(self.events):
+            if event.get("record_id") == record_id:
+                self.events[index] = dict(values)
+                return dict(values)
+        raise KeyError(record_id)
 
 
 class RelocationHouseholdEventTests(unittest.TestCase):
@@ -145,6 +184,22 @@ class RelocationHouseholdEventTests(unittest.TestCase):
         )
 
         self.assertNotIn("relocation_primary_person_ids", normalized)
+
+    def test_linking_child_later_reconciles_existing_parent_relocations(self):
+        existing_move = normalize_world_event(self.relocation())
+        database = _EventDatabase([existing_move], self.people)
+
+        PeopleController(database).reconcile_child_parent_timelines(
+            self.people[1],
+            [],
+        )
+
+        self.assertEqual(
+            ["parent", "child"],
+            database.events[0]["person_ids"],
+        )
+        self.assertNotIn("adult-child", database.events[0]["person_ids"])
+        self.assertNotIn("future-child", database.events[0]["person_ids"])
 
 
 if __name__ == "__main__":

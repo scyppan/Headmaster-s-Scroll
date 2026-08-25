@@ -86,7 +86,22 @@ class CreationLocationWorkflowTests(unittest.TestCase):
         dialog.birth_year_value = FakeVariable("901")
         dialog.birth_month_value = FakeVariable("")
         dialog.birth_day_value = FakeVariable("")
+        dialog.name_details = {
+            "entries": [
+                {
+                    "entry_id": "birth-name",
+                    "name_type": "birth name",
+                    "name_entry": "Maeve of Limerick",
+                    "date": "901",
+                    "note": "",
+                }
+            ]
+        }
         dialog.can_give_birth_value = FakeVariable(True)
+        dialog.deceased_value = FakeVariable(True)
+        dialog.death_year_value = FakeVariable("955")
+        dialog.death_month_value = FakeVariable("03")
+        dialog.death_day_value = FakeVariable("12")
         dialog.school_field = FakeSchoolField()
         dialog.create_command = submitted_values.append
 
@@ -112,6 +127,14 @@ class CreationLocationWorkflowTests(unittest.TestCase):
             "limerick",
             submitted_values[0]["starting_location_id"],
         )
+        self.assertEqual(
+            "Maeve of Limerick",
+            submitted_values[0]["name_details"]["entries"][0]["name_entry"],
+        )
+        self.assertTrue(submitted_values[0]["deceased"])
+        self.assertEqual("955", submitted_values[0]["death_year"])
+        self.assertEqual("03", submitted_values[0]["death_month"])
+        self.assertEqual("12", submitted_values[0]["death_day"])
 
     def test_saving_a_new_location_preserves_the_existing_region_lock(self):
         page = object.__new__(LocationPage)

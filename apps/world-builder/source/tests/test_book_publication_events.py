@@ -10,6 +10,7 @@ from mage_maker.sections.events.types import (
     event_type_label,
     event_type_options,
 )
+from mage_maker.sections.events.models import normalize_world_event
 
 
 def sample_book():
@@ -44,6 +45,17 @@ class BookPublicationEventTests(unittest.TestCase):
         self.assertEqual(["book-one"], event["book_ids"])
         self.assertEqual(["author-one"], event["person_ids"])
         self.assertEqual("1899-09-01", event["date"])
+
+    def test_publication_event_does_not_require_a_book_link(self):
+        event = normalize_world_event({
+            "record_id": "publication-without-book",
+            "event_type": "published_book",
+            "title": "Published an unnamed manuscript",
+            "date": "1899-09-01",
+            "book_ids": [],
+        })
+
+        self.assertEqual([], event["book_ids"])
 
     def test_synchronization_resolves_an_existing_author_by_name(self):
         book = sample_book()

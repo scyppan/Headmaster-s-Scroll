@@ -2,6 +2,7 @@ import unittest
 
 from mage_maker.core.reference_storage import world_event_to_timeline
 from mage_maker.sections.events.controller import EventController
+from mage_maker.sections.events.link_dialog import link_person_to_event
 from mage_maker.sections.events.models import normalize_world_event
 from mage_maker.sections.timeline.events import (
     murder_timeline_summary,
@@ -10,7 +11,14 @@ from mage_maker.sections.timeline.events import (
 
 
 class _WorldDatabase:
+    def __init__(self):
+        self.events = []
+        self.data = {}
+        self.dirty = False
+
     def list_records(self, collection):
+        if collection == "events":
+            return list(self.events)
         if collection == "named_creatures":
             return [{
                 "record_id": "named-1",
@@ -18,6 +26,14 @@ class _WorldDatabase:
                 "species_name": "Kneazle",
             }]
         return []
+
+    def create_record(self, collection, values):
+        if collection != "events":
+            raise KeyError(collection)
+        stored = dict(values)
+        stored.setdefault("record_id", f"event-{len(self.events) + 1}")
+        self.events.append(stored)
+        return stored
 
 
 class _GameDatabase:
@@ -58,18 +74,64 @@ class CharacterControlEventTests(unittest.TestCase):
         self.assertEqual(event["knowledge_record_id"], "spell-1")
         self.assertEqual(event["knowledge_collection"], "spells")
 
-    def test_creature_relationship_event_requires_named_creature(self):
+    def test_creature_relationship_event_may_optionally_link_a_creature(self):
         event = normalize_world_event({
             "record_id": "event-2", "event_type": "bonded_creature",
             "title": "Bonded Pip", "date": "2000-01-01",
             "named_creature_id": "named-1", "named_creature_name": "Pip",
         })
         self.assertEqual(event["named_creature_id"], "named-1")
-        with self.assertRaisesRegex(ValueError, "named creature"):
-            normalize_world_event({
-                "record_id": "event-3", "event_type": "tamed_creature",
-                "title": "Tamed creature", "date": "2000-01-01",
-            })
+        unlinked = normalize_world_event({
+            "record_id": "event-3", "event_type": "tamed_creature",
+            "title": "Tamed creature", "date": "2000-01-01",
+        })
+        self.assertEqual("", unlinked["named_creature_id"])
+
+    def test_knowledge_event_may_be_saved_without_a_catalog_link(self):
+        event = normalize_world_event({
+            "record_id": "event-unlinked-knowledge",
+            "event_type": "taught_spell",
+            "title": "Shared an unnamed spell",
+            "date": "2000-01-01",
+            "person_ids": ["person-1"],
+        })
+
+        self.assertEqual("", event["knowledge_record_id"])
+        self.assertEqual("", event["knowledge_collection"])
+
+    def test_link_event_adds_current_person_to_someone_elses_event(self):
+        linked = link_person_to_event(
+            {
+                "record_id": "event-existing",
+                "event_type": "custom",
+                "title": "Someone else's event",
+                "date": "2000-01-01",
+                "person_ids": ["other-person"],
+            },
+            "current-person",
+            "person_ids",
+        )
+
+        self.assertEqual(
+            ["other-person", "current-person"],
+            linked["person_ids"],
+        )
+
+    def test_unlinked_publication_is_a_normal_event(self):
+        controller = self.controller()
+        event = controller.create_event(
+            {
+                "event_type": "published_book",
+                "title": "Published an unnamed book",
+                "date": "2000-01-01",
+                "person_ids": [],
+                "book_ids": [],
+            },
+            save_database=False,
+        )
+
+        self.assertEqual("published_book", event["event_type"])
+        self.assertEqual([], event["book_ids"])
 
     def test_search_options_use_ids_and_correct_large_catalogs(self):
         taught = self.controller().character_control_link_options("taught_spell")

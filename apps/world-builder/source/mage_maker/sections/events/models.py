@@ -181,11 +181,9 @@ def normalize_character_control_event_metadata(event):
         normalized["knowledge_name"] = " ".join(
             str(normalized.get("knowledge_name", "") or "").strip().split()
         )
-        if not normalized["knowledge_record_id"]:
-            raise ValueError(
-                "A teaching or invention event needs a linked record."
-            )
         if (
+            normalized["knowledge_record_id"]
+            and
             normalized["knowledge_collection"]
             and normalized["knowledge_collection"]
             not in knowledge_event_collections[event_type]
@@ -209,10 +207,6 @@ def normalize_character_control_event_metadata(event):
         normalized["named_creature_name"] = " ".join(
             str(normalized.get("named_creature_name", "") or "").strip().split()
         )
-        if not normalized["named_creature_id"]:
-            raise ValueError(
-                "A creature-relationship event needs a named creature."
-            )
     else:
         normalized.pop("named_creature_id", None)
         normalized.pop("named_creature_name", None)
@@ -495,9 +489,9 @@ def normalize_world_event(event):
         normalized.get("book_ids")
     )
     if normalized["event_type"] == "published_book":
-        if len(normalized["book_ids"]) != 1:
+        if len(normalized["book_ids"]) > 1:
             raise ValueError(
-                "A Published book event must link exactly one book."
+                "A Published book event can link no more than one book."
             )
         normalized["book_author_name"] = " ".join(
             str(normalized.get("book_author_name", "") or "")

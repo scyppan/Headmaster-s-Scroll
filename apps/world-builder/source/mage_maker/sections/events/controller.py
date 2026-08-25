@@ -1537,7 +1537,10 @@ class EventController:
                 self.apply_event_rules(prepared)
             )
         )
-        if normalized["event_type"] == "published_book":
+        if (
+            normalized["event_type"] == "published_book"
+            and normalized.get("book_ids")
+        ):
             return self.upsert_book_publication_event(
                 normalized,
                 save_database=save_database,
@@ -1657,10 +1660,11 @@ class EventController:
                     "A book's publication event cannot be changed into "
                     "another event type."
                 )
-            return self.upsert_book_publication_event(
-                normalized,
-                save_database=save_database,
-            )
+            if normalized.get("book_ids"):
+                return self.upsert_book_publication_event(
+                    normalized,
+                    save_database=save_database,
+                )
         self.validate_associations(
             normalized,
             current,
@@ -1762,7 +1766,7 @@ class EventController:
 
         if canonical_event_type(
             current.get("event_type")
-        ) == "published_book":
+        ) == "published_book" and current.get("book_ids"):
             raise ValueError(
                 "A Published a book event is required by its book and "
                 "cannot be removed."

@@ -1012,7 +1012,9 @@ class EventEditor(tk.Frame):
         self.job_end_day_value = tk.StringVar()
         self.character_control_link_id = ""
         self.character_control_link_collection = ""
-        self.character_control_link_name = tk.StringVar(value="No linked record")
+        self.character_control_link_name = tk.StringVar(
+            value="No record linked (optional)"
+        )
         self.friend_group_name = tk.StringVar()
         self.adjusting_year = False
         self.year_value.trace_add("write", self.update_period_display)
@@ -3683,7 +3685,9 @@ class EventEditor(tk.Frame):
         self.character_control_link_id = ""
         self.character_control_link_collection = ""
         if hasattr(self, "character_control_link_name"):
-            self.character_control_link_name.set("No linked record")
+            self.character_control_link_name.set(
+                "No record linked (optional)"
+            )
         self.update_character_control_detail_buttons()
 
     def update_character_control_detail_buttons(self, selected_type=None):
@@ -4765,14 +4769,6 @@ class EventEditor(tk.Frame):
             )
             return False
 
-        if values["event_type"] in (
-            *KNOWLEDGE_EVENT_TYPES,
-            "tamed_creature", "bonded_creature", "irked_creature",
-            "published_book",
-        ) and not self.character_control_link_id:
-            self.show_error("Choose the record linked to this event.")
-            return False
-
         if (
             values["event_type"] in FRIEND_GROUP_EVENT_TYPES
             and not values["friend_group_name"]
@@ -5213,24 +5209,9 @@ class EventEditor(tk.Frame):
                 pass
 
         if hasattr(self, "character_control_link_panel"):
-            linked_required = event_type in (
-                *KNOWLEDGE_EVENT_TYPES,
-                "tamed_creature",
-                "bonded_creature",
-                "irked_creature",
-                "published_book",
-            )
             self.character_control_link_panel.configure(
-                highlightbackground=(
-                    "#A32626"
-                    if linked_required and not self.character_control_link_id
-                    else BORDER_SOFT
-                ),
-                highlightthickness=(
-                    2
-                    if linked_required and not self.character_control_link_id
-                    else 1
-                ),
+                highlightbackground=BORDER_SOFT,
+                highlightthickness=1,
             )
         if hasattr(self, "friend_group_panel"):
             group_invalid = (

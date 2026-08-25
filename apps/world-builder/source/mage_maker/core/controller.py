@@ -1632,6 +1632,76 @@ class PeopleController:
 
         for parent_id in parent_ids:
             self.reconcile_child_timeline_events_for_parent(parent_id)
+            self.reconcile_parent_relocation_events(parent_id)
+
+    def reconcile_parent_relocation_events(self, parent_id):
+        """Refresh old household moves after a child's family link changes.
+
+        Relocation household expansion normally happens when the relocation is
+        saved.  A child linked later therefore used to miss every earlier move.
+        Reapply only the relocation rules for events linked to this parent so
+        the surrounding create/update operation can persist all changes in its
+        existing single save.
+        """
+        parent_id = str(parent_id or "").strip()
+        if not parent_id:
+            return []
+
+        linked_provider = getattr(self.database, "get_linked_records", None)
+        if callable(linked_provider):
+            events = linked_provider("events", parent_id, "people")
+        else:
+            events = [
+                event
+                for event in self.database.list_records("events")
+                if parent_id
+                in self.normalize_identifier_list(event.get("person_ids", []))
+            ]
+
+        # Import locally: the events controller already depends on core model
+        # helpers, so keeping this import here avoids a module-import cycle.
+        from mage_maker.sections.events.controller import EventController
+
+        event_controller = EventController(
+            self.database,
+            self.list_people,
+            lambda: [],
+            lambda: [],
+            people_summary_provider=self.list_people_summaries,
+        )
+        changed_event_ids = []
+
+        for stored_event in events:
+            current = normalize_world_event(stored_event)
+            if canonical_event_type(current.get("event_type")) != "relocated":
+                continue
+
+            primary_ids = self.normalize_identifier_list(
+                current.get("relocation_primary_person_ids", [])
+            )
+            if not primary_ids:
+                primary_ids = self.normalize_identifier_list(
+                    current.get("person_ids", [])
+                )
+            if parent_id not in primary_ids:
+                continue
+
+            prepared = normalize_world_event(
+                event_controller.apply_relocation_household_rules(
+                    current,
+                    current,
+                )
+            )
+            if prepared == current:
+                continue
+
+            event_id = str(current.get("record_id", "") or "").strip()
+            if not event_id:
+                continue
+            self.database.update_record("events", event_id, prepared)
+            changed_event_ids.append(event_id)
+
+        return changed_event_ids
 
     def reconcile_child_timeline_events_for_parent(self, parent_id):
         parent = self.database.read_person(parent_id)

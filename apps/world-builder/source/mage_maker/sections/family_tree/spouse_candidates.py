@@ -5,7 +5,12 @@ from mage_maker.sections.family_tree.relationships import (
 )
 
 
-def spouse_candidates(focus_person, people, excluded_ids=None):
+def spouse_candidates(
+    focus_person,
+    people,
+    excluded_ids=None,
+    maximum_age_gap=7,
+):
     focus = focus_person if isinstance(focus_person, dict) else {}
     focus_id = str(focus.get("record_id", "") or "")
     focus_can_give_birth = person_can_give_birth(focus)
@@ -30,7 +35,10 @@ def spouse_candidates(focus_person, people, excluded_ids=None):
             or person_id in excluded
             or person_can_give_birth(person) == focus_can_give_birth
             or candidate_year is None
-            or abs(candidate_year - focus_year) > 7
+            or (
+                maximum_age_gap is not None
+                and abs(candidate_year - focus_year) > maximum_age_gap
+            )
         ):
             continue
 

@@ -599,8 +599,8 @@ class PersonForm(tk.Frame):
         classifications_panel = SectionPanel(
             overview,
             "Classifications",
-            "Quick classifications used to identify this magician's role and state.",
         )
+        classifications_panel.configure(pady=8)
         classifications_panel.grid(
             row=0,
             column=0,
@@ -618,7 +618,7 @@ class PersonForm(tk.Frame):
             column=0,
             columnspan=2,
             sticky="ew",
-            pady=(0, 8),
+            pady=(0, 2),
         )
         group_block.grid_columnconfigure(1, weight=1)
         group_label = tk.Label(
@@ -656,6 +656,7 @@ class PersonForm(tk.Frame):
             2,
             SURFACE_MUTED,
             start_row=1,
+            vertical_padding=0,
         )
 
         connections_panel = SectionPanel(
@@ -1029,6 +1030,7 @@ class PersonForm(tk.Frame):
         column_count,
         background=SURFACE,
         start_row=0,
+        vertical_padding=2,
     ):
         for index, (field_name, label_text) in enumerate(fields):
             variable = tk.BooleanVar(value=False)
@@ -1060,7 +1062,7 @@ class PersonForm(tk.Frame):
                 column=index % column_count,
                 sticky="w",
                 padx=(0, 4),
-                pady=2,
+                pady=vertical_padding,
             )
             self.boolean_widgets[field_name] = checkbutton
 

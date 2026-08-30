@@ -135,6 +135,25 @@ def format_expiration_countdown(seconds: float) -> str:
     return f"{minutes:02d}:{seconds:02d}"
 
 
+def session_can_restart(
+    session: dict[str, Any], now: datetime | None = None
+) -> bool:
+    """Return whether an archived room can still restore its original links."""
+
+    if (
+        not session.get("archived")
+        or str(session.get("status") or "") != "ended"
+        or not session.get("restartable")
+    ):
+        return False
+    try:
+        return parse_stored_datetime(session.get("expires_at")) > (
+            now or datetime.now(timezone.utc)
+        ).astimezone(timezone.utc)
+    except (TypeError, ValueError):
+        return False
+
+
 def board_from_admin_state(
     state: dict[str, Any],
 ) -> tuple[str | None, dict[str, Any]]:
@@ -975,6 +994,7 @@ class GameBoardWindow(tk.Tk):
         self._expiration_warning_after_id: str | None = None
         self._expiration_warning_belled_deadlines: set[str] = set()
         self._expiration_update_pending = False
+        self._restart_session_pending_id: str | None = None
         self.current_app_page = ""
         self.refreshing = False
         self.admission_refreshing = False
@@ -9572,8 +9592,48 @@ class GameBoardWindow(tk.Tk):
         )
         ttk.Button(connected_card, text="Revoke & Disconnect", style="Danger.TButton", command=self.revoke_connected).pack(anchor="e", pady=(10, 0))
 
+        restart_card = self._card(self.overview_tab, "Restart Session")
+        self.restart_session_card = restart_card
+        restart_card.grid(
+            row=1, column=0, columnspan=2, sticky="ew", pady=(8, 0)
+        )
+        self.restart_sessions_tree = self._tree(
+            restart_card,
+            ("session", "campaign", "ended", "ends"),
+            ("Session", "Campaign", "Ended", "Session ends"),
+        )
+        self.restart_sessions_tree.configure(selectmode="browse", height=3)
+        self.restart_sessions_tree.bind(
+            "<<TreeviewSelect>>", self._restart_session_selected
+        )
+        self.restart_sessions_tree.bind(
+            "<Double-Button-1>", lambda _event: self.restart_ended_session()
+        )
+        restart_row = ttk.Frame(restart_card, style="Card.TFrame")
+        restart_row.pack(fill="x", pady=(8, 0))
+        self.restart_session_hint = tk.StringVar(
+            value="No manually ended sessions can currently be restarted."
+        )
+        ttk.Label(
+            restart_row,
+            textvariable=self.restart_session_hint,
+            style="Card.TLabel",
+        ).pack(side="left", fill="x", expand=True)
+        self.restart_session_button = ttk.Button(
+            restart_row,
+            text="Restart Session",
+            style="Good.TButton",
+            command=self.restart_ended_session,
+            state="disabled",
+        )
+        self.restart_session_button.pack(side="right", padx=(8, 0))
+        self._attach_tooltip(
+            self.restart_session_button,
+            "Reactivate this room's existing player links and Game Board",
+        )
+
         announcement_card = self._card(self.overview_tab, "Announcement")
-        announcement_card.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+        announcement_card.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(8, 0))
         self.announcement = tk.Text(announcement_card, height=3, wrap="word", background="#fff8e6", foreground=self.INK, relief="solid", borderwidth=1)
         self.announcement.pack(fill="x")
         self.announcement_send_button = ttk.Button(
@@ -10151,6 +10211,41 @@ class GameBoardWindow(tk.Tk):
         archived_sessions = list(state.get("archived_sessions") or [])
         sessions = live_sessions + archived_sessions
         timezone_name = str(settings.get("timezone") or self.settings.get("timezone") or "UTC")
+        restartable_sessions = [
+            session for session in archived_sessions
+            if session_can_restart(session)
+        ]
+        restart_rows = [
+            (
+                str(session["id"]),
+                (
+                    str(session.get("title") or "Session"),
+                    str(session.get("campaign_name") or "Legacy session"),
+                    format_stored_local_datetime(
+                        session.get("ended_at"), timezone_name
+                    ),
+                    format_stored_local_datetime(
+                        session.get("expires_at"), timezone_name
+                    ),
+                ),
+            )
+            for session in restartable_sessions
+        ]
+        self._replace_tree(self.restart_sessions_tree, restart_rows)
+        if restart_rows:
+            self.restart_session_card.grid()
+        else:
+            self.restart_session_card.grid_remove()
+        if restart_rows and not self.restart_sessions_tree.selection():
+            self.restart_sessions_tree.selection_set(restart_rows[0][0])
+        self.restart_session_hint.set(
+            (
+                "Select an ended room to reactivate its existing player links."
+                if restart_rows
+                else "No manually ended sessions can currently be restarted."
+            )
+        )
+        self._restart_session_selected()
         session_rows = [
             (
                 session["id"],
@@ -10772,6 +10867,75 @@ class GameBoardWindow(tk.Tk):
             self.refresh()
 
         self._background(lambda: self.client.request(method, path, payload), done)
+
+    def _restart_session_selected(
+        self, _event: tk.Event | None = None
+    ) -> None:
+        selected = tuple(self.restart_sessions_tree.selection())
+        restartable_ids = {
+            str(session.get("id") or "")
+            for session in self.state_data.get("archived_sessions", [])
+            if session_can_restart(session)
+        }
+        enabled = bool(selected and selected[0] in restartable_ids)
+        if self.__dict__.get("_restart_session_pending_id"):
+            enabled = False
+        self.restart_session_button.configure(
+            state="normal" if enabled else "disabled"
+        )
+
+    def restart_ended_session(self) -> None:
+        if self.__dict__.get("_restart_session_pending_id"):
+            return
+        selected = tuple(self.restart_sessions_tree.selection())
+        session_id = str(selected[0]) if selected else ""
+        session = next(
+            (
+                item for item in self.state_data.get("archived_sessions", [])
+                if str(item.get("id") or "") == session_id
+            ),
+            None,
+        )
+        if not session or not session_can_restart(session):
+            self.set_notice(
+                "That session can no longer be restarted.", error=True
+            )
+            self.refresh()
+            return
+        self._restart_session_pending_id = session_id
+        self.restart_session_button.configure(state="disabled")
+        self.set_notice("Restarting session…")
+
+        def done(result: dict[str, Any]) -> None:
+            self._restart_session_pending_id = None
+            restored_id = str(result.get("id") or session_id)
+            self.managed_session_id = restored_id
+            self._board_session_select_pending_id = restored_id
+            self.selected_invite_ids.clear()
+            self._cancel_board_delayed_actions()
+            self._reset_board_context()
+            self.selected_session_id = None
+            self._set_board_context_available(False)
+            self._render_board({})
+            self._show_board_loading("Restarting session board…")
+            self.set_notice(
+                "Session restarted; its existing player links are active."
+            )
+            self.refresh()
+
+        def failed(error: Exception) -> None:
+            self._restart_session_pending_id = None
+            self.restart_session_button.configure(state="normal")
+            self._failed(error, False)
+            self.refresh(silent=True)
+
+        self._background(
+            lambda: self.client.request(
+                "POST", f"/api/admin/sessions/{session_id}/restart"
+            ),
+            done,
+            failure=failed,
+        )
 
     def add_contact(self) -> None:
         name, email = self.contact_name.get().strip(), self.contact_email.get().strip()

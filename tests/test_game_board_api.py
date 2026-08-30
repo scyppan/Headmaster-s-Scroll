@@ -11,6 +11,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
 from fastapi.testclient import TestClient
+from fastapi import HTTPException
 from starlette.websockets import WebSocketDisconnect
 
 from headmasters_scroll.campaigns import CampaignRepository
@@ -25,7 +26,12 @@ from headmasters_scroll.game_board.desktop import (
     shift_game_calendar,
 )
 from headmasters_scroll.game_board.gmail import GmailSender, GmailUnavailable
-from headmasters_scroll.game_board.server import GameBoardRuntime, SendBody, create_apps
+from headmasters_scroll.game_board.server import (
+    GameBoardRuntime,
+    PlayerConnection,
+    SendBody,
+    create_apps,
+)
 from headmasters_scroll.game_board.service import (
     GameBoardService,
     format_game_datetime_for_people,
@@ -331,6 +337,234 @@ class GameBoardApiTests(unittest.TestCase):
         self.assertEqual(deleted.status_code, 200, deleted.text)
         remaining = self.admin.get("/api/admin/state", headers=self.admin_headers).json()
         self.assertEqual([item["id"] for item in remaining["sessions"]], [session_id])
+
+    def test_restart_session_reactivates_the_same_invitation_link(self):
+        ended = self.admin.post(
+            f"/api/admin/sessions/{self.session_id}/end",
+            headers=self.admin_headers,
+        )
+        self.assertEqual(ended.status_code, 200, ended.text)
+        self.assertTrue(ended.json()["restartable"])
+        archived_state = self.admin.get(
+            "/api/admin/state", headers=self.admin_headers
+        ).json()
+        archived = next(
+            item for item in archived_state["archived_sessions"]
+            if item["id"] == self.session_id
+        )
+        self.assertTrue(archived["restartable"])
+        self.assertNotIn("alice@example.com", json.dumps(archived))
+        self.assertEqual(
+            self.admin.post(
+                f"/api/admin/sessions/{self.session_id}/restart"
+            ).status_code,
+            403,
+        )
+
+        restarted = self.admin.post(
+            f"/api/admin/sessions/{self.session_id}/restart",
+            headers=self.admin_headers,
+        )
+
+        self.assertEqual(restarted.status_code, 200, restarted.text)
+        self.assertEqual(restarted.json()["id"], self.session_id)
+        state = self.admin.get(
+            "/api/admin/state", headers=self.admin_headers
+        ).json()
+        self.assertEqual(state["board_session_id"], self.session_id)
+        self.assertEqual(state["session"]["id"], self.session_id)
+        self.assertNotIn(
+            self.session_id,
+            [item["id"] for item in state["archived_sessions"]],
+        )
+        admission = self.player.post(
+            "/v1/admissions",
+            json={"invite_token": self.invite},
+            headers=self.origin_headers,
+        )
+        self.assertEqual(admission.status_code, 200, admission.text)
+        self.assertEqual(admission.json()["status"], "pending")
+        self.assertEqual(
+            self.admin.post(
+                f"/api/admin/sessions/{self.session_id}/restart",
+                headers=self.admin_headers,
+            ).status_code,
+            409,
+        )
+
+    def test_restart_fails_fast_while_an_invitation_batch_is_running(self):
+        self.runtime.service.end_session("ended", self.session_id)
+        restart_endpoint = next(
+            route.endpoint for route in self.admin_app.routes
+            if route.path == "/api/admin/sessions/{session_id}/restart"
+        )
+
+        async def scenario():
+            async with self.runtime.invitation_batch_lock:
+                started = time.monotonic()
+                with self.assertRaises(HTTPException) as raised:
+                    await restart_endpoint(self.session_id)
+                return raised.exception, time.monotonic() - started
+
+        error, elapsed = asyncio.run(scenario())
+
+        self.assertEqual(error.status_code, 409)
+        self.assertLess(elapsed, 0.1)
+        self.assertEqual(self.runtime.service.sessions_view(), [])
+        self.assertTrue(
+            self.runtime.service.archived_sessions_view()[0]["restartable"]
+        )
+
+    def test_disconnect_deactivates_connection_even_when_notice_send_fails(self):
+        class BrokenNoticeSocket:
+            def __init__(self):
+                self.closed = False
+
+            async def send_json(self, _message):
+                raise ConnectionError("socket write failed")
+
+            async def close(self, **_kwargs):
+                self.closed = True
+
+        socket = BrokenNoticeSocket()
+        connection = PlayerConnection(
+            websocket=socket,
+            request_id="request-old",
+            contact_id=self.contact["id"],
+            name="Alice",
+            session_id=self.session_id,
+            asset_credential_hash="asset-old",
+        )
+        key = f"{self.session_id}:{self.contact['id']}"
+        self.runtime.connections[key] = connection
+        self.runtime.asset_credentials["asset-old"] = key
+
+        with patch.object(
+            self.runtime.service, "mark_disconnected"
+        ) as mark_disconnected:
+            asyncio.run(self.runtime.disconnect(
+                self.contact["id"],
+                "session_expired",
+                "The game session ended.",
+                self.session_id,
+            ))
+
+        self.assertFalse(connection.active)
+        self.assertTrue(connection.persisted)
+        self.assertTrue(socket.closed)
+        self.assertNotIn(key, self.runtime.connections)
+        self.assertNotIn("asset-old", self.runtime.asset_credentials)
+        mark_disconnected.assert_called_once()
+
+    def test_disconnect_waits_for_an_admitted_player_save(self):
+        save_started = threading.Event()
+        release_save = threading.Event()
+
+        class ClosingSocket(FakeSocket):
+            def __init__(self):
+                super().__init__()
+                self.closed = False
+
+            async def close(self, **_kwargs):
+                self.closed = True
+
+        def slow_save():
+            save_started.set()
+            if not release_save.wait(2):
+                raise TimeoutError("test save was not released")
+            return "saved"
+
+        socket = ClosingSocket()
+        connection = PlayerConnection(
+            websocket=socket,
+            request_id="request-saving",
+            contact_id=self.contact["id"],
+            name="Alice",
+            session_id=self.session_id,
+        )
+        key = f"{self.session_id}:{self.contact['id']}"
+        self.runtime.connections[key] = connection
+
+        async def scenario():
+            saving = asyncio.create_task(
+                self.runtime.run_connection_operation(connection, slow_save)
+            )
+            self.assertTrue(await asyncio.to_thread(save_started.wait, 1))
+            disconnecting = asyncio.create_task(self.runtime.disconnect(
+                self.contact["id"],
+                "session_expired",
+                "The game session ended.",
+                self.session_id,
+            ))
+            await asyncio.sleep(0.05)
+            self.assertFalse(connection.active)
+            self.assertFalse(disconnecting.done())
+            with self.assertRaises(PermissionError):
+                await self.runtime.run_connection_operation(connection, lambda: None)
+            release_save.set()
+            self.assertEqual(await saving, "saved")
+            await disconnecting
+
+        try:
+            with patch.object(
+                self.runtime.service, "mark_disconnected"
+            ) as mark_disconnected:
+                asyncio.run(scenario())
+        finally:
+            release_save.set()
+
+        self.assertTrue(socket.closed)
+        self.assertNotIn(key, self.runtime.connections)
+        mark_disconnected.assert_called_once()
+
+    def test_cancelling_a_waiter_does_not_release_its_worker_save(self):
+        save_started = threading.Event()
+        release_save = threading.Event()
+
+        def slow_save():
+            save_started.set()
+            if not release_save.wait(2):
+                raise TimeoutError("test save was not released")
+
+        connection = PlayerConnection(
+            websocket=FakeSocket(),
+            request_id="request-cancelled",
+            contact_id=self.contact["id"],
+            name="Alice",
+            session_id=self.session_id,
+        )
+        key = f"{self.session_id}:{self.contact['id']}"
+        self.runtime.connections[key] = connection
+
+        async def scenario():
+            waiting = asyncio.create_task(
+                self.runtime.run_connection_operation(connection, slow_save)
+            )
+            self.assertTrue(await asyncio.to_thread(save_started.wait, 1))
+            waiting.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await waiting
+            self.assertFalse(connection.operations_idle.is_set())
+
+            disconnecting = asyncio.create_task(self.runtime.disconnect(
+                self.contact["id"],
+                "session_expired",
+                "The game session ended.",
+                self.session_id,
+            ))
+            await asyncio.sleep(0.05)
+            self.assertFalse(disconnecting.done())
+            release_save.set()
+            await disconnecting
+
+        try:
+            with patch.object(self.runtime.service, "mark_disconnected"):
+                asyncio.run(scenario())
+        finally:
+            release_save.set()
+
+        self.assertTrue(connection.operations_idle.is_set())
+        self.assertNotIn(key, self.runtime.connections)
 
     def test_admin_state_contains_only_the_selected_live_session_board(self):
         created = self.admin.post(

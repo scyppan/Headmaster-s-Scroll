@@ -387,6 +387,106 @@ class GameBoardServiceTests(unittest.TestCase):
         with self.assertRaisesRegex(PermissionError, "Archived"):
             self.service.set_map_published(summary["id"], map_id, True)
 
+    def test_manually_ended_session_restarts_with_the_same_player_link(self):
+        created = self.create_session()
+        raw, _link = self.invite()
+        request = self.service.request_admission(
+            raw, "203.0.113.7", "Browser"
+        )
+        self.service.approve(request["request_id"])
+        ticket = self.service.poll_admission(
+            request["request_id"], request["poll_token"]
+        )["ticket"]
+        original_board = self.service.board_snapshot(created["id"])
+
+        summary = self.service.end_session("ended", created["id"])
+
+        self.assertTrue(summary["restartable"])
+        self.assertNotIn("restartable_sessions", summary)
+        archived = self.service.archived_sessions_view()[0]
+        self.assertTrue(archived["restartable"])
+        public_archive = json.dumps(archived)
+        self.assertNotIn("alice@example.com", public_archive)
+        self.assertNotIn("invite_hash", public_archive)
+        private = self.repository.active()["restartable_sessions"]
+        self.assertEqual(private[0]["session"]["id"], created["id"])
+        self.assertTrue(private[0]["session"]["roster"][0]["invite_hash"])
+
+        restarted_service = GameBoardService(
+            self.repository, self.service.campaign_repository
+        )
+        restored = restarted_service.restart_session(created["id"])
+
+        self.assertEqual(restored["id"], created["id"])
+        self.assertEqual(restored["status"], "active")
+        self.assertEqual(restored["pending"], [])
+        self.assertEqual(restarted_service.board_session_id(), created["id"])
+        self.assertEqual(self.repository.active()["restartable_sessions"], [])
+        self.assertEqual(restarted_service.archived_sessions_view(), [])
+        self.assertEqual(
+            [item["record_id"] for item in restarted_service.board_snapshot(
+                created["id"]
+            )["maps"]],
+            [item["record_id"] for item in original_board["maps"]],
+        )
+        with self.assertRaises(PermissionError):
+            restarted_service.consume_ticket(ticket)
+        with self.assertRaises(KeyError):
+            restarted_service.poll_admission(
+                request["request_id"], request["poll_token"]
+            )
+        admitted = restarted_service.request_admission(
+            raw, "203.0.113.7", "Browser"
+        )
+        self.assertEqual(admitted["status"], "pending")
+        self.assertEqual(
+            len(restarted_service.session_view(created["id"])["pending"]), 1
+        )
+        with self.assertRaisesRegex(RuntimeError, "already live"):
+            restarted_service.restart_session(created["id"])
+
+        restarted_service.end_session("ended", created["id"])
+        self.assertEqual(len(self.repository.summaries()["sessions"]), 1)
+        restarted_service.restart_session(created["id"])
+        restarted_service.delete_session(created["id"])
+        self.assertEqual(self.repository.summaries()["sessions"], [])
+
+    def test_expired_legacy_and_deleted_sessions_cannot_restart(self):
+        expired = self.create_session()
+        expired_summary = self.service.end_session("expired", expired["id"])
+        self.assertFalse(expired_summary["restartable"])
+        with self.assertRaisesRegex(RuntimeError, "no longer"):
+            self.service.restart_session(expired["id"])
+
+        legacy = self.create_session()
+        self.service.end_session("ended", legacy["id"])
+        wrapper = self.repository.active()
+        wrapper["restartable_sessions"] = []
+        self.repository.save_active(wrapper)
+        with self.assertRaisesRegex(RuntimeError, "no longer"):
+            self.service.restart_session(legacy["id"])
+
+        deleted = self.create_session()
+        self.service.end_session("ended", deleted["id"])
+        self.service.delete_session(deleted["id"])
+        with self.assertRaises(KeyError):
+            self.service.restart_session(deleted["id"])
+
+    def test_expired_private_restart_state_is_purged(self):
+        created = self.create_session()
+        self.service.end_session("ended", created["id"])
+        wrapper = self.repository.active()
+        wrapper["restartable_sessions"][0]["session"]["expires_at"] = iso_utc(
+            utc_now() - timedelta(seconds=1)
+        )
+        self.repository.save_active(wrapper)
+
+        with self.assertRaisesRegex(RuntimeError, "expired"):
+            self.service.restart_session(created["id"])
+        self.assertEqual(self.service.purge_expired_restartable_sessions(), 1)
+        self.assertEqual(self.repository.active()["restartable_sessions"], [])
+        self.assertFalse(self.service.archived_sessions_view()[0]["restartable"])
+
     def test_new_session_requires_a_campaign(self):
         with self.assertRaisesRegex(ValueError, "Choose a campaign"):
             self.service.create_session(
@@ -634,6 +734,7 @@ class GameBoardServiceTests(unittest.TestCase):
         self.assertEqual(migrated["schema_version"], 1)
         self.assertEqual([item["id"] for item in migrated["sessions"]], [session["id"]])
         self.assertIsNone(migrated["board_session_id"])
+        self.assertEqual(migrated["restartable_sessions"], [])
 
     def test_legacy_sessions_and_explicit_none_never_fall_back(self):
         older = self.create_session()

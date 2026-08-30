@@ -422,12 +422,18 @@ class PlayerConnection:
     heartbeats: dict[str, float] = field(default_factory=dict)
     last_activity: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     persisted: bool = False
+    active: bool = True
+    in_flight_operations: int = 0
+    operations_idle: asyncio.Event = field(default_factory=asyncio.Event)
     chat_events: deque[float] = field(default_factory=deque)
     move_events: deque[float] = field(default_factory=deque)
     roll_events: deque[float] = field(default_factory=deque)
     board_state: dict[str, Any] | None = None
     character_sheet_signature: str = ""
     controlled_ids: set[str] = field(default_factory=set)
+
+    def __post_init__(self) -> None:
+        self.operations_idle.set()
 
     def public(self, service: GameBoardService) -> dict[str, Any]:
         return {
@@ -597,6 +603,53 @@ class GameBoardRuntime:
         settings = self.service.settings(include_private=True)
         return GmailSender(settings["gmail_credentials_path"], settings["gmail_sender"])
 
+    async def run_connection_operation(
+        self,
+        connection: PlayerConnection,
+        function: Any,
+        *args: Any,
+        **kwargs: Any,
+    ) -> Any:
+        """Run connection-scoped worker work that End must let finish first."""
+
+        if not connection.active:
+            raise PermissionError("This player connection is no longer active")
+        connection.in_flight_operations += 1
+        connection.operations_idle.clear()
+
+        def operation_finished(operation: asyncio.Task[Any]) -> None:
+            connection.in_flight_operations = max(
+                0, connection.in_flight_operations - 1
+            )
+            if connection.in_flight_operations == 0:
+                connection.operations_idle.set()
+            # A cancelled outer waiter no longer retrieves the worker result.
+            # Consume any exception here while keeping the worker independent.
+            if not operation.cancelled():
+                try:
+                    operation.exception()
+                except Exception:
+                    pass
+
+        try:
+            if not connection.active:
+                raise PermissionError("This player connection is no longer active")
+            operation = asyncio.create_task(
+                asyncio.to_thread(function, *args, **kwargs)
+            )
+        except Exception:
+            connection.in_flight_operations = max(
+                0, connection.in_flight_operations - 1
+            )
+            if connection.in_flight_operations == 0:
+                connection.operations_idle.set()
+            raise
+        operation.add_done_callback(operation_finished)
+        # The callback—not this outer waiter—releases the lifecycle barrier.
+        # Shielding means repeated cancellation cannot signal idle while the
+        # underlying worker thread is still running.
+        return await asyncio.shield(operation)
+
     async def notify_admins(self) -> None:
         self.invalidate_state()
         if not self.admin_sockets:
@@ -624,20 +677,31 @@ class GameBoardRuntime:
             connection = self.connections.pop(key, None)
             if not connection:
                 continue
+            connection.active = False
             if connection.asset_credential_hash:
                 self.asset_credentials.pop(
                     connection.asset_credential_hash,
                     None,
                 )
-            self.service.mark_disconnected(
-                connection.request_id,
-                time.monotonic() - connection.connected_at,
-                connection.latency_total_ms,
-                connection.latency_samples,
-            )
-            connection.persisted = True
+            # A save admitted while this connection was current belongs to the
+            # ending room. Let it finish before the service snapshots that
+            # room; no new work can enter after ``active`` becomes false.
+            await connection.operations_idle.wait()
+            if not connection.persisted:
+                self.service.mark_disconnected(
+                    connection.request_id,
+                    time.monotonic() - connection.connected_at,
+                    connection.latency_total_ms,
+                    connection.latency_samples,
+                )
+                connection.persisted = True
             try:
-                await connection.websocket.send_json({"v": 1, "type": event_type, "message": message})
+                await connection.websocket.send_json({
+                    "v": 1, "type": event_type, "message": message
+                })
+            except Exception:
+                pass
+            try:
                 await connection.websocket.close(code=4003)
             except Exception:
                 pass
@@ -664,12 +728,23 @@ class GameBoardRuntime:
     async def expire_due_sessions(self) -> int:
         """Expire every due session independently so one bad record cannot kill the loop."""
 
+        checked_at = utc_now()
+        try:
+            purged_restartables = int(
+                self.service.purge_expired_restartable_sessions(checked_at) or 0
+            )
+        except Exception:
+            purged_restartables = 0
         try:
             sessions = self.service.sessions_view()
         except Exception:
+            if purged_restartables:
+                try:
+                    await self.notify_admins()
+                except Exception:
+                    pass
             return 0
         expired_count = 0
-        checked_at = utc_now()
         for session in sessions:
             session_id = str(session.get("id", ""))
             try:
@@ -709,7 +784,7 @@ class GameBoardRuntime:
                         pass
                     continue
                 expired_count += 1
-        if expired_count:
+        if expired_count or purged_restartables:
             try:
                 await self.notify_admins()
             except Exception:
@@ -752,6 +827,7 @@ class GameBoardRuntime:
         *,
         notify_admins: bool = True,
         require_board_session: bool = False,
+        connection: PlayerConnection | None = None,
     ) -> dict[str, Any]:
         arguments = (
             sender_id, sender_name, sender_role, text, session_id, activity,
@@ -760,6 +836,12 @@ class GameBoardRuntime:
             chat = await asyncio.to_thread(
                 self.service.run_for_board_session,
                 str(session_id or ""),
+                self.service.post_chat,
+                *arguments,
+            )
+        elif connection is not None:
+            chat = await self.run_connection_operation(
+                connection,
                 self.service.post_chat,
                 *arguments,
             )
@@ -803,12 +885,17 @@ class GameBoardRuntime:
         *,
         force: bool = False,
     ) -> None:
-        snapshot = await asyncio.to_thread(
+        if not connection.active:
+            return
+        snapshot = await self.run_connection_operation(
+            connection,
             self.service.board_snapshot,
             connection.session_id,
             for_players=True,
             contact_id=connection.contact_id,
         )
+        if not connection.active:
+            return
         connection.controlled_ids = set(
             self.service.controlled_character_ids(
                 connection.session_id, connection.contact_id,
@@ -880,12 +967,17 @@ class GameBoardRuntime:
     async def send_battle_snapshot(
         self, connection: PlayerConnection, message_type: str = "battle_snapshot",
     ) -> None:
-        snapshot = await asyncio.to_thread(
+        if not connection.active:
+            return
+        snapshot = await self.run_connection_operation(
+            connection,
             self.service.battle_snapshot,
             connection.session_id,
             contact_id=connection.contact_id,
             for_players=True,
         )
+        if not connection.active:
+            return
         await connection.websocket.send_json({
             "v": 1, "type": message_type, "battle_state": snapshot,
         })
@@ -912,11 +1004,16 @@ class GameBoardRuntime:
         *,
         force: bool = False,
     ) -> None:
-        sheet = await asyncio.to_thread(
+        if not connection.active:
+            return
+        sheet = await self.run_connection_operation(
+            connection,
             self.service.character_sheet_for,
             connection.session_id,
             connection.contact_id,
         )
+        if not connection.active:
+            return
         signature = _json_signature(sheet)
         if not force and signature == connection.character_sheet_signature:
             return
@@ -1238,6 +1335,31 @@ def create_apps(
     @admin_app.post("/api/admin/sessions/{session_id}/duplicate", dependencies=[Depends(admin_guard)])
     async def duplicate_session(session_id: str):
         result = admin_result(service.duplicate_session, session_id)
+        await runtime.notify_admins()
+        return result
+
+    @admin_app.post(
+        "/api/admin/sessions/{session_id}/restart",
+        dependencies=[Depends(admin_guard)],
+    )
+    async def restart_session(session_id: str):
+        # Never queue a board-changing action behind a slow Gmail batch: the
+        # desktop request could time out and then see a surprising late restart.
+        # The Headmaster can retry as soon as invitation delivery finishes.
+        if runtime.invitation_batch_lock.locked():
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Finish the current invitation batch before restarting "
+                    "a session"
+                ),
+            )
+        async with runtime.session_lifecycle_locks[session_id]:
+            result = await asyncio.to_thread(
+                admin_result, service.restart_session, session_id
+            )
+        for connection in runtime.connections.values():
+            connection.board_state = None
         await runtime.notify_admins()
         return result
 
@@ -2369,7 +2491,7 @@ def create_apps(
             credential = authorization.removeprefix("Bearer ").strip()
             connection_key = runtime.asset_credentials.get(token_hash(credential))
             connection = runtime.connections.get(connection_key or "")
-            if connection is None:
+            if connection is None or not connection.active:
                 raise PermissionError("This asset credential is no longer active")
             path, media_type = service.resolve_player_asset(
                 connection.session_id,
@@ -2443,6 +2565,12 @@ def create_apps(
             "asset_credential": asset_credential,
         })
 
+        def connection_is_current() -> bool:
+            return (
+                connection.active
+                and runtime.connections.get(connection_key) is connection
+            )
+
         async def bootstrap_connection() -> None:
             # The receive loop starts immediately, so a disconnect revokes the
             # credential even while a large private sheet is being prepared.
@@ -2450,7 +2578,11 @@ def create_apps(
             # sheet path is now cached and no longer expands every possible
             # teaching target, so it completes quickly without blocking on
             # unrelated characters.
+            if not connection_is_current():
+                return
             await runtime.send_character_sheet(connection, force=True)
+            if not connection_is_current():
+                return
             await websocket.send_json({
                 "v": 1,
                 "type": "chat_history",
@@ -2461,6 +2593,8 @@ def create_apps(
                     for item in list((session or {}).get("chat", []))[-100:]
                 ],
             })
+            if not connection_is_current():
+                return
             await runtime.chat(
                 "system",
                 "Game Board",
@@ -2468,9 +2602,16 @@ def create_apps(
                 f"{identity['name']} is here!",
                 identity["session_id"],
                 notify_admins=False,
+                connection=connection,
             )
+            if not connection_is_current():
+                return
             await runtime.send_board_snapshot(connection)
+            if not connection_is_current():
+                return
             await runtime.send_battle_snapshot(connection)
+            if not connection_is_current():
+                return
             await runtime.notify_admins()
 
         bootstrap_task = asyncio.create_task(bootstrap_connection())
@@ -2481,6 +2622,8 @@ def create_apps(
             await bootstrap_task
             while True:
                 await asyncio.sleep(5)
+                if not connection_is_current():
+                    return
                 if connection.heartbeats:
                     connection.missed += 1
                 if connection.missed >= 3:
@@ -2495,6 +2638,12 @@ def create_apps(
         try:
             while True:
                 message = await websocket.receive_json()
+                if not connection_is_current():
+                    try:
+                        await websocket.close(code=4003)
+                    except Exception:
+                        pass
+                    return
                 if not isinstance(message, dict) or message.get("v") != 1:
                     await websocket.send_json({"v": 1, "type": "server_error", "message": "Invalid message envelope"})
                     continue
@@ -2535,6 +2684,7 @@ def create_apps(
                         await runtime.chat(
                             connection.contact_id, connection.name, "player", message["message"],
                             connection.session_id,
+                            connection=connection,
                         )
                     except (PermissionError, ValueError) as error:
                         await websocket.send_json({
@@ -2559,13 +2709,15 @@ def create_apps(
                     connection.roll_events.append(now)
                     try:
                         if message.get("type") == "recipe_attempt_request":
-                            result = await asyncio.to_thread(
+                            result = await runtime.run_connection_operation(
+                                connection,
                                 service.attempt_character_recipe,
                                 connection.session_id, connection.contact_id,
                                 str(message.get("target_id", ""))[:120],
                             )
                         else:
-                            result = await asyncio.to_thread(
+                            result = await runtime.run_connection_operation(
+                                connection,
                                 service.roll_character_action,
                                 connection.session_id, connection.contact_id,
                                 str(message.get("roll_type", ""))[:30],
@@ -2592,6 +2744,7 @@ def create_apps(
                             result["text"],
                             connection.session_id,
                             result,
+                            connection=connection,
                         )
                         if str(message.get("roll_type", "")).casefold() in {
                             "spell", "proficiency", "item", "item_action", "potion"
@@ -2614,7 +2767,8 @@ def create_apps(
                     try:
                         if not connection.character_id:
                             raise PermissionError("A linked character is required to teach")
-                        options = await asyncio.to_thread(
+                        options = await runtime.run_connection_operation(
+                            connection,
                             service.teaching_options,
                             connection.session_id,
                             str(connection.character_id),
@@ -2673,6 +2827,7 @@ def create_apps(
                                     str(roll.get("text") or "A Flying check was made."),
                                     connection.session_id,
                                     roll,
+                                    connection=connection,
                                 )
                             await websocket.send_json({
                                 "v": 1,
@@ -2694,6 +2849,7 @@ def create_apps(
                             connection.contact_id, connection.name, "player",
                             str(result.get("text") or "An item was used."),
                             connection.session_id, result,
+                            connection=connection,
                         )
                         await runtime.broadcast_character_sheets(connection.session_id)
                     except (KeyError, PermissionError, RuntimeError, TypeError, ValueError) as error:
@@ -2751,6 +2907,7 @@ def create_apps(
                         await runtime.chat(
                             connection.contact_id, connection.name, "player",
                             result["text"], connection.session_id, result,
+                            connection=connection,
                         )
                         await websocket.send_json({
                             "v": 1, "type": str(result.get("kind") or "region_search_result"),
@@ -2771,6 +2928,7 @@ def create_apps(
                         await runtime.chat(
                             connection.contact_id, connection.name, "player",
                             result["text"], connection.session_id, result,
+                            connection=connection,
                         )
                         await websocket.send_json({
                             "v": 1, "type": "shop_purchase_result", "result": result,
@@ -2818,6 +2976,7 @@ def create_apps(
                             result["text"],
                             connection.session_id,
                             result,
+                            connection=connection,
                         )
                         await websocket.send_json({
                             "v": 1, "type": "creature_harvest_result",
@@ -2886,7 +3045,8 @@ def create_apps(
                             await runtime.broadcast_move_preview(
                                 connection.session_id, person_id, map_id, x, y,
                             )
-                            placement = await asyncio.to_thread(
+                            placement = await runtime.run_connection_operation(
+                                connection,
                                 service.move_person,
                                 connection.session_id, person_id, map_id, x, y,
                             )
@@ -2961,10 +3121,19 @@ def create_apps(
         except Exception:
             pass
         finally:
+            connection.active = False
+            runtime.asset_credentials.pop(asset_credential_hash, None)
             heartbeat_task.cancel()
             bootstrap_task.cancel()
-            runtime.connections.pop(connection_key, None)
-            runtime.asset_credentials.pop(asset_credential_hash, None)
+            await asyncio.gather(
+                heartbeat_task,
+                bootstrap_task,
+                return_exceptions=True,
+            )
+            # A cancelled to_thread waiter leaves its worker running. Keep the
+            # connection discoverable by End until every admitted operation's
+            # completion callback has released this barrier.
+            await connection.operations_idle.wait()
             if not connection.persisted:
                 service.mark_disconnected(
                     connection.request_id,
@@ -2972,6 +3141,9 @@ def create_apps(
                     connection.latency_total_ms,
                     connection.latency_samples,
                 )
+                connection.persisted = True
+            if runtime.connections.get(connection_key) is connection:
+                runtime.connections.pop(connection_key, None)
             await runtime.notify_admins()
 
     return admin_app, player_app, runtime

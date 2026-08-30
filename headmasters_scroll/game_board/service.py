@@ -2104,6 +2104,21 @@ class GameBoardService:
             request.pop("poll_hash", None)
         return view
 
+    @staticmethod
+    def _public_archived_session(
+        summary: dict[str, Any], *, restartable: bool = False
+    ) -> dict[str, Any]:
+        """Return a redacted archive row without private restart credentials."""
+
+        view = deepcopy(summary)
+        view["archived"] = True
+        view["status"] = str(summary.get("reason") or "ended")
+        view["pending"] = []
+        view["chat"] = []
+        view["roster"] = []
+        view["restartable"] = bool(restartable)
+        return view
+
     def sessions_view(self) -> list[dict[str, Any]]:
         with self._lock:
             wrapper = self.repository.active()
@@ -2113,18 +2128,35 @@ class GameBoardService:
         """Return ended sessions for management, never as board contexts."""
 
         with self._lock:
+            wrapper = self.repository.active()
+            active_ids = {
+                str(session.get("id") or "")
+                for session in wrapper.get("sessions", [])
+            }
+            now = utc_now()
+            restartable_ids = set()
+            for entry in wrapper.get("restartable_sessions", []):
+                session = entry.get("session") if isinstance(entry, dict) else None
+                if not isinstance(session, dict):
+                    continue
+                try:
+                    if parse_utc(str(session.get("expires_at") or "")) > now:
+                        restartable_ids.add(str(session.get("id") or ""))
+                except (TypeError, ValueError):
+                    continue
             summaries = self.repository.summaries().get("sessions", [])
             result = []
             for summary in reversed(summaries):
-                if not summary.get("campaign_id"):
+                session_id = str(summary.get("id") or "")
+                if not summary.get("campaign_id") or session_id in active_ids:
                     continue
-                view = deepcopy(summary)
-                view["archived"] = True
-                view["status"] = str(summary.get("reason") or "ended")
-                view["pending"] = []
-                view["chat"] = []
-                view["roster"] = []
-                result.append(view)
+                result.append(self._public_archived_session(
+                    summary,
+                    restartable=(
+                        str(summary.get("reason") or "") == "ended"
+                        and session_id in restartable_ids
+                    ),
+                ))
             return result
 
     def board_session_id(self) -> str | None:
@@ -2376,6 +2408,98 @@ class GameBoardService:
             original.get("campaign_id"),
         )
 
+    def restart_session(self, session_id: str) -> dict[str, Any]:
+        """Restore a manually ended room while its original deadline is future."""
+
+        with self._lock:
+            wrapper = self.repository.active()
+            if any(
+                item.get("id") == session_id
+                for item in wrapper.get("sessions", [])
+            ):
+                raise RuntimeError("That session is already live")
+            entry = next(
+                (
+                    item for item in wrapper.get("restartable_sessions", [])
+                    if isinstance(item, dict)
+                    and isinstance(item.get("session"), dict)
+                    and item["session"].get("id") == session_id
+                ),
+                None,
+            )
+            if entry is None:
+                archived = any(
+                    item.get("id") == session_id
+                    for item in self.repository.summaries().get("sessions", [])
+                )
+                if archived:
+                    raise RuntimeError(
+                        "That ended session can no longer be restarted"
+                    )
+                raise KeyError("Unknown session")
+            restored = deepcopy(entry["session"])
+            try:
+                deadline = parse_utc(str(restored.get("expires_at") or ""))
+                if deadline <= utc_now():
+                    raise RuntimeError("That session has expired")
+            except (TypeError, ValueError) as error:
+                raise RuntimeError("That session has an invalid end time") from error
+            restored["status"] = "active"
+            restored["pending"] = []
+            restored["restarted_at"] = iso_utc(utc_now())
+            restored["restart_count"] = int(restored.get("restart_count", 0) or 0) + 1
+            campaign = self.campaign_repository.get(
+                str(restored.get("campaign_id") or "")
+            )
+            restored["game_datetime"] = normalize_game_datetime(
+                campaign.get("game_state", {}).get("current_game_datetime"),
+                campaign["game_world_start_date"],
+            )
+            # Campaign hydration can involve a sizeable data file. Do not
+            # reactivate a room that crossed its deadline during that read.
+            if deadline <= utc_now():
+                raise RuntimeError("That session has expired")
+            wrapper["restartable_sessions"] = [
+                item for item in wrapper.get("restartable_sessions", [])
+                if not (
+                    isinstance(item, dict)
+                    and isinstance(item.get("session"), dict)
+                    and item["session"].get("id") == session_id
+                )
+            ]
+            wrapper["sessions"].append(restored)
+            wrapper["board_session_id"] = session_id
+            self._expiring_session_deadlines.pop(session_id, None)
+            self.repository.save_active(wrapper)
+            return self._public_session(restored)
+
+    def purge_expired_restartable_sessions(
+        self, now: datetime | None = None
+    ) -> int:
+        """Discard private restart credentials once their deadline passes."""
+
+        checked_at = now or utc_now()
+        with self._lock:
+            wrapper = self.repository.active()
+            retained = []
+            for entry in wrapper.get("restartable_sessions", []):
+                session = entry.get("session") if isinstance(entry, dict) else None
+                try:
+                    keep = (
+                        isinstance(session, dict)
+                        and parse_utc(str(session.get("expires_at") or ""))
+                        > checked_at
+                    )
+                except (TypeError, ValueError):
+                    keep = False
+                if keep:
+                    retained.append(entry)
+            removed = len(wrapper.get("restartable_sessions", [])) - len(retained)
+            if removed:
+                wrapper["restartable_sessions"] = retained
+                self.repository.save_active(wrapper)
+            return removed
+
     def delete_session(self, session_id: str) -> dict[str, Any]:
         with self._lock:
             wrapper = self.repository.active()
@@ -2393,6 +2517,18 @@ class GameBoardService:
                 ]
                 if wrapper.get("board_session_id") == session_id:
                     wrapper["board_session_id"] = None
+                # A restarted room keeps its redacted history row while live.
+                # Permanent deletion must remove that row as well.
+                summaries = self.repository.summaries()
+                retained_summaries = [
+                    item for item in summaries.get("sessions", [])
+                    if item.get("id") != session_id
+                ]
+                if len(retained_summaries) != len(
+                    summaries.get("sessions", [])
+                ):
+                    summaries["sessions"] = retained_summaries
+                    self.repository.save_summaries(summaries)
                 self._drop_tickets_for_session(session_id)
                 self.repository.save_active(wrapper)
                 return self._public_session(session)
@@ -2409,13 +2545,24 @@ class GameBoardService:
             )
             if archived is None:
                 raise KeyError("Unknown session")
+            restartable_before = len(wrapper.get("restartable_sessions", []))
+            wrapper["restartable_sessions"] = [
+                item for item in wrapper.get("restartable_sessions", [])
+                if not (
+                    isinstance(item, dict)
+                    and isinstance(item.get("session"), dict)
+                    and item["session"].get("id") == session_id
+                )
+            ]
+            if len(wrapper["restartable_sessions"]) != restartable_before:
+                self.repository.save_active(wrapper)
             summaries["sessions"] = [
                 item for item in summaries["sessions"]
                 if item.get("id") != session_id
             ]
             self._drop_tickets_for_session(session_id)
             self.repository.save_summaries(summaries)
-            return self._public_session(archived)
+            return self._public_archived_session(archived)
 
     def remove_player(self, session_id: str, contact_id: str) -> dict[str, Any]:
         with self._lock:
@@ -6156,7 +6303,18 @@ class GameBoardService:
         session: dict[str, Any],
         reason: str,
     ) -> dict[str, Any]:
-        ended_at = iso_utc(utc_now())
+        ended_now = utc_now()
+        ended_at = iso_utc(ended_now)
+        try:
+            restartable = (
+                reason == "ended"
+                and parse_utc(session["expires_at"]) > ended_now
+            )
+        except (KeyError, TypeError, ValueError):
+            restartable = False
+        # One-time tickets must not survive even if an archive write later
+        # fails and the durable live record remains available for retry.
+        self._drop_tickets_for_session(session["id"])
         summary = {
             "id": session["id"], "title": session["title"], "created_at": session["created_at"],
             "campaign_id": session.get("campaign_id"),
@@ -6178,16 +6336,40 @@ class GameBoardService:
             ],
         }
         summaries = self.repository.summaries()
+        summaries["sessions"] = [
+            item for item in summaries.get("sessions", [])
+            if item.get("id") != session["id"]
+        ]
         summaries["sessions"].append(summary)
         self.repository.save_summaries(summaries)
+        wrapper.setdefault("restartable_sessions", [])
+        wrapper["restartable_sessions"] = [
+            item for item in wrapper["restartable_sessions"]
+            if not (
+                isinstance(item, dict)
+                and isinstance(item.get("session"), dict)
+                and item["session"].get("id") == session["id"]
+            )
+        ]
+        if restartable:
+            restart_session = deepcopy(session)
+            # Admission polls and one-time tickets are deliberately not
+            # restartable.  The durable invitation hash remains in the roster,
+            # so the original link creates a fresh approval request.
+            restart_session["pending"] = []
+            wrapper["restartable_sessions"].append({
+                "ended_at": ended_at,
+                "session": restart_session,
+            })
         wrapper["sessions"] = [
             item for item in wrapper["sessions"] if item["id"] != session["id"]
         ]
         if wrapper.get("board_session_id") == session["id"]:
             wrapper["board_session_id"] = None
         self.repository.save_active(wrapper)
-        self._drop_tickets_for_session(session["id"])
-        return summary
+        return self._public_archived_session(
+            summary, restartable=restartable
+        )
 
     @staticmethod
     def connection_quality(latency_ms: float | None, missed: int, connected: bool = True) -> str:

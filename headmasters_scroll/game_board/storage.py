@@ -99,6 +99,33 @@ def _active(value: dict[str, Any]) -> None:
             raise ValueError("Every active session requires an ID")
         if len(session_ids) != len(set(session_ids)):
             raise ValueError("Active session IDs must be unique")
+        restartable_sessions = value.get("restartable_sessions", [])
+        if not isinstance(restartable_sessions, list):
+            raise ValueError(
+                "active-session.json restartable_sessions must be a list"
+            )
+        restartable_ids = []
+        for entry in restartable_sessions:
+            if not isinstance(entry, dict) or not isinstance(
+                entry.get("session"), dict
+            ):
+                raise ValueError(
+                    "Every restartable session requires a private session object"
+                )
+            session_id = entry["session"].get("id")
+            if not isinstance(session_id, str) or not session_id:
+                raise ValueError("Every restartable session requires an ID")
+            if not isinstance(entry.get("ended_at"), str):
+                raise ValueError(
+                    "Every restartable session requires an ended_at timestamp"
+                )
+            restartable_ids.append(session_id)
+        if len(restartable_ids) != len(set(restartable_ids)):
+            raise ValueError("Restartable session IDs must be unique")
+        if set(session_ids).intersection(restartable_ids):
+            raise ValueError(
+                "A session cannot be live and restartable at the same time"
+            )
         board_session_id = value.get("board_session_id")
         if board_session_id is not None and not isinstance(board_session_id, str):
             raise ValueError("active-session.json board_session_id must be text or null")
@@ -153,7 +180,12 @@ class GameBoardRepository:
     def active(self) -> dict[str, Any]:
         value = self.store.load(
             "active-session.json",
-            {"schema_version": 1, "sessions": [], "board_session_id": None},
+            {
+                "schema_version": 1,
+                "sessions": [],
+                "board_session_id": None,
+                "restartable_sessions": [],
+            },
             _active,
         )
         changed = False
@@ -163,7 +195,11 @@ class GameBoardRepository:
                 "schema_version": 1,
                 "sessions": [session] if isinstance(session, dict) else [],
                 "board_session_id": None,
+                "restartable_sessions": [],
             }
+            changed = True
+        if "restartable_sessions" not in value:
+            value["restartable_sessions"] = []
             changed = True
         if "board_session_id" not in value:
             # A legacy remembered/live session is not proof that the

@@ -99,6 +99,9 @@ def _active(value: dict[str, Any]) -> None:
             raise ValueError("Every active session requires an ID")
         if len(session_ids) != len(set(session_ids)):
             raise ValueError("Active session IDs must be unique")
+        board_session_id = value.get("board_session_id")
+        if board_session_id is not None and not isinstance(board_session_id, str):
+            raise ValueError("active-session.json board_session_id must be text or null")
         return
     session = value.get("session")
     if session is not None and not isinstance(session, dict):
@@ -149,14 +152,33 @@ class GameBoardRepository:
 
     def active(self) -> dict[str, Any]:
         value = self.store.load(
-            "active-session.json", {"schema_version": 1, "sessions": []}, _active
+            "active-session.json",
+            {"schema_version": 1, "sessions": [], "board_session_id": None},
+            _active,
         )
+        changed = False
         if "sessions" not in value:
             session = value.get("session")
             value = {
                 "schema_version": 1,
                 "sessions": [session] if isinstance(session, dict) else [],
+                "board_session_id": None,
             }
+            changed = True
+        if "board_session_id" not in value:
+            # A legacy remembered/live session is not proof that the
+            # Headmaster intentionally selected it as the current board.
+            # Start inactive and require Create Session or an explicit select.
+            value["board_session_id"] = None
+            changed = True
+        session_ids = {
+            str(session.get("id", "")) for session in value.get("sessions", [])
+        }
+        if value.get("board_session_id") not in session_ids:
+            if value.get("board_session_id") is not None:
+                changed = True
+            value["board_session_id"] = None
+        if changed:
             self.save_active(value)
         return value
 

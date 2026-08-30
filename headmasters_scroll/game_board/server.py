@@ -108,6 +108,11 @@ class SessionBody(BaseModel):
     contact_ids: list[str] = Field(min_length=1, max_length=9)
 
 
+class SessionExpirationBody(BaseModel):
+    expires_at: str = Field(min_length=1, max_length=64)
+    expected_expires_at: str = Field(min_length=1, max_length=64)
+
+
 class AdmissionBody(BaseModel):
     invite_token: str = Field(min_length=20, max_length=256)
 
@@ -521,25 +526,35 @@ class GameBoardRuntime:
                 generation = self._state_generation
             sessions = self.service.sessions_view()
             archived_sessions = self.service.archived_sessions_view()
+            board_session = self.service.board_session_view()
+            board_session_id = (
+                str(board_session.get("id", "")) if board_session else None
+            )
             boards = {}
             battles = {}
-            for session in sessions + archived_sessions:
+            if board_session_id:
                 try:
-                    boards[session["id"]] = self.service.board_snapshot(
-                        session["id"],
+                    boards[board_session_id] = self.service.board_snapshot(
+                        board_session_id,
                         for_players=False,
                     )
                 except (KeyError, ValueError):
-                    continue
-                if session.get("campaign_id"):
+                    board_session = None
+                    board_session_id = None
+                    boards = {}
+                if board_session and board_session.get("campaign_id"):
                     try:
-                        battles[session["id"]] = self.service.battle_snapshot(session["id"])
+                        battles[board_session_id] = self.service.battle_snapshot(
+                            board_session_id
+                        )
                     except (KeyError, ValueError):
                         pass
-            try:
-                location_maps = self.service.location_maps()
-            except (KeyError, ValueError):
-                location_maps = []
+            location_maps = []
+            if board_session_id:
+                try:
+                    location_maps = self.service.location_maps(board_session_id)
+                except (KeyError, ValueError):
+                    location_maps = []
             result = {
                 "contacts": self.service.list_contacts(),
                 "characters": self.service.list_characters(),
@@ -547,7 +562,8 @@ class GameBoardRuntime:
                 "settings": self.service.settings(),
                 "sessions": sessions,
                 "archived_sessions": archived_sessions,
-                "session": sessions[0] if sessions else None,
+                "board_session_id": board_session_id,
+                "session": board_session,
                 "connections": [item.public(self.service) for item in self.connections.values()],
                 "boards": boards,
                 "battles": battles,
@@ -629,7 +645,73 @@ class GameBoardRuntime:
             return_exceptions=True,
         )
 
-    async def announce(self, text: str, session_id: str | None = None) -> str:
+    async def expire_due_sessions(self) -> int:
+        """Expire every due session independently so one bad record cannot kill the loop."""
+
+        try:
+            sessions = self.service.sessions_view()
+        except Exception:
+            return 0
+        expired_count = 0
+        checked_at = utc_now()
+        for session in sessions:
+            session_id = str(session.get("id", ""))
+            try:
+                expires_at = str(session["expires_at"])
+                if parse_utc(expires_at) > checked_at:
+                    continue
+                claimed = self.service.begin_session_expiration(
+                    session_id, expires_at, now=checked_at
+                )
+            except Exception:
+                continue
+            if not claimed:
+                continue
+            try:
+                await self.disconnect_session(
+                    session_id,
+                    "session_expired",
+                    "The game session has expired.",
+                )
+                summary = self.service.finish_session_expiration(
+                    session_id, expires_at
+                )
+            except Exception:
+                try:
+                    self.service.cancel_session_expiration(session_id)
+                except Exception:
+                    pass
+                continue
+            if summary is None:
+                try:
+                    self.service.cancel_session_expiration(session_id)
+                except Exception:
+                    pass
+                continue
+            expired_count += 1
+        if expired_count:
+            try:
+                await self.notify_admins()
+            except Exception:
+                pass
+        return expired_count
+
+    async def announce(
+        self,
+        text: str,
+        session_id: str | None = None,
+        *,
+        require_board_session: bool = False,
+    ) -> str:
+        if require_board_session:
+            await asyncio.to_thread(
+                self.service.run_for_board_session,
+                str(session_id or ""),
+                self.service.increment_announcements,
+                session_id,
+            )
+        else:
+            self.service.increment_announcements(session_id)
         self._announcement_id += 1
         announcement_id = f"announcement-{self._announcement_id}"
         message = {"v": 1, "type": "announcement", "id": announcement_id, "message": text}
@@ -641,7 +723,6 @@ class GameBoardRuntime:
             ),
             return_exceptions=True,
         )
-        self.service.increment_announcements(session_id)
         return announcement_id
 
     async def chat(
@@ -650,11 +731,23 @@ class GameBoardRuntime:
         activity: dict[str, Any] | None = None,
         *,
         notify_admins: bool = True,
+        require_board_session: bool = False,
     ) -> dict[str, Any]:
-        chat = await asyncio.to_thread(
-            self.service.post_chat,
+        arguments = (
             sender_id, sender_name, sender_role, text, session_id, activity,
         )
+        if require_board_session:
+            chat = await asyncio.to_thread(
+                self.service.run_for_board_session,
+                str(session_id or ""),
+                self.service.post_chat,
+                *arguments,
+            )
+        else:
+            chat = await asyncio.to_thread(
+                self.service.post_chat,
+                *arguments,
+            )
         creature_activity = isinstance(activity, dict) and activity.get(
             "activity_type"
         ) in {"creature_action", "creature_harvest"}
@@ -924,35 +1017,26 @@ def create_apps(
     async def expiration_loop():
         while True:
             await asyncio.sleep(1)
-            expired = [
-                session for session in service.sessions_view()
-                if parse_utc(session["expires_at"]) <= utc_now()
-            ]
-            for session in expired:
-                await runtime.disconnect_session(
-                    session["id"], "session_expired", "The game session has expired."
-                )
-                try:
-                    service.end_session("expired", session["id"])
-                except ValueError:
-                    pass
-            if expired:
-                await runtime.notify_admins()
-            if runtime.world_changed():
-                sessions = service.sessions_view()
-                await asyncio.gather(
-                    *(
-                        coroutine
-                        for session in sessions
-                        for coroutine in (
-                            runtime.broadcast_board(session["id"]),
-                            runtime.broadcast_character_sheets(session["id"]),
-                        )
-                    ),
-                    return_exceptions=True,
-                )
-                if not sessions:
-                    await runtime.notify_admins()
+            await runtime.expire_due_sessions()
+            try:
+                if runtime.world_changed():
+                    sessions = service.sessions_view()
+                    await asyncio.gather(
+                        *(
+                            coroutine
+                            for session in sessions
+                            for coroutine in (
+                                runtime.broadcast_board(session["id"]),
+                                runtime.broadcast_character_sheets(session["id"]),
+                            )
+                        ),
+                        return_exceptions=True,
+                    )
+                    if not sessions:
+                        await runtime.notify_admins()
+            except Exception:
+                # A transient world/campaign read must not stop expiration.
+                continue
 
     @asynccontextmanager
     async def lifespan(_app):
@@ -980,8 +1064,31 @@ def create_apps(
         if x_admin_key != settings["admin_key"]:
             raise HTTPException(status_code=403, detail="Invalid dashboard key")
 
+    board_session_calls = {
+        "add_battle_actor", "add_battle_actors", "add_named_creature_to_battle",
+        "adjust_person_currency", "battle_actor_choices", "battle_combatant_sheet",
+        "battle_snapshot", "admin_region_search_options", "admin_search_region",
+        "create_battle", "create_board_faction",
+        "create_board_group", "create_quick_character", "creature_campaign_action",
+        "end_battle", "grant_board_control", "headmaster_creature_interaction",
+        "headmaster_roll_person_action", "place_campaign_creature",
+        "move_person", "place_person_on_map", "remove_battle_actor", "reorder_battle",
+        "roll_campaign_creature_action", "set_board_camera", "set_board_group",
+        "set_board_workspace", "set_campaign_creature_group", "set_game_datetime",
+        "set_map_presentation", "set_map_published", "set_map_settings",
+        "set_secret_revealed", "start_battle", "transport_person",
+        "teach_character", "teaching_options",
+        "update_battle_combatant", "update_battle_turn",
+        "update_board_faction_color", "update_campaign_creature",
+        "update_person_board", "update_person_campaign_action",
+    }
+
     def admin_result(callable_, *args, **kwargs):
         try:
+            if getattr(callable_, "__name__", "") in board_session_calls and args:
+                return service.run_for_board_session(
+                    str(args[0] or ""), callable_, *args, **kwargs
+                )
             return callable_(*args, **kwargs)
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
@@ -1102,6 +1209,33 @@ def create_apps(
         await runtime.notify_admins()
         return result
 
+    @admin_app.put(
+        "/api/admin/sessions/{session_id}/select",
+        dependencies=[Depends(admin_guard)],
+    )
+    async def select_board_session(session_id: str):
+        result = admin_result(service.select_board_session, session_id)
+        for connection in runtime.connections.values():
+            connection.board_state = None
+        await runtime.notify_admins()
+        return result
+
+    @admin_app.put(
+        "/api/admin/sessions/{session_id}/expiration",
+        dependencies=[Depends(admin_guard)],
+    )
+    async def update_session_expiration(
+        session_id: str, body: SessionExpirationBody
+    ):
+        result = admin_result(
+            service.update_session_expiration,
+            session_id,
+            body.expires_at,
+            body.expected_expires_at,
+        )
+        await runtime.notify_admins()
+        return result
+
     @admin_app.post("/api/admin/sessions/{session_id}/end", dependencies=[Depends(admin_guard)])
     async def end_selected_session(session_id: str):
         await runtime.disconnect_session(
@@ -1152,23 +1286,15 @@ def create_apps(
 
     @admin_app.post("/api/admin/board/move", dependencies=[Depends(admin_guard)])
     async def move_board_person(body: BoardMoveBody):
-        try:
-            result = await asyncio.to_thread(
-                service.move_person,
-                body.session_id,
-                body.person_id,
-                body.map_id,
-                body.x,
-                body.y,
-            )
-        except KeyError as error:
-            raise HTTPException(status_code=404, detail=str(error)) from error
-        except PermissionError as error:
-            raise HTTPException(status_code=403, detail=str(error)) from error
-        except ValueError as error:
-            raise HTTPException(status_code=400, detail=str(error)) from error
-        except RuntimeError as error:
-            raise HTTPException(status_code=409, detail=str(error)) from error
+        result = await asyncio.to_thread(
+            admin_result,
+            service.move_person,
+            body.session_id,
+            body.person_id,
+            body.map_id,
+            body.x,
+            body.y,
+        )
         runtime.invalidate_state()
         runtime.queue_board_broadcast(body.session_id)
         return result
@@ -1537,6 +1663,7 @@ def create_apps(
 
     @admin_app.post("/api/admin/board/move-preview", dependencies=[Depends(admin_guard)])
     async def preview_board_person(body: BoardMoveBody):
+        admin_result(service.require_board_session, body.session_id)
         await runtime.broadcast_move_preview(
             body.session_id,
             body.person_id,
@@ -1881,8 +2008,16 @@ def create_apps(
         elif action == "resume":
             admin_result(service.set_paused, False)
         elif action == "end":
-            await runtime.disconnect_all("session_expired", "The game session has ended.")
-            admin_result(service.end_session, "ended")
+            session_id = service.board_session_id()
+            if not session_id:
+                raise HTTPException(
+                    status_code=409,
+                    detail="There is no active board session",
+                )
+            await runtime.disconnect_session(
+                session_id, "session_expired", "The game session has ended."
+            )
+            admin_result(service.end_session, "ended", session_id)
         else:
             raise HTTPException(status_code=404, detail="Unknown session action")
         await runtime.notify_admins()
@@ -1890,21 +2025,48 @@ def create_apps(
 
     @admin_app.post("/api/admin/announcements", dependencies=[Depends(admin_guard)])
     async def announcement(body: AnnouncementBody):
+        session_id = body.session_id or service.board_session_id()
+        if not session_id:
+            raise HTTPException(status_code=409, detail="There is no active board session")
         try:
-            announcement_id = await runtime.announce(body.message.strip(), body.session_id)
+            announcement_id = await runtime.announce(
+                body.message.strip(),
+                session_id,
+                require_board_session=True,
+            )
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except PermissionError as error:
+            raise HTTPException(status_code=403, detail=str(error)) from error
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
+        except RuntimeError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
         await runtime.notify_admins()
         return {"id": announcement_id}
 
     @admin_app.post("/api/admin/chat", dependencies=[Depends(admin_guard)])
     async def headmaster_chat(body: ChatBody):
+        session_id = body.session_id or service.board_session_id()
+        if not session_id:
+            raise HTTPException(status_code=409, detail="There is no active board session")
         try:
             return await runtime.chat(
-                "headmaster", "Headmaster", "headmaster", body.message, body.session_id
+                "headmaster",
+                "Headmaster",
+                "headmaster",
+                body.message,
+                session_id,
+                require_board_session=True,
             )
-        except (PermissionError, ValueError) as error:
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except PermissionError as error:
+            raise HTTPException(status_code=403, detail=str(error)) from error
+        except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
+        except RuntimeError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
 
     @admin_app.post("/api/admin/teaching", dependencies=[Depends(admin_guard)])
     async def teach_character(body: TeachingBody):

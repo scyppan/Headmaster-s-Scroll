@@ -57,6 +57,39 @@ def default_campaign_person_state() -> dict[str, Any]:
     }
 
 
+def hydrate_campaign_person_board(
+    authored_board: Any,
+    campaign_state: Any = None,
+) -> dict[str, Any]:
+    """Build a board person from authored identity and campaign-only state.
+
+    ``world.json`` owns the reusable portrait asset, but its historical board
+    fields are not a campaign template.  Starting from the board defaults keeps
+    an absent (or compacted-away) campaign overlay unplaced and concealed from
+    legacy runtime presentation values.
+    """
+
+    from .board import default_person_board, normalize_person_board
+
+    authored = normalize_person_board(authored_board)
+    board = default_person_board()
+    board["portrait"] = deepcopy(authored.get("portrait"))
+    overlay = campaign_state if isinstance(campaign_state, dict) else {}
+    for field in (
+        "placement",
+        "visibility",
+        "display_mode",
+        "name_revealed",
+        "faction_revealed",
+        "faction_organization_id",
+        "label_offset",
+        "nameplate_scale",
+    ):
+        if field in overlay:
+            board[field] = deepcopy(overlay[field])
+    return normalize_person_board(board)
+
+
 def compact_campaign_person_overlays(
     value: Any,
     *,
@@ -464,6 +497,41 @@ def normalize_campaign_game_state(
     }
 
 
+def fresh_campaign_game_state(
+    game_world_start_date: str,
+    current_game_datetime: str | None = None,
+    *,
+    initialized: bool = False,
+) -> dict[str, Any]:
+    """Return an empty campaign-owned Game Board state.
+
+    Map definitions and portrait assets are hydrated from the authored world at
+    read time.  Runtime map presentation, actors, creatures, groups, battles,
+    and workspace selection must begin inside the campaign instead of being
+    copied from ``world.json`` or another campaign.
+    """
+
+    return normalize_campaign_game_state(
+        {
+            "initialized": initialized,
+            "current_game_datetime": (
+                current_game_datetime or f"{game_world_start_date}T08:00"
+            ),
+            "loaded_map_ids": [],
+            "active_map_id": "",
+            "player_active_map_ids": {},
+            "maps": {},
+            "people": {},
+            "creatures": {},
+            "creature_counters": {},
+            "groups": [],
+            "region_interactions": {},
+            "battles": {},
+        },
+        game_world_start_date,
+    )
+
+
 def _normalize_campaign_inventory(value: Any) -> list[dict[str, Any]]:
     raw_stacks = value if isinstance(value, list) else []
     stacks: list[dict[str, Any]] = []
@@ -772,8 +840,6 @@ class CampaignRepository:
         world_document: dict[str, Any],
         current_game_datetime: str | None = None,
     ) -> dict[str, Any]:
-        from .board import DEFAULT_MAP_TOKEN_SCALE, WorldBoardRepository, normalize_person_board
-
         session = self.store.load("campaign.json")
         campaign = next(
             (item for item in session.data["campaigns"] if item.get("record_id") == campaign_id),
@@ -785,66 +851,46 @@ class CampaignRepository:
         if normalized["game_state"]["initialized"]:
             return normalized
 
-        maps = WorldBoardRepository._location_maps(world_document)
-        assigned_ids = {item["record_id"] for item in maps}
-        map_states = {
-            item["record_id"]: {
-                "players_published": bool(item.get("players_published", False)),
-                "obscurations": deepcopy(item.get("obscurations", []) or []),
-                "obscuration_preview_opacity": float(item.get("obscuration_preview_opacity", 0.35)),
-                "obscuration_preview_color": str(item.get("obscuration_preview_color", "#ff0000") or "#ff0000"),
-                "token_scale": DEFAULT_MAP_TOKEN_SCALE,
-                "start_point": deepcopy(item.get("start_point")),
-                "headmaster_camera": normalize_board_camera(None),
-                "player_cameras": {},
-                "zoom_profile": normalize_zoom_profile(None),
-            }
-            for item in maps
-        }
-        people = {}
-        occupied_map_ids: list[str] = []
-        for person in world_document.get("people", []):
-            if not isinstance(person, dict) or not person.get("record_id"):
-                continue
-            board = normalize_person_board(person.get("board"))
-            person_id = str(person["record_id"])
-            candidate = self._person_state(board)
-            people.update(compact_campaign_person_overlays({person_id: candidate}))
-            placement = board.get("placement")
-            if placement and placement["map_id"] in assigned_ids:
-                occupied_map_ids.append(placement["map_id"])
-        loaded = [item["record_id"] for item in maps if item.get("players_published")]
-        for map_id in occupied_map_ids:
-            if map_id not in loaded:
-                loaded.append(map_id)
-        state = {
-            "initialized": True,
-            "current_game_datetime": (
-                current_game_datetime
-                or normalized["game_state"]["current_game_datetime"]
-            ),
-            "loaded_map_ids": loaded,
-            "active_map_id": loaded[0] if loaded else "",
-            "player_active_map_ids": {},
-            "maps": map_states,
-            "people": people,
-            "creatures": deepcopy(normalized["game_state"].get("creatures", {})),
-            "creature_counters": deepcopy(
-                normalized["game_state"].get("creature_counters", {})
-            ),
-            "groups": deepcopy(world_document.get("board_groups", []) or []),
-            "region_interactions": deepcopy(
-                normalized["game_state"].get("region_interactions", {})
-            ),
-            "battles": deepcopy(normalized["game_state"].get("battles", {})),
-        }
-        campaign["game_state"] = normalize_campaign_game_state(
-            state, normalized["game_world_start_date"]
+        # The world document is deliberately not used as a runtime-state
+        # template.  The service hydrates its canonical map definitions and
+        # portraits separately when it renders this campaign.
+        del world_document
+        campaign["game_state"] = fresh_campaign_game_state(
+            normalized["game_world_start_date"],
+            current_game_datetime
+            or normalized["game_state"]["current_game_datetime"],
+            initialized=True,
         )
         campaign["last_updated"] = utc_now()
         outcome = self._save(session, "game-board")
         if not outcome.saved:
             raise RuntimeError("The campaign changed elsewhere; reload before saving")
+        return normalize_campaign(campaign)
+
+    def reset_game_state(self, campaign_id: str) -> dict[str, Any]:
+        """Reset exactly one campaign board while preserving its campaign clock."""
+
+        session = self.store.load("campaign.json")
+        campaign = next(
+            (
+                item for item in session.data["campaigns"]
+                if item.get("record_id") == campaign_id
+            ),
+            None,
+        )
+        if campaign is None:
+            raise KeyError("Unknown campaign")
+        normalized = normalize_campaign(campaign)
+        campaign["game_state"] = fresh_campaign_game_state(
+            normalized["game_world_start_date"],
+            normalized["game_state"]["current_game_datetime"],
+        )
+        campaign["last_updated"] = utc_now()
+        # Resetting one campaign must not compact or otherwise rewrite sibling
+        # campaign records.  The target state is already normalized and sparse.
+        outcome = self.store.save(session, "campaign-reset")
+        if not outcome.saved:
+            raise RuntimeError("The campaign changed elsewhere; reload before resetting")
         return normalize_campaign(campaign)
 
     def update_game_state(

@@ -34,6 +34,8 @@ from ..board import (
 from ..campaigns import (
     CampaignRepository,
     compact_campaign_person_overlays,
+    default_campaign_person_state,
+    hydrate_campaign_person_board,
     normalize_board_camera,
     normalize_zoom_profile,
 )
@@ -87,6 +89,19 @@ def iso_utc(value: datetime) -> str:
 
 def parse_utc(value: str) -> datetime:
     return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(timezone.utc)
+
+
+def parse_timezone_aware_utc(value: str, label: str) -> datetime:
+    raw = str(value or "").strip()
+    try:
+        parsed = datetime.fromisoformat(
+            raw[:-1] + "+00:00" if raw.endswith("Z") else raw
+        )
+    except ValueError as error:
+        raise ValueError(f"{label} must be an ISO 8601 date and time") from error
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise ValueError(f"{label} must include a timezone")
+    return parsed.astimezone(timezone.utc)
 
 
 def normalize_game_datetime(value: str | None, fallback_date: str) -> str:
@@ -150,6 +165,7 @@ class GameBoardService:
         self._character_sheet_cache: dict[tuple[Any, ...], dict[str, Any] | None] = {}
         self._tickets: dict[str, dict[str, Any]] = {}
         self._ticket_by_request: dict[str, str] = {}
+        self._expiring_session_deadlines: dict[str, str] = {}
         self._restore_for_reapproval()
 
     def world_fingerprint(self) -> tuple[int, int]:
@@ -1648,11 +1664,9 @@ class GameBoardService:
         people_state = state.get("people", {})
         for person in world.get("people", []):
             person_id = str(person.get("record_id", "") or "")
-            base = normalize_person_board(person.get("board"))
-            override = people_state.get(person_id)
-            if override:
-                base.update(deepcopy(override))
-            person["board"] = normalize_person_board(base)
+            person["board"] = hydrate_campaign_person_board(
+                person.get("board"), people_state.get(person_id)
+            )
         world["board_groups"] = deepcopy(state.get("groups", []))
         world["campaign_creatures"] = deepcopy(state.get("creatures", {}))
         world["campaign_creature_counters"] = deepcopy(
@@ -1966,8 +1980,9 @@ class GameBoardService:
                 "board_control_grants": {},
             }
             wrapper["sessions"].append(session)
+            wrapper["board_session_id"] = session["id"]
             self.repository.save_active(wrapper)
-            return self.session_view(session["id"])
+            return self._public_session(session)
 
     @staticmethod
     def _roster_entry(contact: dict[str, Any]) -> dict[str, Any]:
@@ -1992,9 +2007,9 @@ class GameBoardService:
     def _session(wrapper: dict[str, Any], session_id: str | None = None) -> dict[str, Any]:
         sessions = wrapper.get("sessions", [])
         if session_id is None:
-            if not sessions:
-                raise ValueError("There is no active session")
-            return sessions[0]
+            session_id = str(wrapper.get("board_session_id") or "")
+            if not session_id:
+                raise ValueError("There is no active board session")
         session = next((item for item in sessions if item.get("id") == session_id), None)
         if session is None:
             raise KeyError("Unknown session")
@@ -2018,7 +2033,6 @@ class GameBoardService:
         wrapper = self.repository.active()
         session = self._session(wrapper, session_id)
         if parse_utc(session["expires_at"]) <= utc_now():
-            self.end_session("expired", session["id"])
             raise ValueError("The session has expired")
         return wrapper, session
 
@@ -2037,7 +2051,7 @@ class GameBoardService:
             return [self._public_session(session) for session in wrapper.get("sessions", [])]
 
     def archived_sessions_view(self) -> list[dict[str, Any]]:
-        """Return ended sessions as campaign-board contexts, never as live sessions."""
+        """Return ended sessions for management, never as board contexts."""
 
         with self._lock:
             summaries = self.repository.summaries().get("sessions", [])
@@ -2054,30 +2068,235 @@ class GameBoardService:
                 result.append(view)
             return result
 
+    def board_session_id(self) -> str | None:
+        with self._lock:
+            return self.repository.active().get("board_session_id")
+
+    def board_session_view(self) -> dict[str, Any] | None:
+        with self._lock:
+            wrapper = self.repository.active()
+            session_id = str(wrapper.get("board_session_id") or "")
+            if not session_id:
+                return None
+            session = next(
+                (
+                    item for item in wrapper.get("sessions", [])
+                    if item.get("id") == session_id
+                ),
+                None,
+            )
+            if session is None:
+                return None
+            try:
+                if parse_utc(session["expires_at"]) <= utc_now():
+                    return None
+            except (KeyError, TypeError, ValueError):
+                return None
+            return self._public_session(session)
+
+    def select_board_session(self, session_id: str) -> dict[str, Any]:
+        with self._lock:
+            wrapper = self.repository.active()
+            session = next(
+                (
+                    item for item in wrapper.get("sessions", [])
+                    if item.get("id") == session_id
+                ),
+                None,
+            )
+            if session is None:
+                archived = any(
+                    item.get("id") == session_id
+                    for item in self.repository.summaries().get("sessions", [])
+                )
+                if archived:
+                    raise PermissionError(
+                        "Archived sessions cannot drive the game board"
+                    )
+                raise KeyError("Unknown session")
+            if parse_utc(session["expires_at"]) <= utc_now():
+                raise ValueError("The session has expired")
+            wrapper["board_session_id"] = session_id
+            self.repository.save_active(wrapper)
+            return self._public_session(session)
+
+    def update_session_expiration(
+        self,
+        session_id: str,
+        expires_at: str,
+        expected_expires_at: str,
+    ) -> dict[str, Any]:
+        requested = parse_timezone_aware_utc(expires_at, "Session end")
+        expected = parse_timezone_aware_utc(
+            expected_expires_at, "Expected session end"
+        )
+        now = utc_now()
+        if requested <= now:
+            raise ValueError("Session end must be in the future")
+        with self._lock:
+            wrapper = self.repository.active()
+            session = next(
+                (
+                    item for item in wrapper.get("sessions", [])
+                    if item.get("id") == session_id
+                ),
+                None,
+            )
+            if session is None:
+                archived = any(
+                    item.get("id") == session_id
+                    for item in self.repository.summaries().get("sessions", [])
+                )
+                if archived:
+                    raise PermissionError("Archived sessions cannot be extended")
+                raise KeyError("Unknown session")
+            current = parse_timezone_aware_utc(
+                str(session.get("expires_at") or ""), "Current session end"
+            )
+            if session_id in self._expiring_session_deadlines:
+                raise RuntimeError("The session is already expiring")
+            if current <= now:
+                raise RuntimeError("The session is already expiring")
+            if current != expected:
+                raise RuntimeError(
+                    "The session end changed; refresh before extending it"
+                )
+            if requested <= current:
+                raise ValueError(
+                    "Session end must be later than the current session end"
+                )
+            local = requested.astimezone(
+                ZoneInfo(self.repository.settings()["timezone"])
+            )
+            session["expires_at"] = iso_utc(requested)
+            session["game_day"] = local.date().isoformat()
+            session["expiration_time"] = local.strftime("%H:%M")
+            self.repository.save_active(wrapper)
+            return self._public_session(session)
+
+    def begin_session_expiration(
+        self,
+        session_id: str,
+        expected_expires_at: str,
+        *,
+        now: datetime | None = None,
+    ) -> bool:
+        """Claim a due deadline so it cannot be extended during disconnection."""
+
+        expected = parse_timezone_aware_utc(
+            expected_expires_at, "Expected session end"
+        )
+        checked_at = (now or utc_now()).astimezone(timezone.utc)
+        with self._lock:
+            wrapper = self.repository.active()
+            session = next(
+                (
+                    item for item in wrapper.get("sessions", [])
+                    if item.get("id") == session_id
+                ),
+                None,
+            )
+            if session is None:
+                return False
+            current = parse_timezone_aware_utc(
+                str(session.get("expires_at") or ""), "Current session end"
+            )
+            if current != expected or current > checked_at:
+                return False
+            canonical = iso_utc(current)
+            prior = self._expiring_session_deadlines.get(session_id)
+            if prior is not None:
+                return False
+            self._expiring_session_deadlines[session_id] = canonical
+            return True
+
+    def finish_session_expiration(
+        self,
+        session_id: str,
+        expected_expires_at: str,
+    ) -> dict[str, Any] | None:
+        expected = parse_timezone_aware_utc(
+            expected_expires_at, "Expected session end"
+        )
+        canonical = iso_utc(expected)
+        with self._lock:
+            if self._expiring_session_deadlines.get(session_id) != canonical:
+                return None
+            try:
+                wrapper = self.repository.active()
+                session = next(
+                    (
+                        item for item in wrapper.get("sessions", [])
+                        if item.get("id") == session_id
+                    ),
+                    None,
+                )
+                if session is None:
+                    return None
+                current = parse_timezone_aware_utc(
+                    str(session.get("expires_at") or ""), "Current session end"
+                )
+                if current != expected:
+                    return None
+                return self._end_session_locked(wrapper, session, "expired")
+            finally:
+                self._expiring_session_deadlines.pop(session_id, None)
+
+    def cancel_session_expiration(self, session_id: str) -> None:
+        with self._lock:
+            self._expiring_session_deadlines.pop(session_id, None)
+
     def _board_context(self, session_id: str) -> dict[str, Any]:
-        """Resolve either a live session or its retained campaign summary."""
+        """Resolve a live session; retained summaries are never board contexts."""
 
         wrapper = self.repository.active()
         active = next(
             (item for item in wrapper.get("sessions", []) if item.get("id") == session_id),
             None,
         )
-        if active is not None:
-            return active
-        summary = next(
-            (
-                item for item in reversed(self.repository.summaries().get("sessions", []))
-                if item.get("id") == session_id and item.get("campaign_id")
-            ),
-            None,
-        )
-        if summary is None:
+        if active is None:
+            archived = any(
+                item.get("id") == session_id
+                for item in self.repository.summaries().get("sessions", [])
+            )
+            if archived:
+                raise PermissionError(
+                    "Archived sessions cannot drive or modify the game board"
+                )
             raise KeyError("Unknown session")
-        return summary
+        if parse_utc(active["expires_at"]) <= utc_now():
+            raise ValueError("The session has expired")
+        return active
+
+    def require_board_session(self, session_id: str) -> dict[str, Any]:
+        """Reject an admin write prepared for a board that is no longer selected."""
+
+        with self._lock:
+            wrapper = self.repository.active()
+            if wrapper.get("board_session_id") != session_id:
+                raise RuntimeError(
+                    "The active game board session changed; refresh and try again"
+                )
+            return self._public_session(self._board_context(session_id))
+
+    def run_for_board_session(
+        self,
+        session_id: str,
+        action: Any,
+        *args: Any,
+        **kwargs: Any,
+    ) -> Any:
+        """Run an admin board operation atomically with its selected-session check."""
+
+        with self._lock:
+            self.require_board_session(session_id)
+            return action(*args, **kwargs)
 
     def session_view(self, session_id: str | None = None) -> dict[str, Any] | None:
         with self._lock:
             wrapper = self.repository.active()
+            if session_id is None and not wrapper.get("board_session_id"):
+                return None
             if not wrapper.get("sessions"):
                 return None
             return self._public_session(self._session(wrapper, session_id))
@@ -2113,6 +2332,8 @@ class GameBoardService:
                     item for item in wrapper["sessions"]
                     if item.get("id") != session_id
                 ]
+                if wrapper.get("board_session_id") == session_id:
+                    wrapper["board_session_id"] = None
                 self._drop_tickets_for_session(session_id)
                 self.repository.save_active(wrapper)
                 return self._public_session(session)
@@ -2203,7 +2424,6 @@ class GameBoardService:
             if session is None:
                 raise PermissionError("Invalid or revoked invitation")
             if parse_utc(session["expires_at"]) <= utc_now():
-                self.end_session("expired", session["id"])
                 raise ValueError("The session has expired")
             if session["status"] == "paused":
                 raise PermissionError("Admissions are paused")
@@ -2252,7 +2472,6 @@ class GameBoardService:
             wrapper = self.repository.active()
             session = self._session_for_request(wrapper, request_id)
             if parse_utc(session["expires_at"]) <= utc_now():
-                self.end_session("expired", session["id"])
                 raise ValueError("The session has expired")
             request = self._request(session, request_id)
             if not poll_token or token_hash(poll_token) != request["poll_hash"]:
@@ -4586,9 +4805,7 @@ class GameBoardService:
                 people = state.setdefault("people", {})
                 existing = people.get(person_id)
                 if not isinstance(existing, dict):
-                    existing = self.campaign_repository._person_state(
-                        normalize_person_board(person.get("board"))
-                    )
+                    existing = default_campaign_person_state()
                 existing["placement"] = deepcopy(placement)
                 people[person_id] = existing
                 followers = [
@@ -5872,34 +6089,46 @@ class GameBoardService:
         with self._lock:
             wrapper = self.repository.active()
             session = self._session(wrapper, session_id)
-            ended_at = iso_utc(utc_now())
-            summary = {
-                "id": session["id"], "title": session["title"], "created_at": session["created_at"],
-                "campaign_id": session.get("campaign_id"),
-                "campaign_name": session.get("campaign_name"),
-                "event_date": session.get("event_date"),
-                "game_datetime": session.get("game_datetime"),
-                "expires_at": session["expires_at"], "ended_at": ended_at, "reason": reason,
-                "announcement_count": session.get("announcement_count", 0),
-                "players": [
-                    {
-                        "name": item["name"], "invite_status": item["invite_status"],
-                        "approvals": item["stats"]["approvals"],
-                        "disconnects": item["stats"]["disconnects"],
-                        "acknowledgements": item["stats"]["acknowledgements"],
-                        "connected_seconds": round(item["stats"]["connected_seconds"], 2),
-                        "average_latency_ms": round(item["stats"]["latency_total_ms"] / item["stats"]["latency_samples"], 1) if item["stats"]["latency_samples"] else None,
-                    }
-                    for item in session["roster"]
-                ],
-            }
-            summaries = self.repository.summaries()
-            summaries["sessions"].append(summary)
-            self.repository.save_summaries(summaries)
-            wrapper["sessions"] = [item for item in wrapper["sessions"] if item["id"] != session["id"]]
-            self.repository.save_active(wrapper)
-            self._drop_tickets_for_session(session["id"])
-            return summary
+            return self._end_session_locked(wrapper, session, reason)
+
+    def _end_session_locked(
+        self,
+        wrapper: dict[str, Any],
+        session: dict[str, Any],
+        reason: str,
+    ) -> dict[str, Any]:
+        ended_at = iso_utc(utc_now())
+        summary = {
+            "id": session["id"], "title": session["title"], "created_at": session["created_at"],
+            "campaign_id": session.get("campaign_id"),
+            "campaign_name": session.get("campaign_name"),
+            "event_date": session.get("event_date"),
+            "game_datetime": session.get("game_datetime"),
+            "expires_at": session["expires_at"], "ended_at": ended_at, "reason": reason,
+            "announcement_count": session.get("announcement_count", 0),
+            "players": [
+                {
+                    "name": item["name"], "invite_status": item["invite_status"],
+                    "approvals": item["stats"]["approvals"],
+                    "disconnects": item["stats"]["disconnects"],
+                    "acknowledgements": item["stats"]["acknowledgements"],
+                    "connected_seconds": round(item["stats"]["connected_seconds"], 2),
+                    "average_latency_ms": round(item["stats"]["latency_total_ms"] / item["stats"]["latency_samples"], 1) if item["stats"]["latency_samples"] else None,
+                }
+                for item in session["roster"]
+            ],
+        }
+        summaries = self.repository.summaries()
+        summaries["sessions"].append(summary)
+        self.repository.save_summaries(summaries)
+        wrapper["sessions"] = [
+            item for item in wrapper["sessions"] if item["id"] != session["id"]
+        ]
+        if wrapper.get("board_session_id") == session["id"]:
+            wrapper["board_session_id"] = None
+        self.repository.save_active(wrapper)
+        self._drop_tickets_for_session(session["id"])
+        return summary
 
     @staticmethod
     def connection_quality(latency_ms: float | None, missed: int, connected: bool = True) -> str:

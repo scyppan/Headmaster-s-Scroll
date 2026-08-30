@@ -8,6 +8,7 @@ from headmasters_scroll.campaigns import (
     compact_campaign_document_for_storage,
     compact_campaign_person_overlays,
     default_campaign_person_state,
+    hydrate_campaign_person_board,
     normalize_campaign,
     normalize_board_camera,
     normalize_game_world_date,
@@ -66,6 +67,180 @@ class CampaignTests(unittest.TestCase):
         self.assertEqual(state["people"], {})
         self.assertEqual(state["groups"], [])
         self.assertEqual(state["battles"], {})
+
+    def test_fresh_game_state_does_not_copy_world_board_runtime_state(self):
+        campaign = self.repository.save_campaign("Isolated", "1943-09-01")
+        world = {
+            "maps": [{
+                "record_id": "map-1",
+                "name": "Legacy map",
+                "location_id": "location-1",
+                "floor_id": "",
+                "players_published": True,
+                "obscurations": [{
+                    "record_id": "fog-1",
+                    "points": [
+                        {"x": 0.1, "y": 0.1},
+                        {"x": 0.4, "y": 0.1},
+                        {"x": 0.2, "y": 0.4},
+                    ],
+                }],
+                "headmaster_camera": {
+                    "zoom": 8,
+                    "center_x": 0.2,
+                    "center_y": 0.7,
+                },
+            }],
+            "people": [{
+                "record_id": "person-1",
+                "board": {
+                    "placement": {
+                        "location_id": "location-1",
+                        "floor_id": "",
+                        "map_id": "map-1",
+                        "x": 0.25,
+                        "y": 0.75,
+                    },
+                    "visibility": "headmaster",
+                    "name_revealed": True,
+                },
+            }],
+            "board_groups": [{
+                "record_id": "legacy-group",
+                "name": "Old party",
+                "location_id": "location-1",
+                "members": [],
+            }],
+        }
+        original_world = json.loads(json.dumps(world))
+
+        initialized = self.repository.ensure_game_state(
+            campaign["record_id"], world, "1943-09-02T19:45"
+        )
+
+        state = initialized["game_state"]
+        self.assertTrue(state["initialized"])
+        self.assertEqual(state["current_game_datetime"], "1943-09-02T19:45")
+        self.assertEqual(state["loaded_map_ids"], [])
+        self.assertEqual(state["active_map_id"], "")
+        self.assertEqual(state["player_active_map_ids"], {})
+        self.assertEqual(state["maps"], {})
+        self.assertEqual(state["people"], {})
+        self.assertEqual(state["creatures"], {})
+        self.assertEqual(state["groups"], [])
+        self.assertEqual(state["battles"], {})
+        self.assertEqual(world, original_world)
+
+    def test_campaign_board_hydration_keeps_only_authored_portrait(self):
+        portrait = {
+            "asset_id": "portrait:person-1",
+            "sha256": "a" * 64,
+            "width": 512,
+            "height": 512,
+            "mime_type": "image/webp",
+        }
+        authored = {
+            "portrait": portrait,
+            "placement": {
+                "location_id": "legacy-location",
+                "floor_id": "",
+                "map_id": "legacy-map",
+                "x": 0.2,
+                "y": 0.8,
+            },
+            "visibility": "headmaster",
+            "display_mode": "token",
+            "name_revealed": True,
+            "faction_revealed": True,
+            "faction_organization_id": "legacy-faction",
+            "label_offset": {"x": 0.5, "y": -0.4},
+            "nameplate_scale": 2.0,
+        }
+
+        hydrated = hydrate_campaign_person_board(authored)
+
+        self.assertEqual(hydrated["portrait"], portrait)
+        self.assertIsNone(hydrated["placement"])
+        self.assertEqual(hydrated["visibility"], "players")
+        self.assertEqual(hydrated["display_mode"], "dot")
+        self.assertFalse(hydrated["name_revealed"])
+        self.assertFalse(hydrated["faction_revealed"])
+        self.assertEqual(hydrated["faction_organization_id"], "")
+        self.assertEqual(hydrated["label_offset"], {"x": 0.0, "y": 0.0})
+        self.assertEqual(hydrated["nameplate_scale"], 1.0)
+
+    def test_cleared_campaign_placement_stays_clear_during_hydration(self):
+        authored = {
+            "placement": {
+                "location_id": "legacy-location",
+                "floor_id": "",
+                "map_id": "legacy-map",
+                "x": 0.2,
+                "y": 0.8,
+            },
+            "visibility": "headmaster",
+        }
+        campaign_state = {
+            **default_campaign_person_state(),
+            "current_state": "Watching",
+        }
+        compacted = compact_campaign_person_overlays({"person-1": campaign_state})
+        self.assertEqual(compacted, {"person-1": {"current_state": "Watching"}})
+        normalized = normalize_campaign({
+            "record_id": "campaign-1",
+            "name": "Cleared",
+            "game_world_start_date": "1943-09-01",
+            "game_state": {"people": compacted},
+        })["game_state"]["people"]["person-1"]
+
+        hydrated = hydrate_campaign_person_board(authored, normalized)
+
+        self.assertIsNone(hydrated["placement"])
+        self.assertEqual(hydrated["visibility"], "players")
+
+    def test_reset_game_state_targets_one_campaign_and_preserves_clock(self):
+        target = self.repository.save_campaign("Test camp", "1943-09-01")
+        untouched = self.repository.save_campaign("Charms Check", "1991-09-01")
+
+        def dirty(state):
+            state.update({
+                "initialized": True,
+                "current_game_datetime": "1943-10-31T22:15",
+                "loaded_map_ids": ["map-1"],
+                "active_map_id": "map-1",
+                "people": {
+                    "person-1": {
+                        **default_campaign_person_state(),
+                        "current_state": "Hidden",
+                    }
+                },
+            })
+
+        self.repository.update_game_state(target["record_id"], dirty)
+        untouched_before = self.repository.get(untouched["record_id"])
+        untouched_raw_before = next(
+            item for item in json.loads(self.path.read_text(encoding="utf-8"))["campaigns"]
+            if item["record_id"] == untouched["record_id"]
+        )
+
+        reset = self.repository.reset_game_state(target["record_id"])
+
+        state = reset["game_state"]
+        self.assertFalse(state["initialized"])
+        self.assertEqual(state["current_game_datetime"], "1943-10-31T22:15")
+        self.assertEqual(state["loaded_map_ids"], [])
+        self.assertEqual(state["maps"], {})
+        self.assertEqual(state["people"], {})
+        self.assertEqual(state["groups"], [])
+        self.assertEqual(state["battles"], {})
+        self.assertEqual(
+            self.repository.get(untouched["record_id"]), untouched_before
+        )
+        untouched_raw_after = next(
+            item for item in json.loads(self.path.read_text(encoding="utf-8"))["campaigns"]
+            if item["record_id"] == untouched["record_id"]
+        )
+        self.assertEqual(untouched_raw_after, untouched_raw_before)
 
     def test_default_person_state_is_implicit_and_round_trips(self):
         default = default_campaign_person_state()

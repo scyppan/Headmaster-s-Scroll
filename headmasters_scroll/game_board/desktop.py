@@ -14,12 +14,13 @@ import urllib.parse
 import urllib.request
 from copy import deepcopy
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from difflib import SequenceMatcher
 from pathlib import Path
 from tkinter import colorchooser, filedialog, messagebox, simpledialog, ttk
 from typing import Any, Callable
 from uuid import uuid4
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from PIL import Image, ImageDraw, ImageOps, ImageTk
 
@@ -34,6 +35,7 @@ from .storage import GameBoardRepository
 
 DATE_DISPLAY_FORMAT = "%d %b %Y"
 GAME_DATETIME_DISPLAY_FORMAT = "%d %b %Y  %H:%M"
+SESSION_DATETIME_DISPLAY_FORMAT = "%d %b %Y  %H:%M %Z"
 GAME_DATETIME_RE = re.compile(
     r"^(?P<year>-?[1-9]\d*)-(?P<month>\d{2})-(?P<day>\d{2})T"
     r"(?P<hour>\d{2}):(?P<minute>\d{2})$"
@@ -65,6 +67,89 @@ def format_stored_date(value: Any, fallback: str = "Not set") -> str:
         return format_date_display(date.fromisoformat(str(value)[:10]))
     except ValueError:
         return str(value)
+
+
+def parse_stored_datetime(value: Any) -> datetime:
+    """Parse a stored session timestamp as an aware UTC datetime."""
+
+    parsed = datetime.fromisoformat(str(value).strip().replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def parse_local_session_end(value: str, local_zone: Any) -> datetime:
+    """Resolve an unambiguous, real wall-clock time in the configured zone."""
+
+    try:
+        naive = datetime.strptime(value.strip(), "%Y-%m-%d %H:%M")
+    except ValueError as error:
+        raise ValueError(
+            "Use YYYY-MM-DD HH:MM in 24-hour local time."
+        ) from error
+    candidates: dict[datetime, datetime] = {}
+    for fold in (0, 1):
+        candidate = naive.replace(tzinfo=local_zone, fold=fold)
+        instant = candidate.astimezone(timezone.utc)
+        round_trip = instant.astimezone(local_zone)
+        if round_trip.replace(tzinfo=None) == naive:
+            candidates.setdefault(instant, candidate)
+    if not candidates:
+        raise ValueError(
+            "That local time does not exist because of daylight saving time."
+        )
+    if len(candidates) > 1:
+        raise ValueError(
+            "That local time occurs twice because of daylight saving time; "
+            "choose a different time."
+        )
+    return next(iter(candidates.values()))
+
+
+def format_stored_local_datetime(
+    value: Any,
+    timezone_name: str,
+    fallback: str = "Not set",
+) -> str:
+    """Show the complete session deadline in the configured local timezone."""
+
+    if not value:
+        return fallback
+    try:
+        local_zone = ZoneInfo(str(timezone_name or "UTC"))
+    except ZoneInfoNotFoundError:
+        local_zone = timezone.utc
+    try:
+        return parse_stored_datetime(value).astimezone(local_zone).strftime(
+            SESSION_DATETIME_DISPLAY_FORMAT
+        )
+    except (TypeError, ValueError):
+        return str(value)
+
+
+def format_expiration_countdown(seconds: float) -> str:
+    """Format a non-negative countdown without rounding a session up."""
+
+    remaining = max(0, int(seconds))
+    minutes, seconds = divmod(remaining, 60)
+    return f"{minutes:02d}:{seconds:02d}"
+
+
+def board_from_admin_state(
+    state: dict[str, Any],
+) -> tuple[str | None, dict[str, Any]]:
+    """Return only the server-designated live board from an admin snapshot."""
+
+    session_id = str(state.get("board_session_id") or "") or None
+    live_ids = {
+        str(session.get("id") or "")
+        for session in (state.get("sessions") or [])
+        if session.get("id") and not session.get("archived")
+    }
+    if not session_id or session_id not in live_ids:
+        return None, {}
+    board = (state.get("boards") or {}).get(session_id)
+    return session_id, deepcopy(board) if isinstance(board, dict) else {}
 
 
 def _display_historical_year(year: int) -> str:
@@ -780,6 +865,18 @@ class GameBoardWindow(tk.Tk):
         self.client = AdminClient(self.settings)
         self.server = LocalServer(self.client)
         self.state_data: dict[str, Any] = {"contacts": [], "settings": {}, "session": None, "connections": []}
+        # This is exclusively the server-designated session that may drive board,
+        # battle, clock, announcement, and chat mutations.  The independently
+        # selected row in the Sessions page is stored in managed_session_id.
+        self.selected_session_id: str | None = None
+        self.managed_session_id: str | None = None
+        self._board_context_available = False
+        self._board_session_select_pending_id: str | None = None
+        self._rendering_session_selection = False
+        self._expiration_warning_after_id: str | None = None
+        self._expiration_warning_belled_deadlines: set[str] = set()
+        self._expiration_update_pending = False
+        self.current_app_page = ""
         self.refreshing = False
         self.admission_refreshing = False
         self.closing = False
@@ -963,6 +1060,8 @@ class GameBoardWindow(tk.Tk):
             command=lambda: self.show_control_page("live-room"),
         ).pack(side="right", padx=6, pady=5)
 
+        self._build_session_expiration_alert()
+
         self.workspace = ttk.Frame(self)
         self.workspace.pack(fill="both", expand=True, padx=12, pady=(0, 8))
         self._build_chat_shell(self.workspace)
@@ -1112,9 +1211,53 @@ class GameBoardWindow(tk.Tk):
         self._build_settings()
         self.show_control_page("live-room")
         self.show_app_page("game-board")
+        self._set_board_context_available(False)
+
+    def _build_session_expiration_alert(self) -> None:
+        """Build the desktop-only warning shown shortly before a session ends."""
+
+        self.session_expiration_alert = tk.Frame(
+            self,
+            background="#f4dda7",
+            highlightbackground=self.RED,
+            highlightthickness=1,
+        )
+        self.session_expiration_alert_text = tk.StringVar(value="")
+        tk.Label(
+            self.session_expiration_alert,
+            textvariable=self.session_expiration_alert_text,
+            anchor="w",
+            background="#f4dda7",
+            foreground=self.RED,
+            font=("Segoe UI", 10, "bold"),
+            padx=12,
+            pady=9,
+        ).pack(side="left", fill="x", expand=True)
+        self.expiration_extension_buttons: list[tk.Button] = []
+        for text, command in (
+            ("+30 minutes", lambda: self.extend_board_session(30)),
+            ("+1 hour", lambda: self.extend_board_session(60)),
+            ("Custom…", self.choose_board_session_expiration),
+        ):
+            button = tk.Button(
+                self.session_expiration_alert,
+                text=text,
+                background=self.ACCENT,
+                foreground="#fff8e7",
+                activebackground="#63311f",
+                activeforeground="#fff8e7",
+                relief="flat",
+                font=("Segoe UI", 9, "bold"),
+                padx=10,
+                pady=7,
+                command=command,
+            )
+            button.pack(side="right", padx=(0, 6), pady=5)
+            self.expiration_extension_buttons.append(button)
 
     def _build_board_search(self, parent: tk.Misc) -> None:
         search = ttk.Frame(parent)
+        self.board_search_shell = search
         search.pack(side="left", fill="x", expand=True, padx=(0, 8))
         entry_row = ttk.Frame(search)
         entry_row.pack(fill="x")
@@ -1491,6 +1634,271 @@ class GameBoardWindow(tk.Tk):
         if hasattr(self, "board_loading_overlay"):
             self.board_loading_overlay.place_forget()
 
+    def _cancel_board_delayed_actions(self) -> None:
+        camera_saves = self.__dict__.get("_board_camera_save_after_ids") or {}
+        for after_id in list(camera_saves.values()):
+            try:
+                self.after_cancel(after_id)
+            except tk.TclError:
+                pass
+        camera_saves.clear()
+        for attribute in (
+            "_board_preview_after",
+            "_board_token_preview_after_id",
+            "_board_pan_watchdog_id",
+        ):
+            after_id = self.__dict__.get(attribute)
+            if after_id is not None:
+                try:
+                    self.after_cancel(after_id)
+                except tk.TclError:
+                    pass
+            setattr(self, attribute, None)
+
+    def _reset_board_context(self) -> None:
+        """Drop every piece of session-specific desktop state."""
+
+        self._cancel_board_delayed_actions()
+        expiration_after_id = self.__dict__.get("_expiration_warning_after_id")
+        if expiration_after_id is not None:
+            try:
+                self.after_cancel(expiration_after_id)
+            except tk.TclError:
+                pass
+        self._expiration_warning_after_id = None
+        self._expiration_update_pending = False
+        expiration_alert = self.__dict__.get("session_expiration_alert")
+        if expiration_alert is not None:
+            try:
+                expiration_alert.pack_forget()
+            except (AttributeError, tk.TclError):
+                pass
+        for popup_name in (
+            "_piece_popup",
+            "_time_popup",
+            "board_settings_window",
+            "turn_sheet_window",
+        ):
+            popup = self.__dict__.get(popup_name)
+            if popup is not None:
+                try:
+                    if popup.winfo_exists():
+                        if popup_name == "_piece_popup":
+                            try:
+                                popup.unpost()
+                            except (AttributeError, tk.TclError):
+                                pass
+                        popup.destroy()
+                except (AttributeError, tk.TclError):
+                    pass
+            setattr(self, popup_name, None)
+
+        for attribute, value in (
+            ("creature_placement", None),
+            ("pending_creature_battle_id", ""),
+            ("_drag_actor_id", ""),
+            ("_drag_start_point", None),
+            ("_drag_actor_part", ""),
+            ("_drag_label_only", False),
+            ("_drag_label_origin", {"x": 0.0, "y": 0.0}),
+            ("_board_pan_state", None),
+            ("_board_obscure_drag", None),
+            ("_battle_drag_participant_id", ""),
+            ("board_confirmation_message_until", 0.0),
+            ("board_obscure_mode", False),
+            ("board_obscure_drawing", False),
+            ("board_obscure_color", "#ff0000"),
+            ("board_selected_obscuration_id", ""),
+            ("board_selected_obscuration_node", None),
+            ("selected_board_map_id", ""),
+            ("selected_board_actor_id", ""),
+            ("selected_battle_id", ""),
+            ("_board_actor_list_signature", None),
+            ("_last_open_turn_key", ""),
+            ("_board_image", None),
+        ):
+            setattr(self, attribute, value)
+
+        self.board_snapshot = {}
+        self.board_world_revision_id = ""
+        self.board_workspace_campaign_id = ""
+        for collection_name in (
+            "board_map_label_to_id",
+            "board_open_map_ids",
+            "board_map_drafts",
+            "board_view_states",
+            "board_secret_region_ids",
+            "board_creature_ids",
+            "board_obscuration_list_ids",
+            "board_obscure_draft_points",
+            "board_canvas_geometry",
+            "board_map_images",
+            "_board_map_sources",
+            "_board_portraits",
+            "_board_obscure_images",
+            "_board_canvas_actors",
+            "_board_canvas_actor_parts",
+            "board_zoom_override_ids",
+            "battle_ids",
+            "battle_order_ids",
+            "battle_local_orders",
+            "local_battle_drafts",
+            "board_canvases",
+            "_expanded_chat_roll_ids",
+        ):
+            collection = self.__dict__.get(collection_name)
+            if collection is not None:
+                collection.clear()
+
+        for variable_name, value in (
+            ("board_reveal_value", False),
+            ("board_search_value", ""),
+            ("board_actor_search_var", ""),
+            ("board_creature_search_var", ""),
+            ("board_obscure_opacity", "35"),
+            ("board_zoom_status_value", "Zoom 100% · 0 clicks"),
+            ("board_default_token_value", "100"),
+            ("board_default_zoom_value", "1.00"),
+            ("board_default_plaque_value", "10"),
+            ("board_default_position_value", "0.500, 0.500"),
+            ("board_secret_status", "Open a map to view its secrets."),
+            ("game_clock_value", "Select a session"),
+        ):
+            variable = self.__dict__.get(variable_name)
+            if variable is not None:
+                try:
+                    variable.set(value)
+                except (AttributeError, tk.TclError):
+                    pass
+
+        for entry_name, start, end in (
+            ("chat_entry", 0, "end"),
+            ("announcement", "1.0", "end"),
+        ):
+            entry = self.__dict__.get(entry_name)
+            if entry is not None:
+                try:
+                    entry.delete(start, end)
+                except (AttributeError, tk.TclError):
+                    pass
+        chat_log = self.__dict__.get("chat_log")
+        if chat_log is not None:
+            try:
+                chat_log.configure(state="normal")
+                chat_log.delete("1.0", "end")
+                chat_log.configure(state="disabled")
+            except (AttributeError, tk.TclError):
+                pass
+
+        self.turn_sheet_notebook = None
+        board_notebook = self.__dict__.get("board_notebook")
+        if board_notebook is not None:
+            try:
+                for tab in board_notebook.tabs():
+                    board_notebook.forget(tab)
+            except (AttributeError, tk.TclError):
+                pass
+        board_empty = self.__dict__.get("board_empty")
+        if board_empty is not None:
+            try:
+                board_empty.configure(
+                    text="Please start a session to activate the gameboard."
+                )
+            except (AttributeError, tk.TclError):
+                pass
+        search_results = self.__dict__.get("board_search_results")
+        if search_results is not None:
+            try:
+                search_results.delete(0, "end")
+            except (AttributeError, tk.TclError):
+                pass
+        search_panel = self.__dict__.get("board_search_results_panel")
+        if search_panel is not None:
+            try:
+                search_panel.pack_forget()
+            except (AttributeError, tk.TclError):
+                pass
+        self.board_search_result_ids = []
+        self.board_map_ids = ()
+        self._rendered_chat_ids = ("__board-context-reset__",)
+        self._last_chat_messages = []
+        self._chat_roll_ranges = []
+        self._chat_focus_roll_id = ""
+
+    def _set_board_context_available(self, available: bool) -> None:
+        self._board_context_available = bool(available)
+        widget_state = "normal" if available else "disabled"
+        for widget_name in (
+            "chat_entry",
+            "chat_send_button",
+            "announcement_send_button",
+        ):
+            widget = getattr(self, widget_name, None)
+            if widget is not None:
+                widget.configure(state=widget_state)
+        for button in getattr(self, "game_clock_buttons", []):
+            button.configure(state=widget_state)
+        search = getattr(self, "board_search_shell", None)
+        clock = getattr(self, "game_clock_shell", None)
+        if available:
+            if search is not None and not search.winfo_manager():
+                search.pack(side="left", fill="x", expand=True, padx=(0, 8))
+            if clock is not None and not clock.winfo_manager():
+                clock.pack(side="right", anchor="n")
+            if (
+                self.current_app_page == "game-board"
+                and not self.headmaster_tool_rail.winfo_manager()
+            ):
+                self.headmaster_tool_rail.pack(
+                    side="left", fill="y", padx=(0, 8), before=self.app_host
+                )
+            if (
+                self.current_app_page == "game-board"
+                and not self.headmaster_tools_collapsed
+            ):
+                self._open_headmaster_tools_drawer()
+            self._apply_responsive_chat_layout()
+            return
+        if search is not None and search.winfo_manager():
+            search.pack_forget()
+        if clock is not None and clock.winfo_manager():
+            clock.pack_forget()
+        self._close_board_search_suggestions()
+        if self.headmaster_tool_rail.winfo_manager():
+            self.headmaster_tool_rail.pack_forget()
+        if self.headmaster_tools_drawer.winfo_manager():
+            self.headmaster_tools_drawer.place_forget()
+        if self.chat_shell.winfo_manager():
+            self.chat_shell.pack_forget()
+
+    def _render_designated_board(self, state: dict[str, Any]) -> None:
+        board_session_id, board = board_from_admin_state(state)
+        pending_session_id = self.__dict__.get("_board_session_select_pending_id")
+        if pending_session_id:
+            if board_session_id == pending_session_id:
+                self._board_session_select_pending_id = None
+            else:
+                board_session_id, board = None, {}
+        if board_session_id != self.selected_session_id:
+            self._reset_board_context()
+            self.selected_session_id = board_session_id
+        if board_session_id:
+            self.board_empty.configure(
+                text="Search for a map above or use Explore to add one to the Game Board."
+            )
+            self._set_board_context_available(True)
+            self._render_board(board)
+        else:
+            if self.board_snapshot:
+                self._reset_board_context()
+            self.selected_session_id = None
+            self.board_empty.configure(
+                text="Please start a session to activate the gameboard."
+            )
+            self._set_board_context_available(False)
+            self._render_board({})
+        self._render_board_battles()
+
     def _create_board_map_controls(self, parent: tk.Misc) -> None:
         map_controls = ttk.Frame(parent, style="Card.TFrame", padding=4)
         self.board_map_controls_dock = map_controls
@@ -1776,7 +2184,7 @@ class GameBoardWindow(tk.Tk):
 
     def toggle_selected_board_secret(self) -> None:
         region = self._selected_board_secret()
-        session = self._selected_session()
+        session = self._board_session()
         session_id = str(
             self.board_snapshot.get("session_id", "")
             or (session or {}).get("id", "")
@@ -7432,6 +7840,7 @@ class GameBoardWindow(tk.Tk):
             highlightbackground=self.ACCENT,
             highlightthickness=1,
         )
+        self.game_clock_shell = shell
         shell.pack(side="right", anchor="n")
         self.game_clock_buttons: list[tk.Button] = []
 
@@ -7725,7 +8134,7 @@ class GameBoardWindow(tk.Tk):
             self.set_notice(f"{label} tool selected — controls coming soon")
 
     def _current_game_datetime(self) -> GameDateTime | None:
-        session = self._selected_session()
+        session = self._board_session()
         if not session:
             return None
         raw = session.get("game_datetime")
@@ -7747,7 +8156,7 @@ class GameBoardWindow(tk.Tk):
             button.configure(state=state)
 
     def set_game_clock(self, value: GameDateTime) -> None:
-        session = self._selected_session()
+        session = self._board_session()
         if not session:
             self.set_notice("Select a session before changing in-world time", error=True)
             return
@@ -7948,7 +8357,8 @@ class GameBoardWindow(tk.Tk):
         entry.focus_force()
 
     def show_app_page(self, key: str) -> None:
-        if key == "game-board":
+        self.current_app_page = key
+        if key == "game-board" and self._board_context_available:
             if not self.headmaster_tool_rail.winfo_manager():
                 self.headmaster_tool_rail.pack(
                     side="left", fill="y", padx=(0, 8), before=self.app_host
@@ -8205,6 +8615,9 @@ class GameBoardWindow(tk.Tk):
         self._chat_layout_after_id = None
         if not hasattr(self, "chat_shell") or not self.chat_shell.winfo_exists():
             return
+        if not self._board_context_available:
+            self.chat_shell.pack_forget()
+            return
         compact = self.winfo_width() < 1120
         self._chat_layout_compact = compact
         self.chat_shell.pack_forget()
@@ -8308,7 +8721,12 @@ class GameBoardWindow(tk.Tk):
         announcement_card.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(8, 0))
         self.announcement = tk.Text(announcement_card, height=3, wrap="word", background="#fff8e6", foreground=self.INK, relief="solid", borderwidth=1)
         self.announcement.pack(fill="x")
-        ttk.Button(announcement_card, text="Send to Connected Players", command=self.send_announcement).pack(anchor="e", pady=(10, 0))
+        self.announcement_send_button = ttk.Button(
+            announcement_card,
+            text="Send to Connected Players",
+            command=self.send_announcement,
+        )
+        self.announcement_send_button.pack(anchor="e", pady=(10, 0))
 
     def _build_contacts(self) -> None:
         form = ttk.Frame(self.contacts_tab, style="Card.TFrame", padding=(10, 8))
@@ -8420,7 +8838,8 @@ class GameBoardWindow(tk.Tk):
         )
         self.chat_entry.pack(side="left", fill="x", expand=True)
         self.chat_entry.bind("<Return>", lambda _event: self.send_chat())
-        ttk.Button(composer, text="Send", command=self.send_chat).pack(side="right", padx=(10, 0))
+        self.chat_send_button = ttk.Button(composer, text="Send", command=self.send_chat)
+        self.chat_send_button.pack(side="right", padx=(10, 0))
         self._rendered_chat_ids: tuple[str, ...] = ()
         self._chat_roll_ranges: list[tuple[str, str, str, str]] = []
         self._expanded_chat_roll_ids: set[str] = set()
@@ -8509,7 +8928,7 @@ class GameBoardWindow(tk.Tk):
         self.session_tab.columnconfigure(0, weight=1)
         self.session_tab.columnconfigure(1, weight=2)
         self.session_tab.rowconfigure(0, weight=1)
-        self.selected_session_id: str | None = str(
+        self.managed_session_id = str(
             self.preferences.get("last_session_id", "") or ""
         ) or None
         self.selected_invite_ids: set[str] = set()
@@ -8532,7 +8951,7 @@ class GameBoardWindow(tk.Tk):
             ("campaign", "Campaign", 125),
             ("event_date", "Event Date", 95),
             ("game_date", "Game World Date & Time", 145),
-            ("expires", "Expires", 95),
+            ("expires", "Session ends", 155),
         ):
             self.sessions_tree.heading(column, text=heading)
             self.sessions_tree.column(column, width=width, minwidth=75, anchor="w")
@@ -8543,6 +8962,8 @@ class GameBoardWindow(tk.Tk):
         self.sessions_tree.pack(side="left", fill="both", expand=True)
         session_scroll.pack(side="right", fill="y")
         self.sessions_tree.bind("<<TreeviewSelect>>", self._session_selected)
+        self.sessions_tree.bind("<ButtonRelease-1>", self._session_clicked, add="+")
+        self.sessions_tree.bind("<Double-Button-1>", self._session_selected, add="+")
 
         session_buttons = ttk.Frame(self.session_tab, style="Card.TFrame")
         self.session_buttons = session_buttons
@@ -8870,6 +9291,7 @@ class GameBoardWindow(tk.Tk):
         )
         archived_sessions = list(state.get("archived_sessions") or [])
         sessions = live_sessions + archived_sessions
+        timezone_name = str(settings.get("timezone") or self.settings.get("timezone") or "UTC")
         session_rows = [
             (
                 session["id"],
@@ -8882,46 +9304,60 @@ class GameBoardWindow(tk.Tk):
                     session.get("campaign_name") or "Legacy session",
                     format_stored_date(session.get("event_date")),
                     format_stored_game_datetime(session.get("game_datetime")),
-                    format_stored_date(session.get("expires_at")),
+                    format_stored_local_datetime(
+                        session.get("expires_at"), timezone_name
+                    ),
                 ),
             )
             for session in sessions
         ]
         self._replace_tree(self.sessions_tree, session_rows)
         session_ids = {session["id"] for session in sessions}
-        if self.selected_session_id not in session_ids:
-            self.selected_session_id = sessions[0]["id"] if sessions else None
+        if self.managed_session_id not in session_ids:
+            board_session_id = str(state.get("board_session_id") or "")
+            self.managed_session_id = (
+                board_session_id
+                if board_session_id in session_ids
+                else (sessions[0]["id"] if sessions else None)
+            )
             self._invite_selection_session_id = None
-        if self.selected_session_id:
+        if self.managed_session_id:
             selected_for_memory = next(
-                (item for item in sessions if item.get("id") == self.selected_session_id),
+                (item for item in sessions if item.get("id") == self.managed_session_id),
                 None,
             )
-            self.preferences["last_session_id"] = self.selected_session_id
+            self.preferences["last_session_id"] = self.managed_session_id
             if selected_for_memory and selected_for_memory.get("campaign_id"):
                 self.preferences["last_campaign_id"] = selected_for_memory["campaign_id"]
             try:
                 self.preferences_store.save(self.preferences)
             except OSError:
                 pass
-        if self.selected_session_id and self.sessions_tree.exists(self.selected_session_id):
-            self.sessions_tree.selection_set(self.selected_session_id)
+        if self.managed_session_id and self.sessions_tree.exists(self.managed_session_id):
+            self._rendering_session_selection = True
+            try:
+                self.sessions_tree.selection_set(self.managed_session_id)
+            finally:
+                self._rendering_session_selection = False
         session = next(
-            (item for item in sessions if item["id"] == self.selected_session_id), None
+            (item for item in sessions if item["id"] == self.managed_session_id), None
         )
-        self._render_game_clock(session)
-        board = deepcopy(
-            (state.get("boards") or {}).get(self.selected_session_id or "", {})
+        self._render_designated_board(state)
+        board_session = next(
+            (
+                item for item in live_sessions
+                if item.get("id") == self.selected_session_id
+            ),
+            None,
         )
-        if not board.get("maps"):
-            board["maps"] = list(state.get("location_maps") or [])
-        self._render_board(board)
-        self._render_board_battles()
+        self._render_game_clock(board_session)
+        self._render_chat(list((board_session or {}).get("chat", [])))
+        self._update_expiration_warning()
         self.after_idle(self._hide_board_loading)
 
         pending_rows: list[tuple[str, tuple[Any, ...]]] = []
         invite_rows: list[tuple[str, tuple[Any, ...]]] = []
-        for active_session in sessions:
+        for active_session in live_sessions:
             for request in active_session.get("pending", []):
                 if request.get("status") == "pending":
                     pending_rows.append((
@@ -8944,7 +9380,7 @@ class GameBoardWindow(tk.Tk):
                     f"{session_state}"
                     f"  •  Event date: {format_stored_date(session.get('event_date'))}"
                     f"  •  Game World Date: {format_stored_game_datetime(session.get('game_datetime'))}"
-                    f"  •  Expires: {format_stored_date(session.get('expires_at'))}"
+                    f"  •  Session ends: {format_stored_local_datetime(session.get('expires_at'), timezone_name)}"
                 )
             )
             roster_ids = {
@@ -8985,7 +9421,6 @@ class GameBoardWindow(tk.Tk):
             self.session_summary.configure(text="Select a session")
             self.selected_invite_ids.clear()
             self._invite_selection_session_id = None
-        self._render_chat(list((session or {}).get("chat", [])))
         self._replace_tree(self.pending_tree, pending_rows)
         self._replace_tree(self.invites_tree, invite_rows)
         campaign_requests = list(state.get("requests", []) or [])
@@ -9024,6 +9459,168 @@ class GameBoardWindow(tk.Tk):
                 connection["name"], connection["quality"].title(), latency, connection["last_activity"]
             )))
         self._replace_tree(self.connections_tree, connection_rows)
+
+    def _update_expiration_warning(self, now: datetime | None = None) -> None:
+        if self._expiration_warning_after_id is not None:
+            try:
+                self.after_cancel(self._expiration_warning_after_id)
+            except tk.TclError:
+                pass
+            self._expiration_warning_after_id = None
+        if self.closing:
+            return
+        session = self._board_session()
+        raw_deadline = str((session or {}).get("expires_at") or "")
+        try:
+            deadline = parse_stored_datetime(raw_deadline)
+        except (TypeError, ValueError):
+            deadline = None
+        if session is None or deadline is None:
+            if self.session_expiration_alert.winfo_manager():
+                self.session_expiration_alert.pack_forget()
+            return
+        current = now or datetime.now(timezone.utc)
+        if current.tzinfo is None:
+            current = current.replace(tzinfo=timezone.utc)
+        remaining = (deadline - current.astimezone(timezone.utc)).total_seconds()
+        if remaining > 600:
+            if self.session_expiration_alert.winfo_manager():
+                self.session_expiration_alert.pack_forget()
+        else:
+            timezone_name = str(
+                (self.state_data.get("settings") or {}).get("timezone")
+                or self.settings.get("timezone")
+                or "UTC"
+            )
+            if remaining > 0:
+                countdown = format_expiration_countdown(remaining)
+                warning = f"Session ends in {countdown}"
+            else:
+                warning = "Session is ending now"
+            self.session_expiration_alert_text.set(
+                f"{warning} — {format_stored_local_datetime(raw_deadline, timezone_name)}"
+            )
+            if not self.session_expiration_alert.winfo_manager():
+                self.session_expiration_alert.pack(
+                    fill="x", padx=12, pady=(0, 6), before=self.workspace
+                )
+            bell_key = f"{session['id']}:{raw_deadline}"
+            if bell_key not in self._expiration_warning_belled_deadlines:
+                self._expiration_warning_belled_deadlines.add(bell_key)
+                self.bell()
+            button_state = (
+                "normal" if remaining > 0 and not self._expiration_update_pending
+                else "disabled"
+            )
+            for button in self.expiration_extension_buttons:
+                button.configure(state=button_state)
+        self._expiration_warning_after_id = self.after(
+            1000, self._update_expiration_warning
+        )
+
+    @staticmethod
+    def _session_expiration_payload(
+        session: dict[str, Any], new_deadline: datetime
+    ) -> dict[str, str]:
+        if new_deadline.tzinfo is None:
+            raise ValueError("Session end time must include a timezone")
+        expected = str(session.get("expires_at") or "")
+        if not expected:
+            raise ValueError("The session does not have an end time")
+        normalized = new_deadline.astimezone(timezone.utc).isoformat().replace(
+            "+00:00", "Z"
+        )
+        if parse_stored_datetime(expected) == parse_stored_datetime(normalized):
+            raise ValueError("Choose a different session end time")
+        if parse_stored_datetime(normalized) <= datetime.now(timezone.utc):
+            raise ValueError("Session end time must be in the future")
+        return {"expires_at": normalized, "expected_expires_at": expected}
+
+    def _set_board_session_expiration(self, new_deadline: datetime) -> None:
+        session = self._board_session()
+        if session is None or self._expiration_update_pending:
+            return
+        try:
+            payload = self._session_expiration_payload(session, new_deadline)
+        except ValueError as error:
+            messagebox.showwarning("Session end", str(error), parent=self)
+            return
+        session_id = str(session["id"])
+        self._expiration_update_pending = True
+        self._update_expiration_warning()
+
+        def done(_result: Any) -> None:
+            self._expiration_update_pending = False
+            self.set_notice("Session end time updated")
+            self.refresh()
+
+        def failed(error: Exception) -> None:
+            self._expiration_update_pending = False
+            self._update_expiration_warning()
+            self._failed(error, False)
+
+        self._background(
+            lambda: self.client.request(
+                "PUT",
+                f"/api/admin/sessions/{session_id}/expiration",
+                payload,
+            ),
+            done,
+            failure=failed,
+        )
+
+    def extend_board_session(self, minutes: int) -> None:
+        session = self._board_session()
+        if session is None:
+            return
+        try:
+            current_deadline = parse_stored_datetime(session.get("expires_at"))
+        except (TypeError, ValueError):
+            messagebox.showwarning(
+                "Session end", "The current session end time is invalid.", parent=self
+            )
+            return
+        self._set_board_session_expiration(
+            current_deadline + timedelta(minutes=int(minutes))
+        )
+
+    def choose_board_session_expiration(self) -> None:
+        session = self._board_session()
+        if session is None:
+            return
+        timezone_name = str(
+            (self.state_data.get("settings") or {}).get("timezone")
+            or self.settings.get("timezone")
+            or "UTC"
+        )
+        try:
+            local_zone = ZoneInfo(timezone_name)
+        except ZoneInfoNotFoundError:
+            local_zone = timezone.utc
+        try:
+            current_local = parse_stored_datetime(session.get("expires_at")).astimezone(
+                local_zone
+            )
+        except (TypeError, ValueError):
+            current_local = datetime.now(local_zone) + timedelta(hours=1)
+        entered = simpledialog.askstring(
+            "Custom session end",
+            f"Enter the new local date and time ({timezone_name})\nYYYY-MM-DD HH:MM",
+            initialvalue=current_local.strftime("%Y-%m-%d %H:%M"),
+            parent=self,
+        )
+        if entered is None:
+            return
+        try:
+            local_deadline = parse_local_session_end(entered, local_zone)
+        except ValueError as error:
+            messagebox.showwarning(
+                "Session end",
+                str(error),
+                parent=self,
+            )
+            return
+        self._set_board_session_expiration(local_deadline)
 
     def _update_admission_alert(self, pending_rows: list[tuple[str, tuple[Any, ...]]]) -> None:
         pending_ids = {request_id for request_id, _values in pending_rows}
@@ -9164,32 +9761,54 @@ class GameBoardWindow(tk.Tk):
                 tree.insert("", "end", iid=item_id, values=values)
 
     def _selected_session(self) -> dict[str, Any] | None:
+        # The fallback supports lightweight callers that construct the window
+        # without running __init__.
+        managed_session_id = self.__dict__.get(
+            "managed_session_id", self.__dict__.get("selected_session_id")
+        )
         return next(
             (
                 session for session in (
                     list(self.state_data.get("sessions") or [])
                     + list(self.state_data.get("archived_sessions") or [])
                 )
-                if session.get("id") == self.selected_session_id
+                if session.get("id") == managed_session_id
             ),
             None,
         )
 
+    def _board_session(self) -> dict[str, Any] | None:
+        return next(
+            (
+                session for session in (self.state_data.get("sessions") or [])
+                if session.get("id") == self.selected_session_id
+                and not session.get("archived")
+            ),
+            None,
+        )
+
+    def _session_clicked(self, event: tk.Event) -> None:
+        row_id = self.sessions_tree.identify_row(event.y)
+        if row_id and row_id == self.managed_session_id and row_id != self.selected_session_id:
+            self._session_selected()
+
     def _session_selected(self, _event: tk.Event | None = None) -> None:
-        selection = self.sessions_tree.selection()
-        if not selection or selection[0] == self.selected_session_id:
+        if self._rendering_session_selection:
             return
-        self._show_board_loading("Loading campaign board…")
-        self.selected_session_id = selection[0]
+        selection = self.sessions_tree.selection()
+        if not selection:
+            return
+        target_session_id = str(selection[0])
+        self.managed_session_id = target_session_id
         self._invite_selection_session_id = None
-        self.preferences["last_session_id"] = self.selected_session_id
+        self.preferences["last_session_id"] = target_session_id
         selected = next(
             (
                 item for item in (
                     list(self.state_data.get("sessions") or [])
                     + list(self.state_data.get("archived_sessions") or [])
                 )
-                if item.get("id") == self.selected_session_id
+                if item.get("id") == target_session_id
             ),
             None,
         )
@@ -9200,6 +9819,38 @@ class GameBoardWindow(tk.Tk):
         except OSError:
             pass
         self.render(self.state_data)
+        live_ids = {
+            str(item.get("id") or "")
+            for item in (self.state_data.get("sessions") or [])
+            if item.get("id") and not item.get("archived")
+        }
+        if target_session_id not in live_ids or target_session_id == self.selected_session_id:
+            return
+        if self._board_session_select_pending_id == target_session_id:
+            return
+        self._board_session_select_pending_id = target_session_id
+        self._reset_board_context()
+        self.selected_session_id = None
+        self._set_board_context_available(False)
+        self._render_board({})
+        self._show_board_loading("Loading campaign board…")
+
+        def done(_result: Any) -> None:
+            self.set_notice("Game Board session selected")
+            self.refresh()
+
+        def failed(error: Exception) -> None:
+            self._board_session_select_pending_id = None
+            self._failed(error, False)
+            self.refresh()
+
+        self._background(
+            lambda: self.client.request(
+                "PUT", f"/api/admin/sessions/{target_session_id}/select"
+            ),
+            done,
+            failure=failed,
+        )
 
     def _toggle_invitation_id(self, contact_id: str) -> None:
         if contact_id in self.selected_invite_ids:
@@ -9433,7 +10084,7 @@ class GameBoardWindow(tk.Tk):
         field_labels = (
             ("Session title", 0),
             ("Event date", 1),
-            ("Invitations expire", 2),
+            ("Session ends", 2),
         )
         for label, column in field_labels:
             ttk.Label(body, text=label, style="Card.TLabel").grid(
@@ -9631,10 +10282,16 @@ class GameBoardWindow(tk.Tk):
             }
 
             def done(result: dict[str, Any]) -> None:
-                self.selected_session_id = result["id"]
+                self.managed_session_id = str(result["id"])
+                self._board_session_select_pending_id = self.managed_session_id
                 self.selected_invite_ids.clear()
                 dialog.destroy()
                 self.set_notice("Session created")
+                self._reset_board_context()
+                self.selected_session_id = None
+                self._set_board_context_available(False)
+                self._render_board({})
+                self._show_board_loading("Starting session board…")
                 self.refresh()
 
             self._background(
@@ -9719,9 +10376,15 @@ class GameBoardWindow(tk.Tk):
             return
 
         def done(result: dict[str, Any]) -> None:
-            self.selected_session_id = result["id"]
+            self.managed_session_id = str(result["id"])
+            self._board_session_select_pending_id = self.managed_session_id
             self.selected_invite_ids.clear()
             self.set_notice("Session duplicated")
+            self._reset_board_context()
+            self.selected_session_id = None
+            self._set_board_context_available(False)
+            self._render_board({})
+            self._show_board_loading("Starting session board…")
             self.refresh()
 
         self._background(
@@ -9741,8 +10404,24 @@ class GameBoardWindow(tk.Tk):
             parent=self,
         ):
             return
-        self._api_action(
-            "DELETE", f"/api/admin/sessions/{session['id']}", None, "Session deleted"
+        was_board_session = session["id"] == self.selected_session_id
+        if was_board_session:
+            self._cancel_board_delayed_actions()
+
+        def done(_result: Any) -> None:
+            if was_board_session:
+                self._reset_board_context()
+                self.selected_session_id = None
+                self._set_board_context_available(False)
+                self._render_board({})
+            self.set_notice("Session deleted")
+            self.refresh()
+
+        self._background(
+            lambda: self.client.request(
+                "DELETE", f"/api/admin/sessions/{session['id']}"
+            ),
+            done,
         )
 
     def remove_from_session(self) -> None:
@@ -9821,11 +10500,32 @@ class GameBoardWindow(tk.Tk):
             f"End {session['title']}, disconnect its players, and retain its summary?",
             parent=self,
         ):
-            self._api_action(
-                "POST", f"/api/admin/sessions/{session['id']}/end", None, "Session ended"
+            was_board_session = session["id"] == self.selected_session_id
+            if was_board_session:
+                self._cancel_board_delayed_actions()
+
+            def done(_result: Any) -> None:
+                if was_board_session:
+                    self._reset_board_context()
+                    self.selected_session_id = None
+                    self._set_board_context_available(False)
+                    self._render_board({})
+                self.set_notice("Session ended")
+                self.refresh()
+
+            self._background(
+                lambda: self.client.request(
+                    "POST", f"/api/admin/sessions/{session['id']}/end"
+                ),
+                done,
             )
 
     def send_announcement(self) -> None:
+        if not self.selected_session_id:
+            self.set_notice(
+                "Please start a session to activate the gameboard.", error=True
+            )
+            return
         text = self.announcement.get("1.0", "end").strip()
         if not text:
             return
@@ -9954,6 +10654,11 @@ class GameBoardWindow(tk.Tk):
         return None
 
     def send_chat(self) -> None:
+        if not self.selected_session_id:
+            self.set_notice(
+                "Please start a session to activate the gameboard.", error=True
+            )
+            return
         message = self.chat_entry.get().strip()
         if not message:
             return
@@ -10011,6 +10716,12 @@ class GameBoardWindow(tk.Tk):
         if self.closing:
             return
         self.closing = True
+        if self._expiration_warning_after_id is not None:
+            try:
+                self.after_cancel(self._expiration_warning_after_id)
+            except tk.TclError:
+                pass
+            self._expiration_warning_after_id = None
         pending_map_ids = list(self._board_camera_save_after_ids)
         for after_id in list(self._board_camera_save_after_ids.values()):
             try:

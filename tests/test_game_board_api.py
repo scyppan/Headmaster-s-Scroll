@@ -3,10 +3,10 @@ import base64
 import json
 import tempfile
 import unittest
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import AsyncMock, Mock, patch
 
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
@@ -23,7 +23,7 @@ from headmasters_scroll.game_board.desktop import (
     shift_game_calendar,
 )
 from headmasters_scroll.game_board.gmail import GmailSender, GmailUnavailable
-from headmasters_scroll.game_board.server import create_apps
+from headmasters_scroll.game_board.server import GameBoardRuntime, create_apps
 from headmasters_scroll.game_board.service import (
     GameBoardService,
     format_game_datetime_for_people,
@@ -201,6 +201,208 @@ class GameBoardApiTests(unittest.TestCase):
         remaining = self.admin.get("/api/admin/state", headers=self.admin_headers).json()
         self.assertEqual([item["id"] for item in remaining["sessions"]], [session_id])
 
+    def test_admin_state_contains_only_the_selected_live_session_board(self):
+        created = self.admin.post(
+            "/api/admin/sessions",
+            headers=self.admin_headers,
+            json={
+                "title": "Second board",
+                "campaign_id": "campaign-1",
+                "game_day": (date.today() + timedelta(days=2)).isoformat(),
+                "expiration_time": "23:59",
+                "contact_ids": [self.contact["id"]],
+            },
+        )
+        self.assertEqual(created.status_code, 200, created.text)
+        second_id = created.json()["id"]
+        state = self.admin.get("/api/admin/state", headers=self.admin_headers).json()
+        self.assertEqual(state["board_session_id"], second_id)
+        self.assertEqual(state["session"]["id"], second_id)
+        self.assertEqual(set(state["boards"]), {second_id})
+        self.assertLessEqual(set(state["battles"]), {second_id})
+
+        selected = self.admin.put(
+            f"/api/admin/sessions/{self.session_id}/select",
+            headers=self.admin_headers,
+        )
+        self.assertEqual(selected.status_code, 200, selected.text)
+        state = self.admin.get("/api/admin/state", headers=self.admin_headers).json()
+        self.assertEqual(state["board_session_id"], self.session_id)
+        self.assertEqual(set(state["boards"]), {self.session_id})
+
+        ended = self.admin.post(
+            f"/api/admin/sessions/{self.session_id}/end",
+            headers=self.admin_headers,
+        )
+        self.assertEqual(ended.status_code, 200, ended.text)
+        state = self.admin.get("/api/admin/state", headers=self.admin_headers).json()
+        self.assertEqual([item["id"] for item in state["sessions"]], [second_id])
+        self.assertIsNone(state["board_session_id"])
+        self.assertIsNone(state["session"])
+        self.assertEqual(state["boards"], {})
+        self.assertEqual(state["battles"], {})
+        self.assertEqual(state["location_maps"], [])
+        archived_selection = self.admin.put(
+            f"/api/admin/sessions/{self.session_id}/select",
+            headers=self.admin_headers,
+        )
+        self.assertEqual(archived_selection.status_code, 403)
+
+    def test_stale_admin_board_chat_and_announcement_writes_are_rejected(self):
+        created = self.admin.post(
+            "/api/admin/sessions",
+            headers=self.admin_headers,
+            json={
+                "title": "Selected board",
+                "campaign_id": "campaign-1",
+                "game_day": (date.today() + timedelta(days=2)).isoformat(),
+                "expiration_time": "23:59",
+                "contact_ids": [self.contact["id"]],
+            },
+        )
+        self.assertEqual(created.status_code, 200, created.text)
+        selected_id = created.json()["id"]
+        state = self.admin.get(
+            "/api/admin/state", headers=self.admin_headers
+        ).json()
+        map_id = state["boards"][selected_id]["maps"][0]["record_id"]
+        person_id = state["characters"][0]["id"]
+
+        move = self.admin.post(
+            "/api/admin/board/move",
+            headers=self.admin_headers,
+            json={
+                "session_id": self.session_id,
+                "person_id": person_id,
+                "map_id": map_id,
+                "x": 0.25,
+                "y": 0.75,
+            },
+        )
+        chat = self.admin.post(
+            "/api/admin/chat",
+            headers=self.admin_headers,
+            json={"session_id": self.session_id, "message": "stale chat"},
+        )
+        announcement = self.admin.post(
+            "/api/admin/announcements",
+            headers=self.admin_headers,
+            json={"session_id": self.session_id, "message": "stale notice"},
+        )
+
+        self.assertEqual(move.status_code, 409, move.text)
+        self.assertEqual(chat.status_code, 409, chat.text)
+        self.assertEqual(announcement.status_code, 409, announcement.text)
+        old_session = self.runtime.service.session_view(self.session_id)
+        self.assertEqual(old_session["chat"], [])
+        self.assertEqual(old_session["announcement_count"], 0)
+        campaign = self.runtime.service.campaign_repository.get("campaign-1")
+        self.assertIsNone(
+            campaign["game_state"]["people"].get(person_id, {}).get("placement")
+        )
+
+    def test_legacy_end_action_disconnects_only_the_board_session(self):
+        created = self.admin.post(
+            "/api/admin/sessions",
+            headers=self.admin_headers,
+            json={
+                "title": "Selected board",
+                "campaign_id": "campaign-1",
+                "game_day": (date.today() + timedelta(days=2)).isoformat(),
+                "expiration_time": "23:59",
+                "contact_ids": [self.contact["id"]],
+            },
+        )
+        self.assertEqual(created.status_code, 200, created.text)
+        selected_id = created.json()["id"]
+        with patch.object(
+            self.runtime, "disconnect_session", new=AsyncMock()
+        ) as disconnect_session, patch.object(
+            self.runtime, "disconnect_all", new=AsyncMock()
+        ) as disconnect_all:
+            ended = self.admin.post(
+                "/api/admin/session/end", headers=self.admin_headers
+            )
+
+        self.assertEqual(ended.status_code, 200, ended.text)
+        disconnect_session.assert_awaited_once_with(
+            selected_id,
+            "session_expired",
+            "The game session has ended.",
+        )
+        disconnect_all.assert_not_awaited()
+        remaining = self.runtime.service.sessions_view()
+        self.assertEqual([item["id"] for item in remaining], [self.session_id])
+        self.assertIsNone(self.runtime.service.board_session_id())
+
+    def test_expiration_endpoint_requires_a_fresh_later_aware_deadline(self):
+        state = self.admin.get("/api/admin/state", headers=self.admin_headers).json()
+        current = state["session"]["expires_at"]
+        current_datetime = datetime.fromisoformat(current.replace("Z", "+00:00"))
+        later = current_datetime + timedelta(hours=1)
+        response = self.admin.put(
+            f"/api/admin/sessions/{self.session_id}/expiration",
+            headers=self.admin_headers,
+            json={
+                "expires_at": later.astimezone(
+                    timezone(timedelta(hours=2))
+                ).isoformat(),
+                "expected_expires_at": current,
+            },
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["expires_at"], later.isoformat().replace("+00:00", "Z"))
+
+        stale = self.admin.put(
+            f"/api/admin/sessions/{self.session_id}/expiration",
+            headers=self.admin_headers,
+            json={
+                "expires_at": (later + timedelta(hours=1)).isoformat(),
+                "expected_expires_at": current,
+            },
+        )
+        self.assertEqual(stale.status_code, 409)
+        shorter = self.admin.put(
+            f"/api/admin/sessions/{self.session_id}/expiration",
+            headers=self.admin_headers,
+            json={
+                "expires_at": current,
+                "expected_expires_at": response.json()["expires_at"],
+            },
+        )
+        self.assertEqual(shorter.status_code, 400)
+        naive = self.admin.put(
+            f"/api/admin/sessions/{self.session_id}/expiration",
+            headers=self.admin_headers,
+            json={
+                "expires_at": "2030-01-01T12:00:00",
+                "expected_expires_at": response.json()["expires_at"],
+            },
+        )
+        self.assertEqual(naive.status_code, 400)
+
+    def test_expiration_worker_continues_after_one_session_failure(self):
+        service = Mock()
+        service.world_fingerprint.return_value = (1, 1)
+        due = (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat()
+        service.sessions_view.return_value = [
+            {"id": "broken", "expires_at": due},
+            {"id": "healthy", "expires_at": due},
+        ]
+        service.begin_session_expiration.side_effect = [ValueError("broken"), True]
+        service.finish_session_expiration.return_value = {"id": "healthy"}
+        runtime = GameBoardRuntime(service)
+        runtime.disconnect_session = AsyncMock()
+        runtime.notify_admins = AsyncMock()
+
+        count = asyncio.run(runtime.expire_due_sessions())
+
+        self.assertEqual(count, 1)
+        runtime.disconnect_session.assert_awaited_once()
+        self.assertEqual(
+            runtime.disconnect_session.await_args.args[0], "healthy"
+        )
+
     def test_delete_route_removes_archived_session(self):
         state = self.admin.get("/api/admin/state", headers=self.admin_headers).json()
         session_id = state["sessions"][0]["id"]
@@ -323,7 +525,13 @@ class GameBoardApiTests(unittest.TestCase):
     def test_headmaster_chat_is_stored_and_broadcast(self):
         socket = FakeSocket()
         self.runtime.connections["fake"] = type(
-            "Connection", (), {"websocket": socket, "public": lambda _self, _service: {"contact_id": "fake"}}
+            "Connection",
+            (),
+            {
+                "websocket": socket,
+                "session_id": self.session_id,
+                "public": lambda _self, _service: {"contact_id": "fake"},
+            },
         )()
         response = self.admin.post(
             "/api/admin/chat", headers=self.admin_headers, json={"message": "Gather in the hall"}
@@ -767,7 +975,10 @@ class GameBoardAssetTests(unittest.TestCase):
         self.assertIn('"Last hour" if direction < 0 else "Next hour"', desktop)
         self.assertIn("def _build_headmaster_tool_rail", desktop)
         self.assertIn("def select_headmaster_tool", desktop)
-        self.assertIn('if key == "game-board":', desktop)
+        self.assertIn(
+            'if key == "game-board" and self._board_context_available:',
+            desktop,
+        )
         self.assertIn("self.headmaster_tool_rail.pack_forget()", desktop)
         self.assertLess(
             desktop.index('sidebar.pack(side="left"'),

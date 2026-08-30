@@ -1,9 +1,10 @@
 import json
 import tempfile
 import unittest
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from unittest.mock import patch
+from zoneinfo import ZoneInfo
 
 from headmasters_scroll.campaigns import CampaignRepository
 from headmasters_scroll.game_board.service import GameBoardService, iso_utc, utc_now
@@ -320,7 +321,7 @@ class GameBoardServiceTests(unittest.TestCase):
         self.assertEqual(summary["game_datetime"], "1943-09-01T17:45")
         self.assertEqual(summary["campaign_id"], self.campaign_id)
 
-    def test_ended_session_reopens_and_saves_its_campaign_board(self):
+    def test_archived_session_cannot_reopen_or_modify_its_campaign_board(self):
         created = self.create_session()
         snapshot = self.service.board_snapshot(created["id"])
         map_id = snapshot["maps"][0]["record_id"]
@@ -330,30 +331,10 @@ class GameBoardServiceTests(unittest.TestCase):
         archived = self.service.archived_sessions_view()
         self.assertEqual(archived[0]["id"], summary["id"])
         self.assertTrue(archived[0]["archived"])
-        restored = self.service.board_snapshot(summary["id"])
-        self.assertEqual(restored["loaded_map_ids"], [map_id])
-        self.assertEqual(restored["active_map_id"], map_id)
-
-        obscuration = {
-            "record_id": "archived-obscuration",
-            "name": "Closed wing",
-            "points": [
-                {"x": 0.1, "y": 0.1},
-                {"x": 0.3, "y": 0.1},
-                {"x": 0.2, "y": 0.3},
-            ],
-        }
-        self.service.set_map_presentation(
-            summary["id"],
-            map_id,
-            published=False,
-            obscurations=[obscuration],
-            preview_opacity=0.35,
-            preview_color="#ff0000",
-        )
-        saved = self.service.board_snapshot(summary["id"])
-        selected_map = next(item for item in saved["maps"] if item["record_id"] == map_id)
-        self.assertEqual(selected_map["obscurations"][0]["name"], "Closed wing")
+        with self.assertRaisesRegex(PermissionError, "Archived"):
+            self.service.board_snapshot(summary["id"])
+        with self.assertRaisesRegex(PermissionError, "Archived"):
+            self.service.set_map_published(summary["id"], map_id, True)
 
     def test_new_session_requires_a_campaign(self):
         with self.assertRaisesRegex(ValueError, "Choose a campaign"):
@@ -373,6 +354,16 @@ class GameBoardServiceTests(unittest.TestCase):
         self.repository.save_active(wrapper)
         with self.assertRaises(ValueError):
             self.service.poll_admission(request["request_id"], request["poll_token"])
+        self.assertEqual(len(self.repository.active()["sessions"]), 1)
+        due = self.repository.active()["sessions"][0]["expires_at"]
+        self.assertTrue(
+            self.service.begin_session_expiration(
+                self.repository.active()["sessions"][0]["id"], due
+            )
+        )
+        self.service.finish_session_expiration(
+            self.repository.active()["sessions"][0]["id"], due
+        )
         self.assertEqual(self.repository.active()["sessions"], [])
         summary_text = json.dumps(self.repository.summaries())
         self.assertIn("Alice", summary_text)
@@ -449,6 +440,128 @@ class GameBoardServiceTests(unittest.TestCase):
         self.assertEqual(summary["event_date"], "1943-09-02")
         self.assertEqual([session["id"] for session in self.service.sessions_view()], [first["id"]])
 
+    def test_create_select_end_and_delete_manage_one_authoritative_board_session(self):
+        first = self.create_session()
+        bob = self.service.add_contact("Bob", "bob@example.com")
+        second = self.service.create_session(
+            "Sunday Game",
+            (date.today() + timedelta(days=2)).isoformat(),
+            [bob["id"]],
+            campaign_id=self.campaign_id,
+        )
+        self.assertEqual(self.repository.active()["board_session_id"], second["id"])
+        self.assertEqual(self.service.board_session_view()["id"], second["id"])
+
+        selected = self.service.select_board_session(first["id"])
+        self.assertEqual(selected["id"], first["id"])
+        self.assertEqual(self.service.session_view()["id"], first["id"])
+        self.service.end_session("ended", first["id"])
+        self.assertIsNone(self.repository.active()["board_session_id"])
+        self.assertIsNone(self.service.session_view())
+        self.assertEqual([item["id"] for item in self.service.sessions_view()], [second["id"]])
+
+        self.service.select_board_session(second["id"])
+        self.service.delete_session(second["id"])
+        self.assertIsNone(self.repository.active()["board_session_id"])
+
+    def test_duplicate_session_becomes_the_authoritative_board(self):
+        first = self.create_session()
+        duplicated = self.service.duplicate_session(first["id"])
+        self.assertEqual(
+            self.repository.active()["board_session_id"], duplicated["id"]
+        )
+
+    def test_expiration_extension_is_timezone_aware_and_race_safe(self):
+        session = self.create_session()
+        original = session["expires_at"]
+        local_zone = ZoneInfo(self.repository.settings()["timezone"])
+        original_local = datetime.fromisoformat(
+            original.replace("Z", "+00:00")
+        ).astimezone(local_zone)
+        local_day = original_local.date() + timedelta(days=1)
+        extended_local = datetime.combine(local_day, time(0, 15), local_zone)
+        extended = extended_local.astimezone(utc_now().tzinfo)
+        updated = self.service.update_session_expiration(
+            session["id"], extended.isoformat(), original
+        )
+        self.assertEqual(updated["expires_at"], iso_utc(extended))
+        self.assertEqual(updated["game_day"], local_day.isoformat())
+        self.assertEqual(updated["expiration_time"], "00:15")
+        self.assertFalse(
+            self.service.begin_session_expiration(
+                session["id"], original, now=extended + timedelta(days=1)
+            )
+        )
+        self.assertEqual(self.service.session_view(session["id"])["id"], session["id"])
+
+        with self.assertRaisesRegex(RuntimeError, "changed"):
+            self.service.update_session_expiration(
+                session["id"],
+                (extended + timedelta(hours=1)).isoformat(),
+                original,
+            )
+        with self.assertRaisesRegex(ValueError, "later"):
+            self.service.update_session_expiration(
+                session["id"], updated["expires_at"], updated["expires_at"]
+            )
+        with self.assertRaisesRegex(ValueError, "later"):
+            self.service.update_session_expiration(
+                session["id"],
+                iso_utc(extended - timedelta(minutes=1)),
+                updated["expires_at"],
+            )
+        with self.assertRaisesRegex(ValueError, "timezone"):
+            self.service.update_session_expiration(
+                session["id"], "2030-01-01T12:00:00", updated["expires_at"]
+            )
+        with self.assertRaisesRegex(ValueError, "future"):
+            self.service.update_session_expiration(
+                session["id"],
+                iso_utc(utc_now() - timedelta(seconds=1)),
+                updated["expires_at"],
+            )
+
+    def test_due_and_archived_sessions_reject_expiration_extensions(self):
+        session = self.create_session()
+        raw, _link = self.invite()
+        request = self.service.request_admission(raw, "203.0.113.7", "Browser")
+        wrapper = self.repository.active()
+        due = iso_utc(utc_now() - timedelta(seconds=1))
+        wrapper["sessions"][0]["expires_at"] = due
+        self.repository.save_active(wrapper)
+        future = iso_utc(utc_now() + timedelta(hours=1))
+        with self.assertRaisesRegex(RuntimeError, "already expiring"):
+            self.service.update_session_expiration(session["id"], future, due)
+        self.assertTrue(self.service.begin_session_expiration(session["id"], due))
+        with self.assertRaisesRegex(RuntimeError, "already expiring"):
+            self.service.update_session_expiration(session["id"], future, due)
+        self.service.mark_disconnected(request["request_id"], 12.5, 400.0, 2)
+        summary = self.service.finish_session_expiration(session["id"], due)
+        self.assertEqual(summary["reason"], "expired")
+        self.assertEqual(summary["players"][0]["disconnects"], 1)
+        self.assertEqual(summary["players"][0]["connected_seconds"], 12.5)
+        self.assertEqual(summary["players"][0]["average_latency_ms"], 200.0)
+        self.assertIsNone(self.repository.active()["board_session_id"])
+        with self.assertRaisesRegex(PermissionError, "Archived"):
+            self.service.update_session_expiration(session["id"], future, due)
+
+    def test_restart_hides_then_expires_an_overdue_board_session(self):
+        session = self.create_session()
+        wrapper = self.repository.active()
+        due = iso_utc(utc_now() - timedelta(minutes=1))
+        wrapper["sessions"][0]["expires_at"] = due
+        self.repository.save_active(wrapper)
+
+        restarted = GameBoardService(
+            self.repository, self.service.campaign_repository
+        )
+        self.assertIsNone(restarted.board_session_view())
+        self.assertTrue(restarted.begin_session_expiration(session["id"], due))
+        summary = restarted.finish_session_expiration(session["id"], due)
+        self.assertEqual(summary["id"], session["id"])
+        self.assertEqual(restarted.sessions_view(), [])
+        self.assertIsNone(self.repository.active()["board_session_id"])
+
     def test_delete_session_removes_an_expired_archived_session(self):
         session = self.create_session()
         summary = self.service.end_session("expired", session["id"])
@@ -469,6 +582,24 @@ class GameBoardServiceTests(unittest.TestCase):
         migrated = self.repository.active()
         self.assertEqual(migrated["schema_version"], 1)
         self.assertEqual([item["id"] for item in migrated["sessions"]], [session["id"]])
+        self.assertIsNone(migrated["board_session_id"])
+
+    def test_legacy_sessions_and_explicit_none_never_fall_back(self):
+        older = self.create_session()
+        newer = self.service.duplicate_session(older["id"])
+        older["created_at"] = "2026-01-01T00:00:00Z"
+        newer["created_at"] = "2026-01-02T00:00:00Z"
+        self.repository.save_active({
+            "schema_version": 1,
+            "sessions": [newer, older],
+        })
+        migrated = self.repository.active()
+        self.assertIsNone(migrated["board_session_id"])
+
+        migrated["board_session_id"] = None
+        self.repository.save_active(migrated)
+        remembered = self.repository.active()
+        self.assertIsNone(remembered["board_session_id"])
 
 
 if __name__ == "__main__":

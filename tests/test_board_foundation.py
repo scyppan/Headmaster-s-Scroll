@@ -795,6 +795,18 @@ class ProtectedAssetApiTests(unittest.TestCase):
         self.temporary.cleanup()
 
     def test_assets_require_live_connection_credential_and_visibility(self):
+        published = self.admin.put(
+            "/api/admin/board/maps/map-1/presentation",
+            headers=self.admin_headers,
+            json={
+                "session_id": self.session_id,
+                "published": True,
+                "obscurations": [],
+                "preview_opacity": 0.35,
+                "preview_color": "#ff0000",
+            },
+        )
+        self.assertEqual(published.status_code, 200, published.text)
         admission = self.player.post(
             "/v1/admissions",
             headers=self.origin_headers,
@@ -888,6 +900,17 @@ class ProtectedAssetApiTests(unittest.TestCase):
                     "map_id": "map-1",
                     "x": 0.41,
                     "y": 0.62,
+                },
+            ),
+            self.admin.post(
+                "/api/admin/board/move",
+                headers=self.admin_headers,
+                json={
+                    "session_id": self.session_id,
+                    "person_id": "npc-1",
+                    "map_id": "map-1",
+                    "x": 0.55,
+                    "y": 0.55,
                 },
             ),
             self.admin.post(
@@ -1014,6 +1037,19 @@ class ProtectedAssetApiTests(unittest.TestCase):
             "asset": None,
         })
         self.shared.save(world_session, "mapper")
+
+        placed = self.admin.post(
+            "/api/admin/board/move",
+            headers=self.admin_headers,
+            json={
+                "session_id": self.session_id,
+                "person_id": "npc-1",
+                "map_id": "map-1",
+                "x": 0.5,
+                "y": 0.5,
+            },
+        )
+        self.assertEqual(placed.status_code, 200, placed.text)
 
         request = self.admin.post(
             "/api/admin/board/place-character",

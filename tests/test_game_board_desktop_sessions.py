@@ -1,3 +1,4 @@
+import inspect
 import unittest
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -15,9 +16,17 @@ from headmasters_scroll.game_board.desktop import (
 class FakeTree:
     def __init__(self, selected: str):
         self.selected = selected
+        self.selection_set_calls = []
 
     def selection(self):
         return (self.selected,)
+
+    def exists(self, _item_id):
+        return True
+
+    def selection_set(self, item_id):
+        self.selection_set_calls.append(item_id)
+        self.selected = item_id
 
     def identify_row(self, _y):
         return self.selected
@@ -199,6 +208,76 @@ class GameBoardDesktopSessionTests(unittest.TestCase):
             calls,
             [("PUT", "/api/admin/sessions/session-b/select")],
         )
+
+    def test_unchanged_queued_session_selection_is_a_no_op(self):
+        window = object.__new__(GameBoardWindow)
+        window.sessions_tree = FakeTree("session-a")
+        window._rendering_session_selection = False
+        window.managed_session_id = "session-a"
+        window.render = lambda _state: self.fail(
+            "an unchanged queued selection rendered again"
+        )
+
+        window._session_selected()
+
+        self.assertEqual(window.managed_session_id, "session-a")
+
+    def test_clicking_managed_live_session_explicitly_activates_board(self):
+        window = object.__new__(GameBoardWindow)
+        window.sessions_tree = FakeTree("session-b")
+        window._rendering_session_selection = False
+        window._board_session_select_pending_id = None
+        window.selected_session_id = "session-a"
+        window.managed_session_id = "session-b"
+        window._invite_selection_session_id = "session-b"
+        window.state_data = {
+            "sessions": [{"id": "session-a"}, {"id": "session-b"}],
+            "archived_sessions": [],
+        }
+        window.preferences = {}
+        window.preferences_store = SimpleNamespace(save=lambda _value: None)
+        calls = []
+        window.client = SimpleNamespace(
+            request=lambda method, path: calls.append((method, path)) or {}
+        )
+        window._reset_board_context = lambda: None
+        window._set_board_context_available = lambda _available: None
+        window._render_board = lambda _board: None
+        window._show_board_loading = lambda _text: None
+        window.set_notice = lambda _text, error=False: None
+        window.refresh = lambda: None
+
+        def background(work, success=None, **_kwargs):
+            result = work()
+            if success:
+                success(result)
+
+        window._background = background
+
+        window._session_clicked(SimpleNamespace(y=0))
+
+        self.assertIsNone(window.selected_session_id)
+        self.assertEqual(
+            calls,
+            [("PUT", "/api/admin/sessions/session-b/select")],
+        )
+
+    def test_session_tree_sync_skips_an_already_selected_row(self):
+        window = object.__new__(GameBoardWindow)
+        window.sessions_tree = FakeTree("session-a")
+        window._rendering_session_selection = False
+
+        window._sync_session_tree_selection("session-a")
+        window._sync_session_tree_selection("session-b")
+
+        self.assertEqual(window.sessions_tree.selection_set_calls, ["session-b"])
+        self.assertFalse(window._rendering_session_selection)
+
+    def test_control_room_configure_handler_never_processes_idle_tasks_inline(self):
+        source = inspect.getsource(GameBoardWindow._scrollable_page)
+
+        self.assertNotIn("update_idletasks", source)
+        self.assertIn("after_idle", source)
 
     def test_selecting_archived_session_does_not_designate_it(self):
         window = object.__new__(GameBoardWindow)

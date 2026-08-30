@@ -8649,13 +8649,31 @@ class GameBoardWindow(tk.Tk):
         content = ttk.Frame(canvas)
         window = canvas.create_window((0, 0), window=content, anchor="nw")
 
+        update_after_id: str | None = None
+
+        def apply_region_update() -> None:
+            nonlocal update_after_id
+            update_after_id = None
+            try:
+                # Keep every Control Room page inside the visible application
+                # width. Its weighted grids can then contract instead of
+                # creating a hidden wide page that clips right-edge actions
+                # such as Send.  Do not process idle tasks from inside a
+                # <Configure> callback: Tk can synchronously re-enter this
+                # handler and hang the desktop.
+                width = max(1, canvas.winfo_width())
+                if int(float(canvas.itemcget(window, "width") or 0)) != width:
+                    canvas.itemconfigure(window, width=width)
+                canvas.configure(scrollregion=canvas.bbox("all"))
+            except tk.TclError:
+                # The page may have been destroyed while an idle update was
+                # pending during application shutdown.
+                return
+
         def update_region(_event: tk.Event | None = None) -> None:
-            canvas.update_idletasks()
-            # Keep every Control Room page inside the visible application
-            # width. Its weighted grids can then contract instead of creating
-            # a hidden wide page that clips right-edge actions such as Send.
-            canvas.itemconfigure(window, width=max(1, canvas.winfo_width()))
-            canvas.configure(scrollregion=canvas.bbox("all"))
+            nonlocal update_after_id
+            if update_after_id is None:
+                update_after_id = canvas.after_idle(apply_region_update)
 
         def wheel(event: tk.Event) -> str:
             try:
@@ -9333,12 +9351,7 @@ class GameBoardWindow(tk.Tk):
                 self.preferences_store.save(self.preferences)
             except OSError:
                 pass
-        if self.managed_session_id and self.sessions_tree.exists(self.managed_session_id):
-            self._rendering_session_selection = True
-            try:
-                self.sessions_tree.selection_set(self.managed_session_id)
-            finally:
-                self._rendering_session_selection = False
+        self._sync_session_tree_selection(self.managed_session_id)
         session = next(
             (item for item in sessions if item["id"] == self.managed_session_id), None
         )
@@ -9787,38 +9800,63 @@ class GameBoardWindow(tk.Tk):
             None,
         )
 
+    def _sync_session_tree_selection(self, session_id: str | None) -> None:
+        """Select the managed row without generating redundant Tk events."""
+
+        if not session_id or not self.sessions_tree.exists(session_id):
+            return
+        if tuple(self.sessions_tree.selection()) == (session_id,):
+            return
+        self._rendering_session_selection = True
+        try:
+            self.sessions_tree.selection_set(session_id)
+        finally:
+            self._rendering_session_selection = False
+
     def _session_clicked(self, event: tk.Event) -> None:
         row_id = self.sessions_tree.identify_row(event.y)
         if row_id and row_id == self.managed_session_id and row_id != self.selected_session_id:
-            self._session_selected()
+            self._session_selected(force_activate=True)
 
-    def _session_selected(self, _event: tk.Event | None = None) -> None:
+    def _session_selected(
+        self,
+        _event: tk.Event | None = None,
+        *,
+        force_activate: bool = False,
+    ) -> None:
         if self._rendering_session_selection:
             return
         selection = self.sessions_tree.selection()
         if not selection:
             return
         target_session_id = str(selection[0])
-        self.managed_session_id = target_session_id
-        self._invite_selection_session_id = None
-        self.preferences["last_session_id"] = target_session_id
-        selected = next(
-            (
-                item for item in (
-                    list(self.state_data.get("sessions") or [])
-                    + list(self.state_data.get("archived_sessions") or [])
-                )
-                if item.get("id") == target_session_id
-            ),
-            None,
-        )
-        if selected and selected.get("campaign_id"):
-            self.preferences["last_campaign_id"] = selected["campaign_id"]
-        try:
-            self.preferences_store.save(self.preferences)
-        except OSError:
-            pass
-        self.render(self.state_data)
+        managed_changed = target_session_id != self.managed_session_id
+        if not managed_changed and not force_activate:
+            # Treeview queues <<TreeviewSelect>> even when selection_set()
+            # receives the already-selected row.  Rendering here would select
+            # it again and create an unbounded event/render loop.
+            return
+        if managed_changed:
+            self.managed_session_id = target_session_id
+            self._invite_selection_session_id = None
+            self.preferences["last_session_id"] = target_session_id
+            selected = next(
+                (
+                    item for item in (
+                        list(self.state_data.get("sessions") or [])
+                        + list(self.state_data.get("archived_sessions") or [])
+                    )
+                    if item.get("id") == target_session_id
+                ),
+                None,
+            )
+            if selected and selected.get("campaign_id"):
+                self.preferences["last_campaign_id"] = selected["campaign_id"]
+            try:
+                self.preferences_store.save(self.preferences)
+            except OSError:
+                pass
+            self.render(self.state_data)
         live_ids = {
             str(item.get("id") or "")
             for item in (self.state_data.get("sessions") or [])

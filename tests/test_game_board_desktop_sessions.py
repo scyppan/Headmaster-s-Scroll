@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 
 from headmasters_scroll.game_board.desktop import (
     GameBoardWindow,
+    board_character_sections,
     board_from_admin_state,
     format_expiration_countdown,
     format_stored_local_datetime,
@@ -20,6 +21,9 @@ class FakeTree:
 
     def selection(self):
         return (self.selected,)
+
+    def winfo_exists(self):
+        return True
 
     def exists(self, _item_id):
         return True
@@ -65,6 +69,9 @@ class FakeStringValue:
     def set(self, value):
         self.value = value
 
+    def get(self):
+        return self.value
+
 
 class FakeEntry:
     def __init__(self, value="draft"):
@@ -90,6 +97,248 @@ class FakePopup:
 
 
 class GameBoardDesktopSessionTests(unittest.TestCase):
+    def test_character_navigator_groups_placed_and_unplaced_people(self):
+        snapshot = {
+            "maps": [
+                {"record_id": "map-a", "name": "Great Hall"},
+                {"record_id": "map-b", "name": "Library"},
+            ],
+            "actors": [
+                {
+                    "actor_type": "person", "actor_id": "person-a",
+                    "name": "Alice", "map_id": "map-a",
+                    "group_name": "Explorers", "faction_name": "School",
+                },
+                {
+                    "actor_type": "person", "actor_id": "person-b",
+                    "name": "Bob", "map_id": "map-b",
+                    "group_name": "", "faction_name": "",
+                },
+            ],
+        }
+        characters = [
+            {"id": "person-a", "name": "Alice"},
+            {"id": "person-b", "name": "Bob"},
+            {
+                "id": "person-c", "name": "Celia",
+                "faction_id": "faction-c",
+                "faction_name": "Raven Circle",
+                "faction_color": "#223344",
+            },
+        ]
+
+        by_map = board_character_sections(
+            snapshot, characters, "Maps", selected_map_id="map-b"
+        )
+        self.assertEqual([label for label, _records in by_map], [
+            "Library", "Great Hall", "Unplaced"
+        ])
+        self.assertTrue(by_map[-1][1][0]["unplaced"])
+        by_group = board_character_sections(snapshot, characters, "Groups")
+        self.assertEqual(
+            {label: [item["name"] for item in records] for label, records in by_group},
+            {"Explorers": ["Alice"], "No group": ["Bob", "Celia"]},
+        )
+        by_faction = board_character_sections(snapshot, characters, "Factions")
+        self.assertEqual(
+            {label: [item["name"] for item in records] for label, records in by_faction},
+            {
+                "Raven Circle": ["Celia"],
+                "School": ["Alice"],
+                "No faction": ["Bob"],
+            },
+        )
+        searched = board_character_sections(snapshot, characters, "Maps", "school")
+        self.assertEqual(
+            [item["name"] for _label, records in searched for item in records],
+            ["Alice"],
+        )
+
+    def test_selecting_a_navigator_heading_clears_hidden_character_actions(self):
+        window = object.__new__(GameBoardWindow)
+        window._rendering_actor_selection = False
+        window.board_actor_tree = FakeTree("section:0")
+        window.selected_board_actor_id = "person-a"
+        window.selected_board_map_id = ""
+        window._board_character_sheet_request_token = "old-sheet-request"
+        window._board_character_sheet_after_id = None
+        window._board_character_sheet_portrait_image = object()
+        window.board_snapshot = {
+            "actors": [{
+                "actor_type": "person", "actor_id": "person-a",
+                "name": "Alice", "map_id": "map-a",
+            }],
+            "maps": [{"record_id": "map-a", "name": "Great Hall"}],
+        }
+        window.state_data = {"characters": []}
+        window.board_actor_action_buttons = [FakeManagedWidget() for _ in range(4)]
+        window.board_actor_action_summary = FakeStringValue()
+        window.board_character_sheet_name = FakeStringValue()
+        window.board_character_sheet_status = FakeStringValue()
+        window.board_character_sheet_portrait = FakeLabel()
+        window.board_character_sheet_texts = {}
+
+        window._board_actor_selected()
+
+        self.assertEqual(window.selected_board_actor_id, "")
+        self.assertEqual(window._board_character_sheet_request_token, "")
+        self.assertTrue(all(
+            button.state == "disabled"
+            for button in window.board_actor_action_buttons
+        ))
+        self.assertEqual(
+            window.board_actor_action_summary.value,
+            "Select a character to see their sheet and placement controls.",
+        )
+
+    def test_character_sheet_selection_is_debounced(self):
+        window = object.__new__(GameBoardWindow)
+        window._board_character_sheet_after_id = None
+        scheduled = {}
+        cancelled = []
+        begun = []
+
+        def after(delay, callback):
+            after_id = f"after-{len(scheduled) + 1}"
+            scheduled[after_id] = (delay, callback)
+            return after_id
+
+        window.after = after
+        window.after_cancel = cancelled.append
+        window._begin_selected_actor_sheet_request = lambda: begun.append(True)
+
+        window._load_selected_actor_sheet()
+        first_id = window._board_character_sheet_after_id
+        window._load_selected_actor_sheet()
+        second_id = window._board_character_sheet_after_id
+
+        self.assertNotEqual(first_id, second_id)
+        self.assertEqual(cancelled, [first_id])
+        self.assertEqual(scheduled[second_id][0], 180)
+        self.assertEqual(begun, [])
+        scheduled[second_id][1]()
+        self.assertEqual(begun, [True])
+        self.assertIsNone(window._board_character_sheet_after_id)
+
+    def test_map_selected_character_clears_an_excluding_navigator_search(self):
+        window = object.__new__(GameBoardWindow)
+        person = {
+            "actor_type": "person", "actor_id": "person-a",
+            "name": "Alice", "map_id": "map-a",
+        }
+        window.board_snapshot = {"actors": [person]}
+        window.state_data = {"characters": []}
+        window.selected_board_actor_id = "person-a"
+        window.board_actor_search_var = FakeStringValue()
+        window.board_actor_search_var.set("someone else")
+        opened = []
+        rendered = []
+        loaded = []
+        window.show_board_tools_panel = opened.append
+        window._render_board_actor_list = lambda: rendered.append(True)
+        window._load_selected_actor_sheet = (
+            lambda *, force=False: loaded.append(force)
+        )
+
+        window.open_selected_actor_sheet()
+
+        self.assertEqual(window.board_actor_search_var.get(), "")
+        self.assertEqual(window.selected_board_actor_id, "person-a")
+        self.assertEqual(opened, ["groups"])
+        self.assertEqual(rendered, [True])
+        self.assertEqual(loaded, [True])
+
+    def test_map_piece_menu_reveals_person_before_opening_controls(self):
+        window = object.__new__(GameBoardWindow)
+        canvas = object()
+        window.board_canvases = {"map-a": canvas}
+        window.selected_board_actor_id = ""
+        window.board_obscure_mode = False
+        window._actor_at = lambda *_args: ("person-a", "piece")
+        calls = []
+        window._reveal_selected_person_in_navigator = (
+            lambda: calls.append(("reveal", window.selected_board_actor_id))
+        )
+        window._draw_board_map = lambda map_id: calls.append(("draw", map_id))
+        window._render_board_actor_list = lambda: calls.append(("render", None))
+        window._load_selected_actor_sheet = lambda: calls.append(("sheet", None))
+        window._open_piece_controls = (
+            lambda anchor, x, y: calls.append(("controls", anchor, x, y))
+        )
+        event = SimpleNamespace(x=4, y=7, x_root=40, y_root=70)
+
+        result = window._board_piece_menu(event, "map-a")
+
+        self.assertEqual(result, "break")
+        self.assertEqual(window.selected_board_actor_id, "person-a")
+        self.assertEqual(calls[0], ("reveal", "person-a"))
+        self.assertEqual(calls[-1], ("controls", canvas, 40, 70))
+
+    def test_map_single_click_reveals_person_before_loading_sheet(self):
+        window = object.__new__(GameBoardWindow)
+        canvas = object()
+        window.board_canvases = {"map-a": canvas}
+        window.board_snapshot = {"actors": [{
+            "actor_type": "person", "actor_id": "person-a",
+            "name": "Alice", "map_id": "map-a",
+        }]}
+        window._actor_at = lambda *_args: ("person-a", "piece")
+        calls = []
+        window._reveal_selected_person_in_navigator = (
+            lambda: calls.append(("reveal", window.selected_board_actor_id))
+        )
+        window._render_board_actor_list = lambda: calls.append(("render", None))
+        window._draw_board_map = lambda map_id: calls.append(("draw", map_id))
+        window._load_selected_actor_sheet = lambda: calls.append(("sheet", None))
+        event = SimpleNamespace(x=4, y=7, state=0)
+
+        window._board_drag_start(event, "map-a")
+
+        self.assertEqual(window.selected_board_actor_id, "person-a")
+        self.assertEqual(calls[0], ("reveal", "person-a"))
+        self.assertEqual(calls[-1], ("sheet", None))
+
+    def test_character_navigator_caps_large_unplaced_searches(self):
+        characters = [
+            {"id": f"person-{index}", "name": f"Person {index:04d}"}
+            for index in range(6_244)
+        ]
+
+        collapsed = board_character_sections(
+            {"maps": [], "actors": []},
+            characters,
+            "Maps",
+            include_unplaced=False,
+        )
+        matches = board_character_sections(
+            {"maps": [], "actors": []},
+            characters,
+            "Maps",
+            "person",
+            max_records=200,
+        )
+
+        self.assertEqual(collapsed, [])
+        self.assertEqual(
+            sum(len(records) for _label, records in matches),
+            200,
+        )
+
+    def test_creature_selection_remains_available_to_piece_controls(self):
+        window = object.__new__(GameBoardWindow)
+        creature = {
+            "actor_type": "creature",
+            "actor_id": "creature-1",
+            "name": "Bowtruckle",
+            "map_id": "map-a",
+        }
+        window.board_snapshot = {"actors": [creature]}
+        window.state_data = {"characters": []}
+        window.selected_board_actor_id = "creature-1"
+
+        self.assertIs(window._selected_board_actor(), creature)
+        self.assertIs(window._selected_creature(), creature)
+
     def test_deadline_is_displayed_as_exact_configured_local_time(self):
         self.assertEqual(
             format_stored_local_datetime(
@@ -278,6 +527,19 @@ class GameBoardDesktopSessionTests(unittest.TestCase):
 
         self.assertNotIn("update_idletasks", source)
         self.assertIn("after_idle", source)
+
+    def test_quiet_background_timeout_does_not_replace_active_notice(self):
+        window = object.__new__(GameBoardWindow)
+        window.refreshing = True
+        window.server_status = FakeLabel()
+        window._hide_board_loading = lambda: None
+        notices = []
+        window.set_notice = lambda text, error=False: notices.append((text, error))
+
+        window._failed(TimeoutError("timed out"), quiet=True)
+
+        self.assertFalse(window.refreshing)
+        self.assertEqual(notices, [])
 
     def test_selecting_archived_session_does_not_designate_it(self):
         window = object.__new__(GameBoardWindow)

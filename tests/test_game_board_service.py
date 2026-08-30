@@ -72,6 +72,57 @@ class GameBoardServiceTests(unittest.TestCase):
         self.service.delete_contact(self.alice["id"])
         self.assertEqual(self.service.list_contacts(), [])
 
+    def test_live_character_catalog_includes_unplaced_faction_and_player_state(self):
+        world = {
+            "people": [{
+                "record_id": "person-1",
+                "displayed_name": "Alice Character",
+                "board": {"faction_organization_id": "faction-1"},
+            }],
+            "organizations": [{
+                "record_id": "faction-1",
+                "name": "Raven Circle",
+                "is_faction": True,
+                "faction_color": "#223344",
+            }],
+            "events": [{
+                "record_id": "joined-1",
+                "event_type": "joined_faction",
+                "date": "1943-08-01",
+                "time": "1200",
+                "person_ids": ["person-1"],
+                "organization_id": "faction-1",
+            }],
+        }
+        session = {
+            "id": "session-1",
+            "game_datetime": "1943-09-01T08:00",
+            "roster": [{"character_id": "person-1"}],
+        }
+        campaign = {
+            "game_state": {"current_game_datetime": "1943-09-01T08:00"}
+        }
+
+        with patch.object(self.service, "_world_document", return_value=world):
+            self.assertEqual(
+                self.service.list_characters(),
+                [{"id": "person-1", "name": "Alice Character"}],
+            )
+        with (
+            patch.object(self.service, "_board_context", return_value=session),
+            patch.object(
+                self.service,
+                "_campaign_document",
+                return_value=(campaign, world),
+            ),
+        ):
+            character = self.service.list_characters("session-1")[0]
+
+        self.assertEqual(character["faction_id"], "faction-1")
+        self.assertEqual(character["faction_name"], "Raven Circle")
+        self.assertEqual(character["faction_color"], "#223344")
+        self.assertTrue(character["is_player_character"])
+
     def test_teaching_options_include_only_known_subjects_and_same_map_pupils(self):
         self.service.board_snapshot = lambda *_args, **_kwargs: {
             "actors": [

@@ -24,6 +24,7 @@ from ..board import (
     OFF_LIMITS_MESSAGE,
     WorldBoardRepository,
     active_faction_ids,
+    active_faction_ids_by_person,
     normalize_group,
     normalize_map,
     normalize_map_point,
@@ -238,15 +239,65 @@ class GameBoardService:
             contact["display_name"] = contact.get("character_name") or contact["name"]
         return contacts
 
-    def list_characters(self) -> list[dict[str, str]]:
-        world = self._world_document()
-        characters = []
-        for person in world.get("people", []):
-            record_id = person.get("record_id")
-            name = str(person.get("displayed_name") or "").strip()
-            if isinstance(record_id, str) and record_id and name:
-                characters.append({"id": record_id, "name": name})
-        return sorted(characters, key=lambda item: (item["name"].casefold(), item["id"]))
+    def list_characters(
+        self, session_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """List characters, adding campaign-effective navigator data when live."""
+
+        with self._lock:
+            session = self._board_context(session_id) if session_id else None
+            if session is None:
+                world = self._world_document()
+                game_datetime = ""
+                player_ids: set[str] = set()
+            else:
+                campaign, world = self._campaign_document(session)
+                game_datetime = str(
+                    campaign.get("game_state", {}).get("current_game_datetime", "")
+                    or session.get("game_datetime", "")
+                )
+                player_ids = {
+                    str(player.get("character_id") or "")
+                    for player in session.get("roster", []) or []
+                    if player.get("character_id")
+                }
+            organizations = {
+                str(item.get("record_id") or ""): item
+                for item in world.get("organizations", []) or []
+                if isinstance(item, dict) and item.get("is_faction")
+            }
+            faction_ids_by_person = (
+                active_faction_ids_by_person(world, game_datetime)
+                if session is not None else {}
+            )
+            characters = []
+            for person in world.get("people", []) or []:
+                record_id = person.get("record_id")
+                name = str(person.get("displayed_name") or "").strip()
+                if not isinstance(record_id, str) or not record_id or not name:
+                    continue
+                character: dict[str, Any] = {"id": record_id, "name": name}
+                if session is not None:
+                    board = normalize_person_board(person.get("board"))
+                    active_ids = faction_ids_by_person.get(record_id, [])
+                    chosen_id = str(board.get("faction_organization_id") or "")
+                    chosen_id = chosen_id if chosen_id in active_ids else ""
+                    faction = organizations.get(chosen_id, {})
+                    if active_ids:
+                        character.update({
+                            "faction_id": chosen_id,
+                            "faction_name": str(faction.get("name") or ""),
+                            "faction_color": str(
+                                faction.get("faction_color") or "#808080"
+                            ),
+                        })
+                    if record_id in player_ids:
+                        character["is_player_character"] = True
+                characters.append(character)
+            return sorted(
+                characters,
+                key=lambda item: (item["name"].casefold(), item["id"]),
+            )
 
     def list_campaigns(self) -> list[dict[str, Any]]:
         return self.campaign_repository.list()
@@ -318,7 +369,7 @@ class GameBoardService:
             if isinstance(item, dict) and str(item.get("record_id", "")) == person_id
         ), None)
         if person is None:
-            raise KeyError("Unknown teacher")
+            raise KeyError("Unknown character")
         try:
             database = self._database_document()
         except FileNotFoundError:
@@ -328,6 +379,14 @@ class GameBoardService:
                 "creatures": [], "books": [],
             }
         return build_character_sheet(person, document, database, campaign)
+
+    def character_sheet_for_person(
+        self, session_id: str, person_id: str,
+    ) -> dict[str, Any]:
+        """Return one full, date-effective sheet to the Headmaster desktop."""
+
+        with self._lock:
+            return deepcopy(self._sheet_for_person(session_id, person_id))
 
     def _battle_person_sort_key(
         self, person: dict[str, Any], world: dict[str, Any], database: dict[str, Any],

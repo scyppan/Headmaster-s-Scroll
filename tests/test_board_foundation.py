@@ -15,6 +15,7 @@ from headmasters_scroll.board import (
     WorldBoardRepository,
     address_display_name,
     active_faction_ids,
+    active_faction_ids_by_person,
     effective_map_id,
     normalize_map,
     normalize_region,
@@ -143,6 +144,10 @@ class BoardFoundationTests(unittest.TestCase):
         document = world_document()
         self.assertEqual(active_faction_ids(document, "pc-1", "2000-06-01T12:00"), ["house-red"])
         self.assertEqual(active_faction_ids(document, "pc-1", "2002-06-01T12:00"), [])
+        self.assertEqual(
+            active_faction_ids_by_person(document, "2000-06-01T12:00"),
+            {"pc-1": ["house-red"]},
+        )
         snapshot = self.repository.snapshot("2002-06-01T12:00", player_character_ids=["pc-1"])
         actor = next(item for item in snapshot["actors"] if item["actor_id"] == "pc-1")
         self.assertEqual(actor["faction_name"], "Unknown")

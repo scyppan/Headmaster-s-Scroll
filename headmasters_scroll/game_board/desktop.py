@@ -152,6 +152,105 @@ def board_from_admin_state(
     return session_id, deepcopy(board) if isinstance(board, dict) else {}
 
 
+def board_character_sections(
+    snapshot: dict[str, Any],
+    characters: list[dict[str, Any]],
+    view: str,
+    query: str = "",
+    *,
+    selected_map_id: str = "",
+    include_unplaced: bool = True,
+    max_records: int | None = None,
+) -> list[tuple[str, list[dict[str, Any]]]]:
+    """Group every campaign character for the compact Headmaster navigator."""
+
+    needle = " ".join(str(query or "").casefold().split())
+    people = {
+        str(actor.get("actor_id", "")): deepcopy(actor)
+        for actor in snapshot.get("actors", []) or []
+        if actor.get("actor_type", "person") == "person" and actor.get("actor_id")
+    }
+    for character in characters or []:
+        character_id = str(character.get("id") or character.get("record_id") or "")
+        if not include_unplaced or not character_id or character_id in people:
+            continue
+        name = str(character.get("name") or "Unknown")
+        faction_name = str(character.get("faction_name") or "")
+        if needle and needle not in " ".join(
+            (name, faction_name, "Unplaced")
+        ).casefold():
+            continue
+        people[character_id] = {
+            "actor_type": "person",
+            "actor_id": character_id,
+            "name": name,
+            "map_id": "",
+            "location_id": "",
+            "group_id": "",
+            "group_name": "",
+            "faction_id": str(character.get("faction_id") or ""),
+            "faction_name": faction_name,
+            "faction_color": str(character.get("faction_color") or "#808080"),
+            "is_player_character": bool(
+                character.get("is_player_character")
+            ),
+            "unplaced": True,
+        }
+    maps = {
+        str(item.get("record_id", "")): str(item.get("name") or "Unnamed map")
+        for item in snapshot.get("maps", []) or []
+    }
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for actor in people.values():
+        map_id = str(actor.get("map_id", "") or "")
+        map_name = maps.get(map_id, "Unplaced" if not map_id else "Unknown map")
+        name = str(actor.get("name") or "Unknown")
+        group_name = str(actor.get("group_name") or "")
+        faction_name = str(actor.get("faction_name") or "")
+        haystack = " ".join((name, map_name, group_name, faction_name)).casefold()
+        if needle and needle not in haystack:
+            continue
+        actor["map_name"] = map_name
+        selected_view = str(view or "Maps")
+        if selected_view == "Groups":
+            section = group_name or "No group"
+        elif selected_view == "Factions":
+            section = faction_name or "No faction"
+        elif selected_view == "A–Z":
+            first = name.strip()[:1].upper()
+            section = first if first.isalpha() else "#"
+        else:
+            section = map_name
+        grouped.setdefault(section, []).append(actor)
+
+    def section_key(label: str) -> tuple[int, str]:
+        if view == "Maps":
+            selected_name = maps.get(str(selected_map_id or ""), "")
+            if label == selected_name and selected_name:
+                return (0, label.casefold())
+            if label == "Unplaced":
+                return (2, label.casefold())
+        if label in {"No group", "No faction"}:
+            return (2, label.casefold())
+        return (1, label.casefold())
+
+    sections: list[tuple[str, list[dict[str, Any]]]] = []
+    remaining = max_records if max_records is not None else None
+    for label, records in sorted(grouped.items(), key=lambda item: section_key(item[0])):
+        sorted_records = sorted(records, key=lambda item: (
+                str(item.get("name") or "Unknown").casefold(),
+                str(item.get("actor_id") or ""),
+            ))
+        if remaining is not None:
+            if remaining <= 0:
+                break
+            sorted_records = sorted_records[:remaining]
+            remaining -= len(sorted_records)
+        if sorted_records:
+            sections.append((label, sorted_records))
+    return sections
+
+
 def _display_historical_year(year: int) -> str:
     return f"{abs(year)} BCE" if year < 0 else str(year)
 
@@ -893,6 +992,10 @@ class GameBoardWindow(tk.Tk):
         self._board_camera_save_after_ids: dict[str, str] = {}
         self.selected_board_map_id = ""
         self.selected_board_actor_id = ""
+        self._rendering_actor_selection = False
+        self._board_character_sheet_request_token = ""
+        self._board_character_sheet_after_id: str | None = None
+        self._board_character_sheet_portrait_image: ImageTk.PhotoImage | None = None
         self._board_image: ImageTk.PhotoImage | None = None
         self._board_portraits: dict[str, ImageTk.PhotoImage] = {}
         self._board_canvas_actors: dict[tuple[str, int], str] = {}
@@ -938,14 +1041,16 @@ class GameBoardWindow(tk.Tk):
         self.turn_sheet_notebook: ttk.Notebook | None = None
         self._last_open_turn_key = ""
         self.active_headmaster_tool = "groups"
-        self.headmaster_tools_collapsed = False
+        # The map is the primary workspace.  Tools open as an overlay only
+        # when requested and never reserve permanent horizontal space.
+        self.headmaster_tools_collapsed = True
         self.headmaster_tool_widths = {
-            "groups": 430,
-            "creatures": 440,
-            "battles": 520,
-            "obfuscation-tools": 330,
-            "token-tools": 390,
-            "secrets": 360,
+            "groups": 320,
+            "creatures": 350,
+            "battles": 430,
+            "obfuscation-tools": 310,
+            "token-tools": 340,
+            "secrets": 330,
         }
         self.board_reveal_value = tk.BooleanVar(value=False)
         self.board_zoom_status_value = tk.StringVar(value="Zoom 100% · 0 clicks")
@@ -1007,7 +1112,39 @@ class GameBoardWindow(tk.Tk):
 
     def _build(self) -> None:
         header = ttk.Frame(self)
-        header.pack(fill="x", padx=12, pady=(6, 4))
+        header.pack(fill="x", padx=12, pady=(5, 4))
+        self.section_bar = tk.Frame(
+            header,
+            background=self.EDGE,
+            highlightbackground=self.ACCENT,
+            highlightthickness=1,
+        )
+        self.section_bar.pack(side="left")
+        self.sidebar_buttons: dict[str, tk.Button] = {}
+        for key, label in (
+            ("game-board", "Game Board"),
+            ("requests", "Requests"),
+            ("control-panel", "Control Room"),
+        ):
+            button = tk.Button(
+                self.section_bar,
+                text=label,
+                background=self.LIGHT,
+                activebackground=self.PAPER,
+                foreground=self.INK,
+                activeforeground=self.INK,
+                relief="flat",
+                borderwidth=0,
+                font=("Segoe UI", 9, "bold"),
+                padx=14,
+                pady=5,
+                cursor="hand2",
+                command=lambda selected=key: self.show_app_page(selected),
+            )
+            button.pack(side="left", padx=(0, 1))
+            self.sidebar_buttons[key] = button
+        self.control_panel_button = self.sidebar_buttons["control-panel"]
+        self.requests_button = self.sidebar_buttons["requests"]
         self.server_status = tk.Label(
             header, text="STARTING LOCAL SERVER", background=self.PAPER,
             foreground=self.ACCENT, font=("Segoe UI", 9, "bold"),
@@ -1066,53 +1203,6 @@ class GameBoardWindow(tk.Tk):
         self.workspace.pack(fill="both", expand=True, padx=12, pady=(0, 8))
         self._build_chat_shell(self.workspace)
 
-        sidebar = tk.Frame(
-            self.workspace,
-            width=176,
-            background=self.EDGE,
-            highlightbackground=self.ACCENT,
-            highlightthickness=1,
-        )
-        self.section_sidebar = sidebar
-        sidebar.pack(side="left", fill="y", padx=(0, 8))
-        sidebar.pack_propagate(False)
-        tk.Label(
-            sidebar,
-            text="SECTIONS",
-            anchor="w",
-            background=self.EDGE,
-            foreground=self.MUTED,
-            font=("Segoe UI", 9, "bold"),
-            padx=14,
-            pady=12,
-        ).pack(fill="x")
-        self.sidebar_buttons: dict[str, tk.Button] = {}
-        for key, label in (
-            ("game-board", "Game Board"),
-            ("requests", "Requests"),
-            ("control-panel", "Control Room"),
-        ):
-            button = tk.Button(
-                sidebar,
-                text=label,
-                anchor="w",
-                background=self.LIGHT,
-                activebackground=self.PAPER,
-                foreground=self.INK,
-                activeforeground=self.INK,
-                relief="flat",
-                borderwidth=0,
-                font=("Segoe UI", 10, "bold"),
-                padx=16,
-                pady=12,
-                command=lambda selected=key: self.show_app_page(selected),
-            )
-            button.pack(fill="x", pady=(0, 1))
-            self.sidebar_buttons[key] = button
-        self.control_panel_button = self.sidebar_buttons["control-panel"]
-        self.requests_button = self.sidebar_buttons["requests"]
-        self._build_headmaster_tool_rail(self.workspace)
-
         self.app_host = ttk.Frame(self.workspace)
         self.app_host.pack(side="left", fill="both", expand=True)
         self.app_host.rowconfigure(0, weight=1)
@@ -1120,7 +1210,10 @@ class GameBoardWindow(tk.Tk):
 
         game_board_page = ttk.Frame(self.app_host)
         game_board_page.grid(row=0, column=0, sticky="nsew")
+        self.game_board_page = game_board_page
+        self._build_headmaster_tool_rail(game_board_page)
         game_board_top = ttk.Frame(game_board_page)
+        self.board_top_controls = game_board_top
         game_board_top.pack(fill="x", pady=(0, 4))
         self._build_board_search(game_board_top)
         self._build_game_clock(game_board_top)
@@ -1610,7 +1703,6 @@ class GameBoardWindow(tk.Tk):
         self.board_map_images: dict[str, ImageTk.PhotoImage] = {}
         self.board_map_ids: tuple[str, ...] = ()
         self._board_preview_after: str | None = None
-        self.board_actor_tree: ttk.Treeview | None = None
         self.board_transfer_map: ttk.Combobox | None = None
         self.bind_all("<MouseWheel>", self.route_board_wheel, add="+")
         self.bind_all("<B2-Motion>", self.board_pan_drag, add="+")
@@ -1646,6 +1738,7 @@ class GameBoardWindow(tk.Tk):
             "_board_preview_after",
             "_board_token_preview_after_id",
             "_board_pan_watchdog_id",
+            "_board_character_sheet_after_id",
         ):
             after_id = self.__dict__.get(attribute)
             if after_id is not None:
@@ -1712,6 +1805,8 @@ class GameBoardWindow(tk.Tk):
             ("board_selected_obscuration_node", None),
             ("selected_board_map_id", ""),
             ("selected_board_actor_id", ""),
+            ("_board_character_sheet_request_token", ""),
+            ("_board_character_sheet_portrait_image", None),
             ("selected_battle_id", ""),
             ("_board_actor_list_signature", None),
             ("_last_open_turn_key", ""),
@@ -1754,6 +1849,7 @@ class GameBoardWindow(tk.Tk):
             ("board_reveal_value", False),
             ("board_search_value", ""),
             ("board_actor_search_var", ""),
+            ("board_actor_view_var", "Maps"),
             ("board_creature_search_var", ""),
             ("board_obscure_opacity", "35"),
             ("board_zoom_status_value", "Zoom 100% · 0 clicks"),
@@ -1820,6 +1916,17 @@ class GameBoardWindow(tk.Tk):
                 pass
         self.board_search_result_ids = []
         self.board_map_ids = ()
+        sheet_name = self.__dict__.get("board_character_sheet_name")
+        if sheet_name is not None:
+            sheet_name.set("Character sheet")
+            self.board_character_sheet_status.set("Select a character")
+            self.board_character_sheet_portrait.configure(
+                image="", text="?", width=4, height=2
+            )
+            self._render_character_sheet_message(
+                "Start a session, then choose a character to load their sheet."
+            )
+            self._update_board_actor_actions()
         self._rendered_chat_ids = ("__board-context-reset__",)
         self._last_chat_messages = []
         self._chat_roll_ranges = []
@@ -1850,7 +1957,7 @@ class GameBoardWindow(tk.Tk):
                 and not self.headmaster_tool_rail.winfo_manager()
             ):
                 self.headmaster_tool_rail.pack(
-                    side="left", fill="y", padx=(0, 8), before=self.app_host
+                    fill="x", pady=(0, 4), before=self.board_top_controls
                 )
             if (
                 self.current_app_page == "game-board"
@@ -2296,12 +2403,17 @@ class GameBoardWindow(tk.Tk):
         widget.bind("<ButtonPress>", hide, add="+")
 
     def _create_board_groups_controls(self, parent: tk.Misc) -> None:
-        shell = ttk.Frame(parent, style="Card.TFrame", padding=5)
+        shell = ttk.Frame(parent, style="Card.TFrame", padding=6)
         self.board_groups_dock = shell
         self.board_tools_panels["groups"] = shell
         group_header = ttk.Frame(shell, style="Card.TFrame")
         group_header.pack(fill="x")
-        ttk.Label(group_header, text="CHARACTERS", style="Card.TLabel", font=("Segoe UI", 8, "bold")).pack(side="left")
+        ttk.Label(
+            group_header,
+            text="CHARACTER NAVIGATOR",
+            style="Card.TLabel",
+            font=("Segoe UI", 8, "bold"),
+        ).pack(side="left")
         for text, command, help_text in (
             ("G+", self.create_board_group, "Create a colored character group"),
             ("+", self.open_add_character_menu, "Add a character to this map"),
@@ -2310,36 +2422,164 @@ class GameBoardWindow(tk.Tk):
             button.pack(side="right", padx=(3, 0))
             self._attach_tooltip(button, help_text)
         self.board_actor_search_var = tk.StringVar()
-        search = ttk.Entry(shell, textvariable=self.board_actor_search_var)
-        search.pack(fill="x", pady=(4, 3))
-        self._attach_tooltip(search, "Search characters on this map")
+        filters = ttk.Frame(shell, style="Card.TFrame")
+        filters.pack(fill="x", pady=(5, 4))
+        search = ttk.Entry(filters, textvariable=self.board_actor_search_var)
+        search.pack(side="left", fill="x", expand=True)
+        self._attach_tooltip(search, "Search every campaign character")
         self.board_actor_search_var.trace_add("write", lambda *_args: self._render_board_actor_list())
-        self.board_actor_rows_canvas = tk.Canvas(
-            shell, background="#fff8e6", borderwidth=0, highlightthickness=1,
-            highlightbackground=self.EDGE, height=190,
+        self.board_actor_view_var = tk.StringVar(value="Maps")
+        view = ttk.Combobox(
+            filters,
+            textvariable=self.board_actor_view_var,
+            values=("Maps", "Groups", "Factions", "A–Z"),
+            state="readonly",
+            width=9,
         )
-        actor_scroll = ttk.Scrollbar(shell, orient="vertical", command=self.board_actor_rows_canvas.yview)
-        self.board_actor_rows_canvas.configure(yscrollcommand=actor_scroll.set)
-        self.board_actor_rows_canvas.pack(side="left", fill="both", expand=True, pady=(0, 2))
-        actor_scroll.pack(side="right", fill="y", pady=(0, 2))
-        self.board_actor_rows_frame = tk.Frame(self.board_actor_rows_canvas, background="#fff8e6")
-        self._board_actor_rows_window = self.board_actor_rows_canvas.create_window(
-            (0, 0), window=self.board_actor_rows_frame, anchor="nw"
+        view.pack(side="right", padx=(4, 0))
+        self._attach_tooltip(view, "Organize every campaign character")
+        self.board_actor_view_var.trace_add(
+            "write", lambda *_args: self._render_board_actor_list()
         )
-        self.board_actor_rows_frame.bind(
-            "<Configure>",
-            lambda _event: self.board_actor_rows_canvas.configure(
-                scrollregion=self.board_actor_rows_canvas.bbox("all")
-            ),
+
+        tree_shell = ttk.Frame(shell, style="Card.TFrame")
+        tree_shell.pack(fill="x")
+        self.board_actor_tree = ttk.Treeview(
+            tree_shell,
+            show="tree",
+            selectmode="browse",
+            height=9,
         )
-        self.board_actor_rows_canvas.bind(
-            "<Configure>",
-            lambda event: self.board_actor_rows_canvas.itemconfigure(
-                self._board_actor_rows_window, width=max(1, event.width)
-            ),
+        self.board_actor_tree.column("#0", width=285, minwidth=170, stretch=True)
+        actor_scroll = ttk.Scrollbar(
+            tree_shell, orient="vertical", command=self.board_actor_tree.yview
         )
-        self.board_actor_tree = None
+        self.board_actor_tree.configure(yscrollcommand=actor_scroll.set)
+        self.board_actor_tree.pack(side="left", fill="x", expand=True)
+        actor_scroll.pack(side="right", fill="y")
+        self.board_actor_tree.tag_configure(
+            "section", background=self.EDGE, foreground=self.INK,
+            font=("Segoe UI", 8, "bold"),
+        )
+        self.board_actor_tree.tag_configure("unplaced", foreground=self.MUTED)
+        self.board_actor_tree.tag_configure(
+            "hint", foreground=self.MUTED, font=("Segoe UI", 8, "italic")
+        )
+        self.board_actor_tree.tag_configure(
+            "player", foreground=self.ACCENT, font=("Segoe UI", 8, "bold")
+        )
+        self.board_actor_tree.bind("<<TreeviewSelect>>", self._board_actor_selected)
+        self.board_actor_tree.bind("<Double-Button-1>", self.locate_selected_actor)
+        self.board_actor_tree.bind("<Button-3>", self._board_actor_tree_menu)
+
+        self.board_actor_action_summary = tk.StringVar(
+            value="Select a character to see their sheet and placement controls."
+        )
+        tk.Label(
+            shell,
+            textvariable=self.board_actor_action_summary,
+            anchor="w",
+            justify="left",
+            wraplength=292,
+            background=self.LIGHT,
+            foreground=self.MUTED,
+            font=("Segoe UI", 8),
+            padx=2,
+            pady=4,
+        ).pack(fill="x")
+        actor_actions = ttk.Frame(shell, style="Card.TFrame")
+        actor_actions.pack(fill="x", pady=(0, 5))
+        self.board_actor_action_buttons: list[ttk.Button] = []
+        for text, command, help_text in (
+            ("Locate", self.locate_selected_actor, "Open the character's map"),
+            ("Map…", self.move_selected_actor_to_map, "Move or place this character on a map"),
+            ("Group…", self.manage_actor_group, "Move this character into a board group"),
+            ("Faction…", self.select_actor_faction, "Move this character into a faction"),
+        ):
+            button = ttk.Button(
+                actor_actions, text=text, style="Quiet.TButton", command=command
+            )
+            button.pack(side="left", fill="x", expand=True, padx=(0, 2))
+            button.configure(state="disabled")
+            self.board_actor_action_buttons.append(button)
+            self._attach_tooltip(button, help_text)
+
+        sheet_header = tk.Frame(shell, background="#ead8aa")
+        sheet_header.pack(fill="x")
+        self.board_character_sheet_portrait = tk.Label(
+            sheet_header,
+            text="?",
+            width=4,
+            height=2,
+            background=self.ACCENT,
+            foreground="#fff8e7",
+            font=("Georgia", 18, "bold"),
+        )
+        self.board_character_sheet_portrait.pack(side="left", padx=(0, 7))
+        sheet_identity = tk.Frame(sheet_header, background="#ead8aa")
+        sheet_identity.pack(side="left", fill="both", expand=True)
+        self.board_character_sheet_name = tk.StringVar(value="Character sheet")
+        self.board_character_sheet_status = tk.StringVar(value="Select a character")
+        tk.Label(
+            sheet_identity,
+            textvariable=self.board_character_sheet_name,
+            anchor="w",
+            background="#ead8aa",
+            foreground=self.INK,
+            font=("Georgia", 11, "bold"),
+        ).pack(fill="x", pady=(4, 0))
+        tk.Label(
+            sheet_identity,
+            textvariable=self.board_character_sheet_status,
+            anchor="w",
+            background="#ead8aa",
+            foreground=self.MUTED,
+            font=("Segoe UI", 8),
+        ).pack(fill="x")
+        refresh_sheet = ttk.Button(
+            sheet_header,
+            text="↻",
+            width=3,
+            style="Quiet.TButton",
+            command=lambda: self._load_selected_actor_sheet(force=True),
+        )
+        refresh_sheet.pack(side="right", padx=3, pady=5)
+        self._attach_tooltip(refresh_sheet, "Refresh this character sheet")
+
+        self.board_character_sheet_notebook = ttk.Notebook(
+            shell, style="Board.TNotebook"
+        )
+        self.board_character_sheet_notebook.pack(fill="both", expand=True, pady=(3, 0))
+        self.board_character_sheet_texts: dict[str, tk.Text] = {}
+        for label in ("Overview", "Attributes", "Knowledge", "Inventory", "Story"):
+            tab = ttk.Frame(self.board_character_sheet_notebook)
+            text_widget = tk.Text(
+                tab,
+                height=12,
+                wrap="word",
+                background="#fff8e6",
+                foreground=self.INK,
+                relief="flat",
+                borderwidth=0,
+                padx=7,
+                pady=6,
+                font=("Segoe UI", 8),
+                state="disabled",
+            )
+            sheet_scroll = ttk.Scrollbar(tab, orient="vertical", command=text_widget.yview)
+            text_widget.configure(yscrollcommand=sheet_scroll.set)
+            text_widget.pack(side="left", fill="both", expand=True)
+            sheet_scroll.pack(side="right", fill="y")
+            text_widget.tag_configure("title", font=("Georgia", 13, "bold"), foreground=self.ACCENT)
+            text_widget.tag_configure("section", font=("Segoe UI", 8, "bold"), foreground=self.ACCENT, spacing1=6)
+            text_widget.tag_configure("muted", foreground=self.MUTED)
+            self.board_character_sheet_notebook.add(tab, text=label)
+            self.board_character_sheet_texts[label] = text_widget
+
         self.board_transfer_map = None
+        self._render_character_sheet_message(
+            "Choose any character above to load the same campaign-effective sheet used by the player board."
+        )
         self._render_board_actor_list()
         self._render_board_creature_list()
 
@@ -4544,7 +4784,12 @@ class GameBoardWindow(tk.Tk):
                 canvas.bind("<ButtonPress-1>", lambda event, selected=map_id: self._board_pointer_start(event, selected))
                 canvas.bind("<B1-Motion>", lambda event, selected=map_id: self._board_drag_move(event, selected))
                 canvas.bind("<ButtonRelease-1>", lambda event, selected=map_id: self._board_drag_end(event, selected))
-                canvas.bind("<Double-Button-1>", lambda event, selected=map_id: self.complete_board_obscuration(event, selected))
+                canvas.bind(
+                    "<Double-Button-1>",
+                    lambda event, selected=map_id: self._board_double_click(
+                        event, selected
+                    ),
+                )
                 canvas.bind("<Button-3>", lambda event, selected=map_id: self._board_piece_menu(event, selected))
                 canvas.bind("<Motion>", lambda event, selected=map_id: self.board_obscure_motion(event, selected))
                 canvas.bind("<Leave>", lambda event, selected=map_id: self.board_canvas_leave(event, selected))
@@ -5988,6 +6233,48 @@ class GameBoardWindow(tk.Tk):
         else:
             self._board_drag_start(event, map_id)
 
+    def _board_double_click(self, event: tk.Event, map_id: str) -> str | None:
+        """Open a character sheet deliberately, preserving map-first dragging."""
+
+        canvas = self.board_canvases[map_id]
+        actor_id, _part = self._actor_at(canvas, map_id, event.x, event.y)
+        actor = next(
+            (
+                item for item in self.board_snapshot.get("actors", []) or []
+                if str(item.get("actor_id") or "") == actor_id
+                and item.get("actor_type", "person") == "person"
+            ),
+            None,
+        )
+        if actor is None:
+            return self.complete_board_obscuration(event, map_id)
+        self.selected_board_actor_id = actor_id
+        self.open_selected_actor_sheet()
+        self._draw_board_map(map_id)
+        return "break"
+
+    def open_selected_actor_sheet(self) -> None:
+        """Reveal the compact player-style sheet for the selected person."""
+
+        actor = self._selected_board_actor()
+        if actor is None or actor.get("actor_type", "person") != "person":
+            return
+        self._reveal_selected_person_in_navigator()
+        self.show_board_tools_panel("groups")
+        self._board_actor_list_signature = None
+        self._render_board_actor_list()
+        self._load_selected_actor_sheet(force=True)
+
+    def _reveal_selected_person_in_navigator(self) -> None:
+        """Keep a map-selected person visible instead of clearing the selection."""
+
+        actor = self._selected_board_actor()
+        if actor is None or actor.get("actor_type", "person") != "person":
+            return
+        search = self.__dict__.get("board_actor_search_var")
+        if search is not None and str(search.get() or "").strip():
+            search.set("")
+
     def _board_obscuration_point(self, map_id: str, x: float, y: float, *, clamp: bool = False) -> dict[str, float]:
         nx, ny = self._normalized_board_point(map_id, x, y, clamp=clamp)
         return {"x": nx, "y": ny}
@@ -6222,8 +6509,10 @@ class GameBoardWindow(tk.Tk):
             offset = actor.get("label_offset") if isinstance(actor.get("label_offset"), dict) else {}
             self._drag_label_origin = {"x": float(offset.get("x", 0.0)), "y": float(offset.get("y", 0.0))}
             self.selected_board_actor_id = self._drag_actor_id
+            self._reveal_selected_person_in_navigator()
             self._render_board_actor_list()
             self._draw_board_map(map_id)
+            self._load_selected_actor_sheet()
 
     def _normalized_board_point(
         self,
@@ -6405,8 +6694,10 @@ class GameBoardWindow(tk.Tk):
             # A character is always the primary right-click target, including
             # while the obfuscation editor is open.
             self.selected_board_actor_id = actor_id
+            self._reveal_selected_person_in_navigator()
             self._draw_board_map(map_id)
             self._render_board_actor_list()
+            self._load_selected_actor_sheet()
             self._open_piece_controls(canvas, event.x_root, event.y_root)
             return "break"
         if self.board_obscure_mode:
@@ -6490,6 +6781,11 @@ class GameBoardWindow(tk.Tk):
                 popup.grab_release()
             return
         popup.add_command(label=str(actor.get("name") or "Unknown occupant"), state="disabled")
+        popup.add_command(
+            label="Open character sheet",
+            command=self.open_selected_actor_sheet,
+        )
+        popup.add_separator()
         popup.add_command(label="Teach...", command=self.teach_selected_actor)
         popup.add_command(label="Search area...", command=self.search_area_for_selected_actor)
         popup.add_separator()
@@ -7297,132 +7593,669 @@ class GameBoardWindow(tk.Tk):
             lambda _result: self.refresh(silent=True),
         )
 
+    # Programmatic Treeview selections stay idempotent, mirroring the session
+    # selector safeguard and avoiding selection/render feedback loops.
+    def _clear_board_actor_selection(self) -> None:
+        """Clear hidden selections so actions cannot target an unseen character."""
+
+        after_id = self.__dict__.get("_board_character_sheet_after_id")
+        if after_id is not None:
+            try:
+                self.after_cancel(after_id)
+            except tk.TclError:
+                pass
+        self._board_character_sheet_after_id = None
+        self.selected_board_actor_id = ""
+        self._board_character_sheet_request_token = ""
+        self._board_character_sheet_portrait_image = None
+        sheet_name = self.__dict__.get("board_character_sheet_name")
+        if sheet_name is not None:
+            sheet_name.set("Character sheet")
+            self.board_character_sheet_status.set("Select a character")
+            self.board_character_sheet_portrait.configure(
+                image="", text="?", width=4, height=2
+            )
+            self._render_character_sheet_message(
+                "Select a visible character to load their sheet."
+            )
+        self._update_board_actor_actions()
+        if self.selected_board_map_id:
+            self._draw_board_map(self.selected_board_map_id)
+
     def _render_board_actor_list(self) -> None:
-        frame = getattr(self, "board_actor_rows_frame", None)
-        if frame is None or not frame.winfo_exists():
+        tree = self.__dict__.get("board_actor_tree")
+        if tree is None or not tree.winfo_exists():
             return
-        search_value = self.board_actor_search_var.get() if hasattr(self, "board_actor_search_var") else ""
-        query = str(search_value or "").strip().casefold()
-        actors = [
-            actor for actor in self.board_snapshot.get("actors", [])
-            if actor.get("map_id") == self.selected_board_map_id
-            and actor.get("actor_type", "person") == "person"
-            and (not query or query in str(actor.get("name") or "Unknown").casefold())
-        ]
-        actors.sort(key=lambda actor: str(actor.get("name") or "Unknown").casefold())
+        query = str(self.board_actor_search_var.get() or "").strip().casefold()
+        view_variable = self.__dict__.get("board_actor_view_var")
+        view = view_variable.get() if view_variable is not None else "Maps"
+        characters = list(self.state_data.get("characters") or [])
+        placed_person_ids = {
+            str(actor.get("actor_id") or "")
+            for actor in self.board_snapshot.get("actors", []) or []
+            if actor.get("actor_type", "person") == "person"
+            and actor.get("actor_id")
+        }
+        unplaced_count = len({
+            str(character.get("id") or character.get("record_id") or "")
+            for character in characters
+            if (character.get("id") or character.get("record_id"))
+            and str(character.get("id") or character.get("record_id"))
+            not in placed_person_ids
+        })
+        search_limit = 200
+        sections = board_character_sections(
+            self.board_snapshot,
+            characters,
+            view,
+            query,
+            selected_map_id=self.selected_board_map_id,
+            include_unplaced=bool(query),
+            max_records=search_limit if query else None,
+        )
+        displayed_count = sum(len(actors) for _section, actors in sections)
+        search_capped = bool(query and displayed_count >= search_limit)
         signature = (
             self.selected_board_map_id,
             self.selected_board_actor_id,
+            view,
             query,
-            tuple((
-                str(actor.get("actor_id") or ""),
-                str(actor.get("name") or "Unknown"),
-                str(actor.get("faction_id") or ""),
-                str(actor.get("faction_color") or ""),
-                bool(actor.get("faction_revealed")),
-                str(actor.get("group_id") or ""),
-                str(actor.get("group_color") or ""),
-                str(actor.get("visibility") or ""),
-                str(actor.get("display_mode") or ""),
-                bool(actor.get("name_revealed")),
-            ) for actor in actors),
+            unplaced_count,
+            search_capped,
+            tuple(
+                (
+                    section,
+                    tuple(
+                        (
+                            str(actor.get("actor_id") or ""),
+                            str(actor.get("name") or "Unknown"),
+                            str(actor.get("map_id") or ""),
+                            str(actor.get("group_id") or ""),
+                            str(actor.get("group_name") or ""),
+                            str(actor.get("faction_id") or ""),
+                            str(actor.get("faction_name") or ""),
+                            bool(actor.get("is_player_character")),
+                        )
+                        for actor in actors
+                    ),
+                )
+                for section, actors in sections
+            ),
         )
         if signature == self._board_actor_list_signature:
+            self._update_board_actor_actions()
             return
         self._board_actor_list_signature = signature
-        previous_y = self.board_actor_rows_canvas.yview()[0]
-        for child in frame.winfo_children():
-            child.destroy()
-        for row_index, actor in enumerate(actors):
-            actor_id = str(actor.get("actor_id"))
-            row = tk.Frame(
-                frame,
-                background="#ead8aa" if actor_id == self.selected_board_actor_id else "#fff8e6",
-                highlightbackground=self.EDGE,
-                highlightthickness=0 if row_index == 0 else 1,
-            )
-            row.pack(fill="x")
-            row.bind(
-                "<Button-3>",
-                lambda event, value=actor_id: self._open_actor_row_menu(event, value),
-            )
-            row.bind(
-                "<Control-Button-1>",
-                lambda event, value=actor_id: self._open_actor_row_menu(event, value),
-            )
-            name_button = tk.Button(
-                row, text=str(actor.get("name") or "Unknown"), anchor="w",
-                background=row.cget("background"), activebackground="#ead8aa",
-                foreground=self.INK, relief="flat", borderwidth=0,
-                font=("Segoe UI", 8, "bold"), padx=3, pady=2,
-                command=lambda value=actor_id: self._select_board_actor(value),
-            )
-            name_button.pack(side="left", fill="x", expand=True)
-            name_button.bind(
-                "<Button-3>",
-                lambda event, value=actor_id: self._open_actor_row_menu(event, value),
-            )
-            name_button.bind(
-                "<Control-Button-1>",
-                lambda event, value=actor_id: self._open_actor_row_menu(event, value),
-            )
-            faction_help = "Conceal faction" if actor.get("faction_revealed") else "Reveal faction"
-            character_help = "Conceal character" if actor.get("visibility") == "players" else "Reveal character"
-            name_help = "Conceal name" if actor.get("name_revealed") else "Reveal name"
-            controls = (
-                ("⚑", lambda value=actor_id: self._actor_row_action(value, self.select_actor_faction), "Choose or create a faction", actor.get("faction_color") if actor.get("faction_id") else "#d8c9a1"),
-                ("F" if actor.get("faction_revealed") else "f", lambda value=actor_id: self._actor_row_action(value, self.toggle_selected_faction), faction_help, "#4d6b43" if actor.get("faction_revealed") else "#d8c9a1"),
-                ("G", lambda value=actor_id: self._actor_row_action(value, self.manage_actor_group), "Choose or create a colored group", actor.get("group_color") if actor.get("group_id") else "#d8c9a1"),
-                ("◉" if actor.get("visibility") == "players" else "○", lambda value=actor_id, current=actor.get("visibility"): self._actor_row_update(value, visibility="headmaster" if current == "players" else "players"), character_help, "#4d6b43" if actor.get("visibility") == "players" else "#d8c9a1"),
-                ("▣" if actor.get("display_mode") == "token" else "●", lambda value=actor_id, current=actor.get("display_mode"): self._actor_row_update(value, display_mode="dot" if current == "token" else "token"), "Toggle dot or portrait token", "#4d6b43" if actor.get("display_mode") == "token" else "#d8c9a1"),
-                ("N" if actor.get("name_revealed") else "n", lambda value=actor_id: self._actor_row_action(value, self.toggle_selected_name), name_help, "#4d6b43" if actor.get("name_revealed") else "#d8c9a1"),
-            )
-            for text, command, help_text, button_color in controls:
-                button = tk.Button(
-                    row, text=text, width=2, command=command,
-                    background=str(button_color or "#d8c9a1"),
-                    activebackground="#ead8aa", foreground=self.INK,
-                    relief="flat", borderwidth=0, font=("Segoe UI", 8, "bold"), padx=1, pady=2,
+        selected_item = f"actor:{self.selected_board_actor_id}"
+        selected_actor = self._selected_board_actor()
+        self._rendering_actor_selection = True
+        try:
+            children = tree.get_children()
+            if children:
+                tree.delete(*children)
+            for section_index, (section, actors) in enumerate(sections):
+                section_id = f"section:{section_index}"
+                tree.insert(
+                    "", "end", iid=section_id,
+                    text=f"{section}  ({len(actors)})",
+                    tags=("section",), open=True,
                 )
-                button.pack(side="left", padx=(1, 0))
-                self._attach_tooltip(button, help_text)
-        frame.update_idletasks()
-        self.board_actor_rows_canvas.configure(
-            scrollregion=self.board_actor_rows_canvas.bbox("all")
-        )
-        self.board_actor_rows_canvas.yview_moveto(previous_y)
-
-    def _open_actor_row_menu(self, event: tk.Event, actor_id: str) -> str:
-        self.selected_board_actor_id = actor_id
-        self._render_board_actor_list()
-        self._draw_board_map(self.selected_board_map_id)
-        self._open_piece_controls(event.widget, event.x_root, event.y_root)
-        return "break"
+                for actor in actors:
+                    actor_id = str(actor.get("actor_id") or "")
+                    details = [
+                        str(actor.get("map_name") or ""),
+                        str(actor.get("group_name") or ""),
+                        str(actor.get("faction_name") or ""),
+                    ]
+                    detail = " · ".join(value for value in details if value)
+                    label = str(actor.get("name") or "Unknown")
+                    if detail:
+                        label = f"{label}  —  {detail}"
+                    tags = []
+                    if actor.get("unplaced"):
+                        tags.append("unplaced")
+                    if actor.get("is_player_character"):
+                        tags.append("player")
+                    tree.insert(
+                        section_id, "end", iid=f"actor:{actor_id}",
+                        text=label, tags=tuple(tags),
+                    )
+            if not query and unplaced_count:
+                tree.insert(
+                    "", "end", iid="hint:unplaced",
+                    text=(
+                        f"{unplaced_count:,} unplaced characters — "
+                        "type a name to search"
+                    ),
+                    tags=("hint",),
+                )
+            elif search_capped:
+                tree.insert(
+                    "", "end", iid="hint:refine",
+                    text="Showing the first 200 matches — refine your search",
+                    tags=("hint",),
+                )
+            if tree.exists(selected_item) and tuple(tree.selection()) != (selected_item,):
+                tree.selection_set(selected_item)
+                tree.see(selected_item)
+            elif (
+                self.selected_board_actor_id
+                and not tree.exists(selected_item)
+                and (
+                    selected_actor is None
+                    or selected_actor.get("actor_type", "person") == "person"
+                )
+            ):
+                self._clear_board_actor_selection()
+        finally:
+            self._rendering_actor_selection = False
+        self._update_board_actor_actions()
 
     def _select_board_actor(self, actor_id: str) -> None:
-        self.selected_board_actor_id = actor_id
+        self.selected_board_actor_id = str(actor_id or "")
+        self._board_actor_list_signature = None
         self._render_board_actor_list()
-        self._draw_board_map(self.selected_board_map_id)
-
-    def _actor_row_action(self, actor_id: str, command: Callable[[], None]) -> None:
-        self.selected_board_actor_id = actor_id
-        command()
-
-    def _actor_row_update(self, actor_id: str, **updates: Any) -> None:
-        self.selected_board_actor_id = actor_id
-        self.update_selected_actor(**updates)
+        actor = self._selected_board_actor()
+        if actor and actor.get("map_id") == self.selected_board_map_id:
+            self._draw_board_map(self.selected_board_map_id)
+        self._update_board_actor_actions()
+        self._load_selected_actor_sheet()
 
     def _board_actor_selected(self, _event: tk.Event | None = None) -> None:
+        if self._rendering_actor_selection:
+            return
         tree = self.board_actor_tree
         if tree is None or not tree.winfo_exists():
             return
         selected = tree.selection()
-        if selected:
-            self.selected_board_actor_id = selected[0]
+        if not selected or not str(selected[0]).startswith("actor:"):
+            self._clear_board_actor_selection()
+            return
+        self.selected_board_actor_id = str(selected[0]).removeprefix("actor:")
+        actor = self._selected_board_actor()
+        if actor and actor.get("map_id") == self.selected_board_map_id:
             self._draw_board_map(self.selected_board_map_id)
+        self._update_board_actor_actions()
+        self._load_selected_actor_sheet()
+
+    def _board_actor_tree_menu(self, event: tk.Event) -> str | None:
+        row_id = self.board_actor_tree.identify_row(event.y)
+        if not row_id.startswith("actor:"):
+            return None
+        self._select_board_actor(row_id.removeprefix("actor:"))
+        actor = self._selected_board_actor()
+        if actor and actor.get("map_id"):
+            self._open_piece_controls(event.widget, event.x_root, event.y_root)
+            return "break"
+        popup = tk.Menu(self, tearoff=False)
+        popup.add_command(
+            label="Refresh character sheet",
+            command=lambda: self._load_selected_actor_sheet(force=True),
+        )
+        popup.add_command(label="Move to map…", command=self.move_selected_actor_to_map)
+        popup.add_command(label="Choose faction…", command=self.select_actor_faction)
+        try:
+            popup.tk_popup(event.x_root, event.y_root)
+        finally:
+            popup.grab_release()
+        return "break"
+
+    def _update_board_actor_actions(self) -> None:
+        actor = self._selected_board_actor()
+        buttons = getattr(self, "board_actor_action_buttons", [])
+        if actor is None or actor.get("actor_type", "person") != "person":
+            for button in buttons:
+                button.configure(state="disabled")
+            if hasattr(self, "board_actor_action_summary"):
+                self.board_actor_action_summary.set(
+                    "Select a character to see their sheet and placement controls."
+                )
+            return
+        map_name = next(
+            (
+                str(item.get("name") or "Unnamed map")
+                for item in self.board_snapshot.get("maps", []) or []
+                if str(item.get("record_id") or "") == str(actor.get("map_id") or "")
+            ),
+            "Unplaced",
+        )
+        group = str(actor.get("group_name") or "Solo")
+        faction = str(actor.get("faction_name") or "No faction")
+        self.board_actor_action_summary.set(
+            f"{actor.get('name') or 'Unknown'}  ·  {map_name}  ·  {group}  ·  {faction}"
+        )
+        for button in buttons:
+            button.configure(state="normal")
+        if buttons:
+            buttons[0].configure(state="normal" if actor.get("map_id") else "disabled")
+        if len(buttons) > 2:
+            buttons[2].configure(state="normal" if actor.get("location_id") else "disabled")
 
     def _selected_board_actor(self) -> dict[str, Any] | None:
-        return next((item for item in self.board_snapshot.get("actors", []) if item.get("actor_id") == self.selected_board_actor_id), None)
+        actor = next(
+            (
+                item for item in self.board_snapshot.get("actors", [])
+                if str(item.get("actor_id") or "") == self.selected_board_actor_id
+            ),
+            None,
+        )
+        if actor is not None:
+            return actor
+        character = next(
+            (
+                item for item in self.state_data.get("characters", []) or []
+                if str(item.get("id") or "") == self.selected_board_actor_id
+            ),
+            None,
+        )
+        if character is None:
+            return None
+        return {
+            "actor_type": "person",
+            "actor_id": str(character.get("id") or ""),
+            "name": str(character.get("name") or "Unknown"),
+            "map_id": "",
+            "location_id": "",
+            "group_id": "",
+            "group_name": "",
+            "faction_id": str(character.get("faction_id") or ""),
+            "faction_name": str(character.get("faction_name") or ""),
+            "faction_color": str(character.get("faction_color") or "#808080"),
+            "is_player_character": bool(
+                character.get("is_player_character")
+            ),
+            "unplaced": True,
+        }
+
+    def locate_selected_actor(self, event: tk.Event | None = None) -> str | None:
+        if event is not None and hasattr(event, "y"):
+            row_id = self.board_actor_tree.identify_row(event.y)
+            if not row_id.startswith("actor:"):
+                return None
+            self._select_board_actor(row_id.removeprefix("actor:"))
+        actor = self._selected_board_actor()
+        map_id = str((actor or {}).get("map_id") or "")
+        if not actor or not map_id:
+            self.set_notice("Move this character to a map before locating them", error=True)
+            return "break" if event is not None else None
+        self.add_board_map(map_id)
+        self.selected_board_actor_id = str(actor.get("actor_id") or "")
+        self._board_actor_list_signature = None
+        self._render_board_actor_list()
+        self._draw_board_map(map_id)
+        self.set_notice(f"Located {actor.get('name') or 'character'}")
+        return "break" if event is not None else None
+
+    def move_selected_actor_to_map(self) -> None:
+        actor = self._selected_board_actor()
+        maps = list(self.board_snapshot.get("maps", []) or [])
+        if not actor or not self.selected_session_id or not maps:
+            messagebox.showinfo(
+                "Move character",
+                "Select a character in an active session first.",
+                parent=self,
+            )
+            return
+        dialog = tk.Toplevel(self)
+        dialog.title(f"Move {actor.get('name') or 'character'} to a map")
+        dialog.transient(self)
+        dialog.grab_set()
+        dialog.geometry("560x500")
+        dialog.minsize(420, 340)
+        apply_window_icon(dialog, GAME_BOARD_ICON)
+        body = ttk.Frame(dialog, padding=10)
+        body.pack(fill="both", expand=True)
+        ttk.Label(body, text="Destination map", style="Section.TLabel").pack(anchor="w")
+        query = tk.StringVar()
+        search = ttk.Entry(body, textvariable=query)
+        search.pack(fill="x", pady=(5, 6))
+        results = tk.Listbox(
+            body,
+            exportselection=False,
+            background="#fff8e6",
+            foreground=self.INK,
+            selectbackground=self.ACCENT,
+            selectforeground="#fff8e7",
+        )
+        results.pack(fill="both", expand=True)
+        visible: list[dict[str, Any]] = []
+
+        def fill(*_args: object) -> None:
+            visible[:] = self.fuzzy_board_maps(query.get(), limit=150)
+            results.delete(0, "end")
+            for record in visible:
+                current = "  ·  current" if str(record.get("record_id")) == str(actor.get("map_id") or "") else ""
+                results.insert("end", f"{self._board_map_result_label(record)}{current}")
+            if visible:
+                results.selection_set(0)
+
+        def place(confirm_move: bool = False) -> None:
+            selection = results.curselection()
+            if not selection or selection[0] >= len(visible):
+                return
+            destination = visible[int(selection[0])]
+            map_id = str(destination.get("record_id") or "")
+            payload = {
+                "session_id": self.selected_session_id,
+                "person_id": str(actor.get("actor_id") or ""),
+                "map_id": map_id,
+                "x": 0.5,
+                "y": 0.5,
+                "confirm_move": confirm_move,
+            }
+
+            def handled(result: dict[str, Any]) -> None:
+                if result.get("requires_confirmation"):
+                    if messagebox.askyesno(
+                        "Move character?",
+                        (
+                            f"{result.get('person_name') or actor.get('name') or 'This character'} "
+                            f"is currently on {result.get('current_map_name') or 'another map'}.\n\n"
+                            "Move them and reconsider any location-specific group membership?"
+                        ),
+                        parent=dialog,
+                    ):
+                        place(True)
+                    return
+                dialog.destroy()
+                self.selected_board_actor_id = str(actor.get("actor_id") or "")
+                self.add_board_map(map_id)
+                if result.get("already_on_map"):
+                    self.set_notice(f"{actor.get('name') or 'Character'} is already on this map")
+                else:
+                    self.set_notice(f"Moved {actor.get('name') or 'character'} to the map")
+                self.refresh(silent=True)
+
+            self._background(
+                lambda: self.client.request(
+                    "POST", "/api/admin/board/place-character", payload
+                ),
+                handled,
+            )
+
+        query.trace_add("write", fill)
+        results.bind("<Double-Button-1>", lambda _event: place())
+        results.bind("<Return>", lambda _event: place())
+        controls = ttk.Frame(body)
+        controls.pack(fill="x", pady=(7, 0))
+        ttk.Button(
+            controls, text="Cancel", style="Quiet.TButton", command=dialog.destroy
+        ).pack(side="right")
+        ttk.Button(controls, text="Move to map", command=place).pack(
+            side="right", padx=(0, 5)
+        )
+        fill()
+        search.focus_set()
+
+    def _render_character_sheet_message(self, message: str) -> None:
+        texts = getattr(self, "board_character_sheet_texts", {})
+        for label, widget in texts.items():
+            widget.configure(state="normal")
+            widget.delete("1.0", "end")
+            if label == "Overview":
+                widget.insert("end", "Character sheet\n", "title")
+                widget.insert("end", message, "muted")
+            widget.configure(state="disabled")
+
+    @staticmethod
+    def _sheet_record_lines(
+        records: list[dict[str, Any]],
+        *detail_fields: str,
+    ) -> list[str]:
+        lines = []
+        for record in records or []:
+            name = str(record.get("name") or record.get("title") or "Unknown")
+            details = [
+                str(record.get(field) or "").strip()
+                for field in detail_fields
+                if str(record.get(field) or "").strip()
+            ]
+            lines.append(f"• {name}" + (f" — {' · '.join(details)}" if details else ""))
+        return lines
+
+    def _set_character_sheet_panel(
+        self,
+        label: str,
+        title: str,
+        sections: list[tuple[str, str | list[str]]],
+    ) -> None:
+        widget = self.board_character_sheet_texts[label]
+        widget.configure(state="normal")
+        widget.delete("1.0", "end")
+        widget.insert("end", f"{title}\n", "title")
+        for heading, value in sections:
+            lines = value if isinstance(value, list) else [value]
+            lines = [str(line) for line in lines if str(line).strip()]
+            if not lines:
+                continue
+            widget.insert("end", f"\n{heading}\n", "section")
+            widget.insert("end", "\n".join(lines).strip() + "\n")
+        widget.configure(state="disabled")
+        widget.yview_moveto(0.0)
+
+    def _render_board_character_sheet_portrait(self, sheet: dict[str, Any]) -> None:
+        overview = sheet.get("overview") or {}
+        name = str(overview.get("name") or sheet.get("character_name") or "?")
+        label = self.board_character_sheet_portrait
+        self._board_character_sheet_portrait_image = None
+        asset_id = str(overview.get("portrait_asset_id") or "")
+        if asset_id:
+            try:
+                path = self.asset_store.resolve(asset_id)
+                with Image.open(path) as opened:
+                    portrait = ImageOps.fit(
+                        ImageOps.exif_transpose(opened).convert("RGB"),
+                        (52, 52),
+                        Image.Resampling.LANCZOS,
+                    )
+                photo = ImageTk.PhotoImage(portrait)
+                self._board_character_sheet_portrait_image = photo
+                label.configure(image=photo, text="", width=52, height=52)
+                return
+            except (OSError, ValueError, KeyError, TypeError, AttributeError):
+                pass
+        label.configure(
+            image="", text=(name[:1].upper() or "?"), width=4, height=2
+        )
+
+    def _render_board_character_sheet(self, sheet: dict[str, Any]) -> None:
+        overview = sheet.get("overview") or {}
+        name = str(overview.get("name") or sheet.get("character_name") or "Character")
+        self.board_character_sheet_name.set(name)
+        status_parts = [
+            str(overview.get("school") or "").strip(),
+            f"Age {overview.get('age')}" if overview.get("age") is not None else "",
+            f"As of {sheet.get('as_of')}" if sheet.get("as_of") else "",
+        ]
+        self.board_character_sheet_status.set(" · ".join(value for value in status_parts if value))
+        self._render_board_character_sheet_portrait(sheet)
+
+        wounds = list(sheet.get("wounds") or [])
+        battle = sheet.get("battle") or {}
+        notes = list(sheet.get("character_notes") or [])
+        note_lines = [
+            f"• {item.get('text') or item.get('note') or 'Note'}"
+            if isinstance(item, dict) else f"• {item}"
+            for item in notes
+        ]
+        overview_lines = [
+            f"Born: {overview.get('birth') or 'Not recorded'}",
+            f"School: {overview.get('school') or 'Not recorded'}",
+            f"Canon: {'Yes' if overview.get('canon') else 'No'}",
+            f"Eminence: {overview.get('eminence', 0)}",
+            f"Currency: {sheet.get('currency_knuts', 0)} Knuts",
+            "Airborne" if sheet.get("airborne") else "Grounded",
+        ]
+        condition_lines = [
+            f"Battle: {battle.get('name') or 'Active'}" if battle else "Not in battle",
+            *[
+                f"• {str(item.get('severity') or 'Wound').title()}: {item.get('note') or 'No note'}"
+                for item in wounds
+            ],
+        ]
+        self._set_character_sheet_panel(
+            "Overview",
+            name,
+            [
+                ("Profile", overview_lines),
+                ("Biography", str(overview.get("narrative") or "No biography recorded.")),
+                ("Conditions", condition_lines),
+                ("Headmaster notes", note_lines),
+            ],
+        )
+
+        attributes = sheet.get("attributes") or {}
+        def stat_lines(records: list[dict[str, Any]]) -> list[str]:
+            rows = []
+            for record in records or []:
+                value = record.get("total", record.get("value", 0))
+                bonus = int(record.get("bonus", 0) or 0)
+                rows.append(
+                    f"• {record.get('name') or 'Unknown'}: {value}"
+                    + (f" ({bonus:+d})" if bonus else "")
+                )
+            return rows
+
+        self._set_character_sheet_panel(
+            "Attributes",
+            f"{name} · Attributes",
+            [
+                ("Abilities", stat_lines(list(attributes.get("attributes") or []))),
+                ("Characteristics", stat_lines(list(attributes.get("characteristics") or []))),
+                ("Skills", stat_lines(list(attributes.get("skills") or []))),
+                ("Parental values", stat_lines(list(attributes.get("parental_values") or []))),
+                ("Traits", [f"• {value}" for value in attributes.get("traits", []) or []]),
+            ],
+        )
+        self._set_character_sheet_panel(
+            "Knowledge",
+            f"{name} · Knowledge",
+            [
+                ("Spells", self._sheet_record_lines(list(sheet.get("spells") or []), "skill", "source")),
+                ("Proficiencies", self._sheet_record_lines(list(sheet.get("proficiencies") or []), "skill", "source")),
+                ("Recipes", self._sheet_record_lines(list(sheet.get("recipes") or []), "skill", "source")),
+                ("Books", self._sheet_record_lines(list(sheet.get("books") or []), "author")),
+            ],
+        )
+        inventory_records = list(sheet.get("inventory") or [])
+        inventory_names = {
+            str(item.get("record_id") or ""): str(item.get("name") or "Unknown")
+            for item in inventory_records
+            if isinstance(item, dict) and item.get("record_id")
+        }
+        equipment = sheet.get("equipment") or {}
+        equipment_lines = [
+            (
+                f"• {str(slot).replace('_', ' ').title()}: "
+                f"{inventory_names.get(str(item_id), str(item_id))}"
+            )
+            for slot, item_id in equipment.items() if item_id
+        ]
+        inventory_lines = []
+        for item in inventory_records:
+            quantity = item.get("quantity", 1)
+            category = str(item.get("category") or "")
+            inventory_lines.append(
+                f"• {item.get('name') or 'Unknown'} ×{quantity}"
+                + (f" — {category}" if category else "")
+            )
+        pet_lines = []
+        for pet in sheet.get("pets", []) or []:
+            relationships = ", ".join(str(value) for value in pet.get("relationships", []) or [])
+            pet_lines.append(
+                f"• {pet.get('name') or 'Creature'}"
+                + (f" — {relationships}" if relationships else "")
+            )
+        self._set_character_sheet_panel(
+            "Inventory",
+            f"{name} · Inventory",
+            [
+                ("Equipped", equipment_lines),
+                ("Carried", inventory_lines),
+                ("Pets & creatures", pet_lines),
+            ],
+        )
+        relationship_lines = []
+        for item in sheet.get("relationships", []) or []:
+            people = ", ".join(str(value) for value in item.get("people", []) or [])
+            detail = str(item.get("detail") or item.get("event_type") or "")
+            date_value = str(item.get("date") or "")
+            relationship_lines.append(
+                "• " + " · ".join(value for value in (date_value, people, detail) if value)
+            )
+        self._set_character_sheet_panel(
+            "Story",
+            f"{name} · Story",
+            [
+                ("Biography", str(overview.get("narrative") or "No biography recorded.")),
+                ("Relationships", relationship_lines),
+                ("Wounds", condition_lines[1:]),
+                ("Headmaster notes", note_lines),
+            ],
+        )
+
+    def _load_selected_actor_sheet(self, *, force: bool = False) -> None:
+        pending = self.__dict__.get("_board_character_sheet_after_id")
+        if pending is not None:
+            try:
+                self.after_cancel(pending)
+            except tk.TclError:
+                pass
+        self._board_character_sheet_after_id = None
+        if not force:
+            def begin() -> None:
+                self._board_character_sheet_after_id = None
+                self._begin_selected_actor_sheet_request()
+
+            self._board_character_sheet_after_id = self.after(180, begin)
+            return
+        self._begin_selected_actor_sheet_request()
+
+    def _begin_selected_actor_sheet_request(self) -> None:
+        actor = self._selected_board_actor()
+        session_id = str(self.selected_session_id or "")
+        actor_id = str((actor or {}).get("actor_id") or "")
+        if (
+            not actor
+            or actor.get("actor_type", "person") != "person"
+            or not session_id
+            or not actor_id
+        ):
+            self.board_character_sheet_name.set("Character sheet")
+            self.board_character_sheet_status.set("Select a character")
+            self._render_character_sheet_message("Select a character to load their sheet.")
+            return
+        token = f"{session_id}:{actor_id}:{uuid4().hex}"
+        self._board_character_sheet_request_token = token
+        self.board_character_sheet_name.set(str(actor.get("name") or "Character"))
+        self.board_character_sheet_status.set("Loading campaign-effective sheet…")
+        self._render_character_sheet_message("Loading overview, attributes, knowledge, inventory, and story…")
+        query = urllib.parse.urlencode({"session_id": session_id})
+        path = (
+            f"/api/admin/board/people/{urllib.parse.quote(actor_id, safe='')}/sheet?{query}"
+        )
+
+        def loaded(sheet: dict[str, Any]) -> None:
+            if (
+                token != self._board_character_sheet_request_token
+                or actor_id != self.selected_board_actor_id
+                or session_id != str(self.selected_session_id or "")
+            ):
+                return
+            self._render_board_character_sheet(sheet)
+
+        def failed(error: Exception) -> None:
+            if token != self._board_character_sheet_request_token:
+                return
+            self.board_character_sheet_status.set("Sheet unavailable")
+            self._render_character_sheet_message(str(error))
+
+        self._background(
+            lambda: self.client.request("GET", path, timeout=60),
+            loaded,
+            failure=failed,
+            quiet=True,
+        )
 
     def update_selected_actor(self, **updates: Any) -> None:
         if not self.selected_board_actor_id:
@@ -7731,6 +8564,13 @@ class GameBoardWindow(tk.Tk):
         if not actor:
             messagebox.showinfo("Groups", "Select a character first.", parent=self)
             return
+        if not actor.get("location_id"):
+            messagebox.showinfo(
+                "Groups",
+                "Move this character to a map before assigning a location-based group.",
+                parent=self,
+            )
+            return
         groups = [
             group for group in self.board_snapshot.get("groups", [])
             if str(group.get("location_id")) == str(actor.get("location_id"))
@@ -7928,26 +8768,18 @@ class GameBoardWindow(tk.Tk):
         )
 
     def _build_headmaster_tool_rail(self, parent: tk.Misc) -> None:
-        """Build a Photoshop-style tool strip that does not navigate the workspace."""
+        """Build the compact map-tool bar above the primary workspace."""
 
         rail = tk.Frame(
             parent,
-            width=50,
+            height=32,
             background=self.ACCENT,
             highlightbackground=self.ACCENT,
             highlightthickness=1,
         )
         self.headmaster_tool_rail = rail
-        rail.pack(side="left", fill="y", padx=(0, 8))
+        rail.pack(fill="x", pady=(0, 4))
         rail.pack_propagate(False)
-        tk.Label(
-            rail,
-            text="TOOLS",
-            background=self.ACCENT,
-            foreground="#fff8e7",
-            font=("Segoe UI", 7, "bold"),
-            pady=8,
-        ).pack(fill="x")
         self.headmaster_tool_buttons: dict[str, tk.Button] = {}
         tools = (
             ("groups", "●", "Characters"),
@@ -7956,33 +8788,30 @@ class GameBoardWindow(tk.Tk):
             ("obfuscation-tools", "▧", "Obfuscation"),
             ("token-tools", "◉", "Tokens & Zoom"),
             ("secrets", "✦", "Secrets"),
-            ("roll", "⚄", "Roll"),
-            ("target", "⌖", "Target"),
-            ("marker", "◎", "Marker"),
         )
         for key, symbol, label in tools:
             button = tk.Button(
                 rail,
-                text=symbol,
-                background=self.ACCENT,
+                text=f"{symbol}  {label}",
+                background=self.EDGE if key == self.active_headmaster_tool else self.ACCENT,
                 activebackground=self.EDGE,
-                foreground="#fff8e7",
+                foreground=self.INK if key == self.active_headmaster_tool else "#fff8e7",
                 activeforeground=self.INK,
                 relief="flat",
                 borderwidth=0,
-                font=("Segoe UI Symbol", 16),
-                padx=4,
-                pady=8,
+                font=("Segoe UI", 8, "bold"),
+                padx=8,
+                pady=4,
                 cursor="hand2",
                 command=lambda selected=key, name=label: self.select_headmaster_tool(selected, name),
             )
-            button.pack(fill="x", pady=(0, 1))
+            button.pack(side="left", fill="y", padx=(0, 1))
             self.headmaster_tool_buttons[key] = button
+            self._attach_tooltip(button, f"Open {label}")
         self._build_headmaster_tools_drawer(parent)
-        self.select_headmaster_tool("groups", "Characters")
 
     def _build_headmaster_tools_drawer(self, parent: tk.Misc) -> None:
-        """Build the expandable drawer immediately beside the tool rail."""
+        """Build the expandable drawer that overlays the left edge of the map."""
 
         drawer = tk.Frame(
             parent,
@@ -8009,7 +8838,7 @@ class GameBoardWindow(tk.Tk):
         ).pack(side="left", fill="both", expand=True)
         collapse = tk.Button(
             header,
-            text="‹",
+            text="×",
             width=3,
             background=self.EDGE,
             activebackground=self.PAPER,
@@ -8063,22 +8892,28 @@ class GameBoardWindow(tk.Tk):
     def _position_headmaster_tools_drawer(self) -> None:
         """Overlay the drawer on the board without changing the map layout."""
 
-        sidebar_width = int(self.section_sidebar.cget("width"))
-        rail_width = int(self.headmaster_tool_rail.cget("width"))
-        width = self.headmaster_tool_widths.get(self.active_headmaster_tool, 340)
+        parent = self.game_board_page
+        parent_width = max(1, parent.winfo_width())
+        requested_width = self.headmaster_tool_widths.get(self.active_headmaster_tool, 320)
+        width = min(requested_width, max(280, int(parent_width * 0.46)))
+        y = 0
+        for widget in (self.headmaster_tool_rail, self.board_top_controls):
+            if widget.winfo_manager():
+                y = max(y, widget.winfo_y() + widget.winfo_height())
+        height = max(1, parent.winfo_height() - y)
         self.headmaster_tools_drawer.configure(width=width)
         self.headmaster_tools_drawer.place(
-            x=sidebar_width + rail_width + 16,
-            y=0,
+            x=0,
+            y=y,
             width=width,
-            relheight=1.0,
+            height=height,
         )
         self.headmaster_tools_drawer.lift()
 
     def _open_headmaster_tools_drawer(self) -> None:
         self.headmaster_tools_collapsed = False
-        drawer = self.headmaster_tools_drawer
         self._position_headmaster_tools_drawer()
+        self.after_idle(self._position_headmaster_tools_drawer)
 
     def select_headmaster_tool(self, key: str, label: str) -> None:
         """Select a future quick tool without changing the visible app panel."""
@@ -8361,7 +9196,7 @@ class GameBoardWindow(tk.Tk):
         if key == "game-board" and self._board_context_available:
             if not self.headmaster_tool_rail.winfo_manager():
                 self.headmaster_tool_rail.pack(
-                    side="left", fill="y", padx=(0, 8), before=self.app_host
+                    fill="x", pady=(0, 4), before=self.board_top_controls
                 )
             if not self.headmaster_tools_collapsed:
                 self._open_headmaster_tools_drawer()
@@ -8623,13 +9458,15 @@ class GameBoardWindow(tk.Tk):
         self.chat_shell.pack_forget()
         if self.chat_collapsed:
             self.chat_shell.configure(width=44, height=1)
-            self.chat_shell.pack(side="right", fill="y", padx=(6, 0), before=self.section_sidebar)
+            self.chat_shell.pack(side="right", fill="y", padx=(6, 0), before=self.app_host)
         elif compact:
             self.chat_shell.configure(width=1, height=190)
-            self.chat_shell.pack(side="bottom", fill="x", pady=(6, 0), before=self.section_sidebar)
+            self.chat_shell.pack(side="bottom", fill="x", pady=(6, 0), before=self.app_host)
         else:
             self.chat_shell.configure(width=292, height=1)
-            self.chat_shell.pack(side="right", fill="y", padx=(8, 0), before=self.section_sidebar)
+            self.chat_shell.pack(side="right", fill="y", padx=(8, 0), before=self.app_host)
+        if not self.headmaster_tools_collapsed:
+            self.after_idle(self._position_headmaster_tools_drawer)
 
     def _scrollable_page(self, parent: tk.Misc) -> tuple[ttk.Frame, ttk.Frame]:
         container = ttk.Frame(parent)
@@ -9251,9 +10088,13 @@ class GameBoardWindow(tk.Tk):
             self.server_status.configure(text="LOCAL SERVER OFFLINE", foreground=self.RED)
         else:
             self.server_status.configure(text="LOCAL SERVER ONLINE", foreground=self.GREEN)
+        if quiet:
+            # Silent polling and workspace saves must never impersonate the
+            # result of the action the Headmaster is watching (for example an
+            # invitation batch that is still being delivered).
+            return
         self.set_notice(str(error), error=True)
-        if not quiet:
-            messagebox.showerror("Game Board", str(error), parent=self)
+        messagebox.showerror("Game Board", str(error), parent=self)
 
     def set_notice(self, text: str, error: bool = False) -> None:
         self.notice.configure(text=text, foreground=self.RED if error else self.MUTED)
@@ -10403,7 +11244,14 @@ class GameBoardWindow(tk.Tk):
                     timeout=max(120, 75 * len(ids)),
                 )
             except Exception as error:
-                return {"_client_error": str(error)}
+                detail = str(error)
+                if "timed out" in detail.casefold():
+                    detail = (
+                        "The desktop lost contact while Gmail was still working. "
+                        "Delivery may have completed; check the refreshed invitation "
+                        "statuses before sending again."
+                    )
+                return {"_client_error": detail}
 
         self._background(work, done)
 

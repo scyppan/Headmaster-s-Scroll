@@ -475,6 +475,15 @@ class GameBoardRuntime:
         self._state_generation = 0
         self._board_broadcast_generations: dict[str, int] = defaultdict(int)
         self._board_broadcast_tasks: dict[str, asyncio.Task[Any]] = {}
+        # Gmail credentials and transports are shared process-wide.  Keep one
+        # invitation batch in flight so two desktop windows cannot accidentally
+        # send the same roster at the same time.
+        self.invitation_batch_lock = asyncio.Lock()
+        # Session removal and expiration must not invalidate links midway
+        # through a confirmed delivery batch for that same session.
+        self.session_lifecycle_locks: defaultdict[str, asyncio.Lock] = defaultdict(
+            asyncio.Lock
+        )
 
     def world_changed(self) -> bool:
         try:
@@ -555,9 +564,16 @@ class GameBoardRuntime:
                     location_maps = self.service.location_maps(board_session_id)
                 except (KeyError, ValueError):
                     location_maps = []
+            try:
+                characters = self.service.list_characters(board_session_id)
+            except (KeyError, ValueError):
+                # A session can end between the earlier snapshot and this
+                # compact navigator projection.  Keep admin state available;
+                # the next generation will advertise no designated board.
+                characters = self.service.list_characters()
             result = {
                 "contacts": self.service.list_contacts(),
-                "characters": self.service.list_characters(),
+                "characters": characters,
                 "campaigns": self.service.list_campaigns(),
                 "settings": self.service.settings(),
                 "sessions": sessions,
@@ -660,35 +676,39 @@ class GameBoardRuntime:
                 expires_at = str(session["expires_at"])
                 if parse_utc(expires_at) > checked_at:
                     continue
-                claimed = self.service.begin_session_expiration(
-                    session_id, expires_at, now=checked_at
-                )
             except Exception:
                 continue
-            if not claimed:
-                continue
-            try:
-                await self.disconnect_session(
-                    session_id,
-                    "session_expired",
-                    "The game session has expired.",
-                )
-                summary = self.service.finish_session_expiration(
-                    session_id, expires_at
-                )
-            except Exception:
+            async with self.session_lifecycle_locks[session_id]:
                 try:
-                    self.service.cancel_session_expiration(session_id)
+                    claimed = self.service.begin_session_expiration(
+                        session_id, expires_at, now=checked_at
+                    )
                 except Exception:
-                    pass
-                continue
-            if summary is None:
+                    continue
+                if not claimed:
+                    continue
                 try:
-                    self.service.cancel_session_expiration(session_id)
+                    await self.disconnect_session(
+                        session_id,
+                        "session_expired",
+                        "The game session has expired.",
+                    )
+                    summary = self.service.finish_session_expiration(
+                        session_id, expires_at
+                    )
                 except Exception:
-                    pass
-                continue
-            expired_count += 1
+                    try:
+                        self.service.cancel_session_expiration(session_id)
+                    except Exception:
+                        pass
+                    continue
+                if summary is None:
+                    try:
+                        self.service.cancel_session_expiration(session_id)
+                    except Exception:
+                        pass
+                    continue
+                expired_count += 1
         if expired_count:
             try:
                 await self.notify_admins()
@@ -1068,7 +1088,7 @@ def create_apps(
         "add_battle_actor", "add_battle_actors", "add_named_creature_to_battle",
         "adjust_person_currency", "battle_actor_choices", "battle_combatant_sheet",
         "battle_snapshot", "admin_region_search_options", "admin_search_region",
-        "create_battle", "create_board_faction",
+        "character_sheet_for_person", "create_battle", "create_board_faction",
         "create_board_group", "create_quick_character", "creature_campaign_action",
         "end_battle", "grant_board_control", "headmaster_creature_interaction",
         "headmaster_roll_person_action", "place_campaign_creature",
@@ -1108,6 +1128,18 @@ def create_apps(
         # Deliberately performs no canonical-data reads.  Desktop startup must
         # distinguish a listening service from completion of the first state.
         return {"service": "game-board", "ready": True}
+
+    @admin_app.get(
+        "/api/admin/board/people/{person_id}/sheet",
+        dependencies=[Depends(admin_guard)],
+    )
+    async def headmaster_character_sheet(person_id: str, session_id: str = Query(...)):
+        return await asyncio.to_thread(
+            admin_result,
+            service.character_sheet_for_person,
+            session_id,
+            person_id,
+        )
 
     @admin_app.get("/api/admin/admissions/pending", dependencies=[Depends(admin_guard)])
     async def pending_admissions():
@@ -1238,19 +1270,25 @@ def create_apps(
 
     @admin_app.post("/api/admin/sessions/{session_id}/end", dependencies=[Depends(admin_guard)])
     async def end_selected_session(session_id: str):
-        await runtime.disconnect_session(
-            session_id, "session_expired", "The game session has ended."
-        )
-        result = admin_result(service.end_session, "ended", session_id)
+        async with runtime.session_lifecycle_locks[session_id]:
+            await runtime.disconnect_session(
+                session_id, "session_expired", "The game session has ended."
+            )
+            result = await asyncio.to_thread(
+                admin_result, service.end_session, "ended", session_id
+            )
         await runtime.notify_admins()
         return result
 
     @admin_app.delete("/api/admin/sessions/{session_id}", dependencies=[Depends(admin_guard)])
     async def delete_session(session_id: str):
-        await runtime.disconnect_session(
-            session_id, "session_expired", "The game session was deleted."
-        )
-        result = admin_result(service.delete_session, session_id)
+        async with runtime.session_lifecycle_locks[session_id]:
+            await runtime.disconnect_session(
+                session_id, "session_expired", "The game session was deleted."
+            )
+            result = await asyncio.to_thread(
+                admin_result, service.delete_session, session_id
+            )
         await runtime.notify_admins()
         return result
 
@@ -1259,10 +1297,16 @@ def create_apps(
         dependencies=[Depends(admin_guard)],
     )
     async def remove_session_player(session_id: str, contact_id: str):
-        await runtime.disconnect(
-            contact_id, "access_revoked", "You were removed from this game session.", session_id
-        )
-        result = admin_result(service.remove_player, session_id, contact_id)
+        async with runtime.session_lifecycle_locks[session_id]:
+            await runtime.disconnect(
+                contact_id,
+                "access_revoked",
+                "You were removed from this game session.",
+                session_id,
+            )
+            result = await asyncio.to_thread(
+                admin_result, service.remove_player, session_id, contact_id
+            )
         await runtime.notify_admins()
         return result
 
@@ -1933,40 +1977,118 @@ def create_apps(
 
     @admin_app.post("/api/admin/invitations/send", dependencies=[Depends(admin_guard)])
     async def send_invitations(body: SendBody):
-        session = service.session_view(body.session_id)
-        if not session:
-            raise HTTPException(status_code=400, detail="There is no active session")
-        players = {item["contact_id"]: item for item in session["roster"]}
+        if runtime.invitation_batch_lock.locked():
+            raise HTTPException(
+                status_code=409,
+                detail="An invitation batch is already being sent",
+            )
         results = []
-        for contact_id in body.contact_ids:
-            if contact_id not in players:
-                results.append({"contact_id": contact_id, "success": False, "error": "Not in session roster"})
-                continue
+
+        async def current_session(session_id: str | None):
             try:
-                _raw, link, player = service.prepare_invite(contact_id, session["id"])
-                subject = f"Game Board invitation: {session['title']}"
-                local_expiration = parse_utc(session["expires_at"]).astimezone(
-                    ZoneInfo(service.settings(include_private=True)["timezone"])
-                ).strftime("%B %d, %Y at %I:%M %p %Z")
-                game_datetime = format_game_datetime_for_people(session["game_datetime"])
-                email_body = (
-                    f"Hello {player['name']},\n\n"
-                    f"Use this private link to request admission to {session['title']}:\n\n{link}\n\n"
-                    f"Game World Date: {game_datetime}.\n"
-                    f"The invitation expires {local_expiration}. The headmaster must approve every connection.\n"
+                return await asyncio.to_thread(
+                    service.session_view, session_id
                 )
-                # Gmail delivery previously proved reliable on the server's owning
-                # thread. Keep it there; the desktop client now supplies the longer
-                # batch timeout and prevents duplicate clicks while this completes.
-                message_id = runtime.gmail().send(player["email"], subject, email_body)
-                service.record_invite_result(contact_id, True, session["id"])
-                results.append({"contact_id": contact_id, "success": True, "message_id": message_id})
-            except Exception as error:
-                try:
-                    service.record_invite_result(contact_id, False, session["id"])
-                except Exception:
-                    pass
-                results.append({"contact_id": contact_id, "success": False, "error": str(error)})
+            except (KeyError, ValueError):
+                return None
+
+        async with runtime.invitation_batch_lock:
+            # Resolve an omitted board-session choice once.  Every recipient in
+            # this batch must remain attached to that concrete session even if
+            # the Headmaster selects a different live board while Gmail works.
+            initial_session = await current_session(body.session_id)
+            if not initial_session:
+                raise HTTPException(
+                    status_code=400, detail="There is no active session"
+                )
+            session_id = str(initial_session["id"])
+            async with runtime.session_lifecycle_locks[session_id]:
+                initial_session = await current_session(session_id)
+            if not initial_session:
+                raise HTTPException(
+                    status_code=400, detail="There is no active session"
+                )
+            for contact_id in body.contact_ids:
+                # Release the lifecycle lock between recipients.  End/delete/
+                # expiration may wait for one confirmed Gmail call, never an
+                # entire serial batch; a later recipient is revalidated before
+                # any message is sent.
+                async with runtime.session_lifecycle_locks[session_id]:
+                    session = await current_session(session_id)
+                    if not session:
+                        results.append({
+                            "contact_id": contact_id,
+                            "success": False,
+                            "error": (
+                                "The session ended before this invitation "
+                                "could be sent"
+                            ),
+                        })
+                        continue
+                    players = {
+                        item["contact_id"]: item
+                        for item in session["roster"]
+                    }
+                    if contact_id not in players:
+                        results.append({
+                            "contact_id": contact_id,
+                            "success": False,
+                            "error": "Not in session roster",
+                        })
+                        continue
+                    delivered_message_id = ""
+                    try:
+                        _raw, link, player = await asyncio.to_thread(
+                            service.prepare_invite, contact_id, session["id"]
+                        )
+                        subject = f"Game Board invitation: {session['title']}"
+                        local_expiration = parse_utc(session["expires_at"]).astimezone(
+                            ZoneInfo(service.settings(include_private=True)["timezone"])
+                        ).strftime("%B %d, %Y at %I:%M %p %Z")
+                        game_datetime = format_game_datetime_for_people(session["game_datetime"])
+                        email_body = (
+                            f"Hello {player['name']},\n\n"
+                            f"Use this private link to request admission to {session['title']}:\n\n{link}\n\n"
+                            f"Game World Date: {game_datetime}.\n"
+                            f"The invitation expires {local_expiration}. The headmaster must approve every connection.\n"
+                        )
+                        # Gmail/curl is blocking I/O and may legitimately take tens
+                        # of seconds.  Running it in a worker keeps health, state,
+                        # admission, and player websocket traffic responsive.
+                        sender = runtime.gmail()
+                        message_id = await asyncio.to_thread(
+                            sender.send, player["email"], subject, email_body
+                        )
+                        delivered_message_id = str(message_id or "")
+                        await asyncio.to_thread(
+                            service.record_invite_result,
+                            contact_id,
+                            True,
+                            session["id"],
+                        )
+                        results.append({"contact_id": contact_id, "success": True, "message_id": message_id})
+                    except Exception as error:
+                        if delivered_message_id:
+                            results.append({
+                                "contact_id": contact_id,
+                                "success": True,
+                                "message_id": delivered_message_id,
+                                "warning": (
+                                    "Gmail confirmed delivery, but the local "
+                                    f"status could not be recorded: {error}"
+                                ),
+                            })
+                            continue
+                        try:
+                            await asyncio.to_thread(
+                                service.record_invite_result,
+                                contact_id,
+                                False,
+                                session["id"],
+                            )
+                        except Exception:
+                            pass
+                        results.append({"contact_id": contact_id, "success": False, "error": str(error)})
         await runtime.notify_admins()
         return {"results": results}
 
@@ -1984,8 +2106,13 @@ def create_apps(
 
     @admin_app.post("/api/admin/players/{contact_id}/revoke", dependencies=[Depends(admin_guard)])
     async def revoke(contact_id: str):
-        admin_result(service.revoke, contact_id)
-        await runtime.disconnect(contact_id, "access_revoked", "The headmaster revoked this invitation.")
+        async with runtime.invitation_batch_lock:
+            await asyncio.to_thread(admin_result, service.revoke, contact_id)
+            await runtime.disconnect(
+                contact_id,
+                "access_revoked",
+                "The headmaster revoked this invitation.",
+            )
         await runtime.notify_admins()
         return {"revoked": True}
 
@@ -1994,10 +2121,16 @@ def create_apps(
         dependencies=[Depends(admin_guard)],
     )
     async def revoke_session_player(session_id: str, contact_id: str):
-        admin_result(service.revoke, contact_id, session_id)
-        await runtime.disconnect(
-            contact_id, "access_revoked", "The headmaster revoked this invitation.", session_id
-        )
+        async with runtime.session_lifecycle_locks[session_id]:
+            await asyncio.to_thread(
+                admin_result, service.revoke, contact_id, session_id
+            )
+            await runtime.disconnect(
+                contact_id,
+                "access_revoked",
+                "The headmaster revoked this invitation.",
+                session_id,
+            )
         await runtime.notify_admins()
         return {"revoked": True}
 
@@ -2014,10 +2147,13 @@ def create_apps(
                     status_code=409,
                     detail="There is no active board session",
                 )
-            await runtime.disconnect_session(
-                session_id, "session_expired", "The game session has ended."
-            )
-            admin_result(service.end_session, "ended", session_id)
+            async with runtime.session_lifecycle_locks[session_id]:
+                await runtime.disconnect_session(
+                    session_id, "session_expired", "The game session has ended."
+                )
+                await asyncio.to_thread(
+                    admin_result, service.end_session, "ended", session_id
+                )
         else:
             raise HTTPException(status_code=404, detail="Unknown session action")
         await runtime.notify_admins()

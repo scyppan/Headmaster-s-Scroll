@@ -545,6 +545,51 @@ def active_faction_ids(document: dict[str, Any], person_id: str, game_datetime: 
     return sorted(organization_id for organization_id, active in state.items() if active)
 
 
+def active_faction_ids_by_person(
+    document: dict[str, Any], game_datetime: str,
+) -> dict[str, list[str]]:
+    """Resolve every person's active factions in one pass through world events."""
+
+    cutoff_date, _, cutoff_time = str(game_datetime).partition("T")
+    cutoff = _date_key(cutoff_date, cutoff_time)
+    valid_factions = {
+        str(item.get("record_id"))
+        for item in document.get("organizations", [])
+        if isinstance(item, dict) and item.get("is_faction")
+    }
+    events = []
+    for event in document.get("events", []):
+        if not isinstance(event, dict) or event.get("event_type") not in {"joined_faction", "left_faction"}:
+            continue
+        person_ids = [
+            str(value or "")
+            for value in event.get("person_ids", []) or []
+            if str(value or "")
+        ]
+        if not person_ids:
+            continue
+        organization_id = str(event.get("organization_id", "") or "")
+        if organization_id not in valid_factions:
+            continue
+        key = _date_key(event.get("date"), event.get("time"))
+        if key <= cutoff:
+            events.append((key, str(event.get("record_id", "")), event, person_ids))
+    states: dict[str, dict[str, bool]] = {}
+    for _, __, event, person_ids in sorted(events, key=lambda item: (item[0], item[1])):
+        organization_id = str(event.get("organization_id"))
+        active = event.get("event_type") == "joined_faction"
+        for event_person_id in person_ids:
+            states.setdefault(event_person_id, {})[organization_id] = active
+    return {
+        event_person_id: sorted(
+            organization_id
+            for organization_id, active in state.items()
+            if active
+        )
+        for event_person_id, state in states.items()
+    }
+
+
 def address_display_name(
     document: dict[str, Any],
     address_id: str,

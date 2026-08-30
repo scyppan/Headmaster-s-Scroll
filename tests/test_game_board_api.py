@@ -2,6 +2,8 @@ import asyncio
 import base64
 import json
 import tempfile
+import threading
+import time
 import unittest
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -23,7 +25,7 @@ from headmasters_scroll.game_board.desktop import (
     shift_game_calendar,
 )
 from headmasters_scroll.game_board.gmail import GmailSender, GmailUnavailable
-from headmasters_scroll.game_board.server import GameBoardRuntime, create_apps
+from headmasters_scroll.game_board.server import GameBoardRuntime, SendBody, create_apps
 from headmasters_scroll.game_board.service import (
     GameBoardService,
     format_game_datetime_for_people,
@@ -180,6 +182,135 @@ class GameBoardApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         self.assertTrue(response.json()["results"][0]["success"])
         self.assertIn("Game World Date: 01 Sep 1943 at 08:15.", captured["body"])
+
+    def test_slow_gmail_delivery_does_not_block_admin_health(self):
+        class SlowGmail:
+            def status(self):
+                return {"connected": True}
+
+            def send(self, _recipient, _subject, _body):
+                time.sleep(0.8)
+                return "slow-message"
+
+        self.runtime.gmail = lambda: SlowGmail()
+
+        async def scenario():
+            send_endpoint = next(
+                route.endpoint for route in self.admin_app.routes
+                if route.path == "/api/admin/invitations/send"
+            )
+            health_endpoint = next(
+                route.endpoint for route in self.admin_app.routes
+                if route.path == "/api/admin/health"
+            )
+            started = time.monotonic()
+            send = asyncio.create_task(send_endpoint(SendBody(
+                session_id=self.session_id,
+                contact_ids=[self.contact["id"]],
+            )))
+            await asyncio.sleep(0.05)
+            health = await health_endpoint()
+            health_elapsed = time.monotonic() - started
+            sent = await send
+            return health, health_elapsed, sent
+
+        health, health_elapsed, sent = asyncio.run(scenario())
+        self.assertEqual(health, {"service": "game-board", "ready": True})
+        self.assertLess(health_elapsed, 0.45)
+        self.assertTrue(sent["results"][0]["success"])
+
+    def test_omitted_session_batch_stays_bound_across_board_switch_and_end(self):
+        delivery_started = threading.Event()
+        release_delivery = threading.Event()
+        recipients = []
+        second_contact = self.runtime.service.add_contact("Bob", "bob@example.com")
+        batch_session = self.runtime.service.create_session(
+            "Lifecycle batch",
+            (date.today() + timedelta(days=1)).isoformat(),
+            [self.contact["id"], second_contact["id"]],
+            campaign_id="campaign-1",
+        )
+        batch_session_id = batch_session["id"]
+
+        class CoordinatedGmail:
+            def status(self):
+                return {"connected": True}
+
+            def send(self, recipient, _subject, _body):
+                recipients.append(recipient)
+                delivery_started.set()
+                if not release_delivery.wait(2):
+                    raise TimeoutError("test delivery was not released")
+                return "coordinated-message"
+
+        self.runtime.gmail = lambda: CoordinatedGmail()
+
+        async def scenario():
+            send_endpoint = next(
+                route.endpoint for route in self.admin_app.routes
+                if route.path == "/api/admin/invitations/send"
+            )
+            end_endpoint = next(
+                route.endpoint for route in self.admin_app.routes
+                if route.path == "/api/admin/sessions/{session_id}/end"
+            )
+            select_endpoint = next(
+                route.endpoint for route in self.admin_app.routes
+                if route.path == "/api/admin/sessions/{session_id}/select"
+            )
+            send = asyncio.create_task(send_endpoint(SendBody(
+                contact_ids=[self.contact["id"], second_contact["id"]],
+            )))
+            self.assertTrue(await asyncio.to_thread(delivery_started.wait, 1))
+            await select_endpoint(self.session_id)
+            ending = asyncio.create_task(end_endpoint(batch_session_id))
+            await asyncio.sleep(0.05)
+            self.assertFalse(ending.done())
+            release_delivery.set()
+            return await send, await ending
+
+        try:
+            sent, ended = asyncio.run(scenario())
+        finally:
+            release_delivery.set()
+
+        self.assertTrue(sent["results"][0]["success"])
+        self.assertEqual(sent["results"][0]["message_id"], "coordinated-message")
+        self.assertFalse(sent["results"][1]["success"])
+        self.assertIn("session ended", sent["results"][1]["error"].lower())
+        self.assertEqual(recipients, ["alice@example.com"])
+        self.assertEqual(ended["reason"], "ended")
+        with self.assertRaises(KeyError):
+            self.runtime.service.session_view(batch_session_id)
+
+    def test_headmaster_can_load_full_sheet_for_any_campaign_character(self):
+        state = self.admin.get(
+            "/api/admin/state", headers=self.admin_headers
+        ).json()
+        character = state["characters"][0]
+
+        response = self.admin.get(
+            f"/api/admin/board/people/{character['id']}/sheet",
+            headers=self.admin_headers,
+            params={"session_id": self.session_id},
+        )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        sheet = response.json()
+        self.assertEqual(sheet["character_id"], character["id"])
+        self.assertEqual(sheet["overview"]["name"], character["name"])
+        for key in (
+            "attributes", "spells", "proficiencies", "recipes", "pets",
+            "inventory", "relationships", "wounds", "character_notes",
+        ):
+            self.assertIn(key, sheet)
+        self.assertEqual(
+            self.admin.get(
+                f"/api/admin/board/people/{character['id']}/sheet",
+                params={"session_id": self.session_id},
+            ).status_code,
+            403,
+        )
 
     def test_session_management_routes_are_session_specific(self):
         state = self.admin.get("/api/admin/state", headers=self.admin_headers).json()
@@ -924,8 +1055,14 @@ class GameBoardAssetTests(unittest.TestCase):
         self.assertIn('("groups", "●", "Characters")', desktop)
         self.assertIn("def _build_headmaster_tools_drawer", desktop)
         self.assertIn("def collapse_headmaster_tools", desktop)
-        self.assertIn('"groups": 430', desktop)
-        self.assertIn('"creatures": 440', desktop)
+        self.assertIn('"groups": 320', desktop)
+        self.assertIn("self.section_bar", desktop)
+        self.assertNotIn('text="SECTIONS"', desktop)
+        self.assertIn("board_character_sections", desktop)
+        self.assertIn('label="Open character sheet"', desktop)
+        self.assertIn("def _board_double_click", desktop)
+        self.assertIn("/api/admin/board/people/{person_id}/sheet", (root / "headmasters_scroll" / "game_board" / "server.py").read_text(encoding="utf-8"))
+        self.assertIn('"creatures": 350', desktop)
         self.assertNotIn("self.board_tools_host = tk.Frame(self.chat_expanded", desktop)
         self.assertIn("self.headmaster_tools_drawer.place(", desktop)
         self.assertNotIn('drawer.pack(side="left"', desktop)
@@ -981,8 +1118,8 @@ class GameBoardAssetTests(unittest.TestCase):
         )
         self.assertIn("self.headmaster_tool_rail.pack_forget()", desktop)
         self.assertLess(
-            desktop.index('sidebar.pack(side="left"'),
-            desktop.index("self._build_headmaster_tool_rail(self.workspace)"),
+            desktop.index("self.section_bar = tk.Frame("),
+            desktop.index("self._build_headmaster_tool_rail(game_board_page)"),
         )
         self.assertNotIn('ttk.Label(header, text="Game Board"', desktop)
         self.assertNotIn("padx=28", desktop)

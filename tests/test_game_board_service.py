@@ -1,6 +1,7 @@
 import json
 import tempfile
 import unittest
+from copy import deepcopy
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from unittest.mock import patch
@@ -62,6 +63,59 @@ class GameBoardServiceTests(unittest.TestCase):
         raw, link, _player = self.service.prepare_invite(contact_id or self.alice["id"])
         self.service.record_invite_result(contact_id or self.alice["id"], True)
         return raw, link
+
+    def save_distinct_board_state(self, session_id):
+        snapshot = self.service.board_snapshot(session_id)
+        map_record = snapshot["maps"][0]
+        map_id = map_record["record_id"]
+        location_id = map_record["location_id"]
+        actor_ids = [
+            item["id"] for item in self.service.list_characters(session_id)[:2]
+        ]
+        self.assertEqual(len(actor_ids), 2)
+        self.service.set_board_workspace(session_id, [map_id], map_id)
+        self.service.place_person_on_map(
+            session_id, actor_ids[0], map_id, 0.31, 0.42
+        )
+        self.service.place_person_on_map(
+            session_id, actor_ids[1], map_id, 0.57, 0.68
+        )
+        self.service.update_person_board(
+            session_id,
+            actor_ids[0],
+            {"visibility": "headmaster", "name_revealed": True},
+        )
+        self.service.create_board_group(
+            session_id,
+            "Restart party",
+            location_id,
+            actor_ids,
+            "#334455",
+        )
+        self.service.set_map_presentation(
+            session_id,
+            map_id,
+            published=True,
+            obscurations=[{
+                "record_id": "restart-obscuration",
+                "name": "Saved veil",
+                "points": [
+                    {"x": 0.1, "y": 0.1},
+                    {"x": 0.3, "y": 0.1},
+                    {"x": 0.2, "y": 0.3},
+                ],
+            }],
+            preview_opacity=0.55,
+            preview_color="#123456",
+        )
+        self.service.set_board_camera(
+            session_id,
+            map_id,
+            {"zoom": 4.5, "center_x": 0.62, "center_y": 0.37},
+        )
+        return map_id, actor_ids, deepcopy(
+            self.service.campaign_repository.get(self.campaign_id)["game_state"]
+        )
 
     def test_contacts_are_private_and_unique(self):
         self.assertEqual(self.service.list_contacts()[0]["email"], "alice@example.com")
@@ -721,6 +775,161 @@ class GameBoardServiceTests(unittest.TestCase):
         restarted_service.restart_session(created["id"])
         restarted_service.delete_session(created["id"])
         self.assertEqual(self.repository.summaries()["sessions"], [])
+
+    def test_live_restart_preserves_the_complete_campaign_board_save(self):
+        created = self.create_session()
+        map_id, actor_ids, saved_state = self.save_distinct_board_state(
+            created["id"]
+        )
+        raw, _link = self.invite()
+        admission = self.service.request_admission(
+            raw, "203.0.113.7", "Browser"
+        )
+
+        restarted = self.service.restart_session(created["id"])
+
+        self.assertEqual(restarted["pending"], [])
+        with self.assertRaises(KeyError):
+            self.service.poll_admission(
+                admission["request_id"], admission["poll_token"]
+            )
+        self.assertEqual(
+            self.service.campaign_repository.get(self.campaign_id)["game_state"],
+            saved_state,
+        )
+        snapshot = self.service.board_snapshot(created["id"])
+        self.assertEqual(snapshot["loaded_map_ids"], [map_id])
+        self.assertEqual(snapshot["active_map_id"], map_id)
+        map_record = next(
+            item for item in snapshot["maps"] if item["record_id"] == map_id
+        )
+        self.assertTrue(map_record["players_published"])
+        self.assertEqual(
+            map_record["camera"],
+            {"zoom": 4.5, "center_x": 0.62, "center_y": 0.37},
+        )
+        self.assertEqual(
+            map_record["obscurations"][0]["record_id"],
+            "restart-obscuration",
+        )
+        actor = next(
+            item for item in snapshot["actors"]
+            if item["actor_id"] == actor_ids[0]
+        )
+        self.assertEqual((actor["x"], actor["y"]), (0.31, 0.42))
+        self.assertEqual(actor["visibility"], "headmaster")
+        self.assertEqual(snapshot["groups"][0]["name"], "Restart party")
+
+    def test_end_then_restart_reloads_the_latest_durable_campaign_save(self):
+        created = self.create_session()
+        map_id, actor_ids, saved_state = self.save_distinct_board_state(
+            created["id"]
+        )
+
+        self.service.end_session("ended", created["id"])
+        private_entry = self.repository.active()["restartable_sessions"][0]
+        self.assertNotIn("campaign_save_point", private_entry)
+        self.assertEqual(
+            self.service.campaign_repository.get(self.campaign_id)["game_state"],
+            saved_state,
+        )
+
+        restarted = self.service.restart_session(created["id"])
+
+        self.assertEqual(restarted["id"], created["id"])
+        self.assertEqual(
+            self.service.campaign_repository.get(self.campaign_id)["game_state"],
+            saved_state,
+        )
+        snapshot = self.service.board_snapshot(created["id"])
+        self.assertEqual(snapshot["loaded_map_ids"], [map_id])
+        self.assertEqual(snapshot["active_map_id"], map_id)
+        actor = next(
+            item for item in snapshot["actors"]
+            if item["actor_id"] == actor_ids[0]
+        )
+        self.assertEqual((actor["x"], actor["y"]), (0.31, 0.42))
+        self.assertEqual(actor["visibility"], "headmaster")
+        self.assertEqual(snapshot["groups"][0]["name"], "Restart party")
+        map_record = next(
+            item for item in snapshot["maps"] if item["record_id"] == map_id
+        )
+        self.assertTrue(map_record["players_published"])
+        self.assertEqual(
+            map_record["camera"],
+            {"zoom": 4.5, "center_x": 0.62, "center_y": 0.37},
+        )
+        self.assertEqual(
+            map_record["obscurations"][0]["record_id"],
+            "restart-obscuration",
+        )
+
+    def test_ended_restart_never_rolls_back_a_newer_campaign_save(self):
+        created = self.create_session()
+        self.save_distinct_board_state(created["id"])
+        self.service.end_session("ended", created["id"])
+
+        # Campaigner, another session, or another application may save this
+        # campaign after the room ends. Restart must load that newest durable
+        # save, not overwrite it with a stale room-local copy.
+        self.service.campaign_repository.reset_game_state(self.campaign_id)
+        newest_state = deepcopy(
+            self.service.campaign_repository.get(self.campaign_id)["game_state"]
+        )
+
+        self.service.restart_session(created["id"])
+
+        self.assertEqual(
+            self.service.campaign_repository.get(self.campaign_id)["game_state"],
+            newest_state,
+        )
+        self.assertEqual(newest_state["loaded_map_ids"], [])
+        self.assertEqual(newest_state["active_map_id"], "")
+        restarted_board = self.service.board_snapshot(created["id"])
+        self.assertEqual(restarted_board["loaded_map_ids"], [])
+        self.assertEqual(restarted_board["active_map_id"], "")
+
+    def test_restart_never_changes_a_different_campaign(self):
+        first = self.create_session()
+        map_id, _actor_ids, first_state = self.save_distinct_board_state(
+            first["id"]
+        )
+        document = self.service.campaign_repository.store.load("campaign.json")
+        document.data["campaigns"].append({
+            "record_id": "campaign-2",
+            "name": "Other Campaign",
+            "game_world_start_date": "1943-09-02",
+            "created_at": "2026-08-11T00:00:00Z",
+            "last_updated": "2026-08-11T00:00:00Z",
+        })
+        outcome = self.service.campaign_repository.store.save(
+            document, "test"
+        )
+        self.assertTrue(outcome.saved)
+        second = self.service.create_session(
+            "Other Table",
+            (date.today() + timedelta(days=1)).isoformat(),
+            [self.alice["id"]],
+            campaign_id="campaign-2",
+        )
+        self.service.board_snapshot(second["id"])
+        second_state = deepcopy(
+            self.service.campaign_repository.get("campaign-2")["game_state"]
+        )
+
+        self.service.restart_session(first["id"])
+
+        self.assertEqual(
+            self.service.campaign_repository.get(self.campaign_id)["game_state"],
+            first_state,
+        )
+        self.assertEqual(
+            self.service.campaign_repository.get("campaign-2")["game_state"],
+            second_state,
+        )
+        self.assertEqual(
+            self.service.board_snapshot(first["id"])["active_map_id"], map_id
+        )
 
     def test_expired_legacy_and_deleted_sessions_cannot_restart(self):
         expired = self.create_session()

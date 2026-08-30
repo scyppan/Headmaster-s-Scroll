@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 
 from headmasters_scroll.game_board.desktop import (
     GameBoardWindow,
+    active_board_context_text,
     board_character_sections,
     board_from_admin_state,
     format_expiration_countdown,
@@ -99,6 +100,50 @@ class FakePopup:
 
 
 class GameBoardDesktopSessionTests(unittest.TestCase):
+    def test_header_identifies_only_the_designated_live_session_and_campaign(self):
+        state = {
+            "board_session_id": "session-two",
+            "sessions": [
+                {
+                    "id": "session-one",
+                    "title": "Other room",
+                    "campaign_name": "Other campaign",
+                },
+                {
+                    "id": "session-two",
+                    "title": "Monday table",
+                    "campaign_id": "campaign-two",
+                },
+            ],
+            "campaigns": [
+                {"record_id": "campaign-two", "name": "Charms Check"}
+            ],
+        }
+
+        self.assertEqual(
+            active_board_context_text(state),
+            "SESSION: Monday table  •  CAMPAIGN: Charms Check",
+        )
+        state["board_session_id"] = None
+        self.assertEqual(
+            active_board_context_text(state),
+            "NO ACTIVE SESSION  •  NO ACTIVE CAMPAIGN",
+        )
+
+    def test_header_never_identifies_an_archived_session_as_active(self):
+        self.assertEqual(
+            active_board_context_text({
+                "board_session_id": "session-old",
+                "sessions": [{
+                    "id": "session-old",
+                    "title": "Old room",
+                    "campaign_name": "Old campaign",
+                    "archived": True,
+                }],
+            }),
+            "NO ACTIVE SESSION  •  NO ACTIVE CAMPAIGN",
+        )
+
     def test_sessions_page_can_restart_live_or_restorable_unexpired_rooms(self):
         now = datetime(2098, 12, 31, 12, tzinfo=timezone.utc)
         live = {
@@ -466,7 +511,7 @@ class GameBoardDesktopSessionTests(unittest.TestCase):
         ))
         self.assertEqual(
             window.board_actor_action_summary.value,
-            "Select a character to see their sheet and placement controls.",
+            "Select a character or creature to open their sheet.",
         )
 
     def test_character_sheet_selection_is_debounced(self):
@@ -512,7 +557,7 @@ class GameBoardDesktopSessionTests(unittest.TestCase):
         opened = []
         rendered = []
         loaded = []
-        window.show_board_tools_panel = opened.append
+        window.open_actor_sheet_drawer = lambda: opened.append("drawer")
         window._render_board_actor_list = lambda: rendered.append(True)
         window._load_selected_actor_sheet = (
             lambda *, force=False: loaded.append(force)
@@ -522,7 +567,7 @@ class GameBoardDesktopSessionTests(unittest.TestCase):
 
         self.assertEqual(window.board_actor_search_var.get(), "")
         self.assertEqual(window.selected_board_actor_id, "person-a")
-        self.assertEqual(opened, ["groups"])
+        self.assertEqual(opened, ["drawer"])
         self.assertEqual(rendered, [True])
         self.assertEqual(loaded, [True])
 

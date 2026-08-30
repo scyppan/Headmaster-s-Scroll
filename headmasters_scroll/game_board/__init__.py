@@ -1,6 +1,6 @@
 """Game Board session hosting, admission, and monitoring."""
 
-ADMIN_API_REVISION = "session-recovery-v1"
+ADMIN_API_REVISION = "campaign-resume-v2"
 
 from .service import GameBoardService
 from .storage import GameBoardRepository

@@ -419,6 +419,114 @@ class GameBoardApiTests(unittest.TestCase):
         self.assertEqual(restarted_live.status_code, 200, restarted_live.text)
         self.assertEqual(restarted_live.json()["pending"], [])
 
+    def test_restart_api_repopulates_the_saved_campaign_board(self):
+        initial = self.admin.get(
+            "/api/admin/state", headers=self.admin_headers
+        ).json()
+        initial_board = initial["boards"][self.session_id]
+        map_record = initial_board["maps"][0]
+        map_id = map_record["record_id"]
+        location_id = map_record["location_id"]
+        actor_ids = [item["id"] for item in initial["characters"][:2]]
+        self.assertEqual(len(actor_ids), 2)
+        service = self.runtime.service
+        service.set_board_workspace(self.session_id, [map_id], map_id)
+        service.place_person_on_map(
+            self.session_id, actor_ids[0], map_id, 0.24, 0.36
+        )
+        service.place_person_on_map(
+            self.session_id, actor_ids[1], map_id, 0.64, 0.72
+        )
+        service.update_person_board(
+            self.session_id,
+            actor_ids[0],
+            {"visibility": "headmaster", "name_revealed": True},
+        )
+        service.create_board_group(
+            self.session_id,
+            "API restart party",
+            location_id,
+            actor_ids,
+            "#445566",
+        )
+        service.set_map_presentation(
+            self.session_id,
+            map_id,
+            published=True,
+            obscurations=[{
+                "record_id": "api-restart-obscuration",
+                "name": "API saved veil",
+                "points": [
+                    {"x": 0.15, "y": 0.15},
+                    {"x": 0.35, "y": 0.15},
+                    {"x": 0.25, "y": 0.35},
+                ],
+            }],
+            preview_opacity=0.6,
+            preview_color="#234567",
+        )
+        service.set_board_camera(
+            self.session_id,
+            map_id,
+            {"zoom": 5.0, "center_x": 0.58, "center_y": 0.41},
+        )
+        saved_state = service.campaign_repository.get("campaign-1")["game_state"]
+
+        live_restart = self.admin.post(
+            f"/api/admin/sessions/{self.session_id}/restart",
+            headers=self.admin_headers,
+        )
+        self.assertEqual(live_restart.status_code, 200, live_restart.text)
+        live_state = self.admin.get(
+            "/api/admin/state", headers=self.admin_headers
+        ).json()
+        self.assertEqual(live_state["board_session_id"], self.session_id)
+        self.assertEqual(
+            service.campaign_repository.get("campaign-1")["game_state"],
+            saved_state,
+        )
+        self.assertEqual(
+            live_state["boards"][self.session_id]["active_map_id"], map_id
+        )
+
+        ended = self.admin.post(
+            f"/api/admin/sessions/{self.session_id}/end",
+            headers=self.admin_headers,
+        )
+        self.assertEqual(ended.status_code, 200, ended.text)
+        restarted = self.admin.post(
+            f"/api/admin/sessions/{self.session_id}/restart",
+            headers=self.admin_headers,
+        )
+        self.assertEqual(restarted.status_code, 200, restarted.text)
+
+        state = self.admin.get(
+            "/api/admin/state", headers=self.admin_headers
+        ).json()
+        board = state["boards"][self.session_id]
+        self.assertEqual(state["board_session_id"], self.session_id)
+        self.assertEqual(board["loaded_map_ids"], [map_id])
+        self.assertEqual(board["active_map_id"], map_id)
+        restored_map = next(
+            item for item in board["maps"] if item["record_id"] == map_id
+        )
+        self.assertTrue(restored_map["players_published"])
+        self.assertEqual(
+            restored_map["camera"],
+            {"zoom": 5.0, "center_x": 0.58, "center_y": 0.41},
+        )
+        self.assertEqual(
+            restored_map["obscurations"][0]["record_id"],
+            "api-restart-obscuration",
+        )
+        actor = next(
+            item for item in board["actors"]
+            if item["actor_id"] == actor_ids[0]
+        )
+        self.assertEqual((actor["x"], actor["y"]), (0.24, 0.36))
+        self.assertEqual(actor["visibility"], "headmaster")
+        self.assertEqual(board["groups"][0]["name"], "API restart party")
+
     def test_restart_fails_fast_while_an_invitation_batch_is_running(self):
         self.runtime.service.end_session("ended", self.session_id)
         restart_endpoint = next(
@@ -1787,25 +1895,27 @@ class GameBoardAssetTests(unittest.TestCase):
         self.assertNotIn('text="Move selected to map centre"', desktop)
         self.assertIn("def _apply_responsive_chat_layout", desktop)
         self.assertIn("self._create_board_map_controls(self.board_tools_content)", desktop)
-        self.assertIn("self._create_board_groups_controls(self.board_tools_content)", desktop)
-        self.assertIn('("groups", "●", "Characters")', desktop)
+        self.assertIn("self._create_board_groups_controls(game_board_panel)", desktop)
+        self.assertNotIn('("groups", "●", "Characters")', desktop)
+        self.assertNotIn('("creatures", "◆", "Creatures")', desktop)
         self.assertIn("def _build_headmaster_tools_drawer", desktop)
         self.assertIn("def collapse_headmaster_tools", desktop)
-        self.assertIn('"groups": 320', desktop)
+        self.assertIn("self.board_actor_rail_width = 264", desktop)
+        self.assertIn("def _build_actor_sheet_drawer", desktop)
         self.assertIn("self.section_bar", desktop)
         self.assertNotIn('text="SECTIONS"', desktop)
         self.assertIn("board_character_sections", desktop)
         self.assertIn('label="Open character sheet"', desktop)
         self.assertIn("def _board_double_click", desktop)
         self.assertIn("/api/admin/board/people/{person_id}/sheet", (root / "headmasters_scroll" / "game_board" / "server.py").read_text(encoding="utf-8"))
-        self.assertIn('"creatures": 350', desktop)
+        self.assertIn("def board_actor_typology_sections", desktop)
         self.assertNotIn("self.board_tools_host = tk.Frame(self.chat_expanded", desktop)
         self.assertIn("self.headmaster_tools_drawer.place(", desktop)
         self.assertNotIn('drawer.pack(side="left"', desktop)
         self.assertNotIn('window.title("Map Tools")', desktop)
         self.assertNotIn('dialog.title("Game Board Occupants")', desktop)
         self.assertNotIn('("groups", "●", "Groups")', desktop)
-        self.assertIn('self.show_board_tools_panel("groups")', desktop)
+        self.assertIn("self.open_actor_sheet_drawer()", desktop)
         self.assertIn("BOARD_TOKEN_SCREEN_SIZES", desktop)
         self.assertIn("BOARD_OVERVIEW_DOT_SIZES", desktop)
         self.assertIn("zoom_tier < 6", desktop)

@@ -18,6 +18,7 @@ from headmasters_scroll.board import (
     active_faction_ids_by_person,
     effective_map_id,
     normalize_map,
+    normalize_person_board,
     normalize_region,
     validate_world_board,
 )
@@ -532,6 +533,63 @@ class BoardFoundationTests(unittest.TestCase):
         self.assertEqual(location_maps[0]["floor_name"], "First Floor")
         self.assertTrue(location_maps[0]["is_location_default"])
         self.assertTrue(location_maps[0]["is_floor_primary"])
+
+    def test_person_can_occupy_a_location_without_a_map_token(self):
+        session = self.repository.load()
+        session.data["locations"].append({
+            "record_id": "mapless-village",
+            "name": "Mapless Village",
+            "parent_location_id": "",
+            "has_floors": False,
+            "floors": [],
+            "default_map_id": "",
+        })
+        npc = next(
+            item for item in session.data["people"]
+            if item["record_id"] == "npc-1"
+        )
+        board = normalize_person_board(npc.get("board"))
+        board["placement"] = {
+            "location_id": "mapless-village",
+            "floor_id": "",
+            "map_id": "",
+            "x": 0.5,
+            "y": 0.5,
+        }
+        npc["board"] = board
+
+        self.repository.save(session, "game-board")
+
+        stored = next(
+            item for item in self.repository.load().data["people"]
+            if item["record_id"] == "npc-1"
+        )
+        placement = normalize_person_board(stored["board"])["placement"]
+        self.assertEqual(placement["location_id"], "mapless-village")
+        self.assertEqual(placement["map_id"], "")
+        snapshot = self.repository.snapshot("2000-08-27T08:00")
+        self.assertNotIn(
+            "npc-1", {item["actor_id"] for item in snapshot["actors"]}
+        )
+
+    def test_location_only_placement_still_requires_a_known_location(self):
+        session = self.repository.load()
+        npc = next(
+            item for item in session.data["people"]
+            if item["record_id"] == "npc-1"
+        )
+        board = normalize_person_board(npc.get("board"))
+        board["placement"] = {
+            "location_id": "missing-location",
+            "floor_id": "",
+            "map_id": "",
+            "x": 0.5,
+            "y": 0.5,
+        }
+        npc["board"] = board
+
+        with self.assertRaisesRegex(ValueError, "existing location"):
+            self.repository.save(session, "game-board")
 
     def test_orphan_maps_and_their_occupants_do_not_enter_board_snapshots(self):
         session = self.repository.load()

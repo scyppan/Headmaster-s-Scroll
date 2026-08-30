@@ -216,13 +216,24 @@ class BoardPlaceCharacterBody(BaseModel):
     confirm_move: bool = False
 
 
+class BoardPersonLocationBody(BaseModel):
+    session_id: str = Field(min_length=1, max_length=100)
+    location_id: str = Field(min_length=1, max_length=100)
+    confirm_move: bool = False
+
+
 class QuickCharacterBody(BaseModel):
     session_id: str = Field(min_length=1, max_length=100)
-    map_id: str = Field(min_length=1, max_length=100)
+    map_id: str | None = Field(default=None, min_length=1, max_length=100)
     name: str = Field(min_length=1, max_length=200)
     age: int = Field(ge=0, le=1000)
     development_strategy: str = Field(default="random", min_length=1, max_length=80)
     player_character: bool = False
+
+
+class WorldCharacterImportBody(BaseModel):
+    session_id: str = Field(min_length=1, max_length=100)
+    person_id: str = Field(min_length=1, max_length=100)
 
 
 class BoardPersonBody(BaseModel):
@@ -571,7 +582,7 @@ class GameBoardRuntime:
                         board_session_id,
                         for_players=False,
                     )
-                except (KeyError, ValueError):
+                except (KeyError, PermissionError, RuntimeError, ValueError):
                     board_session = None
                     board_session_id = None
                     boards = {}
@@ -580,21 +591,25 @@ class GameBoardRuntime:
                         battles[board_session_id] = self.service.battle_snapshot(
                             board_session_id
                         )
-                    except (KeyError, ValueError):
+                    except (KeyError, PermissionError, RuntimeError, ValueError):
                         pass
             location_maps = []
             if board_session_id:
                 try:
                     location_maps = self.service.location_maps(board_session_id)
-                except (KeyError, ValueError):
+                except (KeyError, PermissionError, RuntimeError, ValueError):
                     location_maps = []
-            try:
-                characters = self.service.list_characters(board_session_id)
-            except (KeyError, ValueError):
-                # A session can end between the earlier snapshot and this
-                # compact navigator projection.  Keep admin state available;
-                # the next generation will advertise no designated board.
-                characters = self.service.list_characters()
+            if board_session_id:
+                try:
+                    characters = self.service.list_characters(board_session_id)
+                except (KeyError, PermissionError, RuntimeError, ValueError):
+                    # A session can end between the earlier snapshot and this
+                    # compact navigator projection.  Never replace it with the
+                    # global World Builder catalog: that would leak thousands
+                    # of unrelated people into the Actors rail for one poll.
+                    characters = []
+            else:
+                characters = []
             admin_requests = self.service.admin_requests()
             result = {
                 "contacts": self.service.list_contacts(),
@@ -1217,7 +1232,8 @@ def create_apps(
         "create_board_group", "create_quick_character", "creature_campaign_action",
         "end_battle", "grant_board_control", "headmaster_creature_interaction",
         "headmaster_roll_person_action", "place_campaign_creature",
-        "move_person", "place_person_on_map", "remove_battle_actor", "reorder_battle",
+        "assign_person_location", "move_person", "place_person_on_map",
+        "remove_battle_actor", "reorder_battle",
         "roll_campaign_creature_action", "set_board_camera", "set_board_group",
         "set_board_workspace", "set_campaign_creature_group", "set_game_datetime",
         "set_map_presentation", "set_map_published", "set_map_settings",
@@ -1272,6 +1288,38 @@ def create_apps(
             session_id,
             person_id,
         )
+
+    @admin_app.get(
+        "/api/admin/board/world-people",
+        dependencies=[Depends(admin_guard)],
+    )
+    async def search_world_people(
+        session_id: str = Query(min_length=1, max_length=100),
+        q: str = Query(default="", max_length=200),
+        limit: int = Query(default=100, ge=1, le=500),
+    ):
+        return await asyncio.to_thread(
+            admin_result,
+            service.search_world_characters,
+            session_id,
+            q,
+            limit,
+        )
+
+    @admin_app.post(
+        "/api/admin/board/people/import",
+        dependencies=[Depends(admin_guard)],
+    )
+    async def import_world_person(body: WorldCharacterImportBody):
+        result = await asyncio.to_thread(
+            admin_result,
+            service.import_world_character,
+            body.session_id,
+            body.person_id,
+        )
+        runtime.invalidate_state()
+        await runtime.notify_admins()
+        return result
 
     @admin_app.get("/api/admin/admissions/pending", dependencies=[Depends(admin_guard)])
     async def pending_admissions():
@@ -1550,6 +1598,26 @@ def create_apps(
             body.map_id,
             body.x,
             body.y,
+            confirm_move=body.confirm_move,
+        )
+        if not result.get("requires_confirmation"):
+            await runtime.broadcast_board(body.session_id)
+            await runtime.notify_admins()
+        return result
+
+    @admin_app.put(
+        "/api/admin/board/people/{person_id}/location",
+        dependencies=[Depends(admin_guard)],
+    )
+    async def assign_board_person_location(
+        person_id: str,
+        body: BoardPersonLocationBody,
+    ):
+        result = admin_result(
+            service.assign_person_location,
+            body.session_id,
+            person_id,
+            body.location_id,
             confirm_move=body.confirm_move,
         )
         if not result.get("requires_confirmation"):

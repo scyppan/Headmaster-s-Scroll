@@ -241,31 +241,44 @@ def board_character_sections(
         for actor in snapshot.get("actors", []) or []
         if actor.get("actor_type", "person") == "person" and actor.get("actor_id")
     }
+    locations = {
+        str(item.get("record_id", "")): str(item.get("name") or "Unnamed location")
+        for item in snapshot.get("locations", []) or []
+        if isinstance(item, dict) and item.get("record_id")
+    }
     for character in characters or []:
         character_id = str(character.get("id") or character.get("record_id") or "")
         if not include_unplaced or not character_id or character_id in people:
             continue
         name = str(character.get("name") or "Unknown")
         faction_name = str(character.get("faction_name") or "")
+        location_id = str(character.get("location_id") or "")
+        location_name = str(
+            character.get("location_name")
+            or locations.get(location_id, "")
+        )
         if needle and needle not in " ".join(
-            (name, faction_name, "Unplaced")
+            (name, faction_name, location_name, "Unplaced")
         ).casefold():
             continue
         people[character_id] = {
             "actor_type": "person",
             "actor_id": character_id,
             "name": name,
-            "map_id": "",
-            "location_id": "",
-            "group_id": "",
-            "group_name": "",
+            "map_id": str(character.get("map_id") or ""),
+            "location_id": location_id,
+            "location_name": location_name,
+            "floor_id": str(character.get("floor_id") or ""),
+            "group_id": str(character.get("group_id") or ""),
+            "group_name": str(character.get("group_name") or ""),
+            "group_color": str(character.get("group_color") or "#b0b0b0"),
             "faction_id": str(character.get("faction_id") or ""),
             "faction_name": faction_name,
             "faction_color": str(character.get("faction_color") or "#808080"),
             "is_player_character": bool(
                 character.get("is_player_character")
             ),
-            "unplaced": True,
+            "unplaced": not bool(location_id),
         }
     maps = {
         str(item.get("record_id", "")): str(item.get("name") or "Unnamed map")
@@ -274,16 +287,31 @@ def board_character_sections(
     grouped: dict[str, list[dict[str, Any]]] = {}
     for actor in people.values():
         map_id = str(actor.get("map_id", "") or "")
-        map_name = maps.get(map_id, "Unplaced" if not map_id else "Unknown map")
+        location_id = str(actor.get("location_id", "") or "")
+        location_name = str(
+            actor.get("location_name")
+            or locations.get(location_id, "")
+        )
+        map_name = maps.get(
+            map_id,
+            "No map" if location_id and not map_id else (
+                "Unplaced" if not map_id else "Unknown map"
+            ),
+        )
         name = str(actor.get("name") or "Unknown")
         group_name = str(actor.get("group_name") or "")
         faction_name = str(actor.get("faction_name") or "")
-        haystack = " ".join((name, map_name, group_name, faction_name)).casefold()
+        haystack = " ".join(
+            (name, location_name, map_name, group_name, faction_name)
+        ).casefold()
         if needle and needle not in haystack:
             continue
         actor["map_name"] = map_name
-        selected_view = str(view or "Maps")
-        if selected_view == "Groups":
+        actor["location_name"] = location_name
+        selected_view = str(view or "Locations")
+        if selected_view == "Locations":
+            section = location_name or "No location"
+        elif selected_view == "Groups":
             section = group_name or "No group"
         elif selected_view == "Factions":
             section = faction_name or "No faction"
@@ -295,11 +323,13 @@ def board_character_sections(
         grouped.setdefault(section, []).append(actor)
 
     def section_key(label: str) -> tuple[int, str]:
+        if view == "Locations" and label == "No location":
+            return (2, label.casefold())
         if view == "Maps":
             selected_name = maps.get(str(selected_map_id or ""), "")
             if label == selected_name and selected_name:
                 return (0, label.casefold())
-            if label == "Unplaced":
+            if label in {"No map", "Unplaced"}:
                 return (2, label.casefold())
         if label in {"No group", "No faction"}:
             return (2, label.casefold())
@@ -361,6 +391,11 @@ def board_actor_typology_sections(
         str(item.get("record_id", "")): str(item.get("name") or "Unnamed map")
         for item in snapshot.get("maps", []) or []
     }
+    locations = {
+        str(item.get("record_id", "")): str(item.get("name") or "Unnamed location")
+        for item in snapshot.get("locations", []) or []
+        if isinstance(item, dict) and item.get("record_id")
+    }
     creature_groups: dict[str, list[dict[str, Any]]] = {}
     for raw in snapshot.get("actors", []) or []:
         if raw.get("actor_type") != "creature" or not raw.get("actor_id"):
@@ -374,22 +409,33 @@ def board_actor_typology_sections(
         )
         map_id = str(actor.get("map_id") or "")
         map_name = maps.get(map_id, "Unplaced" if not map_id else "Unknown map")
+        location_id = str(actor.get("location_id") or "")
+        location_name = str(
+            actor.get("location_name")
+            or locations.get(location_id, "")
+        )
         group_name = str(actor.get("group_name") or "")
         faction_name = str(actor.get("faction_name") or "")
         species_name = str(actor.get("true_name") or actor.get("name") or "Creature")
         haystack = " ".join(
-            (name, species_name, map_name, group_name, faction_name, "Creature")
+            (
+                name, species_name, location_name, map_name,
+                group_name, faction_name, "Creature",
+            )
         ).casefold()
         if needle and needle not in haystack:
             continue
         actor.update({
             "name": name,
             "map_name": map_name,
+            "location_name": location_name,
             "actor_typology": "Creature",
             "actor_subtype": species_name,
         })
-        selected_view = str(view or "Maps")
-        if selected_view == "Groups":
+        selected_view = str(view or "Locations")
+        if selected_view == "Locations":
+            section = location_name or "No location"
+        elif selected_view == "Groups":
             section = group_name or "No group"
         elif selected_view == "Factions":
             section = faction_name or "No faction"
@@ -401,6 +447,8 @@ def board_actor_typology_sections(
         creature_groups.setdefault(section, []).append(actor)
 
     def section_key(label: str) -> tuple[int, str]:
+        if view == "Locations" and label == "No location":
+            return (2, label.casefold())
         if view == "Maps":
             selected_name = maps.get(str(selected_map_id or ""), "")
             if label == selected_name and selected_name:
@@ -439,6 +487,55 @@ def board_actor_typology_sections(
         ("Characters", people_sections),
         ("Creatures", creature_sections),
     ]
+
+
+def board_campaign_character_empty_lines() -> tuple[str, str]:
+    """Return the concise empty state for a campaign-scoped Actors rail."""
+
+    return ("No campaign characters", "Use C+ to add one")
+
+
+def board_location_choices(
+    locations: list[dict[str, Any]], query: str = "",
+) -> list[dict[str, Any]]:
+    """Return searchable location paths without requiring map assignments."""
+
+    by_id = {
+        str(item.get("record_id") or ""): item
+        for item in locations or []
+        if isinstance(item, dict) and item.get("record_id")
+    }
+
+    def path_for(location_id: str) -> str:
+        names: list[str] = []
+        seen: set[str] = set()
+        current_id = location_id
+        while current_id and current_id not in seen:
+            seen.add(current_id)
+            current = by_id.get(current_id)
+            if current is None:
+                break
+            names.append(str(current.get("name") or "Unnamed location"))
+            current_id = str(current.get("parent_location_id") or "")
+        return " › ".join(reversed(names))
+
+    needle = " ".join(str(query or "").casefold().split())
+    choices: list[dict[str, Any]] = []
+    for location_id, raw in by_id.items():
+        item = deepcopy(raw)
+        item["label"] = path_for(location_id)
+        if needle and needle not in " ".join(
+            (item["label"], str(item.get("name") or ""))
+        ).casefold():
+            continue
+        choices.append(item)
+    return sorted(
+        choices,
+        key=lambda item: (
+            str(item.get("label") or "").casefold(),
+            str(item.get("record_id") or ""),
+        ),
+    )
 
 
 def board_request_rows(
@@ -2410,7 +2507,7 @@ class GameBoardWindow(tk.Tk):
             ("board_reveal_value", False),
             ("board_search_value", ""),
             ("board_actor_search_var", ""),
-            ("board_actor_view_var", "Maps"),
+            ("board_actor_view_var", "Locations"),
             ("board_creature_search_var", ""),
             ("board_obscure_opacity", "35"),
             ("board_zoom_status_value", "Zoom 100% · 0 clicks"),
@@ -3368,7 +3465,7 @@ class GameBoardWindow(tk.Tk):
         ).pack(side="left")
         for text, command, help_text in (
             ("G+", self.create_board_group, "Create a colored character group"),
-            ("C+", self.open_add_character_menu, "Add a character to this map"),
+            ("C+", self.open_add_character_menu, "Import or create a campaign character"),
             ("◆+", self.open_add_creature_dialog, "Add creatures to this map"),
         ):
             button = ttk.Button(group_header, text=text, width=3, style="Quiet.TButton", command=command)
@@ -3382,11 +3479,11 @@ class GameBoardWindow(tk.Tk):
         search.pack(side="left", fill="x", expand=True)
         self._attach_tooltip(search, "Search every campaign character and creature")
         self.board_actor_search_var.trace_add("write", lambda *_args: self._render_board_actor_list())
-        self.board_actor_view_var = tk.StringVar(value="Maps")
+        self.board_actor_view_var = tk.StringVar(value="Locations")
         view = ttk.Combobox(
             filters,
             textvariable=self.board_actor_view_var,
-            values=("Maps", "Groups", "Factions", "A–Z"),
+            values=("Locations", "Maps", "Groups", "Factions", "A–Z"),
             state="readonly",
             width=9,
         )
@@ -3436,7 +3533,7 @@ class GameBoardWindow(tk.Tk):
         self.board_actor_action_summary = tk.StringVar(
             value="Select a character or creature to open their sheet."
         )
-        tk.Label(
+        self.board_actor_action_summary_label = tk.Label(
             shell,
             textvariable=self.board_actor_action_summary,
             anchor="w",
@@ -3447,17 +3544,23 @@ class GameBoardWindow(tk.Tk):
             font=("Segoe UI", 8),
             padx=2,
             pady=4,
-        ).pack(fill="x")
+        )
+        self.board_actor_action_summary_label.pack(fill="x")
         actor_actions = ttk.Frame(shell, style="Card.TFrame")
         actor_actions.pack(fill="x")
         actor_actions.columnconfigure(0, weight=1)
         actor_actions.columnconfigure(1, weight=1)
         self.board_actor_action_buttons: list[ttk.Button] = []
-        for index, (text, command, help_text) in enumerate((
-            ("Locate", self.locate_selected_actor, "Open this actor's map"),
-            ("Map…", self.move_selected_actor_to_map, "Move or place this actor on a map"),
-            ("Group…", self.manage_actor_group, "Move this actor into a board group"),
-            ("Faction…", self.select_actor_faction, "Move this character into a faction"),
+        self.board_actor_action_buttons_by_key: dict[str, ttk.Button] = {}
+        for index, (key, text, command, help_text) in enumerate((
+            ("locate", "Locate", self.locate_selected_actor, "Open this actor's map"),
+            (
+                "location", "Location…", self.move_selected_actor_to_location,
+                "Assign this character to a location without loading a map",
+            ),
+            ("map", "Map…", self.move_selected_actor_to_map, "Move or place this actor on a map"),
+            ("group", "Group…", self.manage_actor_group, "Move this actor into a board group"),
+            ("faction", "Faction…", self.select_actor_faction, "Move this character into a faction"),
         )):
             button = ttk.Button(
                 actor_actions, text=text, style="Quiet.TButton", command=command
@@ -3471,6 +3574,7 @@ class GameBoardWindow(tk.Tk):
             )
             button.configure(state="disabled")
             self.board_actor_action_buttons.append(button)
+            self.board_actor_action_buttons_by_key[key] = button
             self._attach_tooltip(button, help_text)
 
         self._render_board_actor_list()
@@ -5574,32 +5678,34 @@ class GameBoardWindow(tk.Tk):
         ttk.Button(buttons, text="Roll", command=roll).pack(side="right", padx=(0, 6))
 
     def open_add_character_menu(self) -> None:
-        if not self.selected_session_id or not self.selected_board_map_id:
+        if not self.selected_session_id:
             messagebox.showinfo(
                 "Add character",
-                "Open a campaign session and a map first.",
+                "Start or select a campaign session first.",
                 parent=self,
             )
             return
         menu = tk.Menu(self, tearoff=False)
-        menu.add_command(label="Choose from World Builderâ€¦", command=self.choose_character_for_map)
-        menu.add_command(label="Quick new characterâ€¦", command=self.quick_create_character_for_map)
+        menu.add_command(
+            label="Import from character database…",
+            command=self.choose_character_for_campaign,
+        )
+        menu.add_command(
+            label="New campaign character…",
+            command=self.quick_create_campaign_character,
+        )
         try:
             menu.tk_popup(self.winfo_pointerx(), self.winfo_pointery())
         finally:
             menu.grab_release()
 
-    def choose_character_for_map(self) -> None:
-        characters = list(self.character_choices)
-        if not characters:
-            messagebox.showinfo(
-                "Add character",
-                "No characters are available in World Builder.",
-                parent=self,
-            )
+    def choose_character_for_campaign(self) -> None:
+        """Search the large world catalog on demand and import one reference."""
+
+        if not self.selected_session_id:
             return
         dialog = tk.Toplevel(self)
-        dialog.title("Add Character to Map")
+        dialog.title("Import Character into Campaign")
         dialog.transient(self)
         dialog.grab_set()
         dialog.geometry("600x560")
@@ -5607,10 +5713,21 @@ class GameBoardWindow(tk.Tk):
         apply_window_icon(dialog, GAME_BOARD_ICON)
         body = ttk.Frame(dialog, padding=12)
         body.pack(fill="both", expand=True)
-        ttk.Label(body, text="Add Character", style="Title.TLabel").pack(anchor="w")
+        ttk.Label(
+            body, text="Import from Character Database", style="Title.TLabel"
+        ).pack(anchor="w")
+        ttk.Label(
+            body,
+            text=(
+                "Search the shared database, then add only the selected character "
+                "to this campaign."
+            ),
+            style="Card.TLabel",
+            wraplength=560,
+        ).pack(anchor="w", pady=(2, 8))
         query = tk.StringVar()
         search = ttk.Entry(body, textvariable=query)
-        search.pack(fill="x", pady=(6, 7))
+        search.pack(fill="x", pady=(0, 7))
         results = tk.Listbox(
             body,
             exportselection=False,
@@ -5623,102 +5740,146 @@ class GameBoardWindow(tk.Tk):
         status = ttk.Label(body, text="", style="Status.TLabel")
         status.pack(anchor="w", pady=(5, 0))
         visible: list[dict[str, Any]] = []
+        pending_after: list[str | None] = [None]
+        generation = [0]
 
-        def fill(*_args: object) -> None:
-            search_text = " ".join(query.get().strip().casefold().split())
-            ranked: list[tuple[float, dict[str, Any]]] = []
-            for item in characters:
-                name = " ".join(str(item.get("name", "")).casefold().split())
-                if not search_text:
-                    score = 1.0
-                elif search_text in name:
-                    score = 2.0 - (name.index(search_text) / max(1, len(name)))
-                else:
-                    score = SequenceMatcher(None, search_text, name).ratio()
-                    word_scores = [
-                        SequenceMatcher(None, word, candidate).ratio()
-                        for word in search_text.split()
-                        for candidate in name.split()
-                    ]
-                    score = max([score, *word_scores])
-                    if score < 0.58:
-                        continue
-                ranked.append((score, item))
-            ranked.sort(
-                key=lambda value: (
-                    -value[0],
-                    str(value[1].get("name", "")).casefold(),
-                )
-            )
-            visible[:] = [item for _score, item in ranked]
+        def show_records(payload: dict[str, Any], expected: int) -> None:
+            if expected != generation[0] or not dialog.winfo_exists():
+                return
+            visible[:] = list(payload.get("characters") or [])
             results.delete(0, "end")
             for item in visible:
-                results.insert("end", str(item.get("name") or "Unnamed character"))
-            status.configure(text=f"{len(visible)} character(s) shown")
+                details = [
+                    str(item.get("school") or ""),
+                    (
+                        f"born {item.get('birth_year')}"
+                        if item.get("birth_year") is not None else ""
+                    ),
+                ]
+                suffix = " · ".join(value for value in details if value)
+                imported = "  ✓ in campaign" if item.get("imported") else ""
+                results.insert(
+                    "end",
+                    str(item.get("name") or "Unnamed character")
+                    + (f"  —  {suffix}" if suffix else "")
+                    + imported,
+                )
+            status.configure(
+                text=(
+                    f"{len(visible)} result(s)"
+                    + (" · refine your search" if payload.get("has_more") else "")
+                )
+            )
             if visible:
                 results.selection_set(0)
 
-        def place(confirm_move: bool = False) -> None:
-            selection = results.curselection()
-            if not selection:
+        def search_database() -> None:
+            pending_after[0] = None
+            search_text = " ".join(query.get().strip().split())
+            generation[0] += 1
+            expected = generation[0]
+            if len(search_text) < 2:
+                visible.clear()
+                results.delete(0, "end")
+                status.configure(text="Type at least two characters to search")
                 return
-            character = visible[selection[0]]
+            status.configure(text="Searching character database…")
+            session_id = urllib.parse.quote(str(self.selected_session_id), safe="")
+            encoded_query = urllib.parse.quote(search_text, safe="")
+            path = (
+                "/api/admin/board/world-people"
+                f"?session_id={session_id}&q={encoded_query}&limit=100"
+            )
+            self._background(
+                lambda: self.client.request("GET", path),
+                lambda payload: show_records(payload or {}, expected),
+                failure=lambda error: (
+                    status.configure(text=str(error))
+                    if dialog.winfo_exists() and expected == generation[0]
+                    else None
+                ),
+            )
+
+        def queue_search(*_args: object) -> None:
+            if pending_after[0] is not None:
+                try:
+                    dialog.after_cancel(pending_after[0])
+                except tk.TclError:
+                    pass
+            pending_after[0] = dialog.after(260, search_database)
+
+        def search_now(_event: tk.Event | None = None) -> str:
+            """Run immediately without leaving the queued debounce behind."""
+
+            after_id = pending_after[0]
+            pending_after[0] = None
+            if after_id is not None:
+                try:
+                    dialog.after_cancel(after_id)
+                except tk.TclError:
+                    pass
+            search_database()
+            return "break"
+
+        def import_selected() -> None:
+            selection = results.curselection()
+            if not selection or int(selection[0]) >= len(visible):
+                return
+            character = visible[int(selection[0])]
+            if character.get("imported"):
+                dialog.destroy()
+                self.selected_board_actor_id = str(character.get("id") or "")
+                self.set_notice(f"{character.get('name') or 'Character'} is already in this campaign")
+                self.refresh(silent=True)
+                return
             payload = {
                 "session_id": self.selected_session_id,
-                "person_id": character["id"],
-                "map_id": self.selected_board_map_id,
-                "x": 0.5,
-                "y": 0.5,
-                "confirm_move": confirm_move,
+                "person_id": str(character.get("id") or ""),
             }
 
             def handled(result: dict[str, Any]) -> None:
-                result = result or {}
-                if result.get("requires_confirmation"):
-                    if messagebox.askyesno(
-                        "Move character?",
-                        (
-                            f"{result.get('person_name') or character['name']} is currently on "
-                            f"{result.get('current_map_name') or 'another map'}.\n\n"
-                            "Move them to this map?"
-                        ),
-                        parent=dialog,
-                    ):
-                        place(True)
-                    return
                 dialog.destroy()
-                if result.get("already_on_map"):
-                    self.set_notice(f"{character['name']} is already on this map")
-                else:
-                    self.set_notice(f"{character['name']} added to map")
+                self.selected_board_actor_id = str(result.get("id") or character.get("id") or "")
+                self.set_notice(
+                    f"Imported {result.get('name') or character.get('name') or 'character'} "
+                    "into this campaign"
+                )
                 self.refresh(silent=True)
 
             self._background(
-                lambda: self.client.request("POST", "/api/admin/board/place-character", payload),
+                lambda: self.client.request(
+                    "POST", "/api/admin/board/people/import", payload
+                ),
                 handled,
             )
 
-        query.trace_add("write", fill)
-        results.bind("<Double-Button-1>", lambda _event: place())
-        results.bind("<Return>", lambda _event: place())
+        query.trace_add("write", queue_search)
+        results.bind("<Double-Button-1>", lambda _event: import_selected())
+        results.bind("<Return>", lambda _event: import_selected())
+        search.bind("<Return>", search_now)
         controls = ttk.Frame(body)
         controls.pack(fill="x", pady=(8, 0))
         ttk.Button(controls, text="Cancel", style="Quiet.TButton", command=dialog.destroy).pack(side="right")
-        ttk.Button(controls, text="Add to Map", command=place).pack(side="right", padx=(0, 6))
-        fill()
+        ttk.Button(controls, text="Import into Campaign", command=import_selected).pack(side="right", padx=(0, 6))
+        status.configure(text="Type at least two characters to search")
         search.focus_set()
 
-    def quick_create_character_for_map(self) -> None:
+    def choose_character_for_map(self) -> None:
+        """Compatibility alias for the campaign import workflow."""
+
+        self.choose_character_for_campaign()
+
+    def quick_create_campaign_character(self) -> None:
         dialog = tk.Toplevel(self)
-        dialog.title("Quick New Character")
+        dialog.title("New Campaign Character")
         dialog.transient(self)
         dialog.grab_set()
-        dialog.geometry("520x330")
+        dialog.geometry("540x385")
         dialog.resizable(False, False)
         apply_window_icon(dialog, GAME_BOARD_ICON)
         body = ttk.Frame(dialog, padding=16)
         body.pack(fill="both", expand=True)
-        ttk.Label(body, text="Quick New Character", style="Title.TLabel").grid(row=0, column=0, columnspan=2, sticky="w")
+        ttk.Label(body, text="New Campaign Character", style="Title.TLabel").grid(row=0, column=0, columnspan=2, sticky="w")
         ttk.Label(body, text="Name", style="Card.TLabel").grid(row=1, column=0, sticky="w", pady=(14, 4))
         name_value = tk.StringVar()
         name_entry = ttk.Entry(body, textvariable=name_value)
@@ -5737,13 +5898,25 @@ class GameBoardWindow(tk.Tk):
         strategy.grid(row=3, column=1, sticky="ew", pady=4)
         player_value = tk.BooleanVar(value=False)
         ttk.Checkbutton(body, text="Player character", variable=player_value).grid(row=4, column=1, sticky="w", pady=(6, 0))
+        place_on_map = tk.BooleanVar(value=bool(self.selected_board_map_id))
+        map_option = ttk.Checkbutton(
+            body,
+            text="Also place on the currently open map",
+            variable=place_on_map,
+        )
+        map_option.grid(row=5, column=1, sticky="w", pady=(4, 0))
+        if not self.selected_board_map_id:
+            map_option.configure(state="disabled")
         note = ttk.Label(
             body,
-            text="Birth year and completed development years are calculated from the current Game World Date.",
+            text=(
+                "This character belongs only to this campaign. Birth year and "
+                "development are calculated from the current Game World Date."
+            ),
             style="Status.TLabel",
             wraplength=450,
         )
-        note.grid(row=5, column=0, columnspan=2, sticky="w", pady=(12, 0))
+        note.grid(row=6, column=0, columnspan=2, sticky="w", pady=(12, 0))
         body.columnconfigure(1, weight=1)
 
         def create() -> None:
@@ -5754,12 +5927,13 @@ class GameBoardWindow(tk.Tk):
                 return
             payload = {
                 "session_id": self.selected_session_id,
-                "map_id": self.selected_board_map_id,
                 "name": name_value.get().strip(),
                 "age": age,
                 "development_strategy": strategy_value.get(),
                 "player_character": player_value.get(),
             }
+            if place_on_map.get() and self.selected_board_map_id:
+                payload["map_id"] = self.selected_board_map_id
             if not payload["name"]:
                 messagebox.showwarning("Quick character", "Enter a character name.", parent=dialog)
                 return
@@ -5767,8 +5941,10 @@ class GameBoardWindow(tk.Tk):
             def created(result: dict[str, Any]) -> None:
                 character = result.get("character", {})
                 dialog.destroy()
+                self.selected_board_actor_id = str(character.get("id") or "")
                 self.set_notice(
-                    f"Created {character.get('name', 'character')} â€” born {character.get('birth_year')}"
+                    f"Created campaign character {character.get('name', 'character')} "
+                    f"— born {character.get('birth_year')}"
                 )
                 self.refresh(silent=True)
 
@@ -5778,10 +5954,15 @@ class GameBoardWindow(tk.Tk):
             )
 
         controls = ttk.Frame(body)
-        controls.grid(row=6, column=0, columnspan=2, sticky="e", pady=(18, 0))
+        controls.grid(row=7, column=0, columnspan=2, sticky="e", pady=(18, 0))
         ttk.Button(controls, text="Cancel", style="Quiet.TButton", command=dialog.destroy).pack(side="right")
-        ttk.Button(controls, text="Create and Add", command=create).pack(side="right", padx=(0, 6))
+        ttk.Button(controls, text="Create Character", command=create).pack(side="right", padx=(0, 6))
         name_entry.focus_set()
+
+    def quick_create_character_for_map(self) -> None:
+        """Compatibility alias for campaign-owned character creation."""
+
+        self.quick_create_campaign_character()
 
     def open_board_groups(self) -> None:
         self.collapse_headmaster_tools()
@@ -8767,21 +8948,8 @@ class GameBoardWindow(tk.Tk):
             return
         query = str(self.board_actor_search_var.get() or "").strip().casefold()
         view_variable = self.__dict__.get("board_actor_view_var")
-        view = view_variable.get() if view_variable is not None else "Maps"
+        view = view_variable.get() if view_variable is not None else "Locations"
         characters = list(self.state_data.get("characters") or [])
-        placed_person_ids = {
-            str(actor.get("actor_id") or "")
-            for actor in self.board_snapshot.get("actors", []) or []
-            if actor.get("actor_type", "person") == "person"
-            and actor.get("actor_id")
-        }
-        unplaced_count = len({
-            str(character.get("id") or character.get("record_id") or "")
-            for character in characters
-            if (character.get("id") or character.get("record_id"))
-            and str(character.get("id") or character.get("record_id"))
-            not in placed_person_ids
-        })
         search_limit = 200
         typologies = board_actor_typology_sections(
             self.board_snapshot,
@@ -8789,7 +8957,7 @@ class GameBoardWindow(tk.Tk):
             view,
             query,
             selected_map_id=self.selected_board_map_id,
-            include_unplaced=bool(query),
+            include_unplaced=True,
             max_records=search_limit if query else None,
         )
         displayed_count = sum(
@@ -8803,7 +8971,6 @@ class GameBoardWindow(tk.Tk):
             self.selected_board_actor_id,
             view,
             query,
-            unplaced_count,
             search_capped,
             tuple(
                 (
@@ -8818,6 +8985,8 @@ class GameBoardWindow(tk.Tk):
                                     str(actor.get("actor_typology") or ""),
                                     str(actor.get("actor_subtype") or ""),
                                     str(actor.get("map_id") or ""),
+                                    str(actor.get("location_id") or ""),
+                                    str(actor.get("location_name") or ""),
                                     str(actor.get("group_id") or ""),
                                     str(actor.get("group_name") or ""),
                                     str(actor.get("faction_id") or ""),
@@ -8847,8 +9016,6 @@ class GameBoardWindow(tk.Tk):
                 tree.delete(*children)
             for type_index, (typology, sections) in enumerate(typologies):
                 type_count = sum(len(records) for _label, records in sections)
-                if typology == "Characters" and not query:
-                    type_count += unplaced_count
                 type_id = f"typology:{type_index}"
                 tree.insert(
                     "", "end", iid=type_id,
@@ -8865,12 +9032,13 @@ class GameBoardWindow(tk.Tk):
                     for actor in actors:
                         actor_id = str(actor.get("actor_id") or "")
                         is_creature = actor.get("actor_type") == "creature"
-                        details = [
-                            str(actor.get("map_name") or ""),
-                            str(actor.get("group_name") or ""),
-                            str(actor.get("faction_name") or ""),
-                        ]
-                        detail = " · ".join(value for value in details if value)
+                        location_name = str(actor.get("location_name") or "")
+                        map_name = str(actor.get("map_name") or "")
+                        detail = (
+                            map_name
+                            if actor.get("map_id")
+                            else location_name
+                        )
                         name = str(actor.get("name") or "Unknown")
                         subtype = str(actor.get("actor_subtype") or "")
                         if is_creature:
@@ -8892,13 +9060,22 @@ class GameBoardWindow(tk.Tk):
                             section_id, "end", iid=f"actor:{actor_id}",
                             text=label, tags=tuple(tags),
                         )
-            if not query and unplaced_count:
+            character_count = sum(
+                len(records)
+                for typology, sections in typologies
+                if typology == "Characters"
+                for _section, records in sections
+            )
+            if not query and character_count == 0:
+                empty_hint, action_hint = board_campaign_character_empty_lines()
                 tree.insert(
-                    "typology:0", "end", iid="hint:unplaced",
-                    text=(
-                        f"{unplaced_count:,} unplaced characters — "
-                        "type a name to search"
-                    ),
+                    "typology:0", "end", iid="hint:campaign-empty",
+                    text=empty_hint,
+                    tags=("hint",),
+                )
+                tree.insert(
+                    "typology:0", "end", iid="hint:campaign-add",
+                    text=action_hint,
                     tags=("hint",),
                 )
             elif search_capped:
@@ -8963,6 +9140,11 @@ class GameBoardWindow(tk.Tk):
             label="Refresh creature sheet" if actor_is_creature else "Refresh character sheet",
             command=lambda: self._load_selected_actor_sheet(force=True),
         )
+        if not actor_is_creature:
+            popup.add_command(
+                label="Choose location…",
+                command=self.move_selected_actor_to_location,
+            )
         popup.add_command(label="Move to map…", command=self.move_selected_actor_to_map)
         popup.add_command(label="Choose group…", command=self.manage_actor_group)
         if not actor_is_creature:
@@ -8990,8 +9172,20 @@ class GameBoardWindow(tk.Tk):
                 for item in self.board_snapshot.get("maps", []) or []
                 if str(item.get("record_id") or "") == str(actor.get("map_id") or "")
             ),
-            "Unplaced",
+            "",
         )
+        location_name = str(actor.get("location_name") or "")
+        if not location_name and actor.get("location_id"):
+            location_name = next(
+                (
+                    str(item.get("name") or "Unnamed location")
+                    for item in self.board_snapshot.get("locations", []) or []
+                    if str(item.get("record_id") or "")
+                    == str(actor.get("location_id") or "")
+                ),
+                "Unknown location",
+            )
+        place_name = map_name or location_name or "No location"
         is_creature = actor.get("actor_type") == "creature"
         name = str(
             actor.get("internal_label") or actor.get("name") or "Unknown"
@@ -9002,17 +9196,41 @@ class GameBoardWindow(tk.Tk):
             "Player character" if actor.get("is_player_character") else "Character"
         )
         self.board_actor_action_summary.set(
-            f"{typology} · {name} · {map_name} · {group}"
+            f"{typology}: {name}\n"
+            f"{place_name} · {group}"
             + ("" if is_creature else f" · {faction}")
         )
         for button in buttons:
             button.configure(state="normal")
-        if buttons:
-            buttons[0].configure(state="normal" if actor.get("map_id") else "disabled")
-        if len(buttons) > 2:
-            buttons[2].configure(state="normal" if actor.get("location_id") else "disabled")
-        if len(buttons) > 3:
-            buttons[3].configure(state="disabled" if is_creature else "normal")
+        by_key = getattr(self, "board_actor_action_buttons_by_key", {})
+        if by_key:
+            by_key["locate"].configure(
+                state="normal" if actor.get("map_id") else "disabled"
+            )
+            by_key["location"].configure(
+                state="disabled" if is_creature else "normal"
+            )
+            by_key["map"].configure(state="normal")
+            by_key["group"].configure(
+                state="normal" if actor.get("location_id") else "disabled"
+            )
+            by_key["faction"].configure(
+                state="disabled" if is_creature else "normal"
+            )
+        else:
+            # Compatibility for lightweight tests and restored old windows.
+            if buttons:
+                buttons[0].configure(
+                    state="normal" if actor.get("map_id") else "disabled"
+                )
+            if len(buttons) > 2:
+                buttons[2].configure(
+                    state="normal" if actor.get("location_id") else "disabled"
+                )
+            if len(buttons) > 3:
+                buttons[3].configure(
+                    state="disabled" if is_creature else "normal"
+                )
 
     def _selected_board_actor(self) -> dict[str, Any] | None:
         actor = next(
@@ -9037,17 +9255,20 @@ class GameBoardWindow(tk.Tk):
             "actor_type": "person",
             "actor_id": str(character.get("id") or ""),
             "name": str(character.get("name") or "Unknown"),
-            "map_id": "",
-            "location_id": "",
-            "group_id": "",
-            "group_name": "",
+            "map_id": str(character.get("map_id") or ""),
+            "location_id": str(character.get("location_id") or ""),
+            "location_name": str(character.get("location_name") or ""),
+            "floor_id": str(character.get("floor_id") or ""),
+            "group_id": str(character.get("group_id") or ""),
+            "group_name": str(character.get("group_name") or ""),
+            "group_color": str(character.get("group_color") or "#b0b0b0"),
             "faction_id": str(character.get("faction_id") or ""),
             "faction_name": str(character.get("faction_name") or ""),
             "faction_color": str(character.get("faction_color") or "#808080"),
             "is_player_character": bool(
                 character.get("is_player_character")
             ),
-            "unplaced": True,
+            "unplaced": not bool(character.get("location_id")),
         }
 
     def locate_selected_actor(self, event: tk.Event | None = None) -> str | None:
@@ -9070,6 +9291,164 @@ class GameBoardWindow(tk.Tk):
             f"Located {actor.get('internal_label') or actor.get('name') or 'actor'}"
         )
         return "break" if event is not None else None
+
+    def move_selected_actor_to_location(self) -> None:
+        """Assign a character to an authored location without loading a map."""
+
+        actor = self._selected_board_actor()
+        if not actor or not self.selected_session_id:
+            messagebox.showinfo(
+                "Character location",
+                "Select a character in an active session first.",
+                parent=self,
+            )
+            return
+        if actor.get("actor_type") == "creature":
+            messagebox.showinfo(
+                "Creature location",
+                "Move campaign creatures with Map… so their encounter position stays defined.",
+                parent=self,
+            )
+            return
+        locations = list(self.board_snapshot.get("locations") or [])
+        if not locations:
+            messagebox.showinfo(
+                "Character location",
+                "No World Builder locations are available for this campaign.",
+                parent=self,
+            )
+            return
+
+        actor_name = str(actor.get("name") or "Character")
+        dialog = tk.Toplevel(self)
+        dialog.title(f"Choose {actor_name}'s location")
+        dialog.transient(self)
+        dialog.grab_set()
+        dialog.geometry("620x560")
+        dialog.minsize(460, 360)
+        apply_window_icon(dialog, GAME_BOARD_ICON)
+        body = ttk.Frame(dialog, padding=12)
+        body.pack(fill="both", expand=True)
+        ttk.Label(body, text="Character Location", style="Title.TLabel").pack(
+            anchor="w"
+        )
+        ttk.Label(
+            body,
+            text=(
+                "Choose any authored location. This records where the character is "
+                "without opening or loading a map."
+            ),
+            style="Card.TLabel",
+            wraplength=570,
+        ).pack(anchor="w", pady=(2, 9))
+        query = tk.StringVar()
+        search = ttk.Entry(body, textvariable=query)
+        search.pack(fill="x", pady=(0, 7))
+        results = tk.Listbox(
+            body,
+            exportselection=False,
+            background="#fff8e6",
+            foreground=self.INK,
+            selectbackground=self.ACCENT,
+            selectforeground="#fff8e7",
+        )
+        results.pack(fill="both", expand=True)
+        status = ttk.Label(body, text="", style="Status.TLabel")
+        status.pack(anchor="w", pady=(5, 0))
+        visible: list[dict[str, Any]] = []
+
+        def fill(*_args: object) -> None:
+            visible[:] = board_location_choices(locations, query.get())[:250]
+            results.delete(0, "end")
+            current_id = str(actor.get("location_id") or "")
+            for item in visible:
+                suffixes = []
+                if str(item.get("record_id") or "") == current_id:
+                    suffixes.append("current")
+                if not item.get("map_ids") and not item.get("default_map_id"):
+                    suffixes.append("no map")
+                suffix = f"  ·  {' · '.join(suffixes)}" if suffixes else ""
+                results.insert("end", f"{item.get('label') or 'Unnamed location'}{suffix}")
+            status.configure(
+                text=(
+                    f"{len(visible)} location(s) shown"
+                    + (" · refine your search" if len(visible) >= 250 else "")
+                )
+            )
+            if visible:
+                results.selection_set(0)
+
+        def assign(confirm_move: bool = False) -> None:
+            selection = results.curselection()
+            if not selection or int(selection[0]) >= len(visible):
+                return
+            destination = visible[int(selection[0])]
+            location_id = str(destination.get("record_id") or "")
+            if (
+                not confirm_move
+                and actor.get("map_id")
+                and str(actor.get("location_id") or "") == location_id
+            ):
+                if not messagebox.askyesno(
+                    "Remove map position?",
+                    (
+                        f"Keep {actor_name} at {destination.get('name') or 'this location'}, "
+                        "but remove their position from the current map?"
+                    ),
+                    parent=dialog,
+                ):
+                    return
+                confirm_move = True
+            payload = {
+                "session_id": self.selected_session_id,
+                "location_id": location_id,
+                "confirm_move": bool(confirm_move),
+            }
+
+            def handled(result: dict[str, Any]) -> None:
+                if result.get("requires_confirmation"):
+                    if messagebox.askyesno(
+                        "Move character?",
+                        (
+                            f"{result.get('person_name') or actor_name} is currently at "
+                            f"{result.get('current_location_name') or 'another location'}.\n\n"
+                            f"Move them to {destination.get('name') or 'the selected location'}?"
+                        ),
+                        parent=dialog,
+                    ):
+                        assign(True)
+                    return
+                dialog.destroy()
+                self.selected_board_actor_id = str(actor.get("actor_id") or "")
+                self.set_notice(
+                    f"Assigned {actor_name} to "
+                    f"{destination.get('name') or 'the selected location'} · no map loaded"
+                )
+                self.refresh(silent=True)
+
+            self._background(
+                lambda: self.client.request(
+                    "PUT",
+                    "/api/admin/board/people/"
+                    f"{urllib.parse.quote(str(actor.get('actor_id') or ''), safe='')}/location",
+                    payload,
+                ),
+                handled,
+            )
+
+        query.trace_add("write", fill)
+        results.bind("<Double-Button-1>", lambda _event: assign())
+        results.bind("<Return>", lambda _event: assign())
+        controls = ttk.Frame(body)
+        controls.pack(fill="x", pady=(8, 0))
+        ttk.Button(
+            controls, text="Cancel", style="Quiet.TButton", command=dialog.destroy
+        ).pack(side="right")
+        ttk.Button(controls, text="Assign location", command=assign).pack(
+            side="right", padx=(0, 6)
+        )
+        fill()
+        search.focus_set()
 
     def move_selected_actor_to_map(self) -> None:
         actor = self._selected_board_actor()
@@ -12412,7 +12791,10 @@ class GameBoardWindow(tk.Tk):
         if not self.character_label_to_id:
             messagebox.showinfo(
                 "Choose character",
-                "No characters are available in the shared world data.",
+                (
+                    "No characters have been added to the active campaign. "
+                    "Use C+ on the Game Board to import or create one first."
+                ),
                 parent=self,
             )
             return

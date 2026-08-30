@@ -126,6 +126,20 @@ def compact_campaign_document_for_storage(document: dict[str, Any]) -> dict[str,
             continue
         game_state = campaign.get("game_state")
         if isinstance(game_state, dict):
+            character_ids: list[str] = []
+            for value in (
+                *(game_state.get("character_ids", []) or []),
+                *((game_state.get("people", {}) or {}).keys()),
+                *(
+                    str(character.get("record_id", "") or "")
+                    for character in (campaign.get("characters", []) or [])
+                    if isinstance(character, dict)
+                ),
+            ):
+                character_id = str(value or "").strip()
+                if character_id and character_id not in character_ids:
+                    character_ids.append(character_id)
+            game_state["character_ids"] = character_ids
             required_person_ids = {
                 str(participant.get("actor_id", "") or "").strip()
                 for battle in (game_state.get("battles", {}) or {}).values()
@@ -282,6 +296,17 @@ def normalize_campaign_game_state(
         if str(player_id).strip() and str(map_id).strip()
     }
 
+    character_ids: list[str] = []
+    raw_character_ids = raw.get("character_ids", []) or []
+    if not isinstance(raw_character_ids, list):
+        raise ValueError("Campaign character IDs must be a list")
+    for raw_character_id in raw_character_ids:
+        character_id = str(raw_character_id or "").strip()
+        if not character_id:
+            raise ValueError("Campaign character IDs cannot be empty")
+        if character_id not in character_ids:
+            character_ids.append(character_id)
+
     map_states: dict[str, dict[str, Any]] = {}
     maps = raw.get("maps", {}) or {}
     if not isinstance(maps, dict):
@@ -409,6 +434,8 @@ def normalize_campaign_game_state(
             "airborne": bool(raw_state.get("airborne", False)),
             "currency_knuts": max(0, int(raw_state.get("currency_knuts", 0) or 0)),
         }
+        if person_id not in character_ids:
+            character_ids.append(person_id)
 
     creatures: dict[str, dict[str, Any]] = {}
     raw_creatures = raw.get("creatures", {}) or {}
@@ -481,12 +508,22 @@ def normalize_campaign_game_state(
             raise ValueError("Battles may only contain existing people")
         if actor_type == "creature" and actor_id not in creatures:
             raise ValueError("Battles may only contain existing campaign creatures")
+    for group in groups:
+        for member in group.get("members", []) or []:
+            if str(member.get("actor_type", "person") or "person") == "person":
+                actor_id = str(member.get("actor_id", "") or "")
+                if actor_id and actor_id not in character_ids:
+                    character_ids.append(actor_id)
+    for actor_type, actor_id in actor_battles:
+        if actor_type == "person" and actor_id not in character_ids:
+            character_ids.append(actor_id)
     return {
         "initialized": bool(raw.get("initialized", False)),
         "current_game_datetime": current,
         "loaded_map_ids": loaded_map_ids,
         "active_map_id": active_map_id,
         "player_active_map_ids": player_active_map_ids,
+        "character_ids": character_ids,
         "maps": map_states,
         "people": people,
         "creatures": creatures,
@@ -520,6 +557,7 @@ def fresh_campaign_game_state(
             "loaded_map_ids": [],
             "active_map_id": "",
             "player_active_map_ids": {},
+            "character_ids": [],
             "maps": {},
             "people": {},
             "creatures": {},
@@ -720,6 +758,28 @@ def normalize_campaign(value: Any) -> dict[str, Any]:
         event_ids.add(record_id)
         events.append(event)
     result["events"] = events
+    raw_characters = value.get("characters", []) or []
+    if not isinstance(raw_characters, list):
+        raise ValueError("Campaign characters must be a list")
+    characters: list[dict[str, Any]] = []
+    character_ids: set[str] = set()
+    for raw_character in raw_characters:
+        if not isinstance(raw_character, dict):
+            raise ValueError("Every campaign character must be an object")
+        character = deepcopy(raw_character)
+        character_id = str(character.get("record_id", "") or "").strip()
+        character_name = str(character.get("displayed_name", "") or "").strip()
+        if not character_id or not character_name:
+            raise ValueError(
+                "Campaign characters require stable IDs and displayed names"
+            )
+        if character_id in character_ids:
+            raise ValueError("Campaign character IDs must be unique")
+        character["record_id"] = character_id
+        character["displayed_name"] = character_name
+        character_ids.add(character_id)
+        characters.append(character)
+    result["characters"] = characters
     raw_requests = value.get("requests", []) or []
     if not isinstance(raw_requests, list):
         raise ValueError("Campaign requests must be a list")
@@ -755,6 +815,9 @@ def normalize_campaign(value: Any) -> dict[str, Any]:
     result["game_state"] = normalize_campaign_game_state(
         value.get("game_state"), result["game_world_start_date"]
     )
+    for character_id in character_ids:
+        if character_id not in result["game_state"]["character_ids"]:
+            result["game_state"]["character_ids"].append(character_id)
     return result
 
 
@@ -855,12 +918,17 @@ class CampaignRepository:
         # template.  The service hydrates its canonical map definitions and
         # portraits separately when it renders this campaign.
         del world_document
-        campaign["game_state"] = fresh_campaign_game_state(
+        fresh_state = fresh_campaign_game_state(
             normalized["game_world_start_date"],
             current_game_datetime
             or normalized["game_state"]["current_game_datetime"],
             initialized=True,
         )
+        fresh_state["character_ids"] = deepcopy(
+            normalized["game_state"].get("character_ids", [])
+        )
+        campaign["characters"] = deepcopy(normalized.get("characters", []))
+        campaign["game_state"] = fresh_state
         campaign["last_updated"] = utc_now()
         outcome = self._save(session, "game-board")
         if not outcome.saved:
@@ -881,10 +949,15 @@ class CampaignRepository:
         if campaign is None:
             raise KeyError("Unknown campaign")
         normalized = normalize_campaign(campaign)
-        campaign["game_state"] = fresh_campaign_game_state(
+        fresh_state = fresh_campaign_game_state(
             normalized["game_world_start_date"],
             normalized["game_state"]["current_game_datetime"],
         )
+        fresh_state["character_ids"] = deepcopy(
+            normalized["game_state"].get("character_ids", [])
+        )
+        campaign["characters"] = deepcopy(normalized.get("characters", []))
+        campaign["game_state"] = fresh_state
         campaign["last_updated"] = utc_now()
         # Resetting one campaign must not compact or otherwise rewrite sibling
         # campaign records.  The target state is already normalized and sparse.
@@ -916,6 +989,57 @@ class CampaignRepository:
         if not outcome.saved:
             raise RuntimeError("The campaign changed elsewhere; reload before saving")
         return normalize_campaign(campaign)
+
+    def add_character_ids(
+        self,
+        campaign_id: str,
+        character_ids: list[str] | set[str] | tuple[str, ...],
+    ) -> dict[str, Any]:
+        """Add canonical person references to one campaign idempotently."""
+
+        requested = [
+            str(character_id or "").strip() for character_id in character_ids
+        ]
+        if any(not character_id for character_id in requested):
+            raise ValueError("Campaign character IDs cannot be empty")
+
+        def update(state: dict[str, Any]) -> None:
+            existing = state.setdefault("character_ids", [])
+            for character_id in requested:
+                if character_id not in existing:
+                    existing.append(character_id)
+
+        return self.update_game_state(campaign_id, update)
+
+    def add_character(
+        self, campaign_id: str, character: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Create one campaign-owned person and enroll them atomically."""
+
+        candidate = deepcopy(character)
+        character_id = str(candidate.get("record_id", "") or "").strip()
+        character_name = str(candidate.get("displayed_name", "") or "").strip()
+        if not character_id or not character_name:
+            raise ValueError(
+                "Campaign characters require stable IDs and displayed names"
+            )
+
+        def update(campaign: dict[str, Any]) -> None:
+            characters = campaign.setdefault("characters", [])
+            if any(
+                str(item.get("record_id", "") or "") == character_id
+                for item in characters
+                if isinstance(item, dict)
+            ):
+                raise ValueError("That campaign character already exists")
+            characters.append(candidate)
+            membership = campaign.setdefault("game_state", {}).setdefault(
+                "character_ids", []
+            )
+            if character_id not in membership:
+                membership.append(character_id)
+
+        return self.update_campaign(campaign_id, update, app_id="game-board")
 
     def update_campaign(
         self,

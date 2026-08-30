@@ -63,6 +63,8 @@ class CampaignTests(unittest.TestCase):
         self.assertEqual(state["current_game_datetime"], "1943-09-01T08:00")
         self.assertEqual(state["loaded_map_ids"], [])
         self.assertEqual(state["player_active_map_ids"], {})
+        self.assertEqual(state["character_ids"], [])
+        self.assertEqual(created["characters"], [])
         self.assertEqual(state["maps"], {})
         self.assertEqual(state["people"], {})
         self.assertEqual(state["groups"], [])
@@ -229,6 +231,7 @@ class CampaignTests(unittest.TestCase):
         self.assertFalse(state["initialized"])
         self.assertEqual(state["current_game_datetime"], "1943-10-31T22:15")
         self.assertEqual(state["loaded_map_ids"], [])
+        self.assertEqual(state["character_ids"], ["person-1"])
         self.assertEqual(state["maps"], {})
         self.assertEqual(state["people"], {})
         self.assertEqual(state["groups"], [])
@@ -241,6 +244,41 @@ class CampaignTests(unittest.TestCase):
             if item["record_id"] == untouched["record_id"]
         )
         self.assertEqual(untouched_raw_after, untouched_raw_before)
+
+    def test_legacy_person_state_infers_durable_campaign_membership(self):
+        campaign = self.repository.save_campaign("Legacy members", "1943-09-01")
+
+        def update(state):
+            state["people"] = {
+                "legacy-person": {
+                    **default_campaign_person_state(),
+                    "current_state": "Present",
+                }
+            }
+
+        saved = self.repository.update_game_state(campaign["record_id"], update)
+        self.assertEqual(saved["game_state"]["character_ids"], ["legacy-person"])
+        raw = json.loads(self.path.read_text(encoding="utf-8"))["campaigns"][0]
+        self.assertEqual(raw["game_state"]["character_ids"], ["legacy-person"])
+
+    def test_campaign_owned_characters_are_full_records_and_members(self):
+        campaign = self.repository.save_campaign("Owned people", "1943-09-01")
+        world_independent = {
+            "record_id": "campaign-person",
+            "displayed_name": "Campaign Person",
+            "birth_year": 1930,
+        }
+
+        saved = self.repository.add_character(
+            campaign["record_id"], world_independent
+        )
+
+        self.assertEqual(saved["characters"], [world_independent])
+        self.assertEqual(
+            saved["game_state"]["character_ids"], ["campaign-person"]
+        )
+        with self.assertRaises(ValueError):
+            self.repository.add_character(campaign["record_id"], world_independent)
 
     def test_default_person_state_is_implicit_and_round_trips(self):
         default = default_campaign_person_state()

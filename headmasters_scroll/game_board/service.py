@@ -259,7 +259,14 @@ class GameBoardService:
     def list_characters(
         self, session_id: str | None = None,
     ) -> list[dict[str, Any]]:
-        """List characters, adding campaign-effective navigator data when live."""
+        """List either the global catalog or one campaign's explicit actors.
+
+        The no-session form remains the canonical World Builder catalog used
+        for contact linking.  A live-session form is deliberately bounded to
+        IDs imported into that campaign, campaign-owned characters, and the
+        session roster.  Merely existing in ``world.json`` never places a
+        person in the campaign Actors navigator.
+        """
 
         with self._lock:
             session = self._board_context(session_id) if session_id else None
@@ -267,6 +274,7 @@ class GameBoardService:
                 world = self._world_document()
                 game_datetime = ""
                 player_ids: set[str] = set()
+                campaign_character_ids: set[str] | None = None
             else:
                 campaign, world = self._campaign_document(session)
                 game_datetime = str(
@@ -278,6 +286,17 @@ class GameBoardService:
                     for player in session.get("roster", []) or []
                     if player.get("character_id")
                 }
+                campaign_character_ids = {
+                    str(character_id or "")
+                    for character_id in (
+                        campaign.get("game_state", {}).get("character_ids", [])
+                        or []
+                    )
+                    if str(character_id or "")
+                }
+                # A linked player remains available in legacy campaigns whose
+                # private session predates explicit campaign membership.
+                campaign_character_ids.update(player_ids)
             organizations = {
                 str(item.get("record_id") or ""): item
                 for item in world.get("organizations", []) or []
@@ -287,15 +306,54 @@ class GameBoardService:
                 active_faction_ids_by_person(world, game_datetime)
                 if session is not None else {}
             )
+            group_by_person: dict[str, dict[str, Any]] = {}
+            if session is not None:
+                for group in world.get("board_groups", []) or []:
+                    if not isinstance(group, dict):
+                        continue
+                    for member in group.get("members", []) or []:
+                        if (
+                            isinstance(member, dict)
+                            and str(member.get("actor_type", "person") or "person")
+                            == "person"
+                            and member.get("actor_id")
+                        ):
+                            group_by_person[str(member["actor_id"])] = group
+            location_names = {
+                str(item.get("record_id", "") or ""): str(
+                    item.get("name", "") or ""
+                )
+                for item in world.get("locations", []) or []
+                if isinstance(item, dict) and item.get("record_id")
+            }
             characters = []
             for person in world.get("people", []) or []:
                 record_id = person.get("record_id")
                 name = str(person.get("displayed_name") or "").strip()
                 if not isinstance(record_id, str) or not record_id or not name:
                     continue
+                if (
+                    campaign_character_ids is not None
+                    and record_id not in campaign_character_ids
+                ):
+                    continue
                 character: dict[str, Any] = {"id": record_id, "name": name}
                 if session is not None:
                     board = normalize_person_board(person.get("board"))
+                    placement = board.get("placement") or {}
+                    location_id = str(placement.get("location_id", "") or "")
+                    group = group_by_person.get(record_id, {})
+                    character.update({
+                        "location_id": location_id,
+                        "location_name": location_names.get(location_id, ""),
+                        "map_id": str(placement.get("map_id", "") or ""),
+                        "floor_id": str(placement.get("floor_id", "") or ""),
+                        "group_id": str(group.get("record_id", "") or ""),
+                        "group_name": str(group.get("name", "") or ""),
+                        "group_color": str(
+                            group.get("color", "#b0b0b0") or "#b0b0b0"
+                        ),
+                    })
                     active_ids = faction_ids_by_person.get(record_id, [])
                     chosen_id = str(board.get("faction_organization_id") or "")
                     chosen_id = chosen_id if chosen_id in active_ids else ""
@@ -316,8 +374,109 @@ class GameBoardService:
                 key=lambda item: (item["name"].casefold(), item["id"]),
             )
 
+    def search_world_characters(
+        self,
+        session_id: str,
+        query: str = "",
+        limit: int = 100,
+    ) -> dict[str, Any]:
+        """Search the canonical world catalog without adding it to admin state."""
+
+        clean_query = " ".join(str(query or "").casefold().split())
+        limit = int(limit)
+        if not 1 <= limit <= 500:
+            raise ValueError("World character search limit must be between 1 and 500")
+
+        with self._lock:
+            self.require_board_session(session_id)
+            session = self._board_context(session_id)
+            campaign = self.campaign_repository.get(str(session["campaign_id"]))
+            imported_ids = {
+                str(character_id or "")
+                for character_id in (
+                    campaign.get("game_state", {}).get("character_ids", []) or []
+                )
+                if str(character_id or "")
+            }
+            imported_ids.update(
+                str(player.get("character_id") or "")
+                for player in session.get("roster", []) or []
+                if player.get("character_id")
+            )
+            matches: list[dict[str, Any]] = []
+            for person in self._world_document().get("people", []) or []:
+                if not isinstance(person, dict):
+                    continue
+                person_id = str(person.get("record_id", "") or "")
+                name = str(person.get("displayed_name", "") or "").strip()
+                if not person_id or not name:
+                    continue
+                haystack = " ".join((name, person_id)).casefold()
+                if clean_query and clean_query not in haystack:
+                    continue
+                matches.append({
+                    "id": person_id,
+                    "name": name,
+                    "school": str(person.get("school", "") or ""),
+                    "birth_year": person.get("birth_year"),
+                    "imported": person_id in imported_ids,
+                })
+            matches.sort(key=lambda item: (item["name"].casefold(), item["id"]))
+            has_more = len(matches) > limit
+            return {
+                "characters": matches[:limit],
+                "has_more": has_more,
+                "limit": limit,
+            }
+
+    def import_world_character(
+        self, session_id: str, person_id: str,
+    ) -> dict[str, Any]:
+        """Import one canonical World Builder person into the selected campaign."""
+
+        person_id = str(person_id or "").strip()
+        if not person_id:
+            raise ValueError("Choose a World Builder character")
+
+        def import_selected() -> dict[str, Any]:
+            session = self._board_context(session_id)
+            person = next(
+                (
+                    item for item in self._world_document().get("people", []) or []
+                    if isinstance(item, dict)
+                    and str(item.get("record_id", "") or "") == person_id
+                ),
+                None,
+            )
+            if person is None:
+                raise KeyError("Unknown World Builder character")
+            campaign_id = str(session.get("campaign_id", "") or "")
+            self.campaign_repository.add_character_ids(campaign_id, [person_id])
+            return {
+                "id": person_id,
+                "name": str(person.get("displayed_name") or "Unknown"),
+                "campaign_id": campaign_id,
+                "imported": True,
+            }
+
+        return self.run_for_board_session(session_id, import_selected)
+
     def list_campaigns(self) -> list[dict[str, Any]]:
-        return self.campaign_repository.list()
+        """Return chooser metadata without other campaigns' private state."""
+
+        return [
+            {
+                "record_id": str(campaign["record_id"]),
+                "name": str(campaign["name"]),
+                "game_world_start_date": str(
+                    campaign["game_world_start_date"]
+                ),
+                "history_policy": str(campaign.get("history_policy", "keep")),
+                "created_at": str(campaign.get("created_at", "") or ""),
+                "last_updated": str(campaign.get("last_updated", "") or ""),
+            }
+            for campaign in self.campaign_repository.list()
+        ]
 
     def teaching_catalog(self) -> dict[str, list[dict[str, str]]]:
         """Return compact searchable catalogs for the Headmaster UI."""
@@ -381,6 +540,20 @@ class GameBoardService:
         """Build one character's date-effective sheet without exposing the world."""
         session = self._board_context(session_id)
         campaign, document = self._campaign_document(session)
+        campaign_person_ids = {
+            str(character_id or "")
+            for character_id in (
+                campaign["game_state"].get("character_ids", []) or []
+            )
+            if str(character_id or "")
+        }
+        campaign_person_ids.update(
+            str(player.get("character_id", "") or "")
+            for player in session.get("roster", []) or []
+            if player.get("character_id")
+        )
+        if person_id not in campaign_person_ids:
+            raise KeyError("This character is not part of the campaign")
         person = next((
             item for item in document.get("people", []) or []
             if isinstance(item, dict) and str(item.get("record_id", "")) == person_id
@@ -476,14 +649,34 @@ class GameBoardService:
         return found
 
     def _battle_actor_catalog(
-        self, campaign: dict[str, Any], world: dict[str, Any], *, for_players: bool = False,
+        self,
+        campaign: dict[str, Any],
+        world: dict[str, Any],
+        *,
+        session: dict[str, Any] | None = None,
+        for_players: bool = False,
     ) -> dict[tuple[str, str], dict[str, Any]]:
         result: dict[tuple[str, str], dict[str, Any]] = {}
         people_state = campaign["game_state"].get("people", {}) or {}
+        campaign_person_ids = {
+            str(character_id or "")
+            for character_id in (
+                campaign["game_state"].get("character_ids", []) or []
+            )
+            if str(character_id or "")
+        }
+        if session is not None:
+            campaign_person_ids.update(
+                str(player.get("character_id", "") or "")
+                for player in session.get("roster", []) or []
+                if player.get("character_id")
+            )
         for person in world.get("people", []) or []:
             if not isinstance(person, dict) or not person.get("record_id"):
                 continue
             actor_id = str(person["record_id"])
+            if actor_id not in campaign_person_ids:
+                continue
             state = people_state.get(actor_id, {}) or {}
             result[("person", actor_id)] = {
                 "actor_id": actor_id,
@@ -522,7 +715,9 @@ class GameBoardService:
     ) -> dict[str, Any]:
         session = self._board_context(session_id)
         campaign, world = self._campaign_document(session)
-        actors = self._battle_actor_catalog(campaign, world, for_players=for_players)
+        actors = self._battle_actor_catalog(
+            campaign, world, session=session, for_players=for_players
+        )
         battles = list((campaign["game_state"].get("battles", {}) or {}).values())
         if not for_players:
             rendered = []
@@ -577,7 +772,7 @@ class GameBoardService:
         else:
             battle = normalize_battle(raw_battle)
         needle = str(query or "").strip().casefold()
-        actors = self._battle_actor_catalog(campaign, world)
+        actors = self._battle_actor_catalog(campaign, world, session=session)
         occupied = {
             (item["actor_type"], item["actor_id"]): str(battle_key)
             for battle_key, raw in (campaign["game_state"].get("battles", {}) or {}).items()
@@ -744,7 +939,7 @@ class GameBoardService:
             session = self._board_context(session_id)
             campaign, world = self._campaign_document(session)
             database = self._database_document()
-            actors = self._battle_actor_catalog(campaign, world)
+            actors = self._battle_actor_catalog(campaign, world, session=session)
             if (actor_type, actor_id) not in actors:
                 raise KeyError("Unknown battle actor")
             now = iso_utc(utc_now())
@@ -826,7 +1021,7 @@ class GameBoardService:
             session = self._board_context(session_id)
             campaign, world = self._campaign_document(session)
             database = self._database_document()
-            catalog = self._battle_actor_catalog(campaign, world)
+            catalog = self._battle_actor_catalog(campaign, world, session=session)
             missing = [key for key in references if key not in catalog]
             if missing:
                 raise KeyError("One or more battle actors are unavailable")
@@ -2329,6 +2524,26 @@ class GameBoardService:
             world,
             str(session.get("game_datetime") or "") or None,
         )
+        world_people = [
+            person for person in (world.get("people", []) or [])
+            if isinstance(person, dict)
+        ]
+        world_person_ids = {
+            str(person.get("record_id", "") or "") for person in world_people
+            if person.get("record_id")
+        }
+        campaign_characters = deepcopy(campaign.get("characters", []) or [])
+        conflicting_ids = {
+            str(person.get("record_id", "") or "")
+            for person in campaign_characters
+            if isinstance(person, dict)
+            and str(person.get("record_id", "") or "") in world_person_ids
+        }
+        if conflicting_ids:
+            raise ValueError(
+                "Campaign-owned character IDs cannot duplicate World Builder people"
+            )
+        world["people"] = [*world_people, *campaign_characters]
         state = campaign["game_state"]
         map_states = state.get("maps", {})
         for map_record in world.get("maps", []):
@@ -2484,6 +2699,7 @@ class GameBoardService:
             wrapper = self.repository.active()
             sessions_changed = False
             former_character_links: list[tuple[str, str]] = []
+            campaign_memberships: dict[str, set[str]] = {}
             for session in wrapper.get("sessions", []):
                 player = next(
                     (item for item in session.get("roster", []) if item["contact_id"] == contact_id),
@@ -2506,7 +2722,15 @@ class GameBoardService:
                     for message in session.get("chat", []):
                         if message.get("sender_id") == contact_id:
                             message["sender_name"] = display_name
+                    if character_id and session.get("campaign_id"):
+                        campaign_memberships.setdefault(
+                            str(session["campaign_id"]), set()
+                        ).add(character_id)
                     sessions_changed = True
+            for campaign_id, character_ids in campaign_memberships.items():
+                self.campaign_repository.add_character_ids(
+                    campaign_id, character_ids
+                )
             if sessions_changed:
                 self.repository.save_active(wrapper)
             for session_id, former_character_id in former_character_links:
@@ -2646,6 +2870,16 @@ class GameBoardService:
         contacts = {item["id"]: item for item in self.list_contacts()}
         if any(contact_id not in contacts for contact_id in contact_ids):
             raise ValueError("The roster contains an unknown contact")
+        roster = [self._roster_entry(contacts[item]) for item in contact_ids]
+        roster_character_ids = {
+            str(player.get("character_id") or "")
+            for player in roster
+            if player.get("character_id")
+        }
+        if roster_character_ids:
+            self.campaign_repository.add_character_ids(
+                campaign["record_id"], roster_character_ids
+            )
         with self._lock:
             wrapper = self.repository.active()
             session = {
@@ -2660,7 +2894,7 @@ class GameBoardService:
                 "expiration_time": expiration_time,
                 "created_at": iso_utc(utc_now()),
                 "expires_at": iso_utc(local_expiration),
-                "roster": [self._roster_entry(contacts[item]) for item in contact_ids],
+                "roster": roster,
                 "pending": [],
                 "admission_history": [],
                 "chat": [],
@@ -3530,6 +3764,7 @@ class GameBoardService:
                 snapshot["revealed_secret_region_ids"] = sorted(
                     revealed_secret_ids
                 )
+                snapshot["locations"] = self._location_catalog(document)
             if for_players and contact_id:
                 player_active = str(
                     campaign["game_state"].get("player_active_map_ids", {}).get(
@@ -3542,6 +3777,11 @@ class GameBoardService:
                 }
                 if player_active in visible_ids:
                     snapshot["active_map_id"] = player_active
+                elif viewer_placement and not viewer_map_id:
+                    # A location-only campaign assignment deliberately has no
+                    # spatial board. Do not fall back to the Headmaster's open
+                    # map for that linked character.
+                    snapshot["active_map_id"] = ""
                 # Character sheets travel on their own private channel.  They
                 # must never be rebuilt and embedded in a board update: a
                 # one-pixel token move otherwise retransmits books, inventory,
@@ -3579,6 +3819,55 @@ class GameBoardService:
                 for_players=for_players, contact_id=contact_id,
             )
             return snapshot
+
+    @staticmethod
+    def _location_catalog(document: dict[str, Any]) -> list[dict[str, Any]]:
+        """Return compact authored locations for Headmaster organization tools."""
+
+        maps_by_location: dict[str, list[str]] = {}
+        for map_record in document.get("maps", []) or []:
+            if not isinstance(map_record, dict):
+                continue
+            location_id = str(map_record.get("location_id", "") or "")
+            map_id = str(map_record.get("record_id", "") or "")
+            if location_id and map_id:
+                maps_by_location.setdefault(location_id, []).append(map_id)
+        catalog = []
+        for location in document.get("locations", []) or []:
+            if not isinstance(location, dict):
+                continue
+            location_id = str(location.get("record_id", "") or "")
+            if not location_id:
+                continue
+            floors = [
+                {
+                    "record_id": str(floor.get("record_id", "") or ""),
+                    "name": str(floor.get("name", "") or "Unnamed floor"),
+                    "sort_order": int(floor.get("sort_order", index) or 0),
+                    "primary_map_id": str(
+                        floor.get("primary_map_id", "") or ""
+                    ),
+                }
+                for index, floor in enumerate(location.get("floors", []) or [])
+                if isinstance(floor, dict) and floor.get("record_id")
+            ]
+            catalog.append({
+                "record_id": location_id,
+                "name": str(location.get("name", "") or "Unnamed location"),
+                "parent_location_id": str(
+                    location.get("parent_location_id", "") or ""
+                ),
+                "has_floors": bool(location.get("has_floors", False) or floors),
+                "floors": floors,
+                "default_map_id": str(
+                    location.get("default_map_id", "") or ""
+                ),
+                "map_ids": sorted(maps_by_location.get(location_id, [])),
+            })
+        return sorted(
+            catalog,
+            key=lambda item: (str(item["name"]).casefold(), item["record_id"]),
+        )
 
     def _append_creature_actors(
         self,
@@ -5766,12 +6055,24 @@ class GameBoardService:
                     ),
                     {},
                 )
+                previous_location = next(
+                    (
+                        item for item in document.get("locations", [])
+                        if str(item.get("record_id", ""))
+                        == str(previous.get("location_id", ""))
+                    ),
+                    {},
+                )
                 return {
                     "requires_confirmation": True,
                     "person_id": person_id,
                     "person_name": str(person.get("displayed_name", "") or "Character"),
                     "current_map_id": str(previous.get("map_id", "")),
-                    "current_map_name": str(previous_map.get("name", "") or "another map"),
+                    "current_map_name": str(
+                        previous_map.get("name", "")
+                        or previous_location.get("name", "")
+                        or "another location"
+                    ),
                 }
 
             occupied = []
@@ -5853,16 +6154,185 @@ class GameBoardService:
                 "moved_from_another_map": bool(previous),
             }
 
+    def assign_person_location(
+        self,
+        session_id: str,
+        person_id: str,
+        location_id: str,
+        *,
+        confirm_move: bool = False,
+    ) -> dict[str, Any]:
+        """Assign a campaign person to a location without opening or requiring a map."""
+
+        with self._lock:
+            session = self._board_context(session_id)
+            campaign, document = self._campaign_document(session)
+            location = next(
+                (
+                    item for item in document.get("locations", []) or []
+                    if isinstance(item, dict)
+                    and str(item.get("record_id", "") or "") == str(location_id)
+                ),
+                None,
+            )
+            if location is None:
+                raise KeyError("Unknown location")
+            campaign_person_ids = {
+                str(value or "")
+                for value in (
+                    campaign.get("game_state", {}).get("character_ids", []) or []
+                )
+                if str(value or "")
+            }
+            campaign_person_ids.update(
+                str(item.get("record_id", "") or "")
+                for item in campaign.get("characters", []) or []
+                if isinstance(item, dict) and item.get("record_id")
+            )
+            campaign_person_ids.update(
+                str(player.get("character_id", "") or "")
+                for player in session.get("roster", []) or []
+                if player.get("character_id")
+            )
+            if str(person_id) not in campaign_person_ids:
+                raise KeyError("This character is not part of the campaign")
+            person = next(
+                (
+                    item for item in document.get("people", []) or []
+                    if isinstance(item, dict)
+                    and str(item.get("record_id", "") or "") == str(person_id)
+                ),
+                None,
+            )
+            if person is None:
+                raise KeyError("Unknown person")
+            board = normalize_person_board(person.get("board"))
+            previous = board.get("placement")
+            previous_location_id = str((previous or {}).get("location_id", "") or "")
+            if (
+                previous_location_id
+                and previous_location_id != str(location_id)
+                and not confirm_move
+            ):
+                previous_location = next(
+                    (
+                        item for item in document.get("locations", []) or []
+                        if isinstance(item, dict)
+                        and str(item.get("record_id", "") or "")
+                        == previous_location_id
+                    ),
+                    {},
+                )
+                return {
+                    "requires_confirmation": True,
+                    "person_id": person_id,
+                    "person_name": str(
+                        person.get("displayed_name", "") or "Character"
+                    ),
+                    "current_location_id": previous_location_id,
+                    "current_location_name": str(
+                        previous_location.get("name", "") or "another location"
+                    ),
+                }
+            if (
+                previous_location_id == str(location_id)
+                and not str((previous or {}).get("map_id", "") or "")
+            ):
+                return {
+                    "assigned": False,
+                    "already_at_location": True,
+                    "person_id": person_id,
+                    "person_name": str(
+                        person.get("displayed_name", "") or "Character"
+                    ),
+                    "location": {
+                        "record_id": str(location_id),
+                        "name": str(location.get("name", "") or "Unnamed location"),
+                    },
+                    "placement": deepcopy(previous),
+                }
+
+            placement = {
+                "location_id": str(location_id),
+                "floor_id": "",
+                "map_id": "",
+                "x": 0.5,
+                "y": 0.5,
+            }
+            linked_contact_ids = {
+                str(player.get("contact_id", "") or "")
+                for player in session.get("roster", []) or []
+                if str(player.get("character_id", "") or "") == str(person_id)
+                and str(player.get("contact_id", "") or "")
+            }
+
+            def update(state: dict[str, Any]) -> None:
+                people = state.setdefault("people", {})
+                existing = people.get(person_id)
+                if not isinstance(existing, dict):
+                    existing = default_campaign_person_state()
+                existing["placement"] = deepcopy(placement)
+                people[person_id] = existing
+                retained_groups = []
+                for group in state.get("groups", []) or []:
+                    if str(group.get("location_id", "") or "") != str(location_id):
+                        group["members"] = [
+                            member for member in group.get("members", []) or []
+                            if not (
+                                str(member.get("actor_type", "person") or "person")
+                                == "person"
+                                and str(member.get("actor_id", "") or "")
+                                == str(person_id)
+                            )
+                        ]
+                    if group.get("members"):
+                        retained_groups.append(group)
+                state["groups"] = retained_groups
+                if linked_contact_ids:
+                    active_maps = state.setdefault("player_active_map_ids", {})
+                    for contact_id in linked_contact_ids:
+                        active_maps.pop(contact_id, None)
+                    for map_state in (state.get("maps", {}) or {}).values():
+                        if not isinstance(map_state, dict):
+                            continue
+                        cameras = map_state.get("player_cameras", {}) or {}
+                        for contact_id in linked_contact_ids:
+                            cameras.pop(contact_id, None)
+                        map_state["player_cameras"] = cameras
+
+            self.campaign_repository.update_game_state(
+                campaign["record_id"], update
+            )
+            return {
+                "assigned": True,
+                "person_id": person_id,
+                "person_name": str(
+                    person.get("displayed_name", "") or "Character"
+                ),
+                "location": {
+                    "record_id": str(location_id),
+                    "name": str(location.get("name", "") or "Unnamed location"),
+                },
+                "placement": deepcopy(placement),
+                "removed_from_map": bool(
+                    str((previous or {}).get("map_id", "") or "")
+                ),
+                "moved_from_another_location": bool(
+                    previous_location_id
+                    and previous_location_id != str(location_id)
+                ),
+            }
+
     def create_quick_character(
         self,
         session_id: str,
-        map_id: str,
+        map_id: str | None,
         name: str,
         age: int,
         development_strategy: str = "random",
         player_character: bool = False,
     ) -> dict[str, Any]:
-        """Create a lightweight World Builder person and progress their youth."""
+        """Create a lightweight campaign-owned person and progress their youth."""
 
         clean_name = " ".join(str(name or "").split())
         if not clean_name:
@@ -5872,6 +6342,14 @@ class GameBoardService:
             raise ValueError("Rough age must be between 0 and 1000")
         with self._lock:
             session = self._board_context(session_id)
+            campaign, document = self._campaign_document(session)
+            if any(
+                str(person.get("displayed_name", "") or "").strip().casefold()
+                == clean_name.casefold()
+                for person in document.get("people", []) or []
+                if isinstance(person, dict)
+            ):
+                raise ValueError("That character name already exists in this campaign")
             current = normalize_game_datetime(
                 str(session.get("game_datetime", "") or ""),
                 str(session.get("event_date", "") or date.today().isoformat()),
@@ -5890,8 +6368,6 @@ class GameBoardService:
                 "HEADMASTERS_SCROLL_DATA_DIRECTORY",
                 str(data_directory),
             )
-            from mage_maker.core.database import JsonDatabase
-            from mage_maker.core.controller import PeopleController
             from mage_maker.core.dates import historical_year_shift
             from mage_maker.sections.development.characteristics import randomized_characteristics
             from mage_maker.sections.development.initial_bonuses import initialize_initial_bonuses
@@ -5919,13 +6395,6 @@ class GameBoardService:
             plan["academic_years_advanced"] = (
                 7 if age >= 18 else max(0, visible_school_years - 1)
             )
-            db = JsonDatabase(data_directory / "world.json")
-            # Use this service's store explicitly.  This is important for
-            # portable installs and temporary/test data directories, and it
-            # retains the shared revision-aware save contract.
-            db.shared_store = self.shared_store
-            db.load()
-            controller = PeopleController(db)
             draft = {
                 "displayed_name": clean_name,
                 "birth_year": birth_year,
@@ -5937,10 +6406,16 @@ class GameBoardService:
                 "development_plan": plan,
                 "unfinished": True,
             }
-            draft["parental_values"] = initialize_parental_values(draft, db.list_people())
+            draft["parental_values"] = initialize_parental_values(
+                draft,
+                [
+                    person for person in document.get("people", []) or []
+                    if isinstance(person, dict)
+                ],
+            )
             draft["initial_bonuses"] = initialize_initial_bonuses(draft, plan)
             draft["characteristics"] = randomized_characteristics()
-            rules = self.shared_store.load("db.json").data
+            rules = self._database_document()
             plan["school_years"] = ensure_school_year_records(
                 [],
                 visible_school_years,
@@ -5954,15 +6429,45 @@ class GameBoardService:
                 schools=rules.get("schools", []),
             )
             draft["development_plan"] = plan
-            created = controller.create_person(draft)
-            placement = self.place_person_on_map(
-                session_id,
-                str(created["record_id"]),
-                map_id,
-                0.5,
-                0.5,
-                confirm_move=True,
+            timestamp = iso_utc(utc_now())
+            created = {
+                "record_id": str(uuid4()),
+                "displayed_name": clean_name,
+                "narrative": "",
+                "birth_year": birth_year,
+                "birth_month": None,
+                "birth_day": None,
+                "deceased": False,
+                "canon": False,
+                "player_character": bool(player_character),
+                "non_magical": False,
+                "blood_status": "Pureblood",
+                "developmental_environment": "Magical",
+                "school": "",
+                "parental_values": deepcopy(draft["parental_values"]),
+                "initial_bonuses": deepcopy(draft["initial_bonuses"]),
+                "characteristics": deepcopy(draft["characteristics"]),
+                "development_plan": deepcopy(plan),
+                "notes": "",
+                "unfinished": True,
+                "created_at": timestamp,
+                "last_updated": timestamp,
+            }
+            self.campaign_repository.add_character(
+                str(campaign["record_id"]), created
             )
+            placement = None
+            clean_map_id = str(map_id or "").strip()
+            if clean_map_id:
+                placement_result = self.place_person_on_map(
+                    session_id,
+                    str(created["record_id"]),
+                    clean_map_id,
+                    0.5,
+                    0.5,
+                    confirm_move=True,
+                )
+                placement = placement_result.get("placement")
             return {
                 "character": {
                     "id": str(created["record_id"]),
@@ -5971,7 +6476,7 @@ class GameBoardService:
                     "development_strategy": plan.get("schema"),
                     "development_years": visible_school_years,
                 },
-                "placement": placement.get("placement"),
+                "placement": placement,
             }
 
     def transport_person(
@@ -6071,7 +6576,11 @@ class GameBoardService:
                 raise KeyError("Unknown person")
             board = normalize_person_board(person.get("board"))
             if board.get("placement"):
-                return deepcopy(board["placement"])
+                return (
+                    deepcopy(board["placement"])
+                    if board["placement"].get("map_id")
+                    else None
+                )
             state = campaign["game_state"]
             maps_by_id = {
                 item["record_id"]: item for item in self.world_board._location_maps(document)

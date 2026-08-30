@@ -69,6 +69,8 @@ class GameBoardServiceTests(unittest.TestCase):
         map_record = snapshot["maps"][0]
         map_id = map_record["record_id"]
         location_id = map_record["location_id"]
+        for character in self.service.list_characters()[:2]:
+            self.service.import_world_character(session_id, character["id"])
         actor_ids = [
             item["id"] for item in self.service.list_characters(session_id)[:2]
         ]
@@ -176,6 +178,331 @@ class GameBoardServiceTests(unittest.TestCase):
         self.assertEqual(character["faction_name"], "Raven Circle")
         self.assertEqual(character["faction_color"], "#223344")
         self.assertTrue(character["is_player_character"])
+
+    def test_campaign_character_catalog_never_falls_back_to_the_world(self):
+        session = self.create_session()
+        world_characters = self.service.list_characters()
+        self.assertGreater(len(world_characters), 2)
+        self.assertEqual(self.service.list_characters(session["id"]), [])
+
+        first, second = world_characters[:2]
+        with self.assertRaises(KeyError):
+            self.service.character_sheet_for_person(session["id"], first["id"])
+        imported = self.service.import_world_character(
+            session["id"], first["id"]
+        )
+
+        self.assertEqual(imported["id"], first["id"])
+        self.assertEqual(
+            self.service.character_sheet_for_person(
+                session["id"], first["id"]
+            )["character_id"],
+            first["id"],
+        )
+        self.assertEqual(
+            [item["id"] for item in self.service.list_characters(session["id"])],
+            [first["id"]],
+        )
+        search = self.service.search_world_characters(
+            session["id"], first["id"], 20
+        )
+        match = next(
+            item for item in search["characters"] if item["id"] == first["id"]
+        )
+        self.assertTrue(match["imported"])
+
+        second_campaign = self.service.campaign_repository.save_campaign(
+            "Second campaign", "1943-09-01"
+        )
+        second_session = self.service.create_session(
+            "Second table",
+            (date.today() + timedelta(days=1)).isoformat(),
+            [self.alice["id"]],
+            campaign_id=second_campaign["record_id"],
+        )
+        self.service.import_world_character(second_session["id"], second["id"])
+        self.assertEqual(
+            {item["id"] for item in self.service.list_characters(session["id"])},
+            {first["id"]},
+        )
+        self.assertEqual(
+            {item["id"] for item in self.service.list_characters(second_session["id"])},
+            {second["id"]},
+        )
+
+    def test_battle_choices_only_include_campaign_people(self):
+        session = self.create_session()
+        world_characters = self.service.list_characters()
+        first, second = world_characters[:2]
+        map_id = self.service.board_snapshot(session["id"])["maps"][0][
+            "record_id"
+        ]
+        battle = self.service.create_battle(session["id"], "Scoped", map_id)
+
+        empty_choices = self.service.battle_actor_choices(
+            session["id"], battle["record_id"]
+        )
+        self.assertEqual(
+            [
+                item for item in empty_choices["actors"]
+                if item["actor_type"] == "person"
+            ],
+            [],
+        )
+
+        self.service.import_world_character(session["id"], first["id"])
+        choices = self.service.battle_actor_choices(
+            session["id"], battle["record_id"]
+        )
+        self.assertEqual(
+            {
+                item["actor_id"] for item in choices["actors"]
+                if item["actor_type"] == "person"
+            },
+            {first["id"]},
+        )
+        with self.assertRaises(KeyError):
+            self.service.add_battle_actor(
+                session["id"], battle["record_id"], "person", second["id"]
+            )
+        self.service.add_battle_actor(
+            session["id"], battle["record_id"], "person", first["id"]
+        )
+
+    def test_roster_character_is_enrolled_and_retained_as_a_player(self):
+        character = self.service.list_characters()[0]
+        self.service.assign_character(self.alice["id"], character["id"])
+
+        session = self.create_session()
+
+        campaign = self.service.campaign_repository.get(self.campaign_id)
+        self.assertIn(
+            character["id"], campaign["game_state"]["character_ids"]
+        )
+        scoped = self.service.list_characters(session["id"])
+        self.assertEqual([item["id"] for item in scoped], [character["id"]])
+        self.assertTrue(scoped[0]["is_player_character"])
+
+    def test_campaign_owned_character_is_merged_without_touching_world(self):
+        world_before = self.service.world_fingerprint()
+        campaign_character = {
+            "record_id": "campaign-person-1",
+            "displayed_name": "Campaign Only",
+            "birth_year": 1930,
+        }
+        self.service.campaign_repository.add_character(
+            self.campaign_id, campaign_character
+        )
+        session = self.create_session()
+
+        scoped = self.service.list_characters(session["id"])
+
+        self.assertEqual(
+            [(item["id"], item["name"]) for item in scoped],
+            [("campaign-person-1", "Campaign Only")],
+        )
+        self.assertEqual(self.service.world_fingerprint(), world_before)
+        self.assertNotIn(
+            "campaign-person-1",
+            {item["id"] for item in self.service.list_characters()},
+        )
+
+        campaign_summary = next(
+            item for item in self.service.list_campaigns()
+            if item["record_id"] == self.campaign_id
+        )
+        self.assertNotIn("characters", campaign_summary)
+        self.assertNotIn("game_state", campaign_summary)
+
+    def test_quick_character_is_campaign_owned_and_may_start_unplaced(self):
+        session = self.create_session()
+        world_before = self.service.world_fingerprint()
+
+        created = self.service.create_quick_character(
+            session["id"], None, "Campaign Quick", 13
+        )
+
+        character_id = created["character"]["id"]
+        self.assertIsNone(created["placement"])
+        campaign = self.service.campaign_repository.get(self.campaign_id)
+        self.assertIn(character_id, campaign["game_state"]["character_ids"])
+        self.assertIn(
+            character_id,
+            {item["record_id"] for item in campaign["characters"]},
+        )
+        self.assertEqual(self.service.world_fingerprint(), world_before)
+        scoped = self.service.list_characters(session["id"])
+        created_summary = next(item for item in scoped if item["id"] == character_id)
+        self.assertEqual(created_summary["location_id"], "")
+        self.assertEqual(created_summary["location_name"], "")
+        self.assertEqual(created_summary["map_id"], "")
+        self.assertEqual(created_summary["floor_id"], "")
+
+    def test_campaign_person_can_be_assigned_to_a_mapless_location(self):
+        world = deepcopy(self.service._world_document())
+        world.setdefault("locations", []).append({
+            "record_id": "mapless-village",
+            "name": "Mapless Village",
+            "parent_location_id": "",
+            "has_floors": False,
+            "floors": [],
+            "default_map_id": "",
+        })
+        world_patch = patch.object(
+            self.service, "_world_document", return_value=world
+        )
+        world_patch.start()
+        self.addCleanup(world_patch.stop)
+        character = self.service.list_characters()[0]
+        self.service.assign_character(self.alice["id"], character["id"])
+        session = self.create_session()
+        before = deepcopy(
+            self.service.campaign_repository.get(self.campaign_id)["game_state"]
+        )
+
+        result = self.service.assign_person_location(
+            session["id"], character["id"], "mapless-village"
+        )
+
+        self.assertTrue(result["assigned"])
+        self.assertEqual(result["placement"]["location_id"], "mapless-village")
+        self.assertEqual(result["placement"]["map_id"], "")
+        state = self.service.campaign_repository.get(
+            self.campaign_id
+        )["game_state"]
+        self.assertEqual(
+            state["loaded_map_ids"], before["loaded_map_ids"]
+        )
+        self.assertEqual(
+            state["people"][character["id"]]["placement"]["location_id"],
+            "mapless-village",
+        )
+        self.assertEqual(
+            state["people"][character["id"]]["placement"]["map_id"], ""
+        )
+        snapshot = self.service.board_snapshot(session["id"])
+        location = next(
+            item for item in snapshot["locations"]
+            if item["record_id"] == "mapless-village"
+        )
+        self.assertEqual(location["map_ids"], [])
+        self.assertEqual(location["floors"], [])
+        self.assertIsNone(
+            self.service.activate_player_character_map(
+                session["id"], self.alice["id"], character["id"]
+            )
+        )
+        self.assertNotIn(
+            self.alice["id"],
+            self.service.campaign_repository.get(
+                self.campaign_id
+            )["game_state"]["player_active_map_ids"],
+        )
+
+    def test_location_move_requires_confirmation_and_never_loads_a_map(self):
+        world = deepcopy(self.service._world_document())
+        world.setdefault("locations", []).extend([
+            {
+                "record_id": "first-mapless-place",
+                "name": "First Place",
+                "parent_location_id": "",
+                "has_floors": False,
+                "floors": [],
+                "default_map_id": "",
+            },
+            {
+                "record_id": "second-mapless-place",
+                "name": "Second Place",
+                "parent_location_id": "",
+                "has_floors": False,
+                "floors": [],
+                "default_map_id": "",
+            },
+        ])
+        world_patch = patch.object(
+            self.service, "_world_document", return_value=world
+        )
+        world_patch.start()
+        self.addCleanup(world_patch.stop)
+        character_id = self.service.list_characters()[0]["id"]
+        self.service.assign_character(self.alice["id"], character_id)
+        session = self.create_session()
+        self.service.assign_person_location(
+            session["id"], character_id, "first-mapless-place"
+        )
+
+        prompt = self.service.assign_person_location(
+            session["id"], character_id, "second-mapless-place"
+        )
+        self.assertTrue(prompt["requires_confirmation"])
+        self.assertEqual(prompt["current_location_name"], "First Place")
+        unchanged = self.service.campaign_repository.get(
+            self.campaign_id
+        )["game_state"]
+        self.assertEqual(
+            unchanged["people"][character_id]["placement"]["location_id"],
+            "first-mapless-place",
+        )
+
+        moved = self.service.assign_person_location(
+            session["id"], character_id, "second-mapless-place",
+            confirm_move=True,
+        )
+        self.assertTrue(moved["moved_from_another_location"])
+        self.assertEqual(moved["placement"]["map_id"], "")
+        self.assertEqual(
+            self.service.campaign_repository.get(
+                self.campaign_id
+            )["game_state"]["loaded_map_ids"],
+            [],
+        )
+
+    def test_location_assignment_removes_token_without_closing_workspace_map(self):
+        character_id = self.service.list_characters()[0]["id"]
+        self.service.assign_character(self.alice["id"], character_id)
+        session = self.create_session()
+        map_record = self.service.board_snapshot(session["id"])["maps"][0]
+        map_id = str(map_record["record_id"])
+        location_id = str(map_record["location_id"])
+        self.service.set_board_workspace(session["id"], [map_id], map_id)
+        self.service.place_person_on_map(
+            session["id"], character_id, map_id, 0.4, 0.6
+        )
+        group = self.service.create_board_group(
+            session["id"],
+            "Location party",
+            location_id,
+            [character_id],
+            "#445566",
+        )
+
+        result = self.service.assign_person_location(
+            session["id"], character_id, location_id
+        )
+
+        self.assertTrue(result["removed_from_map"])
+        self.assertEqual(result["placement"]["map_id"], "")
+        state = self.service.campaign_repository.get(
+            self.campaign_id
+        )["game_state"]
+        self.assertEqual(state["loaded_map_ids"], [map_id])
+        self.assertEqual(state["active_map_id"], map_id)
+        self.assertNotIn(self.alice["id"], state["player_active_map_ids"])
+        self.assertEqual(state["groups"][0]["record_id"], group["record_id"])
+        summary = self.service.list_characters(session["id"])[0]
+        self.assertEqual(summary["group_id"], group["record_id"])
+        self.assertEqual(summary["group_name"], "Location party")
+        self.assertEqual(summary["group_color"], "#445566")
+        self.assertFalse(any(
+            item.get("actor_id") == character_id
+            for item in self.service.board_snapshot(session["id"])["actors"]
+        ))
+        player_board = self.service.board_snapshot(
+            session["id"],
+            for_players=True,
+            contact_id=self.alice["id"],
+        )
+        self.assertEqual(player_board["active_map_id"], "")
 
     def test_teaching_options_include_only_known_subjects_and_same_map_pupils(self):
         self.service.board_snapshot = lambda *_args, **_kwargs: {

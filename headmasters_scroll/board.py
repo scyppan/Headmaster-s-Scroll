@@ -67,8 +67,10 @@ def normalize_person_board(value: Any) -> dict[str, Any]:
             "x": float(placement.get("x", 0.5)),
             "y": float(placement.get("y", 0.5)),
         }
-        if not normalized_placement["location_id"] or not normalized_placement["map_id"]:
-            raise ValueError("Placed people require a location and map")
+        if not normalized_placement["location_id"]:
+            raise ValueError("Placed people require a location")
+        if not normalized_placement["map_id"] and normalized_placement["floor_id"]:
+            raise ValueError("A floor placement requires a map")
         if not 0.0 <= normalized_placement["x"] <= 1.0 or not 0.0 <= normalized_placement["y"] <= 1.0:
             raise ValueError("Board coordinates must be between 0 and 1")
         result["placement"] = normalized_placement
@@ -772,11 +774,14 @@ def validate_world_board(document: dict[str, Any]) -> None:
         placement = board.get("placement")
         if placement:
             person_locations[str(person.get("record_id"))] = placement["location_id"]
-            map_record = map_by_id.get(placement["map_id"])
-            if map_record is None or map_record["location_id"] != placement["location_id"]:
-                raise ValueError("A person's placement must match an existing map and location")
-            if placement["floor_id"] != map_record["floor_id"]:
-                raise ValueError("A person's placement floor must match the map")
+            if placement["location_id"] not in locations:
+                raise ValueError("A person's placement must reference an existing location")
+            if placement["map_id"]:
+                map_record = map_by_id.get(placement["map_id"])
+                if map_record is None or map_record["location_id"] != placement["location_id"]:
+                    raise ValueError("A person's placement must match an existing map and location")
+                if placement["floor_id"] != map_record["floor_id"]:
+                    raise ValueError("A person's placement floor must match the map")
     groups = []
     for item in document.get("board_groups", []):
         members = item.get("members", []) if isinstance(item, dict) else []
@@ -1310,7 +1315,11 @@ class WorldBoardRepository:
             raise KeyError("Unknown person")
         board = normalize_person_board(person.get("board"))
         if board.get("placement"):
-            return deepcopy(board["placement"])
+            return (
+                deepcopy(board["placement"])
+                if board["placement"].get("map_id")
+                else None
+            )
         maps = [item for item in self._location_maps(session.data) if item.get("players_published")]
         if not maps:
             return None

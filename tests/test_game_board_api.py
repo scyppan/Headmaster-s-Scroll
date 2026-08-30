@@ -6,6 +6,7 @@ import tempfile
 import threading
 import time
 import unittest
+from copy import deepcopy
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -127,6 +128,30 @@ class GameBoardApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         return response.json()
 
+    def world_characters(self, limit=10, session_id=None):
+        response = self.admin.get(
+            "/api/admin/board/world-people",
+            headers=self.admin_headers,
+            params={"session_id": session_id or self.session_id, "limit": limit},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        return response.json()["characters"]
+
+    def import_world_characters(self, count=1):
+        candidates = self.world_characters(max(10, count))[:count]
+        self.assertEqual(len(candidates), count)
+        for character in candidates:
+            response = self.admin.post(
+                "/api/admin/board/people/import",
+                headers=self.admin_headers,
+                json={
+                    "session_id": self.session_id,
+                    "person_id": character["id"],
+                },
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+        return candidates
+
     def test_public_service_does_not_expose_admin_or_data(self):
         self.assertEqual(self.player.get("/api/admin/state").status_code, 404)
         self.assertEqual(self.player.get("/data/world.json").status_code, 404)
@@ -137,8 +162,7 @@ class GameBoardApiTests(unittest.TestCase):
         self.assertEqual(self.admin.get("/").status_code, 404)
 
     def test_admin_can_link_a_player_to_a_shared_character(self):
-        state = self.admin.get("/api/admin/state", headers=self.admin_headers).json()
-        character = state["characters"][0]
+        character = self.world_characters(1)[0]
         response = self.admin.put(
             f"/api/admin/contacts/{self.contact['id']}/character",
             headers=self.admin_headers,
@@ -148,6 +172,34 @@ class GameBoardApiTests(unittest.TestCase):
         self.assertEqual(response.json()["display_name"], character["name"])
         updated = self.admin.get("/api/admin/state", headers=self.admin_headers).json()
         self.assertEqual(updated["session"]["roster"][0]["name"], character["name"])
+        self.assertEqual(
+            [item["id"] for item in updated["characters"]], [character["id"]]
+        )
+
+    def test_admin_state_is_campaign_scoped_and_world_import_is_explicit(self):
+        state = self.admin.get(
+            "/api/admin/state", headers=self.admin_headers
+        ).json()
+        self.assertEqual(state["characters"], [])
+        candidate = self.world_characters(1)[0]
+
+        imported = self.admin.post(
+            "/api/admin/board/people/import",
+            headers=self.admin_headers,
+            json={
+                "session_id": self.session_id,
+                "person_id": candidate["id"],
+            },
+        )
+
+        self.assertEqual(imported.status_code, 200, imported.text)
+        self.assertNotIn("email", imported.json())
+        state = self.admin.get(
+            "/api/admin/state", headers=self.admin_headers
+        ).json()
+        self.assertEqual(
+            [item["id"] for item in state["characters"]], [candidate["id"]]
+        )
 
     def test_admin_can_set_the_event_date(self):
         response = self.admin.put(
@@ -318,6 +370,16 @@ class GameBoardApiTests(unittest.TestCase):
             self.runtime.service.session_view(batch_session_id)
 
     def test_headmaster_can_load_full_sheet_for_any_campaign_character(self):
+        unimported = self.world_characters(1)[0]
+        self.assertEqual(
+            self.admin.get(
+                f"/api/admin/board/people/{unimported['id']}/sheet",
+                headers=self.admin_headers,
+                params={"session_id": self.session_id},
+            ).status_code,
+            404,
+        )
+        self.import_world_characters(1)
         state = self.admin.get(
             "/api/admin/state", headers=self.admin_headers
         ).json()
@@ -345,6 +407,77 @@ class GameBoardApiTests(unittest.TestCase):
             ).status_code,
             403,
         )
+
+    def test_headmaster_can_assign_a_character_to_a_location_without_a_map(self):
+        world = deepcopy(self.runtime.service._world_document())
+        world.setdefault("locations", []).append({
+            "record_id": "api-mapless-location",
+            "name": "API Mapless Location",
+            "parent_location_id": "",
+            "has_floors": False,
+            "floors": [],
+            "default_map_id": "",
+        })
+        world_patch = patch.object(
+            self.runtime.service, "_world_document", return_value=world
+        )
+        world_patch.start()
+        self.addCleanup(world_patch.stop)
+        character = self.runtime.service.list_characters()[0]
+        self.runtime.service.assign_character(
+            self.contact["id"], character["id"]
+        )
+        before = deepcopy(
+            self.runtime.service.campaign_repository.get(
+                "campaign-1"
+            )["game_state"]["loaded_map_ids"]
+        )
+
+        response = self.admin.put(
+            f"/api/admin/board/people/{character['id']}/location",
+            headers=self.admin_headers,
+            json={
+                "session_id": self.session_id,
+                "location_id": "api-mapless-location",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["placement"]["map_id"], "")
+        state = self.runtime.service.campaign_repository.get(
+            "campaign-1"
+        )["game_state"]
+        self.assertEqual(state["loaded_map_ids"], before)
+        self.assertEqual(
+            state["people"][character["id"]]["placement"]["location_id"],
+            "api-mapless-location",
+        )
+        admin_state = self.admin.get(
+            "/api/admin/state", headers=self.admin_headers
+        ).json()
+        board = admin_state["boards"][self.session_id]
+        self.assertIn(
+            "api-mapless-location",
+            {item["record_id"] for item in board["locations"]},
+        )
+        self.assertNotIn(
+            "locations",
+            self.runtime.service.board_snapshot(
+                self.session_id,
+                for_players=True,
+                contact_id=self.contact["id"],
+            ),
+        )
+
+        missing = self.admin.put(
+            f"/api/admin/board/people/{character['id']}/location",
+            headers=self.admin_headers,
+            json={
+                "session_id": self.session_id,
+                "location_id": "missing-location",
+            },
+        )
+        self.assertEqual(missing.status_code, 404, missing.text)
 
     def test_session_management_routes_are_session_specific(self):
         state = self.admin.get("/api/admin/state", headers=self.admin_headers).json()
@@ -420,6 +553,7 @@ class GameBoardApiTests(unittest.TestCase):
         self.assertEqual(restarted_live.json()["pending"], [])
 
     def test_restart_api_repopulates_the_saved_campaign_board(self):
+        self.import_world_characters(2)
         initial = self.admin.get(
             "/api/admin/state", headers=self.admin_headers
         ).json()
@@ -1029,7 +1163,7 @@ class GameBoardApiTests(unittest.TestCase):
             "/api/admin/state", headers=self.admin_headers
         ).json()
         map_id = state["boards"][selected_id]["maps"][0]["record_id"]
-        person_id = state["characters"][0]["id"]
+        person_id = self.world_characters(1, selected_id)[0]["id"]
 
         move = self.admin.post(
             "/api/admin/board/move",

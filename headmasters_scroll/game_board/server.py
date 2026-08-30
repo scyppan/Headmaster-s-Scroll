@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field
 
 from ..campaigns import CampaignRepository
 from ..paths import RUNTIME_DIRECTORY
+from . import ADMIN_API_REVISION
 from .gmail import GmailSender, GmailUnavailable
 from .service import (
     GameBoardService,
@@ -161,6 +162,18 @@ class AdminRegionSearchBody(AdminRegionSearchOptionsBody):
 class RequestResolutionBody(BaseModel):
     campaign_id: str = Field(min_length=1, max_length=100)
     decision: str = Field(min_length=1, max_length=20)
+    pupil_person_id: str = Field(default="", max_length=100)
+    knowledge_kind: str = Field(default="", max_length=30)
+    knowledge_record_id: str = Field(default="", max_length=120)
+    knowledge_collection: str = Field(default="", max_length=80)
+    actor_person_id: str = Field(default="", max_length=100)
+    interaction_action: str = Field(default="", max_length=20)
+    creature_name: str = Field(default="", max_length=200)
+
+
+class AdminRequestDecisionBody(BaseModel):
+    decision: str = Field(min_length=1, max_length=20)
+    expected_session_id: str = Field(min_length=1, max_length=100)
     pupil_person_id: str = Field(default="", max_length=100)
     knowledge_kind: str = Field(default="", max_length=30)
     knowledge_record_id: str = Field(default="", max_length=120)
@@ -582,6 +595,7 @@ class GameBoardRuntime:
                 # compact navigator projection.  Keep admin state available;
                 # the next generation will advertise no designated board.
                 characters = self.service.list_characters()
+            admin_requests = self.service.admin_requests()
             result = {
                 "contacts": self.service.list_contacts(),
                 "characters": characters,
@@ -597,6 +611,14 @@ class GameBoardRuntime:
                 "location_maps": location_maps,
                 "gmail": self.gmail().status(),
                 "requests": self.service.pending_campaign_requests(),
+                "admin_requests": admin_requests,
+                "request_history": [
+                    deepcopy(item) for item in admin_requests
+                    if (
+                        item.get("source") == "campaign"
+                        and item.get("decision_status") != "pending"
+                    )
+                ],
                 "teaching_catalog": self.service.teaching_catalog(),
             }
             with self._state_lock:
@@ -1230,7 +1252,14 @@ def create_apps(
     async def admin_health():
         # Deliberately performs no canonical-data reads.  Desktop startup must
         # distinguish a listening service from completion of the first state.
-        return {"service": "game-board", "ready": True}
+        return {
+            "service": "game-board",
+            "ready": True,
+            "api_revision": ADMIN_API_REVISION,
+            "build": ADMIN_API_REVISION,
+            "capabilities": ["session-restart", "verified-server-recovery"],
+            "pid": os.getpid(),
+        }
 
     @admin_app.get(
         "/api/admin/board/people/{person_id}/sheet",
@@ -2412,6 +2441,116 @@ def create_apps(
         )
         await runtime.broadcast_board(body.session_id)
         await runtime.broadcast_character_sheets(body.session_id)
+        await runtime.notify_admins()
+        return result
+
+    @admin_app.get(
+        "/api/admin/requests", dependencies=[Depends(admin_guard)]
+    )
+    async def admin_requests(
+        status: str = Query(default="all", max_length=30),
+        request_type: str = Query(default="", max_length=80),
+        asker_id: str = Query(default="", max_length=120),
+        source: str = Query(default="", max_length=30),
+        sort: str = Query(default="time", max_length=20),
+        direction: str = Query(default="desc", max_length=10),
+        include_history: bool = Query(default=True),
+    ):
+        normalized_direction = direction.strip().casefold()
+        if normalized_direction not in {"asc", "desc"}:
+            raise HTTPException(
+                status_code=400, detail="Request direction must be asc or desc"
+            )
+        rows = await asyncio.to_thread(
+            admin_result,
+            service.admin_requests,
+            include_resolved=status.strip().casefold() != "pending",
+            include_history=include_history,
+            source=source,
+            request_type=request_type,
+            asker_id=asker_id,
+            status=status,
+            sort_by=sort,
+            descending=normalized_direction == "desc",
+        )
+        return {
+            "requests": rows,
+            "pending_count": sum(
+                item.get("decision_status") == "pending" for item in rows
+            ),
+            "history_count": sum(
+                item.get("decision_status") != "pending" for item in rows
+            ),
+        }
+
+    @admin_app.get(
+        "/api/admin/requests/{source}/{request_id}/history",
+        dependencies=[Depends(admin_guard)],
+    )
+    async def admin_request_history(source: str, request_id: str):
+        item = await asyncio.to_thread(
+            admin_result,
+            service.admin_request,
+            source,
+            request_id,
+            include_history=True,
+        )
+        return {"request": item, "history": item.get("history", [])}
+
+    @admin_app.post(
+        "/api/admin/requests/{source}/{request_id}/decision",
+        dependencies=[Depends(admin_guard)],
+    )
+    async def decide_admin_request(
+        source: str, request_id: str, body: AdminRequestDecisionBody
+    ):
+        values = body.model_dump()
+        decision = values.pop("decision")
+        expected_session_id = body.expected_session_id
+        # End, expiration, and Restart all take the session lifecycle lock
+        # before the admission lock.  Use the same ordering so the request's
+        # rendered board context is revalidated at one atomic decision point.
+        async with runtime.session_lifecycle_locks[expected_session_id]:
+            if source.strip().casefold() == "admission":
+                # The legacy admission actions use this same lock.  Keeping the
+                # generic action in that serialization domain prevents two admin
+                # clicks from both appearing to decide one pending request.
+                async with runtime.player_admission_lock:
+                    result = await asyncio.to_thread(
+                        admin_result,
+                        service.decide_admin_request,
+                        source,
+                        request_id,
+                        decision,
+                        **values,
+                    )
+            else:
+                result = await asyncio.to_thread(
+                    admin_result,
+                    service.decide_admin_request,
+                    source,
+                    request_id,
+                    decision,
+                    **values,
+                )
+        request_item = result["request"]
+        if (
+            request_item.get("source") == "campaign"
+            and request_item.get("decision_status") == "approved"
+        ):
+            session_id = str(request_item.get("session_id") or "")
+            if session_id and any(
+                item.get("id") == session_id for item in service.sessions_view()
+            ):
+                roll = result.get("resolution", {}).get("roll")
+                if isinstance(roll, dict):
+                    await runtime.chat(
+                        "headmaster", "Headmaster", "headmaster",
+                        str(roll.get("text") or "A check was made."),
+                        session_id, roll,
+                    )
+                await runtime.broadcast_character_sheets(session_id)
+                await runtime.broadcast_board(session_id)
         await runtime.notify_admins()
         return result
 

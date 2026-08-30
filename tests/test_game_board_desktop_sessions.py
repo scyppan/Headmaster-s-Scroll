@@ -171,6 +171,9 @@ class GameBoardDesktopSessionTests(unittest.TestCase):
         window._confirm_live_session_restart = lambda _session: True
         calls = []
         notices = []
+        window.server = SimpleNamespace(
+            start=lambda: calls.append(("server", "start"))
+        )
         window.client = SimpleNamespace(
             request=lambda method, path: calls.append((method, path))
             or {"id": "session-live"}
@@ -202,6 +205,10 @@ class GameBoardDesktopSessionTests(unittest.TestCase):
 
         self.assertIn(
             ("POST", "/api/admin/sessions/session-live/restart"), calls
+        )
+        self.assertLess(
+            calls.index(("server", "start")),
+            calls.index(("POST", "/api/admin/sessions/session-live/restart")),
         )
         self.assertIsNone(window.selected_session_id)
         self.assertEqual(
@@ -293,6 +300,9 @@ class GameBoardDesktopSessionTests(unittest.TestCase):
         window.selected_session_id = "other-session"
         calls = []
         notices = []
+        window.server = SimpleNamespace(
+            start=lambda: calls.append(("server", "start"))
+        )
         window.client = SimpleNamespace(
             request=lambda method, path: calls.append((method, path))
             or {"id": "session-ended"}
@@ -324,6 +334,10 @@ class GameBoardDesktopSessionTests(unittest.TestCase):
 
         self.assertIn(
             ("POST", "/api/admin/sessions/session-ended/restart"), calls
+        )
+        self.assertLess(
+            calls.index(("server", "start")),
+            calls.index(("POST", "/api/admin/sessions/session-ended/restart")),
         )
         self.assertEqual(window.managed_session_id, "session-ended")
         self.assertEqual(

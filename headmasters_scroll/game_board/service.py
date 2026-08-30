@@ -216,6 +216,23 @@ class GameBoardService:
             changed = False
             for session in wrapper.get("sessions", []):
                 session.setdefault("board_control_grants", {})
+                raw_history = session.get("admission_history", [])
+                archived_at = iso_utc(utc_now())
+                sanitized_history = [
+                    sanitized
+                    for item in (
+                        raw_history if isinstance(raw_history, list) else []
+                    )
+                    if isinstance(item, dict)
+                    for sanitized in [self._sanitize_admission_history_entry(
+                        item,
+                        str(item.get("archived_at") or archived_at),
+                    )]
+                    if sanitized is not None
+                ]
+                if raw_history != sanitized_history:
+                    session["admission_history"] = sanitized_history
+                    changed = True
                 if not session.get("game_datetime"):
                     fallback_date = (
                         session.get("event_date")
@@ -1521,6 +1538,617 @@ class GameBoardService:
         result.sort(key=lambda item: (str(item.get("submitted_at", "")), str(item.get("record_id", ""))))
         return result
 
+    @staticmethod
+    def _sanitize_admission_history_entry(
+        request: dict[str, Any], archived_at: str
+    ) -> dict[str, str] | None:
+        """Retain admission outcomes without retaining access/device secrets."""
+
+        request_id = str(request.get("id", "") or "").strip()
+        if not request_id:
+            return None
+        status = str(request.get("status", "pending") or "pending").casefold()
+        if status == "pending" or status not in {
+            "approved", "ticket_issued", "connected", "disconnected",
+            "denied", "revoked", "cancelled",
+        }:
+            status = "cancelled"
+        result = {
+            "id": request_id[:120],
+            "contact_id": str(request.get("contact_id", "") or "")[:120],
+            "name": str(request.get("name", "Player") or "Player")[:100],
+            "status": status,
+            "requested_at": str(request.get("requested_at", "") or "")[:64],
+            "archived_at": str(archived_at or "")[:64],
+        }
+        for key in (
+            "approved_at", "connected_at", "disconnected_at",
+            "resolved_at", "cancelled_at",
+        ):
+            if request.get(key):
+                result[key] = str(request[key])[:64]
+        if status == "cancelled":
+            result["cancelled_at"] = str(
+                request.get("cancelled_at") or archived_at or ""
+            )[:64]
+            result["resolved_at"] = str(
+                request.get("resolved_at") or result["cancelled_at"]
+            )[:64]
+        elif status in {"denied", "revoked"} and not result.get("resolved_at"):
+            result["resolved_at"] = str(archived_at or "")[:64]
+        elif not result.get("resolved_at"):
+            result["resolved_at"] = str(
+                result.get("approved_at")
+                or result.get("disconnected_at")
+                or archived_at
+                or ""
+            )[:64]
+        return result
+
+    def _archive_admission_requests(
+        self, session: dict[str, Any], archived_at: str | None = None
+    ) -> None:
+        """Move one admission generation to sanitized, non-actionable history."""
+
+        timestamp = str(archived_at or iso_utc(utc_now()))
+        records: dict[str, dict[str, str]] = {}
+        order: list[str] = []
+        sources = (
+            session.get("admission_history", []),
+            session.get("pending", []),
+        )
+        for source in sources:
+            for item in source if isinstance(source, list) else []:
+                if not isinstance(item, dict):
+                    continue
+                sanitized = self._sanitize_admission_history_entry(
+                    item, str(item.get("archived_at") or timestamp)
+                )
+                if sanitized is None:
+                    continue
+                request_id = sanitized["id"]
+                if request_id not in records:
+                    order.append(request_id)
+                records[request_id] = sanitized
+        session["admission_history"] = [
+            records[request_id] for request_id in order[-1000:]
+        ]
+        session["pending"] = []
+
+    @staticmethod
+    def _request_history_events(
+        source: str, request: dict[str, Any]
+    ) -> list[dict[str, str]]:
+        """Build a small, credential-free lifecycle for one admin request."""
+
+        history: list[dict[str, str]] = []
+
+        def append(status: str, at: Any) -> None:
+            timestamp = str(at or "")
+            if not status or not timestamp or any(
+                item["status"] == status and item["at"] == timestamp
+                for item in history
+            ):
+                return
+            history.append({"status": status, "at": timestamp})
+
+        if source == "admission":
+            append("pending", request.get("requested_at"))
+            append("approved", request.get("approved_at"))
+            append("connected", request.get("connected_at"))
+            append("disconnected", request.get("disconnected_at"))
+            if str(request.get("status", "")).casefold() == "denied":
+                append("denied", request.get("resolved_at"))
+            elif str(request.get("status", "")).casefold() == "revoked":
+                append("revoked", request.get("resolved_at"))
+            elif str(request.get("status", "")).casefold() == "cancelled":
+                append(
+                    "cancelled",
+                    request.get("cancelled_at") or request.get("resolved_at"),
+                )
+        else:
+            append("pending", request.get("submitted_at"))
+            if str(request.get("status", "pending")).casefold() != "pending":
+                append(
+                    str(request.get("status", "")).casefold(),
+                    request.get("resolved_at"),
+                )
+        return sorted(
+            history,
+            key=lambda item: (not bool(item["at"]), item["at"], item["status"]),
+        )
+
+    @staticmethod
+    def _request_decision_status(source: str, status: str) -> str:
+        normalized = str(status or "pending").strip().casefold()
+        if normalized == "pending":
+            return "pending"
+        if source == "admission" and normalized in {
+            "denied", "revoked", "cancelled"
+        }:
+            return "rejected"
+        return "rejected" if normalized == "rejected" else "approved"
+
+    @staticmethod
+    def _request_type_label(request_type: str) -> str:
+        labels = {
+            "admission": "Admission",
+            "teaching": "Teaching",
+            "creature_interaction": "Creature interaction",
+            "equipment_change": "Equipment change",
+        }
+        normalized = str(request_type or "request").strip().casefold()
+        return labels.get(normalized, normalized.replace("_", " ").title())
+
+    def _admission_request_projection(
+        self,
+        session: dict[str, Any],
+        request: dict[str, Any],
+        *,
+        include_history: bool,
+        archived: bool = False,
+    ) -> dict[str, Any]:
+        request_id = str(request.get("id", "") or "")
+        contact_id = str(request.get("contact_id", "") or "")
+        player = next(
+            (
+                item for item in session.get("roster", []) or []
+                if str(item.get("contact_id", "")) == contact_id
+            ),
+            {},
+        )
+        character_id = str(player.get("character_id", "") or "")
+        asker_name = str(
+            request.get("name")
+            or player.get("character_name")
+            or player.get("name")
+            or player.get("account_name")
+            or "Player"
+        )
+        status = str(request.get("status", "pending") or "pending").casefold()
+        decision_status = self._request_decision_status("admission", status)
+        submitted_at = str(request.get("requested_at", "") or "")
+        resolved_at = str(
+            request.get("resolved_at")
+            or request.get("approved_at")
+            or request.get("disconnected_at")
+            or request.get("cancelled_at")
+            or request.get("archived_at")
+            or ""
+        )
+        result: dict[str, Any] = {
+            "id": request_id,
+            "request_id": request_id,
+            "record_id": request_id,
+            "request_key": f"admission:{request_id}",
+            "source": "admission",
+            "request_type": "admission",
+            "type_label": "Admission",
+            "status": status,
+            "decision_status": decision_status,
+            "submitted_at": submitted_at,
+            "resolved_at": resolved_at,
+            "summary": f"{asker_name} requests admission to {session.get('title', 'Session')}",
+            "request_summary": f"{asker_name} requests admission",
+            "asker": {
+                "id": contact_id or character_id,
+                "name": asker_name,
+                "contact_id": contact_id,
+                "character_id": character_id,
+            },
+            "asker_id": contact_id or character_id,
+            "asker_name": asker_name,
+            "contact_id": contact_id,
+            "character_id": character_id,
+            "session_id": str(session.get("id", "") or ""),
+            "session_title": str(session.get("title", "") or ""),
+            "campaign_id": str(session.get("campaign_id", "") or ""),
+            "campaign_name": str(session.get("campaign_name", "") or ""),
+            "details": {},
+            "archived": bool(archived),
+            "history_scope": "session",
+            "can_approve": not archived and status == "pending",
+            "can_reject": not archived and status == "pending",
+            "decision_actions": (
+                ["approve", "reject"]
+                if not archived and status == "pending" else []
+            ),
+        }
+        if include_history:
+            result["history"] = self._request_history_events(
+                "admission", request
+            )
+        return result
+
+    def _campaign_request_projection(
+        self,
+        campaign: dict[str, Any],
+        request: dict[str, Any],
+        sessions_by_id: dict[str, dict[str, Any]],
+        contacts_by_id: dict[str, dict[str, Any]],
+        *,
+        include_history: bool,
+    ) -> dict[str, Any]:
+        request_id = str(request.get("record_id", "") or "")
+        request_type = str(
+            request.get("request_type", "request") or "request"
+        ).casefold()
+        session_id = str(request.get("session_id", "") or "")
+        session = sessions_by_id.get(session_id, {})
+        contact_id = str(
+            request.get("submitted_by_contact_id")
+            or request.get("contact_id")
+            or ""
+        )
+        character_id = str(
+            request.get("teacher_person_id")
+            or request.get("actor_person_id")
+            or request.get("person_id")
+            or ""
+        )
+        player = next(
+            (
+                item for item in session.get("roster", []) or []
+                if str(item.get("contact_id", "")) == contact_id
+            ),
+            {},
+        )
+        contact = contacts_by_id.get(contact_id, {})
+        asker_name = str(
+            request.get("teacher_name")
+            or request.get("actor_name")
+            or player.get("character_name")
+            or player.get("name")
+            or contact.get("character_name")
+            or contact.get("name")
+            or "Unknown player"
+        )
+        status = str(request.get("status", "pending") or "pending").casefold()
+        decision_status = self._request_decision_status("campaign", status)
+        summary = str(
+            request.get("request_summary")
+            or f"{asker_name} submitted a {self._request_type_label(request_type).casefold()} request"
+        )
+        detail_fields = {
+            "teaching": (
+                "teacher_person_id", "teacher_name", "pupil_person_id",
+                "pupil_name", "knowledge_kind", "knowledge_collection",
+                "knowledge_record_id", "knowledge_name",
+            ),
+            "creature_interaction": (
+                "actor_person_id", "actor_name", "creature_id",
+                "species_name", "interaction_action", "creature_name",
+            ),
+            "equipment_change": (
+                "person_id", "slot", "item_id", "item_name",
+            ),
+        }
+        details = {
+            key: deepcopy(request[key])
+            for key in detail_fields.get(request_type, ())
+            if key in request
+        }
+        can_approve = status == "pending" and request_type in {
+            "teaching", "creature_interaction", "equipment_change"
+        }
+        result: dict[str, Any] = {
+            "id": request_id,
+            "request_id": request_id,
+            "record_id": request_id,
+            "request_key": f"campaign:{request_id}",
+            "source": "campaign",
+            "request_type": request_type,
+            "type_label": self._request_type_label(request_type),
+            "status": status,
+            "decision_status": decision_status,
+            "submitted_at": str(request.get("submitted_at", "") or ""),
+            "resolved_at": str(request.get("resolved_at", "") or ""),
+            "summary": summary,
+            "request_summary": summary,
+            "asker": {
+                "id": contact_id or character_id,
+                "name": asker_name,
+                "contact_id": contact_id,
+                "character_id": character_id,
+            },
+            "asker_id": contact_id or character_id,
+            "asker_name": asker_name,
+            "contact_id": contact_id,
+            "character_id": character_id,
+            "session_id": session_id,
+            "session_title": str(session.get("title", "") or ""),
+            "campaign_id": str(campaign.get("record_id", "") or ""),
+            "campaign_name": str(campaign.get("name", "") or ""),
+            "details": details,
+            "can_approve": can_approve,
+            "can_reject": status == "pending",
+            "decision_actions": (
+                (["approve"] if can_approve else [])
+                + (["reject"] if status == "pending" else [])
+            ),
+        }
+        # Retain the documented request fields used by the existing edit
+        # dialogs without exposing arbitrary future request payloads.
+        result.update(details)
+        if include_history:
+            result["history"] = self._request_history_events(
+                "campaign", request
+            )
+        return result
+
+    def admin_requests(
+        self,
+        *,
+        include_resolved: bool = True,
+        include_history: bool = True,
+        source: str = "",
+        request_type: str = "",
+        asker_id: str = "",
+        status: str = "",
+        sort_by: str = "time",
+        descending: bool = True,
+    ) -> list[dict[str, Any]]:
+        """Return the unified, redacted Headmaster request projection."""
+
+        normalized_source = str(source or "").strip().casefold()
+        normalized_type = str(request_type or "").strip().casefold()
+        normalized_asker = str(asker_id or "").strip().casefold()
+        normalized_status = str(status or "").strip().casefold()
+        normalized_sort = str(sort_by or "time").strip().casefold()
+        if normalized_source and normalized_source not in {"admission", "campaign"}:
+            raise ValueError("Request source must be admission or campaign")
+        if normalized_sort not in {"time", "type", "asker"}:
+            raise ValueError("Request sort must be time, type, or asker")
+        with self._lock:
+            wrapper = self.repository.active()
+            sessions = [
+                item for item in wrapper.get("sessions", [])
+                if isinstance(item, dict)
+            ]
+            sessions_by_id = {
+                str(item.get("id", "")): item for item in sessions
+                if item.get("id")
+            }
+            contacts_by_id = {
+                str(item.get("id", "")): item
+                for item in self.repository.contacts().get("contacts", []) or []
+                if isinstance(item, dict) and item.get("id")
+            }
+            result: list[dict[str, Any]] = []
+            if normalized_source in {"", "admission"}:
+                for session in sessions:
+                    for request in session.get("admission_history", []) or []:
+                        if not isinstance(request, dict) or not request.get("id"):
+                            continue
+                        result.append(self._admission_request_projection(
+                            session,
+                            request,
+                            include_history=include_history,
+                            archived=True,
+                        ))
+                    for request in session.get("pending", []) or []:
+                        if not isinstance(request, dict) or not request.get("id"):
+                            continue
+                        result.append(self._admission_request_projection(
+                            session, request, include_history=include_history
+                        ))
+            if normalized_source in {"", "campaign"}:
+                for campaign in self.campaign_repository.list():
+                    for request in campaign.get("requests", []) or []:
+                        if (
+                            not isinstance(request, dict)
+                            or not request.get("record_id")
+                        ):
+                            continue
+                        result.append(self._campaign_request_projection(
+                            campaign,
+                            request,
+                            sessions_by_id,
+                            contacts_by_id,
+                            include_history=include_history,
+                        ))
+
+        if not include_resolved:
+            result = [
+                item for item in result
+                if item.get("decision_status") == "pending"
+            ]
+        if normalized_type:
+            result = [
+                item for item in result
+                if str(item.get("request_type", "")).casefold() == normalized_type
+            ]
+        if normalized_asker:
+            result = [
+                item for item in result
+                if normalized_asker in {
+                    str(item.get("asker_id", "")).casefold(),
+                    str(item.get("asker_name", "")).casefold(),
+                    str(item.get("contact_id", "")).casefold(),
+                    str(item.get("character_id", "")).casefold(),
+                }
+            ]
+        if normalized_status and normalized_status != "all":
+            if normalized_status == "resolved":
+                result = [
+                    item for item in result
+                    if item.get("decision_status") != "pending"
+                ]
+            else:
+                result = [
+                    item for item in result
+                    if normalized_status in {
+                        str(item.get("status", "")).casefold(),
+                        str(item.get("decision_status", "")).casefold(),
+                    }
+                ]
+        sorters = {
+            "time": lambda item: (
+                str(item.get("submitted_at", "")),
+                str(item.get("request_key", "")),
+            ),
+            "type": lambda item: (
+                str(item.get("type_label", "")).casefold(),
+                str(item.get("submitted_at", "")),
+                str(item.get("request_key", "")),
+            ),
+            "asker": lambda item: (
+                str(item.get("asker_name", "")).casefold(),
+                str(item.get("submitted_at", "")),
+                str(item.get("request_key", "")),
+            ),
+        }
+        return sorted(result, key=sorters[normalized_sort], reverse=descending)
+
+    def admin_request(
+        self, source: str, request_id: str, *, include_history: bool = True
+    ) -> dict[str, Any]:
+        normalized_source = str(source or "").strip().casefold()
+        matches = [
+            item for item in self.admin_requests(
+                source=normalized_source, include_history=include_history
+            )
+            if item.get("request_id") == request_id
+        ]
+        if not matches:
+            raise KeyError("Unknown admin request")
+        if len(matches) > 1:
+            raise RuntimeError("The request ID is ambiguous across stored records")
+        return matches[0]
+
+    def decide_admin_request(
+        self,
+        source: str,
+        request_id: str,
+        decision: str,
+        *,
+        expected_session_id: str,
+        pupil_person_id: str = "",
+        knowledge_kind: str = "",
+        knowledge_record_id: str = "",
+        knowledge_collection: str = "",
+        actor_person_id: str = "",
+        interaction_action: str = "",
+        creature_name: str = "",
+    ) -> dict[str, Any]:
+        """Resolve a request through its existing type-specific workflow."""
+
+        normalized_source = str(source or "").strip().casefold()
+        normalized_decision = str(decision or "").strip().casefold()
+        if normalized_decision in {"approve", "approved"}:
+            campaign_decision = "approved"
+        elif normalized_decision in {"reject", "rejected", "deny", "denied"}:
+            campaign_decision = "rejected"
+        else:
+            raise ValueError("Decision must be approve or reject")
+        with self._lock:
+            expected_session_id = str(expected_session_id or "").strip()
+            if not expected_session_id:
+                raise ValueError("The expected Game Board session is required")
+            wrapper = self.repository.active()
+            if wrapper.get("board_session_id") != expected_session_id:
+                raise RuntimeError(
+                    "The active Game Board session changed; refresh the request"
+                )
+            expected_session = next(
+                (
+                    item for item in wrapper.get("sessions", [])
+                    if item.get("id") == expected_session_id
+                ),
+                None,
+            )
+            if expected_session is None:
+                raise RuntimeError(
+                    "The request session is no longer live; refresh the Game Board"
+                )
+            if expected_session_id in self._expiring_session_deadlines:
+                raise RuntimeError(
+                    "The request session is already expiring"
+                )
+            try:
+                if parse_utc(str(expected_session.get("expires_at") or "")) <= utc_now():
+                    raise RuntimeError("The request session has expired")
+            except (TypeError, ValueError) as error:
+                raise RuntimeError(
+                    "The request session has an invalid end time"
+                ) from error
+            if normalized_source == "admission":
+                matches = [
+                    session for session in wrapper.get("sessions", [])
+                    if any(
+                        isinstance(item, dict) and item.get("id") == request_id
+                        for item in session.get("pending", []) or []
+                    )
+                ]
+                if not matches:
+                    if any(
+                        isinstance(item, dict) and item.get("id") == request_id
+                        for item in expected_session.get("admission_history", []) or []
+                    ):
+                        raise ValueError(
+                            "Admission history cannot be decided again"
+                        )
+                    raise KeyError("Unknown admission request")
+                if len(matches) > 1:
+                    raise RuntimeError(
+                        "The admission request ID is ambiguous across sessions"
+                    )
+                if str(matches[0].get("id") or "") != expected_session_id:
+                    raise RuntimeError(
+                        "The admission request belongs to another session"
+                    )
+                if campaign_decision == "approved":
+                    self.approve(request_id)
+                else:
+                    self.deny(request_id)
+                resolution: dict[str, Any] = {
+                    "request_id": request_id,
+                    "status": (
+                        "approved" if campaign_decision == "approved" else "denied"
+                    ),
+                }
+            elif normalized_source == "campaign":
+                matches = [
+                    (str(campaign.get("record_id", "")), request)
+                    for campaign in self.campaign_repository.list()
+                    for request in campaign.get("requests", []) or []
+                    if (
+                        isinstance(request, dict)
+                        and request.get("record_id") == request_id
+                    )
+                ]
+                if not matches:
+                    raise KeyError("Unknown campaign request")
+                if len(matches) > 1:
+                    raise RuntimeError(
+                        "The campaign request ID is ambiguous across campaigns"
+                    )
+                campaign_id, campaign_request = matches[0]
+                if str(campaign_request.get("session_id") or "") != expected_session_id:
+                    raise RuntimeError(
+                        "The campaign request belongs to another session"
+                    )
+                resolution = self.resolve_campaign_request(
+                    campaign_id,
+                    request_id,
+                    campaign_decision,
+                    pupil_person_id=pupil_person_id,
+                    knowledge_kind=knowledge_kind,
+                    knowledge_record_id=knowledge_record_id,
+                    knowledge_collection=knowledge_collection,
+                    actor_person_id=actor_person_id,
+                    interaction_action=interaction_action,
+                    creature_name=creature_name,
+                )
+            else:
+                raise ValueError("Request source must be admission or campaign")
+            return {
+                "request": self.admin_request(
+                    normalized_source, request_id, include_history=True
+                ),
+                "resolution": deepcopy(resolution),
+            }
+
     def resolve_campaign_request(
         self, campaign_id: str, request_id: str, decision: str,
         *, pupil_person_id: str = "", knowledge_kind: str = "",
@@ -2034,6 +2662,7 @@ class GameBoardService:
                 "expires_at": iso_utc(local_expiration),
                 "roster": [self._roster_entry(contacts[item]) for item in contact_ids],
                 "pending": [],
+                "admission_history": [],
                 "chat": [],
                 "announcement_count": 0,
                 "board_control_grants": {},
@@ -2482,8 +3111,9 @@ class GameBoardService:
                 wrapper, session_id
             )
             restored["status"] = "active"
-            restored["pending"] = []
-            restored["restarted_at"] = iso_utc(utc_now())
+            restarted_at = iso_utc(utc_now())
+            self._archive_admission_requests(restored, restarted_at)
+            restored["restarted_at"] = restarted_at
             restored["restart_count"] = int(restored.get("restart_count", 0) or 0) + 1
             campaign = self.campaign_repository.get(
                 str(restored.get("campaign_id") or "")
@@ -6401,7 +7031,7 @@ class GameBoardService:
             # Admission polls and one-time tickets are deliberately not
             # restartable.  The durable invitation hash remains in the roster,
             # so the original link creates a fresh approval request.
-            restart_session["pending"] = []
+            self._archive_admission_requests(restart_session, ended_at)
             wrapper["restartable_sessions"].append({
                 "ended_at": ended_at,
                 "session": restart_session,

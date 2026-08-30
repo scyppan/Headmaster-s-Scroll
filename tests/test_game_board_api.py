@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import json
+import os
 import tempfile
 import threading
 import time
@@ -15,6 +16,7 @@ from fastapi import HTTPException
 from starlette.websockets import WebSocketDisconnect
 
 from headmasters_scroll.campaigns import CampaignRepository
+from headmasters_scroll.game_board import ADMIN_API_REVISION
 from headmasters_scroll.game_board.desktop import (
     GameBoardWindow,
     HistoricalDateTime,
@@ -27,6 +29,7 @@ from headmasters_scroll.game_board.desktop import (
 )
 from headmasters_scroll.game_board.gmail import GmailSender, GmailUnavailable
 from headmasters_scroll.game_board.server import (
+    AdminRequestDecisionBody,
     GameBoardRuntime,
     PlayerConnection,
     SendBody,
@@ -234,7 +237,19 @@ class GameBoardApiTests(unittest.TestCase):
             return health, health_elapsed, sent
 
         health, health_elapsed, sent = asyncio.run(scenario())
-        self.assertEqual(health, {"service": "game-board", "ready": True})
+        self.assertEqual(
+            health,
+            {
+                "service": "game-board",
+                "ready": True,
+                "api_revision": ADMIN_API_REVISION,
+                "build": ADMIN_API_REVISION,
+                "capabilities": [
+                    "session-restart", "verified-server-recovery",
+                ],
+                "pid": os.getpid(),
+            },
+        )
         self.assertLess(health_elapsed, 0.45)
         self.assertTrue(sent["results"][0]["success"])
 
@@ -1130,6 +1145,8 @@ class GameBoardApiTests(unittest.TestCase):
             self.assertEqual(arrival["message"]["text"], "Alice is here!")
             board = websocket.receive_json()
             self.assertEqual(board["type"], "board_snapshot")
+            battle = websocket.receive_json()
+            self.assertEqual(battle["type"], "battle_snapshot")
             websocket.send_json({"v": 1, "type": "chat_message", "message": "Hello room"})
             chat = websocket.receive_json()
             self.assertEqual(chat["type"], "chat_message")
@@ -1142,6 +1159,214 @@ class GameBoardApiTests(unittest.TestCase):
                 f"/v1/session?ticket={ticket}", headers=self.origin_headers
             ):
                 pass
+
+    def test_unified_admin_request_api_decides_and_exposes_safe_history(self):
+        admission = self.admission()
+        equipment = self.runtime.service.campaign_repository.add_request(
+            "campaign-1",
+            "equipment_change",
+            {
+                "session_id": self.session_id,
+                "contact_id": self.contact["id"],
+                "person_id": "person-1",
+                "slot": "focus",
+                "item_id": "wand-1",
+                "item_name": "Oak wand",
+                "request_summary": "Alice wants to change focus",
+                "private_note": "not for the projection",
+            },
+        )
+
+        inbox = self.admin.get(
+            "/api/admin/requests?status=pending&sort=type&direction=asc",
+            headers=self.admin_headers,
+        )
+        self.assertEqual(inbox.status_code, 200, inbox.text)
+        rows = inbox.json()["requests"]
+        self.assertEqual(
+            {item["request_type"] for item in rows},
+            {"admission", "equipment_change"},
+        )
+        serialized = json.dumps(rows)
+        self.assertNotIn("poll_hash", serialized)
+        self.assertNotIn("invite_hash", serialized)
+        self.assertNotIn("alice@example.com", serialized)
+        self.assertNotIn("not for the projection", serialized)
+
+        approved = self.admin.post(
+            f"/api/admin/requests/admission/{admission['request_id']}/decision",
+            headers=self.admin_headers,
+            json={
+                "decision": "approve",
+                "expected_session_id": self.session_id,
+            },
+        )
+        self.assertEqual(approved.status_code, 200, approved.text)
+        self.assertEqual(
+            approved.json()["request"]["decision_status"], "approved"
+        )
+        duplicate = self.admin.post(
+            f"/api/admin/requests/admission/{admission['request_id']}/decision",
+            headers=self.admin_headers,
+            json={
+                "decision": "approve",
+                "expected_session_id": self.session_id,
+            },
+        )
+        self.assertEqual(duplicate.status_code, 400)
+
+        rejected = self.admin.post(
+            f"/api/admin/requests/campaign/{equipment['record_id']}/decision",
+            headers=self.admin_headers,
+            json={
+                "decision": "reject",
+                "expected_session_id": self.session_id,
+            },
+        )
+        self.assertEqual(rejected.status_code, 200, rejected.text)
+        self.assertEqual(rejected.json()["request"]["status"], "rejected")
+        history = self.admin.get(
+            f"/api/admin/requests/campaign/{equipment['record_id']}/history",
+            headers=self.admin_headers,
+        )
+        self.assertEqual(history.status_code, 200, history.text)
+        self.assertEqual(
+            [item["status"] for item in history.json()["history"]],
+            ["pending", "rejected"],
+        )
+
+        state = self.admin.get(
+            "/api/admin/state", headers=self.admin_headers
+        ).json()
+        self.assertEqual(
+            {item["request_id"] for item in state["admin_requests"]},
+            {admission["request_id"], equipment["record_id"]},
+        )
+        self.assertEqual(
+            [item["request_id"] for item in state["request_history"]],
+            [equipment["record_id"]],
+        )
+        self.assertEqual(state["requests"], [])
+
+    def test_generic_decision_waits_for_lifecycle_and_rejects_stale_context(self):
+        admission = self.admission()
+        missing = self.admin.post(
+            f"/api/admin/requests/admission/{admission['request_id']}/decision",
+            headers=self.admin_headers,
+            json={"decision": "approve"},
+        )
+        self.assertEqual(missing.status_code, 422)
+        bob = self.runtime.service.add_contact("Bob", "bob@example.com")
+        other = self.runtime.service.create_session(
+            "Other Board",
+            (date.today() + timedelta(days=2)).isoformat(),
+            [bob["id"]],
+            campaign_id="campaign-1",
+        )
+        endpoint = next(
+            route.endpoint for route in self.admin_app.routes
+            if route.path == "/api/admin/requests/{source}/{request_id}/decision"
+        )
+
+        async def race():
+            lifecycle = self.runtime.session_lifecycle_locks[self.session_id]
+            await lifecycle.acquire()
+            task = asyncio.create_task(endpoint(
+                "admission",
+                admission["request_id"],
+                AdminRequestDecisionBody(
+                    decision="approve",
+                    expected_session_id=self.session_id,
+                ),
+            ))
+            await asyncio.sleep(0.02)
+            self.assertFalse(task.done())
+            self.runtime.service.select_board_session(other["id"])
+            lifecycle.release()
+            with self.assertRaises(HTTPException) as caught:
+                await task
+            self.assertEqual(caught.exception.status_code, 409)
+
+        asyncio.run(race())
+        request = self.runtime.service.session_view(self.session_id)["pending"][0]
+        self.assertEqual(request["status"], "pending")
+        wrong_owner = self.admin.post(
+            f"/api/admin/requests/admission/{admission['request_id']}/decision",
+            headers=self.admin_headers,
+            json={
+                "decision": "approve",
+                "expected_session_id": other["id"],
+            },
+        )
+        self.assertEqual(wrong_owner.status_code, 409)
+
+        self.runtime.service.select_board_session(self.session_id)
+        wrapper = self.repository.active()
+        target = next(
+            item for item in wrapper["sessions"] if item["id"] == self.session_id
+        )
+        target["expires_at"] = (
+            datetime.now(timezone.utc) - timedelta(seconds=1)
+        ).isoformat().replace("+00:00", "Z")
+        self.repository.save_active(wrapper)
+        expired = self.admin.post(
+            f"/api/admin/requests/admission/{admission['request_id']}/decision",
+            headers=self.admin_headers,
+            json={
+                "decision": "approve",
+                "expected_session_id": self.session_id,
+            },
+        )
+        self.assertEqual(expired.status_code, 409)
+        self.assertEqual(
+            self.runtime.service.session_view(self.session_id)["pending"][0]["status"],
+            "pending",
+        )
+
+    def test_restart_exposes_cancelled_admission_as_redacted_history_only(self):
+        admission = self.admission()
+        restarted = self.admin.post(
+            f"/api/admin/sessions/{self.session_id}/restart",
+            headers=self.admin_headers,
+        )
+        self.assertEqual(restarted.status_code, 200, restarted.text)
+
+        state = self.admin.get(
+            "/api/admin/state", headers=self.admin_headers
+        ).json()
+        admission_rows = [
+            item for item in state["admin_requests"]
+            if item["source"] == "admission"
+        ]
+        self.assertEqual(len(admission_rows), 1)
+        archived = admission_rows[0]
+        self.assertEqual(archived["status"], "cancelled")
+        self.assertEqual(archived["decision_status"], "rejected")
+        self.assertTrue(archived["archived"])
+        self.assertFalse(archived["can_approve"])
+        self.assertFalse(archived["can_reject"])
+        self.assertEqual(archived["decision_actions"], [])
+        serialized = json.dumps(archived)
+        for private_value in (
+            admission["poll_token"], "alice@example.com",
+            "poll_hash", "invite_hash", "user_agent", "client_ip",
+        ):
+            self.assertNotIn(private_value, serialized)
+        history = self.admin.get(
+            f"/api/admin/requests/admission/{admission['request_id']}/history",
+            headers=self.admin_headers,
+        )
+        self.assertEqual(history.status_code, 200, history.text)
+        self.assertEqual(history.json()["history"][-1]["status"], "cancelled")
+        repeated = self.admin.post(
+            f"/api/admin/requests/admission/{admission['request_id']}/decision",
+            headers=self.admin_headers,
+            json={
+                "decision": "reject",
+                "expected_session_id": self.session_id,
+            },
+        )
+        self.assertEqual(repeated.status_code, 400)
 
     def test_rate_limit_rejects_sixth_attempt(self):
         for _ in range(5):
@@ -1521,7 +1746,9 @@ class GameBoardAssetTests(unittest.TestCase):
         self.assertIn('"Remove checked players from this session"', desktop)
         self.assertIn('text="Admit All"', desktop)
         self.assertIn("def toggle_chat", desktop)
-        self.assertIn('(\"requests\", \"Requests\")', desktop)
+        self.assertNotIn('(\"requests\", \"Requests\")', desktop)
+        self.assertIn('(\"requests\", \"☷\", \"Requests\")', desktop)
+        self.assertIn("_create_board_request_controls", desktop)
         self.assertIn('(\"control-panel\", \"Control Room\")', desktop)
         self.assertIn('self.chat_shell.pack(side="right"', desktop)
         self.assertIn("Players & Characters", desktop)

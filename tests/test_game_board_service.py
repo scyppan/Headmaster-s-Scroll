@@ -274,6 +274,264 @@ class GameBoardServiceTests(unittest.TestCase):
         self.assertEqual(session["pending"][0]["name"], "Alice")
         self.assertEqual(session["chat"][0]["sender_name"], "Alice")
 
+    def test_admin_request_projection_unifies_redacted_requests_and_history(self):
+        session = self.create_session()
+        raw, _link = self.invite()
+        admission = self.service.request_admission(
+            raw, "203.0.113.77", "Private Browser Description"
+        )
+        teaching = self.service.campaign_repository.add_request(
+            self.campaign_id,
+            "teaching",
+            {
+                "session_id": session["id"],
+                "submitted_by_contact_id": self.alice["id"],
+                "teacher_person_id": "teacher-1",
+                "teacher_name": "Alice Character",
+                "pupil_person_id": "pupil-1",
+                "pupil_name": "Bob Character",
+                "knowledge_kind": "spell",
+                "knowledge_record_id": "spell-1",
+                "knowledge_name": "Lumos",
+                "request_summary": "Alice wants to teach Bob Lumos",
+                "private_future_field": "must not be projected",
+            },
+        )
+        creature = self.service.campaign_repository.add_request(
+            self.campaign_id,
+            "creature_interaction",
+            {
+                "session_id": session["id"],
+                "contact_id": self.alice["id"],
+                "actor_person_id": "teacher-1",
+                "actor_name": "Alice Character",
+                "creature_id": "creature-1",
+                "species_name": "Kneazle",
+                "interaction_action": "tame",
+                "request_summary": "Alice wants to tame a Kneazle",
+            },
+        )
+        equipment = self.service.campaign_repository.add_request(
+            self.campaign_id,
+            "equipment_change",
+            {
+                "session_id": session["id"],
+                "contact_id": self.alice["id"],
+                "person_id": "teacher-1",
+                "slot": "focus",
+                "item_id": "wand-1",
+                "item_name": "Oak wand",
+                "request_summary": "Alice wants to change focus",
+            },
+        )
+
+        requests = self.service.admin_requests(
+            sort_by="type", descending=False
+        )
+        self.assertEqual(
+            {item["request_type"] for item in requests},
+            {"admission", "teaching", "creature_interaction", "equipment_change"},
+        )
+        admission_item = next(
+            item for item in requests if item["source"] == "admission"
+        )
+        self.assertEqual(admission_item["asker_name"], "Alice")
+        self.assertEqual(admission_item["decision_actions"], ["approve", "reject"])
+        self.assertEqual(admission_item["history"][0]["status"], "pending")
+        teaching_item = next(
+            item for item in requests if item["request_id"] == teaching["record_id"]
+        )
+        self.assertEqual(teaching_item["details"]["knowledge_name"], "Lumos")
+        self.assertNotIn("private_future_field", teaching_item)
+        self.assertEqual(
+            self.service.admin_requests(
+                asker_id=self.alice["id"], request_type="equipment_change"
+            )[0]["request_id"],
+            equipment["record_id"],
+        )
+        serialized = json.dumps(requests)
+        for private_value in (
+            raw,
+            admission["poll_token"],
+            "alice@example.com",
+            "203.0.113.77",
+            "Private Browser Description",
+            "must not be projected",
+        ):
+            self.assertNotIn(private_value, serialized)
+
+        approved = self.service.decide_admin_request(
+            "admission", admission["request_id"], "approve",
+            expected_session_id=session["id"],
+        )
+        self.assertEqual(approved["request"]["decision_status"], "approved")
+        rejected = self.service.decide_admin_request(
+            "campaign", teaching["record_id"], "reject",
+            expected_session_id=session["id"],
+        )
+        self.assertEqual(rejected["request"]["status"], "rejected")
+        self.assertEqual(
+            rejected["request"]["history"][-1]["status"], "rejected"
+        )
+        history = self.service.admin_requests(
+            source="campaign", status="resolved"
+        )
+        self.assertEqual(
+            [item["request_id"] for item in history], [teaching["record_id"]]
+        )
+        pending_ids = {
+            item["request_id"]
+            for item in self.service.admin_requests(include_resolved=False)
+        }
+        self.assertEqual(
+            pending_ids, {creature["record_id"], equipment["record_id"]}
+        )
+
+    def test_admin_decisions_reject_stale_wrong_and_expired_board_context(self):
+        first = self.create_session()
+        raw, _link = self.invite()
+        admission = self.service.request_admission(
+            raw, "203.0.113.90", "Stale Browser"
+        )
+        campaign_request = self.service.campaign_repository.add_request(
+            self.campaign_id,
+            "equipment_change",
+            {
+                "session_id": first["id"],
+                "contact_id": self.alice["id"],
+                "person_id": "person-1",
+                "slot": "focus",
+                "item_id": "",
+            },
+        )
+        bob = self.service.add_contact("Bob", "bob@example.com")
+        second = self.service.create_session(
+            "Other Board",
+            (date.today() + timedelta(days=2)).isoformat(),
+            [bob["id"]],
+            campaign_id=self.campaign_id,
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "session changed"):
+            self.service.decide_admin_request(
+                "admission", admission["request_id"], "approve",
+                expected_session_id=first["id"],
+            )
+        with self.assertRaisesRegex(RuntimeError, "another session"):
+            self.service.decide_admin_request(
+                "admission", admission["request_id"], "approve",
+                expected_session_id=second["id"],
+            )
+        with self.assertRaisesRegex(RuntimeError, "another session"):
+            self.service.decide_admin_request(
+                "campaign", campaign_request["record_id"], "reject",
+                expected_session_id=second["id"],
+            )
+        self.assertEqual(
+            self.service.session_view(first["id"])["pending"][0]["status"],
+            "pending",
+        )
+        self.assertEqual(
+            self.service.campaign_repository.get(self.campaign_id)["requests"][0]["status"],
+            "pending",
+        )
+
+        self.service.select_board_session(first["id"])
+        wrapper = self.repository.active()
+        target = next(
+            item for item in wrapper["sessions"] if item["id"] == first["id"]
+        )
+        target["expires_at"] = iso_utc(utc_now() - timedelta(seconds=1))
+        self.repository.save_active(wrapper)
+        with self.assertRaisesRegex(RuntimeError, "expired"):
+            self.service.decide_admin_request(
+                "admission", admission["request_id"], "approve",
+                expected_session_id=first["id"],
+            )
+        self.assertEqual(
+            self.service.session_view(first["id"])["pending"][0]["status"],
+            "pending",
+        )
+
+    def test_restart_archives_redacted_non_actionable_admission_history(self):
+        bob = self.service.add_contact("Bob", "bob@example.com")
+        session = self.create_session([self.alice["id"], bob["id"]])
+        alice_invite, _link = self.invite(self.alice["id"])
+        bob_invite, _link = self.invite(bob["id"])
+        approved = self.service.request_admission(
+            alice_invite, "203.0.113.91", "Alice Private Browser"
+        )
+        waiting = self.service.request_admission(
+            bob_invite, "203.0.113.92", "Bob Private Browser"
+        )
+        self.service.decide_admin_request(
+            "admission", approved["request_id"], "approve",
+            expected_session_id=session["id"],
+        )
+
+        restarted = self.service.restart_session(session["id"])
+
+        self.assertEqual(restarted["pending"], [])
+        stored_history = self.repository.active()["sessions"][0][
+            "admission_history"
+        ]
+        self.assertEqual(
+            {item["status"] for item in stored_history},
+            {"approved", "cancelled"},
+        )
+        serialized = json.dumps(stored_history)
+        for private_value in (
+            alice_invite, bob_invite, approved["poll_token"],
+            waiting["poll_token"], "alice@example.com", "bob@example.com",
+            "203.0.113.91", "203.0.113.92", "Alice Private Browser",
+            "Bob Private Browser", "poll_hash", "invite_hash",
+        ):
+            self.assertNotIn(private_value, serialized)
+        projected = self.service.admin_requests(source="admission")
+        self.assertEqual(len(projected), 2)
+        self.assertTrue(all(item["archived"] for item in projected))
+        self.assertTrue(all(not item["can_approve"] for item in projected))
+        self.assertTrue(all(not item["can_reject"] for item in projected))
+        self.assertTrue(all(item["decision_actions"] == [] for item in projected))
+        self.assertEqual(
+            {item["decision_status"] for item in projected},
+            {"approved", "rejected"},
+        )
+        cancelled = next(
+            item for item in projected if item["status"] == "cancelled"
+        )
+        self.assertEqual(cancelled["history"][-1]["status"], "cancelled")
+        with self.assertRaisesRegex(ValueError, "history"):
+            self.service.decide_admin_request(
+                "admission", approved["request_id"], "reject",
+                expected_session_id=session["id"],
+            )
+
+    def test_end_then_restart_retains_cancelled_admission_history(self):
+        session = self.create_session()
+        raw, _link = self.invite()
+        waiting = self.service.request_admission(
+            raw, "203.0.113.93", "End Restart Browser"
+        )
+
+        self.service.end_session("ended", session["id"])
+        private_snapshot = self.repository.active()["restartable_sessions"][0][
+            "session"
+        ]
+        self.assertEqual(private_snapshot["pending"], [])
+        self.assertEqual(
+            private_snapshot["admission_history"][0]["status"], "cancelled"
+        )
+        self.assertNotIn(
+            waiting["poll_token"], json.dumps(private_snapshot["admission_history"])
+        )
+
+        self.service.restart_session(session["id"])
+        projected = self.service.admin_requests(source="admission")
+        self.assertEqual([item["request_id"] for item in projected], [waiting["request_id"]])
+        self.assertEqual(projected[0]["status"], "cancelled")
+        self.assertFalse(projected[0]["can_approve"])
+
     def test_settings_derive_origins_from_normal_page_urls(self):
         updated = self.service.update_settings({
             "wordpress_player_url": "https://charmscheck.com/game-board/",

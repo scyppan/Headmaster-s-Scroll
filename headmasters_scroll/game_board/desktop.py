@@ -3,7 +3,9 @@ from __future__ import annotations
 import calendar
 import math
 import json
+import os
 import re
+import signal
 import subprocess
 import sys
 import threading
@@ -30,6 +32,7 @@ from ..campaigns import format_game_world_date
 from ..paths import PROJECT_ROOT, RUNTIME_DIRECTORY
 from ..preferences import Preferences
 from ..windowing import GAME_BOARD_ICON, apply_window_icon, configure_windows_app_id, maximize_window
+from . import ADMIN_API_REVISION
 from .storage import GameBoardRepository
 
 
@@ -289,6 +292,183 @@ def board_character_sections(
     return sections
 
 
+def board_request_rows(
+    state: dict[str, Any],
+    *,
+    session_id: str = "",
+    campaign_id: str = "",
+    resolved: bool = False,
+) -> list[dict[str, Any]]:
+    """Project request state for the designated Game Board session only.
+
+    New servers provide the unified ``admin_requests`` projection.  The
+    legacy campaign-only keys remain supported so the desktop stays usable
+    while a local service is being upgraded.
+    """
+
+    unified = state.get("admin_requests")
+    if isinstance(unified, list):
+        source_rows = unified
+    else:
+        source_rows = state.get("request_history" if resolved else "requests") or []
+    contacts = {
+        str(item.get("id") or item.get("contact_id") or ""): item
+        for item in state.get("contacts", []) or []
+    }
+    rows: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    wanted_statuses = {"approved", "rejected"} if resolved else {"pending"}
+    for raw in source_rows:
+        if not isinstance(raw, dict):
+            continue
+        status = str(
+            raw.get("decision_status") or raw.get("status") or "pending"
+        ).strip().casefold()
+        if status not in wanted_statuses:
+            continue
+        row_session_id = str(raw.get("session_id") or "")
+        row_campaign_id = str(raw.get("campaign_id") or "")
+        if session_id:
+            if row_session_id and row_session_id != session_id:
+                continue
+            if not row_session_id and campaign_id and row_campaign_id != campaign_id:
+                continue
+        else:
+            continue
+        source = str(raw.get("source") or "campaign").strip().casefold()
+        raw_id = str(
+            raw.get("id") or raw.get("request_id") or raw.get("record_id") or ""
+        )
+        if not raw_id:
+            continue
+        request_key = str(raw.get("request_key") or f"{source}:{raw_id}")
+        if request_key in seen:
+            continue
+        seen.add(request_key)
+        item = deepcopy(raw)
+        if isinstance(raw.get("details"), dict):
+            for key, value in raw["details"].items():
+                item.setdefault(str(key), deepcopy(value))
+        item.update({
+            "id": raw_id,
+            "request_key": request_key,
+            "source": source,
+            "decision_status": status,
+            "summary": str(
+                raw.get("summary")
+                or raw.get("request_summary")
+                or raw.get("request_type")
+                or "Request"
+            ),
+            "type_label": str(
+                raw.get("type_label")
+                or str(raw.get("request_type") or "Request").replace("_", " ").title()
+            ),
+        })
+        asker = raw.get("asker") if isinstance(raw.get("asker"), dict) else {}
+        contact_id = str(
+            raw.get("contact_id")
+            or raw.get("submitted_by_contact_id")
+            or asker.get("contact_id")
+            or ""
+        )
+        contact = contacts.get(contact_id, {})
+        item["contact_id"] = contact_id
+        item["character_id"] = str(
+            raw.get("character_id") or asker.get("character_id") or ""
+        )
+        item["asker_id"] = str(
+            raw.get("asker_id")
+            or asker.get("id")
+            or contact_id
+            or item["character_id"]
+            or ""
+        )
+        item["asker_name"] = str(
+            raw.get("asker_name")
+            or asker.get("name")
+            or raw.get("player_name")
+            or raw.get("actor_name")
+            or raw.get("teacher_name")
+            or raw.get("character_name")
+            or contact.get("character_name")
+            or contact.get("name")
+            or raw.get("name")
+            or "Player"
+        )
+        rows.append(item)
+    return rows
+
+
+def board_request_sections(
+    requests: list[dict[str, Any]], sort_mode: str = "Newest"
+) -> list[tuple[str, list[dict[str, Any]]]]:
+    """Group requests by asker while honoring the visible sort control."""
+
+    grouped: dict[str, tuple[str, list[dict[str, Any]]]] = {}
+    for request in requests:
+        asker = str(request.get("asker_name") or "Player")
+        identity = str(
+            request.get("asker_id")
+            or request.get("contact_id")
+            or request.get("character_id")
+            or f"name:{asker.casefold()}"
+        )
+        grouped.setdefault(identity, (asker, []))[1].append(request)
+
+    mode = str(sort_mode or "Newest")
+
+    def timestamp(item: dict[str, Any]) -> str:
+        return str(item.get("resolved_at") or item.get("submitted_at") or "")
+
+    def item_key(item: dict[str, Any]) -> tuple[str, str, str]:
+        return (
+            str(item.get("type_label") or item.get("request_type") or "").casefold(),
+            timestamp(item),
+            str(item.get("request_key") or ""),
+        )
+
+    sections: list[tuple[str, list[dict[str, Any]]]] = []
+    for asker, items in grouped.values():
+        if mode == "Type":
+            ordered = sorted(items, key=item_key)
+        else:
+            ordered = sorted(
+                items,
+                key=lambda item: (timestamp(item), str(item.get("request_key") or "")),
+                reverse=mode != "Oldest",
+            )
+        sections.append((asker, ordered))
+
+    if mode == "Type":
+        sections.sort(key=lambda section: (item_key(section[1][0]), section[0].casefold()))
+    elif mode == "Oldest":
+        sections.sort(key=lambda section: (timestamp(section[1][0]), section[0].casefold()))
+    else:
+        sections.sort(
+            key=lambda section: (timestamp(section[1][0]), section[0].casefold()),
+            reverse=True,
+        )
+    return sections
+
+
+def campaign_request_notification_ids(
+    requests: list[dict[str, Any]],
+) -> set[str]:
+    """Return campaign request IDs owned by the drawer's notification bell.
+
+    Admission requests have their own persistent alert and notification path;
+    including them here would ring twice for one player action.
+    """
+
+    return {
+        str(item.get("request_key") or item.get("record_id") or item.get("id") or "")
+        for item in requests
+        if str(item.get("source") or "campaign") == "campaign"
+        and (item.get("request_key") or item.get("record_id") or item.get("id"))
+    }
+
+
 def _display_historical_year(year: int) -> str:
     return f"{abs(year)} BCE" if year < 0 else str(year)
 
@@ -456,6 +636,8 @@ class AdminClient:
     """Small localhost-only client used by the native Headmaster window."""
 
     def __init__(self, settings: dict[str, Any]):
+        self.admin_port = int(settings["admin_port"])
+        self.player_port = int(settings["player_port"])
         self.base_url = f"http://{settings['admin_host']}:{settings['admin_port']}"
         self.player_health_url = (
             f"http://{settings['player_host']}:{settings['player_port']}/health"
@@ -494,20 +676,55 @@ class AdminClient:
     def pending_admissions(self) -> dict[str, Any]:
         return self.request("GET", "/api/admin/admissions/pending", timeout=1.0)
 
-    def health(self) -> dict[str, Any]:
-        # The player health route has existed since the first server release,
-        # is localhost-bound, and performs no heavy state assembly.  Checking
-        # it first also lets a newly opened desktop adopt an already-running
-        # service from an earlier release.
+    def player_health(self) -> dict[str, Any]:
         request = urllib.request.Request(self.player_health_url, method="GET")
-        try:
-            with urllib.request.urlopen(request, timeout=1.0) as response:
-                result = json.loads(response.read().decode("utf-8"))
-            if result.get("service") == "game-board":
-                return result
-        except (urllib.error.URLError, ValueError, json.JSONDecodeError):
-            pass
+        with urllib.request.urlopen(request, timeout=1.0) as response:
+            return json.loads(response.read().decode("utf-8"))
+
+    def admin_health(self) -> dict[str, Any]:
         return self.request("GET", "/api/admin/health", timeout=1.0)
+
+    def health(self) -> dict[str, Any]:
+        """Require the local server revision understood by this desktop."""
+
+        player = self.player_health()
+        result = self.admin_health()
+        if (
+            player.get("service") != "game-board"
+            or result.get("service") != "game-board"
+            or result.get("api_revision") != ADMIN_API_REVISION
+            or result.get("build") != ADMIN_API_REVISION
+            or "session-restart" not in (result.get("capabilities") or [])
+        ):
+            raise RuntimeError(
+                "An older Game Board communication service is still running"
+            )
+        return result
+
+    def identifies_game_board_service(self) -> bool:
+        """Authenticate a legacy listener before recovery may stop its process."""
+
+        try:
+            player = self.player_health()
+            if player.get("service") != "game-board":
+                return False
+        except Exception:
+            return False
+        try:
+            admin = self.admin_health()
+            if admin.get("service") == "game-board":
+                return True
+        except Exception:
+            pass
+        # The lightweight admin health route did not exist in the earliest
+        # server.  Its authenticated state route is a safe identity fallback.
+        try:
+            state = self.request("GET", "/api/admin/state", timeout=2.0)
+            return isinstance(state, dict) and "settings" in state and (
+                "sessions" in state or "session" in state
+            )
+        except Exception:
+            return False
 
 
 class LocalServer:
@@ -526,9 +743,155 @@ class LocalServer:
         except Exception:
             return False
 
+    def _listener_pids_by_port(self) -> dict[int, set[int]]:
+        """Return Windows TCP listener owners for only the configured ports."""
+
+        ports = {self.client.admin_port, self.client.player_port}
+        result = {port: set() for port in ports}
+        if sys.platform != "win32":
+            return result
+        creation_flags = subprocess.CREATE_NO_WINDOW
+        try:
+            completed = subprocess.run(
+                ["netstat", "-ano", "-p", "tcp"],
+                capture_output=True,
+                text=True,
+                timeout=3,
+                check=False,
+                creationflags=creation_flags,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return result
+        for line in completed.stdout.splitlines():
+            fields = line.split()
+            if (
+                len(fields) < 5
+                or fields[0].upper() != "TCP"
+                or not fields[-2].upper().startswith("LISTEN")
+            ):
+                continue
+            try:
+                port = int(fields[1].rsplit(":", 1)[1])
+                pid = int(fields[-1])
+            except (IndexError, ValueError):
+                continue
+            if port in result and pid > 0:
+                result[port].add(pid)
+        return result
+
+    @staticmethod
+    def _process_executable(pid: int) -> str | None:
+        """Read a Windows process image without invoking a shell."""
+
+        if sys.platform != "win32":
+            return None
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            kernel32.OpenProcess.argtypes = [
+                wintypes.DWORD, wintypes.BOOL, wintypes.DWORD,
+            ]
+            kernel32.OpenProcess.restype = wintypes.HANDLE
+            kernel32.QueryFullProcessImageNameW.argtypes = [
+                wintypes.HANDLE,
+                wintypes.DWORD,
+                wintypes.LPWSTR,
+                ctypes.POINTER(wintypes.DWORD),
+            ]
+            kernel32.QueryFullProcessImageNameW.restype = wintypes.BOOL
+            kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+            kernel32.CloseHandle.restype = wintypes.BOOL
+            handle = kernel32.OpenProcess(0x1000, False, int(pid))
+            if not handle:
+                return None
+            try:
+                buffer = ctypes.create_unicode_buffer(32768)
+                length = wintypes.DWORD(len(buffer))
+                if not kernel32.QueryFullProcessImageNameW(
+                    handle, 0, buffer, ctypes.byref(length)
+                ):
+                    return None
+                return buffer.value
+            finally:
+                kernel32.CloseHandle(handle)
+        except (AttributeError, OSError, TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _same_executable(left: str | os.PathLike[str], right: str | os.PathLike[str]) -> bool:
+        return os.path.normcase(os.path.abspath(left)) == os.path.normcase(
+            os.path.abspath(right)
+        )
+
+    def _recover_stale_server(self, timeout: float = 5.0) -> bool:
+        """Stop only a verified older gbfhm server owning both local ports."""
+
+        owners = self._listener_pids_by_port()
+        occupied = set().union(*owners.values()) if owners else set()
+        if not occupied:
+            return False
+        shared = (
+            owners.get(self.client.admin_port, set())
+            & owners.get(self.client.player_port, set())
+        )
+        stale_pid = next(iter(shared)) if len(shared) == 1 else None
+        if (
+            stale_pid is None
+            or stale_pid == os.getpid()
+            or not self._same_executable(
+                self._process_executable(stale_pid) or "", sys.executable
+            )
+            or not self.client.identifies_game_board_service()
+        ):
+            raise RuntimeError(
+                "The local Game Board ports are in use by another process. "
+                "For safety it was not stopped. Close any other gbfhm window "
+                "and try again."
+            )
+        # Recheck both ownership and authenticated service identity immediately
+        # before terminating, avoiding action on a PID that was recycled.
+        confirmed = self._listener_pids_by_port()
+        if not (
+            stale_pid in confirmed.get(self.client.admin_port, set())
+            and stale_pid in confirmed.get(self.client.player_port, set())
+            and self._same_executable(
+                self._process_executable(stale_pid) or "", sys.executable
+            )
+            and self.client.identifies_game_board_service()
+        ):
+            raise RuntimeError(
+                "The older Game Board service changed while recovery was "
+                "starting. Try Restart Session again."
+            )
+        try:
+            os.kill(stale_pid, signal.SIGTERM)
+        except OSError as error:
+            raise RuntimeError(
+                "The older Game Board service could not be closed. Close any "
+                "other gbfhm window and try again."
+            ) from error
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            remaining = self._listener_pids_by_port()
+            if all(stale_pid not in values for values in remaining.values()):
+                return True
+            time.sleep(0.1)
+        raise RuntimeError(
+            "The older Game Board service did not close. Close any other "
+            "gbfhm window and try again."
+        )
+
     def start(self, timeout: float = 12.0) -> None:
         if self.ready():
             return
+        # A child from this desktop is always safe to replace.  Otherwise only
+        # recover a listener that authenticates as this Game Board and owns both
+        # configured ports in one process.
+        if self.process is not None:
+            self.stop()
+        self._recover_stale_server()
         creation_flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
         self._log_stream = self.log_path.open("a", encoding="utf-8")
@@ -579,6 +942,7 @@ class LocalServer:
             if self._log_stream is not None:
                 self._log_stream.close()
                 self._log_stream = None
+            self.process = None
 
 
 class CalendarDateField(ttk.Frame):
@@ -1065,6 +1429,7 @@ class GameBoardWindow(tk.Tk):
         self.board_creatures_dock: ttk.Frame | None = None
         self.board_secrets_dock: ttk.Frame | None = None
         self.board_battles_dock: ttk.Frame | None = None
+        self.board_requests_dock: ttk.Frame | None = None
         self.board_secret_region_ids: list[str] = []
         self.creature_placement: dict[str, Any] | None = None
         self.pending_creature_battle_id = ""
@@ -1090,6 +1455,7 @@ class GameBoardWindow(tk.Tk):
             "obfuscation-tools": 310,
             "token-tools": 340,
             "secrets": 330,
+            "requests": 430,
         }
         self.board_reveal_value = tk.BooleanVar(value=False)
         self.board_zoom_status_value = tk.StringVar(value="Zoom 100% · 0 clicks")
@@ -1162,7 +1528,6 @@ class GameBoardWindow(tk.Tk):
         self.sidebar_buttons: dict[str, tk.Button] = {}
         for key, label in (
             ("game-board", "Game Board"),
-            ("requests", "Requests"),
             ("control-panel", "Control Room"),
         ):
             button = tk.Button(
@@ -1183,7 +1548,6 @@ class GameBoardWindow(tk.Tk):
             button.pack(side="left", padx=(0, 1))
             self.sidebar_buttons[key] = button
         self.control_panel_button = self.sidebar_buttons["control-panel"]
-        self.requests_button = self.sidebar_buttons["requests"]
         self.server_status = tk.Label(
             header, text="STARTING LOCAL SERVER", background=self.PAPER,
             foreground=self.ACCENT, font=("Segoe UI", 9, "bold"),
@@ -1262,14 +1626,10 @@ class GameBoardWindow(tk.Tk):
 
         control_panel = ttk.Frame(self.app_host)
         control_panel.grid(row=0, column=0, sticky="nsew")
-        requests_page = ttk.Frame(self.app_host)
-        requests_page.grid(row=0, column=0, sticky="nsew")
         self.app_pages = {
             "game-board": game_board_page,
-            "requests": requests_page,
             "control-panel": control_panel,
         }
-        self._build_requests_page(requests_page)
         control_header = ttk.Frame(control_panel)
         control_header.pack(fill="x", pady=(0, 8))
         ttk.Label(control_header, text="Control Room", style="Title.TLabel").pack(side="left")
@@ -2440,6 +2800,375 @@ class GameBoardWindow(tk.Tk):
         widget.bind("<Enter>", schedule, add="+")
         widget.bind("<Leave>", hide, add="+")
         widget.bind("<ButtonPress>", hide, add="+")
+
+    def _create_board_request_controls(self, parent: tk.Misc) -> None:
+        """Build the compact request triage drawer over the map."""
+
+        shell = ttk.Frame(parent, style="Card.TFrame", padding=6)
+        self.board_requests_dock = shell
+        self.board_tools_panels["requests"] = shell
+
+        header = ttk.Frame(shell, style="Card.TFrame")
+        header.pack(fill="x", pady=(0, 5))
+        self.board_request_pending_value = tk.StringVar(value="No requests waiting")
+        ttk.Label(
+            header,
+            textvariable=self.board_request_pending_value,
+            style="Card.TLabel",
+            font=("Segoe UI", 8, "bold"),
+        ).pack(side="left", fill="x", expand=True)
+        ttk.Label(header, text="Sort", style="Card.TLabel").pack(side="left", padx=(4, 3))
+        self.board_request_sort_value = tk.StringVar(value="Newest")
+        sort = ttk.Combobox(
+            header,
+            textvariable=self.board_request_sort_value,
+            values=("Newest", "Oldest", "Type"),
+            state="readonly",
+            width=8,
+        )
+        sort.pack(side="right")
+        sort.bind("<<ComboboxSelected>>", lambda _event: self._render_board_requests())
+
+        actions = ttk.Frame(shell, style="Card.TFrame")
+        actions.pack(fill="x", pady=(0, 5))
+        self.board_request_reject_button = ttk.Button(
+            actions,
+            text="Reject",
+            style="Danger.TButton",
+            command=lambda: self.resolve_selected_board_request("rejected"),
+        )
+        self.board_request_reject_button.pack(side="left")
+        self.board_request_edit_button = ttk.Button(
+            actions,
+            text="Edit…",
+            style="Quiet.TButton",
+            command=self.edit_selected_board_request,
+        )
+        self.board_request_edit_button.pack(side="left", padx=5)
+        self.board_request_accept_button = ttk.Button(
+            actions,
+            text="Accept",
+            style="Good.TButton",
+            command=lambda: self.resolve_selected_board_request("approved"),
+        )
+        self.board_request_accept_button.pack(side="right")
+
+        self.board_request_notebook = ttk.Notebook(shell, style="Board.TNotebook")
+        self.board_request_notebook.pack(fill="both", expand=True)
+        pending_page = ttk.Frame(self.board_request_notebook, style="Card.TFrame")
+        history_page = ttk.Frame(self.board_request_notebook, style="Card.TFrame")
+        self.board_request_notebook.add(pending_page, text="Waiting")
+        self.board_request_notebook.add(history_page, text="History")
+
+        def request_tree(page: ttk.Frame) -> ttk.Treeview:
+            host = ttk.Frame(page, style="Card.TFrame")
+            host.pack(fill="both", expand=True)
+            tree = ttk.Treeview(
+                host,
+                columns=("type", "when"),
+                show="tree headings",
+                selectmode="browse",
+                height=6,
+            )
+            tree.heading("#0", text="Request")
+            tree.heading("type", text="Type")
+            tree.heading("when", text="Time")
+            tree.column("#0", width=150, minwidth=110, stretch=True)
+            tree.column("type", width=80, minwidth=60, stretch=False)
+            tree.column("when", width=78, minwidth=72, stretch=False)
+            scrollbar = ttk.Scrollbar(host, orient="vertical", command=tree.yview)
+            tree.configure(yscrollcommand=scrollbar.set)
+            tree.pack(side="left", fill="both", expand=True)
+            scrollbar.pack(side="right", fill="y")
+            return tree
+
+        self.board_pending_requests_tree = request_tree(pending_page)
+        self.board_request_history_tree = request_tree(history_page)
+        self.board_pending_requests_tree.bind(
+            "<<TreeviewSelect>>",
+            lambda _event: self._board_request_selection_changed(False),
+        )
+        self.board_request_history_tree.bind(
+            "<<TreeviewSelect>>",
+            lambda _event: self._board_request_selection_changed(True),
+        )
+        self.board_request_notebook.bind(
+            "<<NotebookTabChanged>>", lambda _event: self._board_request_tab_changed()
+        )
+
+        self.board_request_detail_value = tk.StringVar(
+            value="Select a request to see its full details."
+        )
+        ttk.Label(
+            shell,
+            textvariable=self.board_request_detail_value,
+            style="Card.TLabel",
+            wraplength=300,
+            justify="left",
+            font=("Segoe UI", 8),
+        ).pack(fill="x", pady=(5, 3))
+
+        self.board_pending_request_rows: dict[str, dict[str, Any]] = {}
+        self.board_history_request_rows: dict[str, dict[str, Any]] = {}
+        self._sync_board_request_actions()
+
+    @staticmethod
+    def _compact_request_time(value: Any) -> str:
+        raw = str(value or "").replace("T", " ")
+        return raw[5:16] if len(raw) >= 16 else (raw or "—")
+
+    def _populate_board_request_tree(
+        self,
+        tree: ttk.Treeview,
+        rows: list[dict[str, Any]],
+        *,
+        history: bool,
+    ) -> dict[str, dict[str, Any]]:
+        previous_key = ""
+        current_rows = (
+            self.board_history_request_rows if history else self.board_pending_request_rows
+        )
+        selection = tree.selection()
+        if selection and selection[0] in current_rows:
+            previous_key = str(current_rows[selection[0]].get("request_key") or "")
+        for item_id in tree.get_children():
+            tree.delete(item_id)
+        rendered: dict[str, dict[str, Any]] = {}
+        prefix = "history" if history else "waiting"
+        sections = board_request_sections(rows, self.board_request_sort_value.get())
+        if not sections:
+            tree.insert(
+                "",
+                "end",
+                iid=f"{prefix}-empty",
+                text="No decisions yet" if history else "No requests waiting",
+                values=("", ""),
+            )
+            return rendered
+        for group_index, (asker, requests) in enumerate(sections):
+            group_id = f"{prefix}-asker-{group_index}"
+            tree.insert(
+                "",
+                "end",
+                iid=group_id,
+                text=f"{asker} ({len(requests)})",
+                values=("", ""),
+                open=True,
+            )
+            for request_index, request in enumerate(requests):
+                item_id = f"{prefix}-request-{group_index}-{request_index}"
+                decision_time = (
+                    request.get("resolved_at") if history else request.get("submitted_at")
+                )
+                tree.insert(
+                    group_id,
+                    "end",
+                    iid=item_id,
+                    text=str(request.get("summary") or "Request"),
+                    values=(
+                        str(request.get("type_label") or "Request"),
+                        self._compact_request_time(decision_time),
+                    ),
+                    tags=(str(request.get("decision_status") or "pending"),),
+                )
+                rendered[item_id] = request
+                if previous_key and request.get("request_key") == previous_key:
+                    tree.selection_set(item_id)
+                    tree.see(item_id)
+        tree.tag_configure("approved", foreground=self.GREEN)
+        tree.tag_configure("rejected", foreground=self.RED)
+        return rendered
+
+    def _render_board_requests(self) -> None:
+        if not hasattr(self, "board_pending_requests_tree"):
+            return
+        session_id = str(self.state_data.get("board_session_id") or "")
+        board = (self.state_data.get("boards") or {}).get(session_id, {})
+        session = next(
+            (
+                item for item in self.state_data.get("sessions", []) or []
+                if str(item.get("id") or "") == session_id
+            ),
+            {},
+        )
+        campaign_id = str(
+            (board if isinstance(board, dict) else {}).get("campaign_id")
+            or session.get("campaign_id")
+            or ""
+        )
+        pending = board_request_rows(
+            self.state_data,
+            session_id=session_id,
+            campaign_id=campaign_id,
+            resolved=False,
+        )
+        history = board_request_rows(
+            self.state_data,
+            session_id=session_id,
+            campaign_id=campaign_id,
+            resolved=True,
+        )
+        self.board_pending_request_rows = self._populate_board_request_tree(
+            self.board_pending_requests_tree, pending, history=False
+        )
+        self.board_history_request_rows = self._populate_board_request_tree(
+            self.board_request_history_tree, history, history=True
+        )
+        count = len(pending)
+        self.board_request_pending_value.set(
+            f"{count} request{'s' if count != 1 else ''} waiting"
+            if count
+            else "No requests waiting"
+        )
+        self.board_request_notebook.tab(0, text=f"Waiting ({count})" if count else "Waiting")
+        self.board_request_notebook.tab(
+            1, text=f"History ({len(history)})" if history else "History"
+        )
+        button = getattr(self, "headmaster_tool_buttons", {}).get("requests")
+        if button is not None:
+            button.configure(text=f"☷  Requests ({count})" if count else "☷  Requests")
+        self._board_request_tab_changed()
+
+    def _selected_board_request(self) -> dict[str, Any] | None:
+        if not hasattr(self, "board_pending_requests_tree"):
+            return None
+        selection = self.board_pending_requests_tree.selection()
+        if not selection:
+            return None
+        return self.board_pending_request_rows.get(selection[0])
+
+    def _board_request_tab_changed(self) -> None:
+        if not hasattr(self, "board_request_notebook"):
+            return
+        try:
+            history = self.board_request_notebook.index("current") == 1
+        except tk.TclError:
+            history = False
+        self._board_request_selection_changed(history)
+
+    def _board_request_selection_changed(self, history: bool) -> None:
+        tree = (
+            self.board_request_history_tree if history else self.board_pending_requests_tree
+        )
+        rows = self.board_history_request_rows if history else self.board_pending_request_rows
+        selection = tree.selection()
+        request = rows.get(selection[0]) if selection else None
+        if request is None:
+            self.board_request_detail_value.set(
+                "Select a past decision to review it."
+                if history
+                else "Select a request to see its full details."
+            )
+        else:
+            status = str(request.get("decision_status") or "pending").title()
+            occurred = request.get("resolved_at") if history else request.get("submitted_at")
+            self.board_request_detail_value.set(
+                f"{request.get('asker_name', 'Player')} · "
+                f"{request.get('type_label', 'Request')} · {status}\n"
+                f"{request.get('summary', 'Request')}"
+                + (f"\n{str(occurred).replace('T', ' ')}" if occurred else "")
+            )
+        self._sync_board_request_actions()
+
+    def _sync_board_request_actions(self) -> None:
+        if not hasattr(self, "board_request_accept_button"):
+            return
+        try:
+            waiting_tab = self.board_request_notebook.index("current") == 0
+        except tk.TclError:
+            waiting_tab = True
+        request = self._selected_board_request() if waiting_tab else None
+        pending_key = str(getattr(self, "_board_request_decision_pending_key", "") or "")
+        busy = bool(request and request.get("request_key") == pending_key)
+        can_approve = bool(request) and bool(request.get("can_approve", True)) and not busy
+        can_reject = bool(request) and bool(request.get("can_reject", True)) and not busy
+        request_type = str((request or {}).get("request_type") or "")
+        can_edit = (
+            can_approve
+            and str((request or {}).get("source") or "campaign") == "campaign"
+            and request_type in {"teaching", "creature_interaction"}
+        )
+        self.board_request_accept_button.configure(
+            state="normal" if can_approve else "disabled"
+        )
+        self.board_request_reject_button.configure(
+            state="normal" if can_reject else "disabled"
+        )
+        self.board_request_edit_button.configure(
+            state="normal" if can_edit else "disabled"
+        )
+
+    def resolve_selected_board_request(
+        self, decision: str, overrides: dict[str, str] | None = None
+    ) -> None:
+        request = self._selected_board_request()
+        if request is None:
+            messagebox.showinfo("Requests", "Select a request first.", parent=self)
+            return
+        request_id = str(request.get("id") or "")
+        source = str(request.get("source") or "campaign")
+        if not request_id:
+            return
+        expected_session_id = str(request.get("session_id") or "")
+        board_session_id = str(self.state_data.get("board_session_id") or "")
+        if not expected_session_id:
+            self.set_notice(
+                "This request is missing its session context. Refresh before deciding it.",
+                error=True,
+            )
+            return
+        if not board_session_id or expected_session_id != board_session_id:
+            self.set_notice(
+                "The active session changed. Reopen Requests before deciding this item.",
+                error=True,
+            )
+            return
+        self._board_request_decision_pending_key = str(request.get("request_key") or "")
+        self._sync_board_request_actions()
+
+        def work() -> Any:
+            if isinstance(self.state_data.get("admin_requests"), list):
+                payload: dict[str, Any] = dict(overrides or {})
+                payload.update({
+                    "decision": decision,
+                    "expected_session_id": expected_session_id,
+                })
+                return self.client.request(
+                    "POST",
+                    f"/api/admin/requests/{urllib.parse.quote(source, safe='')}/"
+                    f"{urllib.parse.quote(request_id, safe='')}/decision",
+                    payload,
+                )
+            if source == "admission":
+                action = "approve" if decision == "approved" else "deny"
+                return self.client.request(
+                    "POST", f"/api/admin/admissions/{urllib.parse.quote(request_id, safe='')}/{action}"
+                )
+            payload = {"campaign_id": request["campaign_id"], "decision": decision}
+            payload.update(overrides or {})
+            return self.client.request(
+                "POST",
+                f"/api/admin/requests/{urllib.parse.quote(request_id, safe='')}/resolve",
+                payload,
+            )
+
+        def done(_result: Any) -> None:
+            self._board_request_decision_pending_key = ""
+            verb = "accepted" if decision == "approved" else "rejected"
+            self.set_notice(f"Request {verb}")
+            self.refresh(silent=True)
+
+        def failed(error: Exception) -> None:
+            self._board_request_decision_pending_key = ""
+            self._sync_board_request_actions()
+            self._failed(error, False)
+
+        self._background(work, done, failure=failed)
+
+    def edit_selected_board_request(self) -> None:
+        self._edit_campaign_request(
+            self._selected_board_request(), self.resolve_selected_board_request
+        )
 
     def _create_board_groups_controls(self, parent: tk.Misc) -> None:
         shell = ttk.Frame(parent, style="Card.TFrame", padding=6)
@@ -4707,6 +5436,7 @@ class GameBoardWindow(tk.Tk):
             "obfuscation-tools": "Obfuscation",
             "token-tools": "Tokens & Zoom",
             "secrets": "Secrets",
+            "requests": "Requests",
         }
         if hasattr(self, "headmaster_tool_title"):
             self.headmaster_tool_title.set(labels.get(key, "Headmaster Tools"))
@@ -4720,7 +5450,7 @@ class GameBoardWindow(tk.Tk):
         for panel_key, panel in self.board_tools_panels.items():
             if panel_key == key:
                 if not panel.winfo_manager():
-                    large = key in {"groups", "creatures", "battles", "secrets"}
+                    large = key in {"groups", "creatures", "battles", "secrets", "requests"}
                     panel.pack(
                         fill="both" if large else "x",
                         expand=large,
@@ -8822,6 +9552,7 @@ class GameBoardWindow(tk.Tk):
         self.headmaster_tool_buttons: dict[str, tk.Button] = {}
         tools = (
             ("groups", "●", "Characters"),
+            ("requests", "☷", "Requests"),
             ("creatures", "◆", "Creatures"),
             ("battles", "⚔", "Battles"),
             ("obfuscation-tools", "▧", "Obfuscation"),
@@ -8922,6 +9653,7 @@ class GameBoardWindow(tk.Tk):
         self._create_board_creature_controls(self.board_tools_content)
         self._create_board_battle_controls(self.board_tools_content)
         self._create_board_secret_controls(self.board_tools_content)
+        self._create_board_request_controls(self.board_tools_content)
 
     def collapse_headmaster_tools(self) -> None:
         self.headmaster_tools_collapsed = True
@@ -8970,6 +9702,12 @@ class GameBoardWindow(tk.Tk):
             self.open_board_groups()
             if hasattr(self, "notice"):
                 self.set_notice("Group controls opened")
+            return
+        if key == "requests":
+            self.show_board_tools_panel("requests")
+            self._render_board_requests()
+            if hasattr(self, "notice"):
+                self.set_notice("Player requests opened")
             return
         if key == "creatures":
             self.show_board_tools_panel("creatures")
@@ -9290,9 +10028,17 @@ class GameBoardWindow(tk.Tk):
         self._background(lambda: self.client.request("POST", f"/api/admin/requests/{request['record_id']}/resolve", payload), lambda _result: self.refresh(silent=True))
 
     def edit_selected_request(self) -> None:
-        request = self._selected_campaign_request()
+        self._edit_campaign_request(
+            self._selected_campaign_request(), self.resolve_selected_request
+        )
+
+    def _edit_campaign_request(
+        self,
+        request: dict[str, Any] | None,
+        resolver: Callable[[str, dict[str, str] | None], None],
+    ) -> None:
         if request is not None and request.get("request_type") == "creature_interaction":
-            self._edit_creature_interaction_request(request)
+            self._edit_creature_interaction_request(request, resolver)
             return
         if request is None or request.get("request_type") != "teaching":
             messagebox.showinfo("Requests", "Select a teaching or creature request to edit.", parent=self)
@@ -9335,11 +10081,16 @@ class GameBoardWindow(tk.Tk):
             if not pupil.get() or record is None:
                 messagebox.showinfo("Requests", "Choose both a pupil and a subject.", parent=dialog)
                 return
-            self.resolve_selected_request("approved", {"pupil_person_id": pupil.get(), "knowledge_kind": kind.get(), "knowledge_record_id": subject.get(), "knowledge_collection": record.get("collection", "")})
+            resolver("approved", {"pupil_person_id": pupil.get(), "knowledge_kind": kind.get(), "knowledge_record_id": subject.get(), "knowledge_collection": record.get("collection", "")})
             dialog.destroy()
         ttk.Button(actions, text="Approve changes", command=approve).pack(side="right", padx=(0, 6))
 
-    def _edit_creature_interaction_request(self, request: dict[str, Any]) -> None:
+    def _edit_creature_interaction_request(
+        self,
+        request: dict[str, Any],
+        resolver: Callable[[str, dict[str, str] | None], None] | None = None,
+    ) -> None:
+        resolver = resolver or self.resolve_selected_request
         creature_id = str(request.get("creature_id") or "")
         creature = next(
             (item for item in self.board_snapshot.get("actors", []) or [] if str(item.get("actor_id")) == creature_id),
@@ -9382,7 +10133,7 @@ class GameBoardWindow(tk.Tk):
             if not actor_id.get():
                 messagebox.showinfo("Requests", "Choose an acting character.", parent=dialog)
                 return
-            self.resolve_selected_request("approved", {
+            resolver("approved", {
                 "actor_person_id": actor_id.get(), "interaction_action": action.get(),
                 "creature_name": creature_name.get().strip(),
             })
@@ -10417,13 +11168,12 @@ class GameBoardWindow(tk.Tk):
                 )
                 for item in campaign_requests
             ])
-        request_count = len(campaign_requests)
-        request_ids = {str(item.get("record_id")) for item in campaign_requests}
+        self._render_board_requests()
+        request_ids = campaign_request_notification_ids(
+            list(self.board_pending_request_rows.values())
+        )
         new_request_ids = request_ids - self._known_campaign_request_ids
         self._known_campaign_request_ids.update(request_ids)
-        self.requests_button.configure(
-            text=f"Requests ({request_count})" if request_count else "Requests"
-        )
         if new_request_ids:
             self.bell()
             self.set_notice(
@@ -10931,6 +11681,16 @@ class GameBoardWindow(tk.Tk):
         enabled = session_can_activate(session) and not pending_id
         button.configure(state="normal" if enabled else "disabled")
 
+    def _restart_session_on_current_server(
+        self, session_id: str
+    ) -> dict[str, Any]:
+        """Recover an outdated/offline local server before using Restart."""
+
+        self.server.start()
+        return self.client.request(
+            "POST", f"/api/admin/sessions/{session_id}/restart"
+        )
+
     def restart_selected_session(self) -> None:
         if self.__dict__.get("_restart_session_pending_id"):
             return
@@ -10951,7 +11711,7 @@ class GameBoardWindow(tk.Tk):
         self._restart_session_pending_id = session_id
         self._board_session_select_pending_id = session_id
         self._update_sessions_restart_button()
-        self.set_notice("Restarting session…")
+        self.set_notice("Recovering the local server and restarting session…")
         self._cancel_board_delayed_actions()
         self._reset_board_context()
         self.selected_session_id = None
@@ -10976,9 +11736,7 @@ class GameBoardWindow(tk.Tk):
             self.refresh(silent=True)
 
         self._background(
-            lambda: self.client.request(
-                "POST", f"/api/admin/sessions/{session_id}/restart"
-            ),
+            lambda: self._restart_session_on_current_server(session_id),
             done,
             failure=failed,
         )
@@ -11018,7 +11776,7 @@ class GameBoardWindow(tk.Tk):
         self._restart_session_pending_id = session_id
         self.restart_session_button.configure(state="disabled")
         self._update_sessions_restart_button()
-        self.set_notice("Restarting session…")
+        self.set_notice("Recovering the local server and restarting session…")
 
         def done(result: dict[str, Any]) -> None:
             self._restart_session_pending_id = None
@@ -11046,9 +11804,7 @@ class GameBoardWindow(tk.Tk):
             self.refresh(silent=True)
 
         self._background(
-            lambda: self.client.request(
-                "POST", f"/api/admin/sessions/{session_id}/restart"
-            ),
+            lambda: self._restart_session_on_current_server(session_id),
             done,
             failure=failed,
         )

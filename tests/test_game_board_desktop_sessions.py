@@ -11,6 +11,7 @@ from headmasters_scroll.game_board.desktop import (
     format_expiration_countdown,
     format_stored_local_datetime,
     parse_local_session_end,
+    session_can_activate,
     session_can_restart,
 )
 
@@ -98,6 +99,159 @@ class FakePopup:
 
 
 class GameBoardDesktopSessionTests(unittest.TestCase):
+    def test_sessions_page_can_restart_live_or_restorable_unexpired_rooms(self):
+        now = datetime(2098, 12, 31, 12, tzinfo=timezone.utc)
+        live = {
+            "id": "session-live",
+            "expires_at": "2099-01-01T12:00:00Z",
+        }
+        ended = {
+            "id": "session-ended",
+            "archived": True,
+            "status": "ended",
+            "restartable": True,
+            "expires_at": "2099-01-01T12:00:00Z",
+        }
+
+        self.assertTrue(session_can_activate(live, now))
+        self.assertTrue(session_can_activate(ended, now))
+        self.assertFalse(session_can_activate(
+            {**live, "expires_at": "2098-01-01T12:00:00Z"}, now
+        ))
+        self.assertFalse(session_can_activate(
+            {**live, "status": "expiring"}, now
+        ))
+        self.assertFalse(session_can_activate(
+            {**ended, "restartable": False}, now
+        ))
+
+    def test_sessions_restart_button_tracks_selected_room_eligibility(self):
+        window = object.__new__(GameBoardWindow)
+        window.sessions_restart_button = FakeManagedWidget()
+        window._restart_session_pending_id = None
+        window._board_session_select_pending_id = None
+        window.managed_session_id = "session-live"
+        window.state_data = {
+            "sessions": [{
+                "id": "session-live",
+                "expires_at": "2099-01-01T12:00:00Z",
+            }],
+            "archived_sessions": [],
+        }
+
+        window._update_sessions_restart_button()
+        self.assertEqual(window.sessions_restart_button.state, "normal")
+
+        window._restart_session_pending_id = "session-live"
+        window._update_sessions_restart_button()
+        self.assertEqual(window.sessions_restart_button.state, "disabled")
+
+        window._restart_session_pending_id = None
+        window.state_data["sessions"][0]["expires_at"] = (
+            "2000-01-01T00:00:00Z"
+        )
+        window._update_sessions_restart_button()
+        self.assertEqual(window.sessions_restart_button.state, "disabled")
+
+    def test_sessions_restart_activates_selected_live_room(self):
+        window = object.__new__(GameBoardWindow)
+        session = {
+            "id": "session-live",
+            "status": "active",
+            "expires_at": "2099-01-01T12:00:00Z",
+        }
+        window.state_data = {
+            "sessions": [session], "archived_sessions": []
+        }
+        window.managed_session_id = "session-live"
+        window.selected_session_id = "session-live"
+        window._restart_session_pending_id = None
+        window._board_session_select_pending_id = None
+        window.sessions_restart_button = FakeManagedWidget()
+        window._confirm_live_session_restart = lambda _session: True
+        calls = []
+        notices = []
+        window.client = SimpleNamespace(
+            request=lambda method, path: calls.append((method, path))
+            or {"id": "session-live"}
+        )
+        window.set_notice = lambda text, error=False: notices.append(
+            (text, error)
+        )
+        window._cancel_board_delayed_actions = lambda: calls.append(
+            ("cancel", "board")
+        )
+        window._reset_board_context = lambda: calls.append(("reset", "board"))
+        window._set_board_context_available = (
+            lambda available: calls.append(("available", available))
+        )
+        window._render_board = lambda board: calls.append(("render", board))
+        window._show_board_loading = lambda text="": calls.append(
+            ("loading", text)
+        )
+        window.refresh = lambda silent=False: calls.append(("refresh", silent))
+
+        def background(work, success=None, **_kwargs):
+            result = work()
+            if success:
+                success(result)
+
+        window._background = background
+
+        window.restart_selected_session()
+
+        self.assertIn(
+            ("POST", "/api/admin/sessions/session-live/restart"), calls
+        )
+        self.assertIsNone(window.selected_session_id)
+        self.assertEqual(
+            window._board_session_select_pending_id, "session-live"
+        )
+        self.assertIn(("reset", "board"), calls)
+        self.assertIn("existing player links are active", notices[-1][0])
+
+    def test_sessions_restart_respects_live_room_confirmation(self):
+        window = object.__new__(GameBoardWindow)
+        window.state_data = {
+            "sessions": [{
+                "id": "session-live",
+                "status": "active",
+                "expires_at": "2099-01-01T12:00:00Z",
+            }],
+            "archived_sessions": [],
+        }
+        window.managed_session_id = "session-live"
+        window._restart_session_pending_id = None
+        window._confirm_live_session_restart = lambda _session: False
+        window._background = lambda *_args, **_kwargs: self.fail(
+            "a declined live restart was queued"
+        )
+
+        window.restart_selected_session()
+
+    def test_sessions_restart_routes_restorable_ending_to_restart_endpoint(self):
+        window = object.__new__(GameBoardWindow)
+        ended = {
+            "id": "session-ended",
+            "archived": True,
+            "status": "ended",
+            "restartable": True,
+            "expires_at": "2099-01-01T12:00:00Z",
+        }
+        window.state_data = {
+            "sessions": [], "archived_sessions": [ended]
+        }
+        window.managed_session_id = "session-ended"
+        window._restart_session_pending_id = None
+        restarted = []
+        window.restart_ended_session = (
+            lambda session_id=None: restarted.append(session_id)
+        )
+
+        window.restart_selected_session()
+
+        self.assertEqual(restarted, ["session-ended"])
+
     def test_only_private_future_manual_endings_can_restart(self):
         now = datetime(2098, 12, 31, 12, tzinfo=timezone.utc)
         restartable = {

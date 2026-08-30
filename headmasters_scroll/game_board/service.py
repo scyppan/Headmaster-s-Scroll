@@ -2408,16 +2408,23 @@ class GameBoardService:
             original.get("campaign_id"),
         )
 
-    def restart_session(self, session_id: str) -> dict[str, Any]:
-        """Restore a manually ended room while its original deadline is future."""
-
-        with self._lock:
-            wrapper = self.repository.active()
-            if any(
-                item.get("id") == session_id
-                for item in wrapper.get("sessions", [])
-            ):
-                raise RuntimeError("That session is already live")
+    def _restart_candidate(
+        self, wrapper: dict[str, Any], session_id: str
+    ) -> tuple[str, dict[str, Any], int | None, dict[str, Any] | None, datetime]:
+        live_index = next(
+            (
+                index for index, item in enumerate(wrapper.get("sessions", []))
+                if item.get("id") == session_id
+            ),
+            None,
+        )
+        entry = None
+        if live_index is not None:
+            if session_id in self._expiring_session_deadlines:
+                raise RuntimeError("That session is already expiring")
+            kind = "live"
+            restored = deepcopy(wrapper["sessions"][live_index])
+        else:
             entry = next(
                 (
                     item for item in wrapper.get("restartable_sessions", [])
@@ -2437,13 +2444,43 @@ class GameBoardService:
                         "That ended session can no longer be restarted"
                     )
                 raise KeyError("Unknown session")
+            summary = next(
+                (
+                    item
+                    for item in self.repository.summaries().get("sessions", [])
+                    if item.get("id") == session_id
+                ),
+                None,
+            )
+            if not summary or str(summary.get("reason") or "") != "ended":
+                raise RuntimeError("That ended session can no longer be restarted")
+            kind = "ended"
             restored = deepcopy(entry["session"])
-            try:
-                deadline = parse_utc(str(restored.get("expires_at") or ""))
-                if deadline <= utc_now():
-                    raise RuntimeError("That session has expired")
-            except (TypeError, ValueError) as error:
-                raise RuntimeError("That session has an invalid end time") from error
+        try:
+            deadline = parse_utc(str(restored.get("expires_at") or ""))
+            if deadline <= utc_now():
+                raise RuntimeError("That session has expired")
+        except (TypeError, ValueError) as error:
+            raise RuntimeError("That session has an invalid end time") from error
+        return kind, restored, live_index, entry, deadline
+
+    def restart_session_kind(self, session_id: str) -> str:
+        """Validate a restart target without exposing its private snapshot."""
+
+        with self._lock:
+            kind, _restored, _index, _entry, _deadline = self._restart_candidate(
+                self.repository.active(), session_id
+            )
+            return kind
+
+    def restart_session(self, session_id: str) -> dict[str, Any]:
+        """Reset a live room or restore an ended one before its deadline."""
+
+        with self._lock:
+            wrapper = self.repository.active()
+            kind, restored, live_index, _entry, deadline = self._restart_candidate(
+                wrapper, session_id
+            )
             restored["status"] = "active"
             restored["pending"] = []
             restored["restarted_at"] = iso_utc(utc_now())
@@ -2459,17 +2496,25 @@ class GameBoardService:
             # reactivate a room that crossed its deadline during that read.
             if deadline <= utc_now():
                 raise RuntimeError("That session has expired")
-            wrapper["restartable_sessions"] = [
-                item for item in wrapper.get("restartable_sessions", [])
-                if not (
-                    isinstance(item, dict)
-                    and isinstance(item.get("session"), dict)
-                    and item["session"].get("id") == session_id
-                )
-            ]
-            wrapper["sessions"].append(restored)
+            if kind == "ended":
+                wrapper["restartable_sessions"] = [
+                    item for item in wrapper.get("restartable_sessions", [])
+                    if not (
+                        isinstance(item, dict)
+                        and isinstance(item.get("session"), dict)
+                        and item["session"].get("id") == session_id
+                    )
+                ]
+                wrapper["sessions"].append(restored)
+            else:
+                assert live_index is not None
+                wrapper["sessions"][live_index] = restored
             wrapper["board_session_id"] = session_id
             self._expiring_session_deadlines.pop(session_id, None)
+            # Durable pending polls and in-memory one-time tickets belong to
+            # the old admission cycle. The roster invite hashes intentionally
+            # remain so the exact emailed URLs can request fresh approval.
+            self._drop_tickets_for_session(session_id)
             self.repository.save_active(wrapper)
             return self._public_session(restored)
 

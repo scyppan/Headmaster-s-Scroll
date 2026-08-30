@@ -485,6 +485,11 @@ class GameBoardRuntime:
         # invitation batch in flight so two desktop windows cannot accidentally
         # send the same roster at the same time.
         self.invitation_batch_lock = asyncio.Lock()
+        # Ticket consumption and connection registration are one admission
+        # step.  Restart holds this barrier through socket teardown and ticket
+        # invalidation so a connection cannot appear after the teardown
+        # snapshot with a ticket from the prior room activation.
+        self.player_admission_lock = asyncio.Lock()
         # Session removal and expiration must not invalidate links midway
         # through a confirmed delivery batch for that same session.
         self.session_lifecycle_locks: defaultdict[str, asyncio.Lock] = defaultdict(
@@ -763,14 +768,15 @@ class GameBoardRuntime:
                 if not claimed:
                     continue
                 try:
-                    await self.disconnect_session(
-                        session_id,
-                        "session_expired",
-                        "The game session has expired.",
-                    )
-                    summary = self.service.finish_session_expiration(
-                        session_id, expires_at
-                    )
+                    async with self.player_admission_lock:
+                        await self.disconnect_session(
+                            session_id,
+                            "session_expired",
+                            "The game session has expired.",
+                        )
+                        summary = self.service.finish_session_expiration(
+                            session_id, expires_at
+                        )
                 except Exception:
                     try:
                         self.service.cancel_session_expiration(session_id)
@@ -1354,10 +1360,31 @@ def create_apps(
                     "a session"
                 ),
             )
-        async with runtime.session_lifecycle_locks[session_id]:
-            result = await asyncio.to_thread(
-                admin_result, service.restart_session, session_id
-            )
+        # Lock order is invitation batch -> session lifecycle -> player
+        # admission.  Invitation delivery uses the first two in the same order,
+        # while WebSocket setup uses only the last, so this cannot deadlock.
+        # Acquiring the batch lock immediately after the fail-fast check makes
+        # the claim atomic on this event loop and prevents invite-hash rotation
+        # from beginning midway through the restart.
+        async with runtime.invitation_batch_lock:
+            async with runtime.session_lifecycle_locks[session_id]:
+                # Validate before disturbing a player.  The final mutation
+                # revalidates under the same lifecycle lock after teardown.
+                await asyncio.to_thread(
+                    admin_result, service.restart_session_kind, session_id
+                )
+                async with runtime.player_admission_lock:
+                    await runtime.disconnect_session(
+                        session_id,
+                        "session_expired",
+                        (
+                            "The game session was restarted. Reload your existing "
+                            "player link to request admission again."
+                        ),
+                    )
+                    result = await asyncio.to_thread(
+                        admin_result, service.restart_session, session_id
+                    )
         for connection in runtime.connections.values():
             connection.board_state = None
         await runtime.notify_admins()
@@ -1393,24 +1420,26 @@ def create_apps(
     @admin_app.post("/api/admin/sessions/{session_id}/end", dependencies=[Depends(admin_guard)])
     async def end_selected_session(session_id: str):
         async with runtime.session_lifecycle_locks[session_id]:
-            await runtime.disconnect_session(
-                session_id, "session_expired", "The game session has ended."
-            )
-            result = await asyncio.to_thread(
-                admin_result, service.end_session, "ended", session_id
-            )
+            async with runtime.player_admission_lock:
+                await runtime.disconnect_session(
+                    session_id, "session_expired", "The game session has ended."
+                )
+                result = await asyncio.to_thread(
+                    admin_result, service.end_session, "ended", session_id
+                )
         await runtime.notify_admins()
         return result
 
     @admin_app.delete("/api/admin/sessions/{session_id}", dependencies=[Depends(admin_guard)])
     async def delete_session(session_id: str):
         async with runtime.session_lifecycle_locks[session_id]:
-            await runtime.disconnect_session(
-                session_id, "session_expired", "The game session was deleted."
-            )
-            result = await asyncio.to_thread(
-                admin_result, service.delete_session, session_id
-            )
+            async with runtime.player_admission_lock:
+                await runtime.disconnect_session(
+                    session_id, "session_expired", "The game session was deleted."
+                )
+                result = await asyncio.to_thread(
+                    admin_result, service.delete_session, session_id
+                )
         await runtime.notify_admins()
         return result
 
@@ -2216,13 +2245,15 @@ def create_apps(
 
     @admin_app.post("/api/admin/admissions/{request_id}/approve", dependencies=[Depends(admin_guard)])
     async def approve(request_id: str):
-        admin_result(service.approve, request_id)
+        async with runtime.player_admission_lock:
+            admin_result(service.approve, request_id)
         await runtime.notify_admins()
         return {"approved": True}
 
     @admin_app.post("/api/admin/admissions/{request_id}/deny", dependencies=[Depends(admin_guard)])
     async def deny(request_id: str):
-        admin_result(service.deny, request_id)
+        async with runtime.player_admission_lock:
+            admin_result(service.deny, request_id)
         await runtime.notify_admins()
         return {"denied": True}
 
@@ -2270,12 +2301,13 @@ def create_apps(
                     detail="There is no active board session",
                 )
             async with runtime.session_lifecycle_locks[session_id]:
-                await runtime.disconnect_session(
-                    session_id, "session_expired", "The game session has ended."
-                )
-                await asyncio.to_thread(
-                    admin_result, service.end_session, "ended", session_id
-                )
+                async with runtime.player_admission_lock:
+                    await runtime.disconnect_session(
+                        session_id, "session_expired", "The game session has ended."
+                    )
+                    await asyncio.to_thread(
+                        admin_result, service.end_session, "ended", session_id
+                    )
         else:
             raise HTTPException(status_code=404, detail="Unknown session action")
         await runtime.notify_admins()
@@ -2455,7 +2487,12 @@ def create_apps(
             key = f"{client_ip}:{token_hash(body.invite_token)[:16]}"
             if not runtime.rate_limiter.allow(key):
                 raise HTTPException(status_code=429, detail="Too many admission attempts")
-            result = service.request_admission(body.invite_token, client_ip, request.headers.get("user-agent", ""))
+            async with runtime.player_admission_lock:
+                result = service.request_admission(
+                    body.invite_token,
+                    client_ip,
+                    request.headers.get("user-agent", ""),
+                )
             await runtime.notify_admins()
             return result
         except PermissionError as error:
@@ -2469,7 +2506,10 @@ def create_apps(
             require_origin(request.headers.get("origin", ""))
             if not authorization.startswith("Bearer "):
                 raise PermissionError("Missing polling credential")
-            return service.poll_admission(request_id, authorization.removeprefix("Bearer "))
+            async with runtime.player_admission_lock:
+                return service.poll_admission(
+                    request_id, authorization.removeprefix("Bearer ")
+                )
         except KeyError as error:
             raise HTTPException(status_code=404, detail="Unknown admission request") from error
         except PermissionError as error:
@@ -2529,30 +2569,37 @@ def create_apps(
     async def player_websocket(websocket: WebSocket, ticket: str = Query(default="")):
         try:
             require_origin(websocket.headers.get("origin", ""))
-            identity = service.consume_ticket(ticket)
+            # Keep one-time ticket consumption and runtime registration inside
+            # the same barrier used by Restart.  Whichever operation enters
+            # first wins: Restart will disconnect a fully registered socket, or
+            # the old ticket will be invalid by the time this path resumes.
+            async with runtime.player_admission_lock:
+                identity = service.consume_ticket(ticket)
+                await websocket.accept()
+                asset_credential = token_urlsafe(32)
+                asset_credential_hash = token_hash(asset_credential)
+                connection = PlayerConnection(
+                    websocket=websocket,
+                    request_id=identity["request_id"],
+                    contact_id=identity["contact_id"],
+                    name=identity["name"],
+                    session_id=identity["session_id"],
+                    character_id=identity.get("character_id"),
+                    asset_credential_hash=asset_credential_hash,
+                )
+                connection.controlled_ids = set(
+                    service.controlled_character_ids(
+                        identity["session_id"], identity["contact_id"],
+                    )
+                )
+                connection_key = (
+                    f"{identity['session_id']}:{identity['contact_id']}"
+                )
+                runtime.connections[connection_key] = connection
+                runtime.asset_credentials[asset_credential_hash] = connection_key
         except Exception:
             await websocket.close(code=4403)
             return
-        await websocket.accept()
-        asset_credential = token_urlsafe(32)
-        asset_credential_hash = token_hash(asset_credential)
-        connection = PlayerConnection(
-            websocket=websocket,
-            request_id=identity["request_id"],
-            contact_id=identity["contact_id"],
-            name=identity["name"],
-            session_id=identity["session_id"],
-            character_id=identity.get("character_id"),
-            asset_credential_hash=asset_credential_hash,
-        )
-        connection.controlled_ids = set(
-            service.controlled_character_ids(
-                identity["session_id"], identity["contact_id"],
-            )
-        )
-        connection_key = f"{identity['session_id']}:{identity['contact_id']}"
-        runtime.connections[connection_key] = connection
-        runtime.asset_credentials[asset_credential_hash] = connection_key
         session = service.session_view(identity["session_id"])
         await websocket.send_json({
             "v": 1, "type": "connection_accepted", "player": identity["name"],

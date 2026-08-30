@@ -52,6 +52,19 @@ class FakeSocket:
         self.messages.append(value)
 
 
+class HandshakeSocket:
+    def __init__(self):
+        self.headers = {"origin": ORIGIN}
+        self.accepted = False
+        self.closed_code = None
+
+    async def accept(self):
+        self.accepted = True
+
+    async def close(self, code=None, **_kwargs):
+        self.closed_code = code
+
+
 class GameBoardApiTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
@@ -384,13 +397,12 @@ class GameBoardApiTests(unittest.TestCase):
         )
         self.assertEqual(admission.status_code, 200, admission.text)
         self.assertEqual(admission.json()["status"], "pending")
-        self.assertEqual(
-            self.admin.post(
-                f"/api/admin/sessions/{self.session_id}/restart",
-                headers=self.admin_headers,
-            ).status_code,
-            409,
+        restarted_live = self.admin.post(
+            f"/api/admin/sessions/{self.session_id}/restart",
+            headers=self.admin_headers,
         )
+        self.assertEqual(restarted_live.status_code, 200, restarted_live.text)
+        self.assertEqual(restarted_live.json()["pending"], [])
 
     def test_restart_fails_fast_while_an_invitation_batch_is_running(self):
         self.runtime.service.end_session("ended", self.session_id)
@@ -414,6 +426,269 @@ class GameBoardApiTests(unittest.TestCase):
         self.assertTrue(
             self.runtime.service.archived_sessions_view()[0]["restartable"]
         )
+
+    def test_live_restart_preserves_link_but_invalidates_admission_generation(self):
+        admission = self.admission()
+        self.runtime.service.approve(admission["request_id"])
+        ticket = self.runtime.service.poll_admission(
+            admission["request_id"], admission["poll_token"]
+        )["ticket"]
+        original_hash = self.repository.active()["sessions"][0]["roster"][0][
+            "invite_hash"
+        ]
+        other = self.runtime.service.create_session(
+            "Other live room",
+            (date.today() + timedelta(days=2)).isoformat(),
+            [self.contact["id"]],
+            campaign_id="campaign-1",
+        )
+
+        class ClosingSocket(FakeSocket):
+            def __init__(self):
+                super().__init__()
+                self.closed = False
+
+            async def close(self, **_kwargs):
+                self.closed = True
+
+        socket = ClosingSocket()
+        connection_key = f"{self.session_id}:{self.contact['id']}"
+        connection = PlayerConnection(
+            websocket=socket,
+            request_id=admission["request_id"],
+            contact_id=self.contact["id"],
+            name="Alice",
+            session_id=self.session_id,
+            asset_credential_hash="asset-before-restart",
+        )
+        self.runtime.connections[connection_key] = connection
+        self.runtime.asset_credentials["asset-before-restart"] = connection_key
+
+        restarted = self.admin.post(
+            f"/api/admin/sessions/{self.session_id}/restart",
+            headers=self.admin_headers,
+        )
+
+        self.assertEqual(restarted.status_code, 200, restarted.text)
+        self.assertFalse(connection.active)
+        self.assertTrue(socket.closed)
+        self.assertEqual(socket.messages[0]["type"], "session_expired")
+        self.assertIn("Reload your existing player link", socket.messages[0]["message"])
+        self.assertNotIn(connection_key, self.runtime.connections)
+        self.assertNotIn("asset-before-restart", self.runtime.asset_credentials)
+        wrapper = self.repository.active()
+        active = next(
+            item for item in wrapper["sessions"] if item["id"] == self.session_id
+        )
+        self.assertEqual(active["roster"][0]["invite_hash"], original_hash)
+        self.assertEqual(active["pending"], [])
+        self.assertEqual(
+            {item["id"] for item in wrapper["sessions"]},
+            {self.session_id, other["id"]},
+        )
+        self.assertEqual(wrapper["board_session_id"], self.session_id)
+        with self.assertRaises(PermissionError):
+            self.runtime.service.consume_ticket(ticket)
+        old_poll = self.player.get(
+            f"/v1/admissions/{admission['request_id']}",
+            headers={
+                **self.origin_headers,
+                "Authorization": f"Bearer {admission['poll_token']}",
+            },
+        )
+        self.assertEqual(old_poll.status_code, 404)
+        fresh = self.player.post(
+            "/v1/admissions",
+            json={"invite_token": self.invite},
+            headers=self.origin_headers,
+        )
+        self.assertEqual(fresh.status_code, 200, fresh.text)
+        self.assertEqual(fresh.json()["status"], "pending")
+        self.assertNotEqual(fresh.json()["request_id"], admission["request_id"])
+
+    def test_restart_owns_invitation_batch_claim_until_reset_finishes(self):
+        restart_endpoint = next(
+            route.endpoint for route in self.admin_app.routes
+            if route.path == "/api/admin/sessions/{session_id}/restart"
+        )
+        send_endpoint = next(
+            route.endpoint for route in self.admin_app.routes
+            if route.path == "/api/admin/invitations/send"
+        )
+        disconnect_started = asyncio.Event()
+        release_disconnect = asyncio.Event()
+
+        async def slow_disconnect(*_args, **_kwargs):
+            disconnect_started.set()
+            await release_disconnect.wait()
+
+        async def scenario():
+            with patch.object(
+                self.runtime, "disconnect_session", side_effect=slow_disconnect
+            ), patch.object(
+                self.runtime, "notify_admins", new=AsyncMock()
+            ):
+                restarting = asyncio.create_task(
+                    restart_endpoint(self.session_id)
+                )
+                await disconnect_started.wait()
+                self.assertTrue(self.runtime.invitation_batch_lock.locked())
+                with self.assertRaises(HTTPException) as raised:
+                    await send_endpoint(SendBody(
+                        contact_ids=[self.contact["id"]],
+                        session_id=self.session_id,
+                    ))
+                release_disconnect.set()
+                result = await restarting
+                return raised.exception, result
+
+        error, result = asyncio.run(scenario())
+
+        self.assertEqual(error.status_code, 409)
+        self.assertEqual(result["id"], self.session_id)
+        self.assertFalse(self.runtime.invitation_batch_lock.locked())
+
+    def test_ticket_cannot_register_a_socket_mid_restart(self):
+        admission = self.admission()
+        self.runtime.service.approve(admission["request_id"])
+        ticket = self.runtime.service.poll_admission(
+            admission["request_id"], admission["poll_token"]
+        )["ticket"]
+        restart_endpoint = next(
+            route.endpoint for route in self.admin_app.routes
+            if route.path == "/api/admin/sessions/{session_id}/restart"
+        )
+        websocket_endpoint = next(
+            route.endpoint for route in self.player_app.routes
+            if route.path == "/v1/session"
+        )
+        admission_endpoint = next(
+            route.endpoint for route in self.player_app.routes
+            if route.path == "/v1/admissions"
+            and "POST" in (route.methods or set())
+        )
+        poll_endpoint = next(
+            route.endpoint for route in self.player_app.routes
+            if route.path == "/v1/admissions/{request_id}"
+        )
+        player_request = SimpleNamespace(
+            headers={"origin": ORIGIN, "user-agent": "Race test"},
+            client=SimpleNamespace(host="203.0.113.10"),
+        )
+
+        socket = HandshakeSocket()
+        disconnect_started = asyncio.Event()
+        release_disconnect = asyncio.Event()
+
+        async def slow_disconnect(*_args, **_kwargs):
+            disconnect_started.set()
+            await release_disconnect.wait()
+
+        async def scenario():
+            with patch.object(
+                self.runtime, "disconnect_session", side_effect=slow_disconnect
+            ), patch.object(
+                self.runtime, "notify_admins", new=AsyncMock()
+            ):
+                restarting = asyncio.create_task(
+                    restart_endpoint(self.session_id)
+                )
+                await disconnect_started.wait()
+                connecting = asyncio.create_task(
+                    websocket_endpoint(socket, ticket=ticket)
+                )
+                requesting = asyncio.create_task(admission_endpoint(
+                    SimpleNamespace(invite_token=self.invite), player_request
+                ))
+                polling = asyncio.create_task(poll_endpoint(
+                    admission["request_id"],
+                    player_request,
+                    authorization=f"Bearer {admission['poll_token']}",
+                ))
+                await asyncio.sleep(0.01)
+                self.assertFalse(connecting.done())
+                self.assertFalse(requesting.done())
+                self.assertFalse(polling.done())
+                self.assertFalse(socket.accepted)
+                self.assertIsNone(socket.closed_code)
+                release_disconnect.set()
+                await restarting
+                await connecting
+                fresh = await requesting
+                with self.assertRaises(HTTPException) as raised:
+                    await polling
+                return fresh, raised.exception
+
+        fresh, poll_error = asyncio.run(scenario())
+
+        self.assertFalse(socket.accepted)
+        self.assertEqual(socket.closed_code, 4403)
+        self.assertEqual(fresh["status"], "pending")
+        self.assertNotEqual(fresh["request_id"], admission["request_id"])
+        self.assertEqual(poll_error.status_code, 404)
+        self.assertEqual(self.runtime.connections, {})
+
+    def test_restart_preflight_does_not_disconnect_an_invalid_target(self):
+        with patch.object(
+            self.runtime.service,
+            "restart_session_kind",
+            side_effect=RuntimeError("That session has expired"),
+        ), patch.object(
+            self.runtime, "disconnect_session", new=AsyncMock()
+        ) as disconnect_session:
+            response = self.admin.post(
+                f"/api/admin/sessions/{self.session_id}/restart",
+                headers=self.admin_headers,
+            )
+
+        self.assertEqual(response.status_code, 409, response.text)
+        disconnect_session.assert_not_awaited()
+
+    def test_ticket_cannot_register_a_socket_mid_end(self):
+        admission = self.admission()
+        self.runtime.service.approve(admission["request_id"])
+        ticket = self.runtime.service.poll_admission(
+            admission["request_id"], admission["poll_token"]
+        )["ticket"]
+        end_endpoint = next(
+            route.endpoint for route in self.admin_app.routes
+            if route.path == "/api/admin/sessions/{session_id}/end"
+        )
+        websocket_endpoint = next(
+            route.endpoint for route in self.player_app.routes
+            if route.path == "/v1/session"
+        )
+        socket = HandshakeSocket()
+        disconnect_started = asyncio.Event()
+        release_disconnect = asyncio.Event()
+
+        async def slow_disconnect(*_args, **_kwargs):
+            disconnect_started.set()
+            await release_disconnect.wait()
+
+        async def scenario():
+            with patch.object(
+                self.runtime, "disconnect_session", side_effect=slow_disconnect
+            ), patch.object(
+                self.runtime, "notify_admins", new=AsyncMock()
+            ):
+                ending = asyncio.create_task(end_endpoint(self.session_id))
+                await disconnect_started.wait()
+                connecting = asyncio.create_task(
+                    websocket_endpoint(socket, ticket=ticket)
+                )
+                await asyncio.sleep(0.01)
+                self.assertFalse(connecting.done())
+                self.assertFalse(socket.accepted)
+                release_disconnect.set()
+                await ending
+                await connecting
+
+        asyncio.run(scenario())
+
+        self.assertFalse(socket.accepted)
+        self.assertEqual(socket.closed_code, 4403)
+        self.assertEqual(self.runtime.service.sessions_view(), [])
 
     def test_disconnect_deactivates_connection_even_when_notice_send_fails(self):
         class BrokenNoticeSocket:

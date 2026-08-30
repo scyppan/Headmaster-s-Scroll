@@ -442,8 +442,21 @@ class GameBoardServiceTests(unittest.TestCase):
         self.assertEqual(
             len(restarted_service.session_view(created["id"])["pending"]), 1
         )
-        with self.assertRaisesRegex(RuntimeError, "already live"):
-            restarted_service.restart_session(created["id"])
+        restarted_service.set_paused(True, created["id"])
+        self.assertEqual(restarted_service.restart_session_kind(created["id"]), "live")
+        active_restored = restarted_service.restart_session(created["id"])
+        self.assertEqual(active_restored["id"], created["id"])
+        self.assertEqual(active_restored["status"], "active")
+        self.assertEqual(active_restored["pending"], [])
+        self.assertEqual(active_restored["restart_count"], 2)
+        with self.assertRaises(KeyError):
+            restarted_service.poll_admission(
+                admitted["request_id"], admitted["poll_token"]
+            )
+        fresh = restarted_service.request_admission(
+            raw, "203.0.113.9", "Reloaded Browser"
+        )
+        self.assertEqual(fresh["status"], "pending")
 
         restarted_service.end_session("ended", created["id"])
         self.assertEqual(len(self.repository.summaries()["sessions"]), 1)

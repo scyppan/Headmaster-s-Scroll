@@ -29,6 +29,7 @@ from PIL import Image, ImageDraw, ImageOps, ImageTk
 from ..assets import AssetStore, MAP_CANVAS_HEIGHT, MAP_CANVAS_WIDTH, MAP_CANVAS_SIZE
 from ..board import WorldBoardRepository
 from ..campaigns import format_game_world_date
+from ..character_sheet import ability_for_skill
 from ..paths import PROJECT_ROOT, RUNTIME_DIRECTORY
 from ..preferences import Preferences
 from ..windowing import GAME_BOARD_ICON, apply_window_icon, configure_windows_app_id, maximize_window
@@ -53,6 +54,210 @@ BATTLE_INJURY_TYPES = (
     "Terror/Anxiety-inducing", "Sanity-shaking", "Eruption/Explosion",
     "Vital",
 )
+
+SHEET_KNOWLEDGE_COLLECTIONS = {
+    "spells": {
+        "label": "Spells", "singular": "spell", "action": "Cast",
+    },
+    "proficiencies": {
+        "label": "Proficiencies", "singular": "proficiency", "action": "Perform",
+    },
+    "recipes": {
+        "label": "Recipes", "singular": "recipe", "action": "Prepare",
+    },
+}
+
+
+def character_sheet_knowledge_confidence(
+    record: dict[str, Any],
+    collection: str,
+    attributes: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Mirror gbfp's known-knowledge confidence bands for the desktop sheet."""
+
+    try:
+        threshold = int(record.get("threshold"))
+    except (TypeError, ValueError):
+        return {"key": "no-threshold", "label": "No threshold", "required_roll": None}
+    attributes = attributes or {}
+
+    def values(records: list[dict[str, Any]]) -> dict[str, int]:
+        return {
+            str(item.get("name") or ""): int(
+                item.get("value", item.get("total", 0)) or 0
+            )
+            for item in records or [] if isinstance(item, dict)
+        }
+
+    ability_values = values(list(attributes.get("attributes") or []))
+    skill_values = values(list(attributes.get("skills") or []))
+    skill = str(record.get("skill") or ("Potions" if collection == "recipes" else ""))
+    required_roll = (
+        threshold
+        - skill_values.get(skill, 0)
+        - ability_values.get(ability_for_skill(skill), 0)
+    )
+    if collection == "proficiencies":
+        verbs = ("perform", "perform")
+    elif collection == "recipes":
+        verbs = ("prepare", "prepare")
+    else:
+        verbs = ("cast", "cast")
+    if required_roll > 10:
+        label = f"Can't {verbs[0]}"
+        key = "cannot"
+    elif required_roll <= 3:
+        label = f"Easy to {verbs[1]}"
+        key = "easy"
+    elif required_roll <= 6:
+        label = "Medium confidence"
+        key = "medium"
+    elif required_roll <= 8:
+        label = f"Difficult to {verbs[1]}"
+        key = "difficult"
+    else:
+        label = f"Very difficult to {verbs[1]}"
+        key = "very-difficult"
+    return {"key": key, "label": label, "required_roll": required_roll}
+
+
+def search_character_sheet_knowledge(
+    records: list[dict[str, Any]],
+    collection: str,
+    *,
+    query: str = "",
+    skill: str = "",
+    source: str = "",
+    subtype: str = "",
+    confidence: str = "",
+    minimum_difficulty: int | None = None,
+    maximum_difficulty: int | None = None,
+    readiness: str = "",
+    sort_by: str = "name",
+    attributes: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """Search known spells, proficiencies, or recipes using gbfp's fields."""
+
+    terms = [value for value in str(query or "").casefold().split() if value]
+    matches: list[tuple[dict[str, Any], int]] = []
+    for record in records or []:
+        if not isinstance(record, dict) or not record.get("record_id"):
+            continue
+        tags = record.get("tags", []) or []
+        if not isinstance(tags, list):
+            tags = str(tags).split(",")
+        haystack = " ".join(
+            str(value or "")
+            for value in (
+                record.get("name"), record.get("skill"), record.get("subtype"),
+                record.get("source"), record.get("description"),
+                record.get("raw_effect"), record.get("raw_effects"), *tags,
+            )
+        ).casefold()
+        if not all(term in haystack for term in terms):
+            continue
+        if skill and str(record.get("skill") or "") != skill:
+            continue
+        if source and str(record.get("source") or "") != source:
+            continue
+        if subtype and str(record.get("subtype") or "") != subtype:
+            continue
+        band = character_sheet_knowledge_confidence(record, collection, attributes)
+        if confidence and band["label"] != confidence:
+            continue
+        try:
+            difficulty = int(record.get("threshold"))
+        except (TypeError, ValueError):
+            difficulty = None
+        if minimum_difficulty is not None and difficulty is not None and difficulty < minimum_difficulty:
+            continue
+        if maximum_difficulty is not None and difficulty is not None and difficulty > maximum_difficulty:
+            continue
+        if readiness:
+            ready = bool((record.get("requirements") or {}).get("ready"))
+            if readiness == "ready" and not ready:
+                continue
+            if readiness == "missing" and ready:
+                continue
+        name = str(record.get("name") or "").casefold()
+        score = sum(
+            12 if name.startswith(term) else 6 if term in name else 1
+            for term in terms
+        )
+        matches.append((record, score))
+
+    def sort_key(item: tuple[dict[str, Any], int]) -> tuple[Any, ...]:
+        record, score = item
+        name = str(record.get("name") or "").casefold()
+        if terms:
+            return (-score, name, str(record.get("record_id") or ""))
+        if sort_by == "difficulty":
+            try:
+                difficulty = int(record.get("threshold"))
+            except (TypeError, ValueError):
+                difficulty = 10**9
+            return (difficulty, name, str(record.get("record_id") or ""))
+        if sort_by in {"skill", "source"}:
+            return (
+                str(record.get(sort_by) or "").casefold(), name,
+                str(record.get("record_id") or ""),
+            )
+        return (name, str(record.get("record_id") or ""))
+
+    return [record for record, _score in sorted(matches, key=sort_key)]
+
+
+def character_sheet_recipe_requirement_summary(
+    requirements: dict[str, Any] | None,
+) -> dict[str, list[str]]:
+    """Return readable recipe requirements for details and confirmation."""
+
+    requirements = requirements or {}
+    consumables: list[str] = []
+    for group in requirements.get("ingredients", []) or []:
+        if not isinstance(group, dict):
+            continue
+        alternatives = [
+            item for item in group.get("alternatives", []) or []
+            if isinstance(item, dict)
+        ]
+        selected_name = str(group.get("selected") or "")
+        selected = next(
+            (
+                item for item in alternatives
+                if str(item.get("name") or "") == selected_name
+            ),
+            alternatives[0] if alternatives else group,
+        )
+        name = str(selected.get("name") or selected_name or "Ingredient")
+        required = selected.get("required", group.get("required", 1))
+        available = selected.get("available", group.get("available"))
+        detail = f"{required} × {name}"
+        if available is not None:
+            detail += f" ({available} available)"
+        consumables.append(detail)
+    vessels = [
+        str(item.get("selected") or " OR ".join(
+            str(option.get("name") or "Vessel")
+            for option in item.get("alternatives", []) or []
+            if isinstance(option, dict)
+        ))
+        for item in requirements.get("vessels", []) or []
+        if isinstance(item, dict)
+    ]
+    vessels = [value for value in vessels if value]
+    if not vessels and isinstance(requirements.get("vessel"), dict):
+        vessel_name = str(requirements["vessel"].get("name") or "")
+        if vessel_name:
+            vessels.append(vessel_name)
+    return {
+        "consumables": consumables,
+        "vessels": vessels,
+        "missing": [
+            str(value) for value in requirements.get("missing", []) or []
+            if str(value)
+        ],
+    }
 
 
 def format_date_display(value: date) -> str:
@@ -362,12 +567,11 @@ def board_actor_typology_sections(
     include_unplaced: bool = True,
     max_records: int | None = None,
 ) -> list[tuple[str, list[tuple[str, list[dict[str, Any]]]]]]:
-    """Group characters and creatures under explicit, stable typologies.
+    """Build typed actor buckets used to retain each actor's data contract.
 
-    The outer sections keep the two actor contracts visibly distinct while
-    the inner sections preserve the Headmaster's map/group/faction/A-Z
-    navigation.  Creature records already live in the campaign board
-    snapshot; unplaced character records are hydrated from campaign state.
+    This is an internal normalization layer.  The visible navigator is built
+    by :func:`board_actor_sections`, which mixes both typologies under the
+    selected location/map/group/faction/A-Z organization.
     """
 
     needle = " ".join(str(query or "").casefold().split())
@@ -489,10 +693,83 @@ def board_actor_typology_sections(
     ]
 
 
+def board_actor_sections(
+    snapshot: dict[str, Any],
+    characters: list[dict[str, Any]],
+    view: str,
+    query: str = "",
+    *,
+    selected_map_id: str = "",
+    include_unplaced: bool = True,
+    max_records: int | None = None,
+) -> list[tuple[str, list[dict[str, Any]]]]:
+    """Mix every actor type into one organizational navigator tree.
+
+    Actor records retain ``actor_type``, ``actor_typology``, and
+    ``actor_subtype`` so selection, sheets, and type-specific actions can
+    dispatch correctly without exposing separate character/creature trees.
+    """
+
+    typed_sections = board_actor_typology_sections(
+        snapshot,
+        characters,
+        view,
+        query,
+        selected_map_id=selected_map_id,
+        include_unplaced=include_unplaced,
+        max_records=None,
+    )
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for _typology, sections in typed_sections:
+        for label, actors in sections:
+            grouped.setdefault(label, []).extend(actors)
+
+    maps = {
+        str(item.get("record_id", "")): str(item.get("name") or "Unnamed map")
+        for item in snapshot.get("maps", []) or []
+        if isinstance(item, dict)
+    }
+
+    def section_key(label: str) -> tuple[int, str]:
+        if view == "Locations" and label == "No location":
+            return (2, label.casefold())
+        if view == "Maps":
+            selected_name = maps.get(str(selected_map_id or ""), "")
+            if label == selected_name and selected_name:
+                return (0, label.casefold())
+            if label in {"No map", "Unplaced"}:
+                return (2, label.casefold())
+        if label in {"No group", "No faction"}:
+            return (2, label.casefold())
+        return (1, label.casefold())
+
+    sections: list[tuple[str, list[dict[str, Any]]]] = []
+    remaining = max_records if max_records is not None else None
+    for label, actors in sorted(
+        grouped.items(), key=lambda item: section_key(item[0])
+    ):
+        ordered = sorted(
+            actors,
+            key=lambda item: (
+                str(item.get("name") or "Unknown").casefold(),
+                str(item.get("actor_type") or "person"),
+                str(item.get("actor_id") or ""),
+            ),
+        )
+        if remaining is not None:
+            if remaining <= 0:
+                break
+            ordered = ordered[:remaining]
+            remaining -= len(ordered)
+        if ordered:
+            sections.append((label, ordered))
+    return sections
+
+
 def board_campaign_character_empty_lines() -> tuple[str, str]:
     """Return the concise empty state for a campaign-scoped Actors rail."""
 
-    return ("No campaign characters", "Use C+ to add one")
+    return ("No campaign actors", "Use C+ or ◆+ to add one")
 
 
 def board_location_choices(
@@ -1725,7 +2002,7 @@ class GameBoardWindow(tk.Tk):
         self._configure_style()
         self._build()
         self.bind("<Configure>", self._window_resized, add="+")
-        self.bind("<Escape>", self._cancel_creature_placement, add="+")
+        self.bind("<Escape>", self._handle_game_board_escape, add="+")
         self.after_idle(self._apply_responsive_chat_layout)
         self.after_idle(lambda: maximize_window(self))
         self.after(100, self._start_server)
@@ -3513,10 +3790,6 @@ class GameBoardWindow(tk.Tk):
             font=("Segoe UI", 8, "bold"),
         )
         self.board_actor_tree.tag_configure(
-            "typology", background=self.ACCENT, foreground="#fff8e7",
-            font=("Segoe UI", 8, "bold"),
-        )
-        self.board_actor_tree.tag_configure(
             "creature", foreground="#68451f", font=("Segoe UI", 8, "bold")
         )
         self.board_actor_tree.tag_configure("unplaced", foreground=self.MUTED)
@@ -3667,8 +3940,12 @@ class GameBoardWindow(tk.Tk):
         )
         self.board_actor_sheet_tabs: dict[str, ttk.Frame] = {}
         self.board_character_sheet_texts: dict[str, tk.Text] = {}
+        self.board_character_sheet_knowledge_tabs: dict[str, dict[str, Any]] = {}
+        self._active_board_character_sheet: dict[str, Any] = {}
+        self._active_board_character_sheet_scope: tuple[str, str] = ("", "")
         for label in (
-            "Overview", "Attributes", "Actions", "Knowledge", "Inventory", "Story"
+            "Overview", "Attributes", "Actions", "Spells", "Proficiencies",
+            "Recipes", "Inventory", "Story"
         ):
             tab = ttk.Frame(self.board_character_sheet_notebook)
             self.board_actor_sheet_tabs[label] = tab
@@ -3721,6 +3998,11 @@ class GameBoardWindow(tk.Tk):
                     self._attach_tooltip(button, help_text)
                 self.board_character_sheet_notebook.add(tab, text=label)
                 continue
+            collection = label.casefold()
+            if collection in SHEET_KNOWLEDGE_COLLECTIONS:
+                self._build_character_sheet_knowledge_tab(tab, collection)
+                self.board_character_sheet_notebook.add(tab, text=label)
+                continue
             text_widget = tk.Text(
                 tab,
                 height=22,
@@ -3750,6 +4032,251 @@ class GameBoardWindow(tk.Tk):
             "Choose a character or creature from the Actors rail."
         )
 
+    def _build_character_sheet_knowledge_tab(
+        self, tab: ttk.Frame, collection: str,
+    ) -> None:
+        """Build one searchable known-knowledge browser inside the sheet."""
+
+        config = SHEET_KNOWLEDGE_COLLECTIONS[collection]
+        shell = ttk.Frame(tab, padding=(8, 8, 8, 7))
+        shell.pack(fill="both", expand=True)
+
+        search_row = ttk.Frame(shell)
+        search_row.pack(fill="x")
+        query = tk.StringVar()
+        search = ttk.Entry(search_row, textvariable=query)
+        search.pack(side="left", fill="x", expand=True)
+        self._attach_tooltip(
+            search,
+            f"Search known {collection} by name, description, skill, source, or tag",
+        )
+        reset = ttk.Button(
+            search_row,
+            text="Reset",
+            width=7,
+            style="Quiet.TButton",
+            command=lambda selected=collection: self._reset_character_sheet_knowledge_filters(
+                selected
+            ),
+        )
+        reset.pack(side="right", padx=(5, 0))
+
+        filters = ttk.Frame(shell)
+        filters.pack(fill="x", pady=(6, 5))
+        skill = tk.StringVar(value="All skills")
+        source = tk.StringVar(value="All sources")
+        subtype = tk.StringVar(value="All subtypes")
+        confidence = tk.StringVar(value="All confidence levels")
+        readiness = tk.StringVar(value="All recipes")
+        minimum = tk.StringVar()
+        maximum = tk.StringVar()
+        sort_value = tk.StringVar(value="Name A–Z")
+
+        def field(
+            label: str,
+            variable: tk.StringVar,
+            values: tuple[str, ...] = (),
+            *,
+            width: int = 14,
+            row: int = 0,
+            column: int = 0,
+        ) -> ttk.Widget:
+            holder = ttk.Frame(filters)
+            holder.grid(
+                row=row,
+                column=column,
+                sticky="ew",
+                padx=(0, 5),
+                pady=(0, 4),
+            )
+            ttk.Label(holder, text=label, style="Status.TLabel").pack(anchor="w")
+            if values:
+                widget: ttk.Widget = ttk.Combobox(
+                    holder,
+                    textvariable=variable,
+                    values=values,
+                    state="readonly",
+                    width=width,
+                )
+            else:
+                widget = ttk.Entry(holder, textvariable=variable, width=width)
+            widget.pack(fill="x")
+            return widget
+
+        filters.columnconfigure(0, weight=2)
+        filters.columnconfigure(1, weight=2)
+        filters.columnconfigure(2, weight=2)
+        filters.columnconfigure(3, weight=2)
+        skill_control = field("Skill", skill, ("All skills",), row=0, column=0)
+        source_control = field("Source", source, ("All sources",), row=0, column=1)
+        if collection == "spells":
+            special_control = field(
+                "Subtype", subtype, ("All subtypes",), row=0, column=2
+            )
+        elif collection == "recipes":
+            special_control = field(
+                "Readiness",
+                readiness,
+                ("All recipes", "Ready to prepare", "Missing requirements"),
+                row=0,
+                column=2,
+            )
+        else:
+            special_control = ttk.Frame(filters)
+            special_control.grid(row=0, column=2, sticky="ew")
+        confidence_control = field(
+            "Confidence",
+            confidence,
+            ("All confidence levels",),
+            row=0,
+            column=3,
+        )
+        field("Min difficulty", minimum, width=7, row=1, column=0)
+        field("Max difficulty", maximum, width=7, row=1, column=1)
+        sort_control = field(
+            "Sort",
+            sort_value,
+            ("Name A–Z", "Difficulty", "Skill", "Source"),
+            row=1,
+            column=2,
+        )
+
+        count = tk.StringVar(value=f"No known {collection} loaded")
+        ttk.Label(shell, textvariable=count, style="Status.TLabel").pack(
+            fill="x", pady=(0, 4)
+        )
+        pane = ttk.Panedwindow(shell, orient="vertical")
+        pane.pack(fill="both", expand=True)
+        results_shell = ttk.Frame(pane)
+        details_shell = ttk.Frame(pane)
+        pane.add(results_shell, weight=3)
+        pane.add(details_shell, weight=2)
+        results = ttk.Treeview(
+            results_shell,
+            columns=("skill", "difficulty", "confidence"),
+            show="tree headings",
+            selectmode="browse",
+            height=9,
+        )
+        results.heading("#0", text=str(config["singular"]).title())
+        results.heading("skill", text="Skill")
+        results.heading("difficulty", text="Difficulty")
+        results.heading("confidence", text="Confidence / readiness")
+        results.column("#0", width=190, minwidth=120, stretch=True)
+        results.column("skill", width=90, minwidth=55, stretch=True)
+        results.column("difficulty", width=64, minwidth=50, anchor="center")
+        results.column("confidence", width=150, minwidth=100, stretch=True)
+        result_scroll = ttk.Scrollbar(
+            results_shell, orient="vertical", command=results.yview
+        )
+        results.configure(yscrollcommand=result_scroll.set)
+        results.pack(side="left", fill="both", expand=True)
+        result_scroll.pack(side="right", fill="y")
+
+        details = tk.Text(
+            details_shell,
+            height=7,
+            wrap="word",
+            background="#fff8e6",
+            foreground=self.INK,
+            relief="flat",
+            borderwidth=0,
+            padx=9,
+            pady=7,
+            font=("Segoe UI", 9),
+            state="disabled",
+        )
+        detail_scroll = ttk.Scrollbar(
+            details_shell, orient="vertical", command=details.yview
+        )
+        details.configure(yscrollcommand=detail_scroll.set)
+        details.tag_configure(
+            "title", font=("Georgia", 15, "bold"), foreground=self.ACCENT
+        )
+        details.tag_configure(
+            "section", font=("Segoe UI", 9, "bold"), foreground=self.ACCENT
+        )
+        details.tag_configure("missing", foreground="#9b2f20")
+        details.tag_configure("muted", foreground=self.MUTED)
+        details.pack(side="left", fill="both", expand=True)
+        detail_scroll.pack(side="right", fill="y")
+
+        actions = ttk.Frame(shell)
+        actions.pack(fill="x", pady=(6, 0))
+        action = ttk.Button(
+            actions,
+            text=config["action"],
+            command=lambda selected=collection: self.perform_selected_character_sheet_knowledge(
+                selected
+            ),
+        )
+        action.pack(side="right")
+        action.configure(state="disabled")
+        ttk.Label(
+            actions,
+            text=(
+                "Double-click a result or select it and use the action button."
+            ),
+            style="Status.TLabel",
+        ).pack(side="left")
+
+        controls = {
+            "skill": skill_control,
+            "source": source_control,
+            "special": special_control,
+            "confidence": confidence_control,
+            "sort": sort_control,
+        }
+        state = {
+            "collection": collection,
+            "records": [],
+            "visible": [],
+            "attributes": {},
+            "query": query,
+            "skill": skill,
+            "source": source,
+            "subtype": subtype,
+            "confidence": confidence,
+            "readiness": readiness,
+            "minimum": minimum,
+            "maximum": maximum,
+            "sort": sort_value,
+            "controls": controls,
+            "count": count,
+            "results": results,
+            "details": details,
+            "action": action,
+        }
+        self.board_character_sheet_knowledge_tabs[collection] = state
+        for variable in (
+            query, skill, source, subtype, confidence, readiness,
+            minimum, maximum, sort_value,
+        ):
+            variable.trace_add(
+                "write",
+                lambda *_args, selected=collection: self._render_character_sheet_knowledge_results(
+                    selected
+                ),
+            )
+        results.bind(
+            "<<TreeviewSelect>>",
+            lambda _event, selected=collection: self._character_sheet_knowledge_selected(
+                selected
+            ),
+        )
+        results.bind(
+            "<Double-Button-1>",
+            lambda _event, selected=collection: self.perform_selected_character_sheet_knowledge(
+                selected
+            ),
+        )
+        results.bind(
+            "<Return>",
+            lambda _event, selected=collection: self.perform_selected_character_sheet_knowledge(
+                selected
+            ),
+        )
+
     def _configure_actor_sheet_tabs(self, actor_type: str) -> None:
         notebook = self.__dict__.get("board_character_sheet_notebook")
         if notebook is None:
@@ -3758,13 +4285,355 @@ class GameBoardWindow(tk.Tk):
         visible = (
             {"Overview", "Attributes", "Actions", "Story"}
             if creature
-            else {"Overview", "Attributes", "Knowledge", "Inventory", "Story"}
+            else {
+                "Overview", "Attributes", "Spells", "Proficiencies", "Recipes",
+                "Inventory", "Story",
+            }
         )
         for label, tab in self.board_actor_sheet_tabs.items():
             notebook.tab(tab, state="normal" if label in visible else "hidden")
         first = self.board_actor_sheet_tabs.get("Overview")
         if first is not None:
             notebook.select(first)
+
+    def _reset_character_sheet_knowledge_filters(self, collection: str) -> None:
+        state = self.board_character_sheet_knowledge_tabs.get(collection)
+        if not state:
+            return
+        for key, value in (
+            ("query", ""),
+            ("skill", "All skills"),
+            ("source", "All sources"),
+            ("subtype", "All subtypes"),
+            ("confidence", "All confidence levels"),
+            ("readiness", "All recipes"),
+            ("minimum", ""),
+            ("maximum", ""),
+            ("sort", "Name A–Z"),
+        ):
+            state[key].set(value)
+
+    @staticmethod
+    def _sheet_filter_value(value: str, prefix: str = "All ") -> str:
+        normalized = str(value or "").strip()
+        return "" if normalized.startswith(prefix) else normalized
+
+    def _populate_character_sheet_knowledge(
+        self,
+        collection: str,
+        records: list[dict[str, Any]],
+        attributes: dict[str, Any],
+    ) -> None:
+        state = self.board_character_sheet_knowledge_tabs.get(collection)
+        if not state:
+            return
+        state["records"] = [
+            item for item in records or []
+            if isinstance(item, dict) and item.get("record_id")
+        ]
+        state["attributes"] = attributes or {}
+
+        def values(field_name: str) -> tuple[str, ...]:
+            return tuple(sorted({
+                str(item.get(field_name) or "").strip()
+                for item in state["records"]
+                if str(item.get(field_name) or "").strip()
+            }, key=str.casefold))
+
+        choices = {
+            "skill": ("All skills", *values("skill")),
+            "source": ("All sources", *values("source")),
+        }
+        if collection == "spells":
+            choices["special"] = ("All subtypes", *values("subtype"))
+        confidence_values: list[str] = []
+        for item in state["records"]:
+            label = character_sheet_knowledge_confidence(
+                item, collection, attributes
+            )["label"]
+            if label not in confidence_values:
+                confidence_values.append(label)
+        ordered_confidence = [
+            label for label in (
+                "Easy to cast", "Easy to perform", "Easy to prepare",
+                "Medium confidence",
+                "Difficult to cast", "Difficult to perform", "Difficult to prepare",
+                "Very difficult to cast", "Very difficult to perform",
+                "Very difficult to prepare",
+                "Can't cast", "Can't perform", "Can't prepare", "No threshold",
+            ) if label in confidence_values
+        ]
+        choices["confidence"] = (
+            "All confidence levels", *ordered_confidence
+        )
+        for key, options in choices.items():
+            control = state["controls"].get(key)
+            if isinstance(control, ttk.Combobox):
+                control.configure(values=options)
+                variable_key = "subtype" if key == "special" else key
+                if state[variable_key].get() not in options:
+                    state[variable_key].set(options[0])
+        self._render_character_sheet_knowledge_results(collection)
+
+    def _render_character_sheet_knowledge_results(self, collection: str) -> None:
+        state = self.__dict__.get(
+            "board_character_sheet_knowledge_tabs", {}
+        ).get(collection)
+        if not state:
+            return
+
+        def parsed_integer(value: str) -> int | None:
+            try:
+                return int(str(value or "").strip())
+            except ValueError:
+                return None
+
+        readiness_value = {
+            "Ready to prepare": "ready",
+            "Missing requirements": "missing",
+        }.get(state["readiness"].get(), "")
+        sort_value = {
+            "Difficulty": "difficulty",
+            "Skill": "skill",
+            "Source": "source",
+        }.get(state["sort"].get(), "name")
+        visible = search_character_sheet_knowledge(
+            state["records"],
+            collection,
+            query=state["query"].get(),
+            skill=self._sheet_filter_value(state["skill"].get()),
+            source=self._sheet_filter_value(state["source"].get()),
+            subtype=self._sheet_filter_value(state["subtype"].get()),
+            confidence=self._sheet_filter_value(state["confidence"].get()),
+            minimum_difficulty=parsed_integer(state["minimum"].get()),
+            maximum_difficulty=parsed_integer(state["maximum"].get()),
+            readiness=readiness_value,
+            sort_by=sort_value,
+            attributes=state["attributes"],
+        )
+        state["visible"] = visible
+        results: ttk.Treeview = state["results"]
+        selected_record_id = str(state.get("selected_record_id") or "")
+        results.delete(*results.get_children())
+        selected_iid = ""
+        for index, record in enumerate(visible):
+            iid = f"knowledge:{index}"
+            band = character_sheet_knowledge_confidence(
+                record, collection, state["attributes"]
+            )["label"]
+            readiness = ""
+            if collection == "recipes":
+                readiness = (
+                    "Ready"
+                    if (record.get("requirements") or {}).get("ready")
+                    else "Missing requirements"
+                )
+            results.insert(
+                "",
+                "end",
+                iid=iid,
+                text=str(record.get("name") or "Unknown"),
+                values=(
+                    str(record.get("skill") or ""),
+                    "—" if record.get("threshold") in {None, ""} else record.get("threshold"),
+                    readiness or band,
+                ),
+            )
+            if str(record.get("record_id") or "") == selected_record_id:
+                selected_iid = iid
+        noun = SHEET_KNOWLEDGE_COLLECTIONS[collection]["singular"]
+        state["count"].set(
+            f"{len(visible)} of {len(state['records'])} known "
+            f"{noun if len(visible) == 1 else collection}"
+        )
+        if not selected_iid and visible:
+            selected_iid = "knowledge:0"
+        if selected_iid:
+            results.selection_set(selected_iid)
+            results.focus(selected_iid)
+        self._character_sheet_knowledge_selected(collection)
+
+    def _selected_character_sheet_knowledge_record(
+        self, collection: str,
+    ) -> dict[str, Any] | None:
+        state = self.board_character_sheet_knowledge_tabs.get(collection)
+        if not state:
+            return None
+        selection = state["results"].selection()
+        if not selection:
+            return None
+        try:
+            index = int(str(selection[0]).rsplit(":", 1)[1])
+        except (IndexError, ValueError):
+            return None
+        visible = state.get("visible", [])
+        return visible[index] if 0 <= index < len(visible) else None
+
+    def _character_sheet_knowledge_selected(self, collection: str) -> None:
+        state = self.board_character_sheet_knowledge_tabs.get(collection)
+        if not state:
+            return
+        record = self._selected_character_sheet_knowledge_record(collection)
+        details: tk.Text = state["details"]
+        action: ttk.Button = state["action"]
+        details.configure(state="normal")
+        details.delete("1.0", "end")
+        if record is None:
+            details.insert(
+                "end",
+                f"No matching {collection}. Adjust the search or filters.",
+                "muted",
+            )
+            details.configure(state="disabled")
+            action.configure(state="disabled")
+            state["selected_record_id"] = ""
+            return
+        state["selected_record_id"] = str(record.get("record_id") or "")
+        details.insert("end", f"{record.get('name') or 'Unknown'}\n", "title")
+        facts = [
+            f"Skill: {record.get('skill') or 'Not recorded'}",
+            f"Difficulty: {record.get('threshold') if record.get('threshold') not in {None, ''} else 'No threshold'}",
+            "Confidence: " + character_sheet_knowledge_confidence(
+                record, collection, state["attributes"]
+            )["label"],
+        ]
+        if record.get("subtype"):
+            facts.append(f"Subtype: {record['subtype']}")
+        if record.get("source"):
+            facts.append(f"Source: {record['source']}")
+        tags = record.get("tags", []) or []
+        if tags:
+            if not isinstance(tags, list):
+                tags = str(tags).split(",")
+            facts.append("Tags: " + ", ".join(str(value) for value in tags))
+        details.insert("end", "\n".join(facts) + "\n")
+        description = str(
+            record.get("description")
+            or record.get("raw_effect")
+            or record.get("raw_effects")
+            or "No description recorded."
+        )
+        details.insert("end", "\nDescription\n", "section")
+        details.insert("end", description + "\n")
+        ready = True
+        if collection == "recipes":
+            requirements = record.get("requirements") or {}
+            ready = bool(requirements.get("ready"))
+            summary = character_sheet_recipe_requirement_summary(requirements)
+            details.insert("end", "\nRequirements\n", "section")
+            if summary["consumables"]:
+                details.insert(
+                    "end",
+                    "Consumed on attempt:\n• "
+                    + "\n• ".join(summary["consumables"])
+                    + "\n",
+                )
+            if summary["vessels"]:
+                details.insert(
+                    "end",
+                    "Required but not consumed: "
+                    + ", ".join(summary["vessels"])
+                    + "\n",
+                )
+            if summary["missing"]:
+                details.insert(
+                    "end",
+                    "Missing:\n• " + "\n• ".join(summary["missing"]) + "\n",
+                    "missing",
+                )
+            else:
+                details.insert("end", "Ready to prepare.\n")
+        details.configure(state="disabled")
+        action.configure(
+            text=(
+                "Missing requirements"
+                if collection == "recipes" and not ready
+                else SHEET_KNOWLEDGE_COLLECTIONS[collection]["action"]
+            ),
+            state="normal" if ready else "disabled",
+        )
+
+    def perform_selected_character_sheet_knowledge(self, collection: str) -> str:
+        """Run an authoritative Headmaster action for a known sheet record."""
+
+        record = self._selected_character_sheet_knowledge_record(collection)
+        actor = self._selected_board_actor()
+        session_id = str(self.selected_session_id or "")
+        person_id = str((actor or {}).get("actor_id") or "")
+        active_scope = self.__dict__.get(
+            "_active_board_character_sheet_scope", ("", "")
+        )
+        if (
+            record is None
+            or not actor
+            or actor.get("actor_type") != "person"
+            or not session_id
+            or not person_id
+            or active_scope != (session_id, person_id)
+        ):
+            return "break"
+        config = SHEET_KNOWLEDGE_COLLECTIONS[collection]
+        record_id = str(record.get("record_id") or "")
+        record_name = str(record.get("name") or config["singular"].title())
+        if collection == "recipes":
+            requirements = record.get("requirements") or {}
+            summary = character_sheet_recipe_requirement_summary(requirements)
+            if not requirements.get("ready"):
+                messagebox.showinfo(
+                    "Recipe requirements",
+                    "This recipe cannot be attempted yet.\n\nMissing:\n• "
+                    + "\n• ".join(summary["missing"] or ["Requirements not recorded"]),
+                    parent=self,
+                )
+                return "break"
+            consumption = "\n".join(summary["consumables"]) or "No consumable ingredients"
+            vessel = (
+                "\n\nRequired vessel (not consumed): "
+                + ", ".join(summary["vessels"])
+                if summary["vessels"] else ""
+            )
+            if not messagebox.askyesno(
+                f"Prepare {record_name}?",
+                (
+                    "The ingredients below will be consumed whether the attempt "
+                    f"succeeds or fails:\n\n{consumption}{vessel}\n\nContinue?"
+                ),
+                parent=self,
+            ):
+                return "break"
+            path = (
+                "/api/admin/board/people/"
+                f"{urllib.parse.quote(person_id, safe='')}/recipe-attempt"
+            )
+            payload = {"session_id": session_id, "target_id": record_id}
+        else:
+            path = (
+                "/api/admin/board/people/"
+                f"{urllib.parse.quote(person_id, safe='')}/roll"
+            )
+            payload = {
+                "session_id": session_id,
+                "roll_type": config["singular"],
+                "target_id": record_id,
+            }
+        state = self.board_character_sheet_knowledge_tabs[collection]
+        state["action"].configure(state="disabled", text=f"{config['action']}…")
+
+        def completed(result: dict[str, Any]) -> None:
+            self.set_notice(str(result.get("text") or f"{record_name} attempted"))
+            self.refresh(silent=True)
+            self._load_selected_actor_sheet(force=True)
+
+        def failed(error: Exception) -> None:
+            self._character_sheet_knowledge_selected(collection)
+            self._failed(error, False)
+
+        self._background(
+            lambda: self.client.request("POST", path, payload, timeout=60),
+            completed,
+            failure=failed,
+        )
+        return "break"
 
     def _actor_drawer_bounds(self) -> tuple[int, int, int, int]:
         parent = self.game_board_page
@@ -3776,7 +4645,10 @@ class GameBoardWindow(tk.Tk):
             if widget.winfo_manager():
                 y = max(y, widget.winfo_y() + widget.winfo_height())
         available_width = max(1, parent.winfo_width() - x - 4)
-        desired = max(460, min(self.board_actor_sheet_width, int(parent.winfo_width() * 0.52)))
+        # The sheet is an intentional temporary overlay.  Give it its full
+        # reading width whenever the page has room, then shrink only when the
+        # remaining workspace is genuinely narrower.
+        desired = max(460, self.board_actor_sheet_width)
         width = min(desired, available_width)
         height = max(1, parent.winfo_height() - y)
         return x, y, width, height
@@ -5427,6 +6299,17 @@ class GameBoardWindow(tk.Tk):
             canvas.configure(cursor="arrow")
         self.set_notice(f"Creature placement ended · {remaining} unplaced")
         return "break"
+
+    def _handle_game_board_escape(
+        self, event: tk.Event | None = None,
+    ) -> str:
+        """Close the actor sheet while preserving other Escape cancellation."""
+
+        sheet_was_open = bool(self.actor_sheet_drawer_open)
+        if sheet_was_open:
+            self.close_actor_sheet_drawer()
+        placement_result = self._cancel_creature_placement(event)
+        return "break" if sheet_was_open or placement_result == "break" else ""
 
     def _place_next_creature(self, event: tk.Event, map_id: str) -> None:
         placement = self.creature_placement
@@ -8951,7 +9834,7 @@ class GameBoardWindow(tk.Tk):
         view = view_variable.get() if view_variable is not None else "Locations"
         characters = list(self.state_data.get("characters") or [])
         search_limit = 200
-        typologies = board_actor_typology_sections(
+        sections = board_actor_sections(
             self.board_snapshot,
             characters,
             view,
@@ -8962,7 +9845,6 @@ class GameBoardWindow(tk.Tk):
         )
         displayed_count = sum(
             len(actors)
-            for _typology, sections in typologies
             for _section, actors in sections
         )
         search_capped = bool(query and displayed_count >= search_limit)
@@ -8974,33 +9856,28 @@ class GameBoardWindow(tk.Tk):
             search_capped,
             tuple(
                 (
-                    typology,
+                    section,
                     tuple(
                         (
-                            section,
-                            tuple(
-                                (
-                                    str(actor.get("actor_id") or ""),
-                                    str(actor.get("name") or "Unknown"),
-                                    str(actor.get("actor_typology") or ""),
-                                    str(actor.get("actor_subtype") or ""),
-                                    str(actor.get("map_id") or ""),
-                                    str(actor.get("location_id") or ""),
-                                    str(actor.get("location_name") or ""),
-                                    str(actor.get("group_id") or ""),
-                                    str(actor.get("group_name") or ""),
-                                    str(actor.get("faction_id") or ""),
-                                    str(actor.get("faction_name") or ""),
-                                    str(actor.get("life_state") or ""),
-                                    bool(actor.get("is_player_character")),
-                                )
-                                for actor in actors
-                            ),
+                            str(actor.get("actor_id") or ""),
+                            str(actor.get("name") or "Unknown"),
+                            str(actor.get("actor_type") or "person"),
+                            str(actor.get("actor_typology") or ""),
+                            str(actor.get("actor_subtype") or ""),
+                            str(actor.get("map_id") or ""),
+                            str(actor.get("location_id") or ""),
+                            str(actor.get("location_name") or ""),
+                            str(actor.get("group_id") or ""),
+                            str(actor.get("group_name") or ""),
+                            str(actor.get("faction_id") or ""),
+                            str(actor.get("faction_name") or ""),
+                            str(actor.get("life_state") or ""),
+                            bool(actor.get("is_player_character")),
                         )
-                        for section, actors in sections
+                        for actor in actors
                     ),
                 )
-                for typology, sections in typologies
+                for section, actors in sections
             ),
         )
         if signature == self._board_actor_list_signature:
@@ -9008,73 +9885,58 @@ class GameBoardWindow(tk.Tk):
             return
         self._board_actor_list_signature = signature
         selected_item = f"actor:{self.selected_board_actor_id}"
-        selected_actor = self._selected_board_actor()
         self._rendering_actor_selection = True
         try:
             children = tree.get_children()
             if children:
                 tree.delete(*children)
-            for type_index, (typology, sections) in enumerate(typologies):
-                type_count = sum(len(records) for _label, records in sections)
-                type_id = f"typology:{type_index}"
+            for section_index, (section, actors) in enumerate(sections):
+                section_id = f"section:{section_index}"
                 tree.insert(
-                    "", "end", iid=type_id,
-                    text=f"{typology.upper()}  ({type_count})",
-                    tags=("typology",), open=True,
+                    "", "end", iid=section_id,
+                    text=f"{section}  ({len(actors)})",
+                    tags=("section",), open=True,
                 )
-                for section_index, (section, actors) in enumerate(sections):
-                    section_id = f"section:{type_index}:{section_index}"
-                    tree.insert(
-                        type_id, "end", iid=section_id,
-                        text=f"{section}  ({len(actors)})",
-                        tags=("section",), open=True,
+                for actor in actors:
+                    actor_id = str(actor.get("actor_id") or "")
+                    is_creature = actor.get("actor_type") == "creature"
+                    location_name = str(actor.get("location_name") or "")
+                    map_name = str(actor.get("map_name") or "")
+                    detail = (
+                        map_name
+                        if actor.get("map_id")
+                        else location_name
                     )
-                    for actor in actors:
-                        actor_id = str(actor.get("actor_id") or "")
-                        is_creature = actor.get("actor_type") == "creature"
-                        location_name = str(actor.get("location_name") or "")
-                        map_name = str(actor.get("map_name") or "")
-                        detail = (
-                            map_name
-                            if actor.get("map_id")
-                            else location_name
-                        )
-                        name = str(actor.get("name") or "Unknown")
-                        subtype = str(actor.get("actor_subtype") or "")
-                        if is_creature:
-                            state = str(actor.get("life_state") or "alive").title()
-                            label = f"◆ {name}  ·  {state}"
-                        else:
-                            marker = "PC" if actor.get("is_player_character") else "NPC"
-                            label = f"{marker} · {name}"
-                        if detail:
-                            label = f"{label}  —  {detail}"
-                        elif is_creature and subtype and subtype != name:
-                            label = f"{label}  —  {subtype}"
-                        tags = ["creature"] if is_creature else []
-                        if actor.get("unplaced"):
-                            tags.append("unplaced")
-                        if actor.get("is_player_character"):
-                            tags.append("player")
-                        tree.insert(
-                            section_id, "end", iid=f"actor:{actor_id}",
-                            text=label, tags=tuple(tags),
-                        )
-            character_count = sum(
-                len(records)
-                for typology, sections in typologies
-                if typology == "Characters"
-                for _section, records in sections
-            )
-            if not query and character_count == 0:
+                    name = str(actor.get("name") or "Unknown")
+                    subtype = str(actor.get("actor_subtype") or "")
+                    if is_creature:
+                        state = str(actor.get("life_state") or "alive").title()
+                        label = f"◆ {name}  ·  {state}"
+                    else:
+                        marker = "PC" if actor.get("is_player_character") else "NPC"
+                        label = f"{marker} · {name}"
+                    if detail:
+                        label = f"{label}  —  {detail}"
+                    elif is_creature and subtype and subtype != name:
+                        label = f"{label}  —  {subtype}"
+                    tags = ["creature"] if is_creature else []
+                    if actor.get("unplaced"):
+                        tags.append("unplaced")
+                    if actor.get("is_player_character"):
+                        tags.append("player")
+                    tree.insert(
+                        section_id, "end", iid=f"actor:{actor_id}",
+                        text=label, tags=tuple(tags),
+                    )
+            if not query and displayed_count == 0:
                 empty_hint, action_hint = board_campaign_character_empty_lines()
                 tree.insert(
-                    "typology:0", "end", iid="hint:campaign-empty",
+                    "", "end", iid="hint:campaign-empty",
                     text=empty_hint,
                     tags=("hint",),
                 )
                 tree.insert(
-                    "typology:0", "end", iid="hint:campaign-add",
+                    "", "end", iid="hint:campaign-add",
                     text=action_hint,
                     tags=("hint",),
                 )
@@ -9569,7 +10431,7 @@ class GameBoardWindow(tk.Tk):
         search.focus_set()
 
     def _render_character_sheet_message(self, message: str) -> None:
-        texts = getattr(self, "board_character_sheet_texts", {})
+        texts = self.__dict__.get("board_character_sheet_texts", {})
         for label, widget in texts.items():
             widget.configure(state="normal")
             widget.delete("1.0", "end")
@@ -9577,6 +10439,27 @@ class GameBoardWindow(tk.Tk):
                 widget.insert("end", "Actor sheet\n", "title")
                 widget.insert("end", message, "muted")
             widget.configure(state="disabled")
+        self._active_board_character_sheet = {}
+        self._active_board_character_sheet_scope = ("", "")
+        for collection, state in self.__dict__.get(
+            "board_character_sheet_knowledge_tabs", {}
+        ).items():
+            state["records"] = []
+            state["visible"] = []
+            state["attributes"] = {}
+            state["selected_record_id"] = ""
+            results = state["results"]
+            results.delete(*results.get_children())
+            state["count"].set(f"No known {collection} loaded")
+            details = state["details"]
+            details.configure(state="normal")
+            details.delete("1.0", "end")
+            details.insert("end", message, "muted")
+            details.configure(state="disabled")
+            state["action"].configure(
+                text=SHEET_KNOWLEDGE_COLLECTIONS[collection]["action"],
+                state="disabled",
+            )
 
     @staticmethod
     def _sheet_record_lines(
@@ -9641,6 +10524,11 @@ class GameBoardWindow(tk.Tk):
 
     def _render_board_character_sheet(self, sheet: dict[str, Any]) -> None:
         self._configure_actor_sheet_tabs("person")
+        self._active_board_character_sheet = deepcopy(sheet)
+        self._active_board_character_sheet_scope = (
+            str(self.selected_session_id or ""),
+            str(sheet.get("character_id") or ""),
+        )
         self.board_actor_sheet_typology.set("CHARACTER")
         overview = sheet.get("overview") or {}
         name = str(overview.get("name") or sheet.get("character_name") or "Character")
@@ -9710,16 +10598,12 @@ class GameBoardWindow(tk.Tk):
                 ("Traits", [f"• {value}" for value in attributes.get("traits", []) or []]),
             ],
         )
-        self._set_character_sheet_panel(
-            "Knowledge",
-            f"{name} · Knowledge",
-            [
-                ("Spells", self._sheet_record_lines(list(sheet.get("spells") or []), "skill", "source")),
-                ("Proficiencies", self._sheet_record_lines(list(sheet.get("proficiencies") or []), "skill", "source")),
-                ("Recipes", self._sheet_record_lines(list(sheet.get("recipes") or []), "skill", "source")),
-                ("Books", self._sheet_record_lines(list(sheet.get("books") or []), "author")),
-            ],
-        )
+        for collection in SHEET_KNOWLEDGE_COLLECTIONS:
+            self._populate_character_sheet_knowledge(
+                collection,
+                list(sheet.get(collection) or []),
+                attributes,
+            )
         inventory_records = list(sheet.get("inventory") or [])
         inventory_names = {
             str(item.get("record_id") or ""): str(item.get("name") or "Unknown")
@@ -9781,6 +10665,8 @@ class GameBoardWindow(tk.Tk):
         """Render encounter state and actions without flattening it into a person sheet."""
 
         self._configure_actor_sheet_tabs("creature")
+        self._active_board_character_sheet = {}
+        self._active_board_character_sheet_scope = ("", "")
         species = str(creature.get("true_name") or creature.get("name") or "Creature")
         name = str(creature.get("internal_label") or species)
         map_name = next(

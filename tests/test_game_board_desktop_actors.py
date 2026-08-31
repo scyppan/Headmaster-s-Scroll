@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 from headmasters_scroll.game_board.desktop import (
     GameBoardWindow,
+    board_actor_sections,
     board_actor_typology_sections,
     board_campaign_character_empty_lines,
     board_location_choices,
@@ -119,6 +120,37 @@ class GameBoardDesktopActorTests(unittest.TestCase):
         self.assertEqual(creatures[0]["actor_subtype"], "Bowtruckle")
         self.assertEqual(by_type["Creatures"][0][0], "Forest")
 
+    def test_visible_actor_sections_mix_types_and_retain_internal_typology(self):
+        sections = board_actor_sections(
+            self.snapshot(),
+            [
+                {"id": "person-a", "name": "Alice"},
+                {
+                    "id": "person-b",
+                    "name": "Bea",
+                    "location_id": "location-b",
+                },
+            ],
+            "Locations",
+        )
+
+        by_location = dict(sections)
+        forest = by_location["Forest Grounds"]
+        self.assertEqual(
+            [actor["actor_id"] for actor in forest],
+            ["person-b", "creature-a"],
+        )
+        self.assertEqual(
+            [actor["actor_type"] for actor in forest],
+            ["person", "creature"],
+        )
+        self.assertEqual(
+            [actor["actor_typology"] for actor in forest],
+            ["Character", "Creature"],
+        )
+        creature = forest[1]
+        self.assertEqual(creature["actor_subtype"], "Bowtruckle")
+
     def test_unified_helper_searches_creature_species_and_keeps_types_separate(self):
         sections = board_actor_typology_sections(
             self.snapshot(),
@@ -197,8 +229,8 @@ class GameBoardDesktopActorTests(unittest.TestCase):
     def test_campaign_empty_hint_is_split_into_two_narrow_readable_rows(self):
         empty_line, instruction_line = board_campaign_character_empty_lines()
 
-        self.assertEqual(empty_line, "No campaign characters")
-        self.assertEqual(instruction_line, "Use C+ to add one")
+        self.assertEqual(empty_line, "No campaign actors")
+        self.assertEqual(instruction_line, "Use C+ or ◆+ to add one")
         self.assertLessEqual(len(empty_line), 28)
         self.assertLessEqual(len(instruction_line), 28)
 
@@ -207,6 +239,14 @@ class GameBoardDesktopActorTests(unittest.TestCase):
 
         self.assertIn("include_unplaced=True", source)
         self.assertNotIn("include_unplaced=bool(query)", source)
+
+    def test_actor_render_has_one_organization_tree_without_type_headers(self):
+        source = inspect.getsource(GameBoardWindow._render_board_actor_list)
+
+        self.assertIn("board_actor_sections(", source)
+        self.assertNotIn("board_actor_typology_sections(", source)
+        self.assertNotIn("typology.upper()", source)
+        self.assertNotIn('tags=("typology",)', source)
 
     def test_import_search_enter_cancels_the_pending_debounce(self):
         source = inspect.getsource(GameBoardWindow.choose_character_for_campaign)
@@ -358,6 +398,30 @@ class GameBoardDesktopActorTests(unittest.TestCase):
         self.assertNotIn('(\"creatures\", \"◆\", \"Creatures\")', tools)
         self.assertIn("self.board_actor_sheet_width", drawer)
         self.assertIn("self.board_creature_actions", drawer)
+
+    def test_escape_closes_actor_sheet_and_preserves_placement_cancel(self):
+        window = object.__new__(GameBoardWindow)
+        window.actor_sheet_drawer_open = True
+        calls = []
+        window.close_actor_sheet_drawer = lambda: calls.append("sheet")
+        window._cancel_creature_placement = (
+            lambda _event=None: calls.append("placement") or "break"
+        )
+
+        result = window._handle_game_board_escape()
+
+        self.assertEqual(result, "break")
+        self.assertEqual(calls, ["sheet", "placement"])
+
+    def test_escape_still_cancels_placement_when_sheet_is_closed(self):
+        window = object.__new__(GameBoardWindow)
+        window.actor_sheet_drawer_open = False
+        window.close_actor_sheet_drawer = lambda: self.fail(
+            "closed sheet should not be closed again"
+        )
+        window._cancel_creature_placement = lambda _event=None: "break"
+
+        self.assertEqual(window._handle_game_board_escape(), "break")
 
 
 if __name__ == "__main__":

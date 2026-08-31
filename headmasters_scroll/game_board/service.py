@@ -1382,15 +1382,22 @@ class GameBoardService:
     def headmaster_roll_person_action(
         self, session_id: str, person_id: str, roll_type: str, target_id: str,
     ) -> dict[str, Any]:
+        if str(roll_type or "").strip().casefold() == "recipe":
+            raise PermissionError(
+                "Recipe attempts require confirmation before ingredients are used"
+            )
         with self._lock:
             session = self._board_context(session_id)
             campaign, _world = self._campaign_document(session)
+            sheet = self._sheet_for_person(session_id, person_id)
             if self._roll_consumes_battle_action(roll_type):
                 self._assert_battle_action_available(
                     campaign["game_state"], "person", person_id
                 )
-            sheet = self._sheet_for_person(session_id, person_id)
             result = perform_character_roll(sheet, roll_type, target_id)
+            result["character_name"] = str(
+                sheet.get("character_name") or "Character"
+            )
             if self._roll_consumes_battle_action(roll_type):
                 self._commit_battle_action(
                     campaign["record_id"], "person", person_id,
@@ -5365,13 +5372,154 @@ class GameBoardService:
                 )
             return result
 
+    def _attempt_person_recipe(
+        self,
+        character_id: str,
+        campaign_id: str,
+        sheet: dict[str, Any],
+        target_id: str,
+    ) -> dict[str, Any]:
+        """Consume one confirmed recipe and resolve it for an authorized person.
+
+        The caller is responsible for resolving the character and its private,
+        campaign-effective sheet.  Keeping the actual consumption and award
+        logic here ensures Headmaster and player actions have identical rules.
+        This helper is called while ``self._lock`` is held.
+        """
+
+        campaign_for_turn = self.campaign_repository.get(campaign_id)
+        self._assert_battle_action_available(
+            campaign_for_turn["game_state"], "person", character_id
+        )
+        recipe = next(
+            (
+                item for item in sheet.get("recipes", []) or []
+                if isinstance(item, dict)
+                and str(item.get("record_id", "")) == str(target_id)
+            ),
+            None,
+        )
+        if recipe is None:
+            raise PermissionError("This character does not know that recipe")
+        requirements = recipe.get("requirements", {}) or {}
+        missing = [str(item) for item in requirements.get("missing", []) or []]
+        if not requirements.get("ready", False):
+            raise PermissionError(
+                "Missing recipe requirements: " + ", ".join(missing)
+            )
+        consumption = requirements.get("consumption", {}) or {}
+        if not isinstance(consumption, dict):
+            raise ValueError("Invalid recipe consumption plan")
+
+        def consume(state: dict[str, Any]) -> None:
+            person_state = state.setdefault("people", {}).setdefault(
+                character_id, {}
+            )
+            already = person_state.setdefault("consumed_inventory", {})
+            for item_id, raw_quantity in consumption.items():
+                quantity = float(raw_quantity)
+                stacks = person_state.setdefault("campaign_inventory", [])
+                stack = next(
+                    (
+                        item for item in stacks
+                        if str(item.get("record_id", "")) == str(item_id)
+                    ),
+                    None,
+                )
+                if stack is not None:
+                    remaining = float(stack.get("quantity", 0) or 0) - quantity
+                    if remaining < 0:
+                        raise ValueError("Campaign inventory changed before consumption")
+                    if remaining == 0:
+                        stacks.remove(stack)
+                    else:
+                        stack["quantity"] = (
+                            int(remaining) if remaining.is_integer() else remaining
+                        )
+                else:
+                    already[item_id] = (
+                        float(already.get(item_id, 0) or 0) + quantity
+                    )
+
+        # Consumption is committed before the die is rolled. A failed attempt
+        # therefore uses the same ingredients as a successful one.
+        if consumption:
+            self.campaign_repository.update_game_state(campaign_id, consume)
+        required_spell_rolls = []
+        for spell_group in requirements.get("spells", []) or []:
+            spell_id = str(spell_group.get("selected_record_id", "") or "")
+            if not spell_id:
+                continue
+            required_spell_rolls.append(
+                perform_character_roll(sheet, "spell", spell_id)
+            )
+        failed_spell = next(
+            (roll for roll in required_spell_rolls if roll.get("success") is False),
+            None,
+        )
+        if failed_spell is None:
+            result = perform_character_roll(sheet, "recipe", target_id)
+        else:
+            result = deepcopy(failed_spell)
+            result.update({
+                "action_type": "recipe",
+                "target_id": target_id,
+                "target_name": str(recipe.get("name") or "Recipe"),
+                "text": (
+                    f"{sheet.get('character_name', 'The character')} attempts "
+                    f"{recipe.get('name', 'a recipe')}, but the required "
+                    f"{failed_spell.get('target_name', 'spell')} fails."
+                ),
+            })
+        result["character_name"] = str(
+            sheet.get("character_name") or "Character"
+        )
+        result["required_spell_rolls"] = required_spell_rolls
+        result["consumed_ingredients"] = deepcopy(
+            requirements.get("ingredients", []) or []
+        )
+        result["required_vessel"] = deepcopy(requirements.get("vessel"))
+        result["required_vessels"] = deepcopy(
+            requirements.get("vessels", []) or []
+        )
+        result["required_proficiencies"] = deepcopy(
+            requirements.get("proficiencies", []) or []
+        )
+        result["required_spells"] = deepcopy(
+            requirements.get("spells", []) or []
+        )
+        output_item = requirements.get("output_item")
+        output_quantity = int(requirements.get("output_quantity", 1) or 1)
+        if result.get("success") is True and isinstance(output_item, dict):
+            def award(state: dict[str, Any]) -> None:
+                person_state = state.setdefault("people", {}).setdefault(
+                    character_id, {}
+                )
+                self._inventory_add(
+                    person_state,
+                    output_item,
+                    output_item,
+                    output_quantity,
+                    source=str(recipe.get("name") or "Recipe"),
+                )
+
+            self.campaign_repository.update_game_state(campaign_id, award)
+            result["recipe_output"] = {
+                **deepcopy(output_item), "quantity": output_quantity,
+            }
+        self._commit_battle_action(
+            campaign_id, "person", character_id,
+            str(result.get("text") or recipe.get("name") or "Recipe attempted"),
+        )
+        return result
+
     def attempt_character_recipe(
         self,
         session_id: str,
         contact_id: str,
         target_id: str,
     ) -> dict[str, Any]:
-        """Consume a confirmed recipe's ingredients, then make its roll."""
+        """Consume a player's confirmed recipe ingredients, then roll."""
 
         controlled = self.controlled_character_ids(session_id, contact_id)
         with self._lock:
@@ -5383,129 +5531,29 @@ class GameBoardService:
             campaign_id = str(session.get("campaign_id", "") or "")
             if not campaign_id:
                 raise PermissionError("This session is not linked to a campaign")
-
-            campaign_for_turn = self.campaign_repository.get(campaign_id)
-            self._assert_battle_action_available(
-                campaign_for_turn["game_state"], "person", character_id
-            )
-
             sheet = self.character_sheet_for(session_id, contact_id)
             if sheet is None:
                 raise PermissionError("No World Builder character is linked to this player")
-            recipe = next(
-                (
-                    item for item in sheet.get("recipes", []) or []
-                    if isinstance(item, dict)
-                    and str(item.get("record_id", "")) == str(target_id)
-                ),
-                None,
+            return self._attempt_person_recipe(
+                character_id, campaign_id, sheet, target_id
             )
-            if recipe is None:
-                raise PermissionError("This character does not know that recipe")
-            requirements = recipe.get("requirements", {}) or {}
-            missing = [str(item) for item in requirements.get("missing", []) or []]
-            if not requirements.get("ready", False):
-                raise PermissionError(
-                    "Missing recipe requirements: " + ", ".join(missing)
-                )
-            consumption = requirements.get("consumption", {}) or {}
-            if not isinstance(consumption, dict):
-                raise ValueError("Invalid recipe consumption plan")
 
-            def consume(state: dict[str, Any]) -> None:
-                person_state = state.setdefault("people", {}).setdefault(
-                    character_id, {}
-                )
-                already = person_state.setdefault("consumed_inventory", {})
-                for item_id, raw_quantity in consumption.items():
-                    quantity = float(raw_quantity)
-                    stacks = person_state.setdefault("campaign_inventory", [])
-                    stack = next(
-                        (
-                            item for item in stacks
-                            if str(item.get("record_id", "")) == str(item_id)
-                        ),
-                        None,
-                    )
-                    if stack is not None:
-                        remaining = float(stack.get("quantity", 0) or 0) - quantity
-                        if remaining < 0:
-                            raise ValueError("Campaign inventory changed before consumption")
-                        if remaining == 0:
-                            stacks.remove(stack)
-                        else:
-                            stack["quantity"] = int(remaining) if remaining.is_integer() else remaining
-                    else:
-                        already[item_id] = float(already.get(item_id, 0) or 0) + quantity
+    def headmaster_attempt_person_recipe(
+        self, session_id: str, person_id: str, target_id: str,
+    ) -> dict[str, Any]:
+        """Attempt a confirmed recipe for one character on the selected board."""
 
-            # Consumption is committed before the die is rolled. A failed attempt
-            # therefore uses the same ingredients as a successful one.
-            if consumption:
-                self.campaign_repository.update_game_state(campaign_id, consume)
-            required_spell_rolls = []
-            for spell_group in requirements.get("spells", []) or []:
-                spell_id = str(spell_group.get("selected_record_id", "") or "")
-                if not spell_id:
-                    continue
-                required_spell_rolls.append(
-                    perform_character_roll(sheet, "spell", spell_id)
-                )
-            failed_spell = next(
-                (roll for roll in required_spell_rolls if roll.get("success") is False),
-                None,
+        with self._lock:
+            session = self._board_context(session_id)
+            campaign_id = str(session.get("campaign_id", "") or "")
+            if not campaign_id:
+                raise PermissionError("This session is not linked to a campaign")
+            # This also rejects world-catalog people that have not been
+            # explicitly imported into the campaign.
+            sheet = self._sheet_for_person(session_id, person_id)
+            return self._attempt_person_recipe(
+                person_id, campaign_id, sheet, target_id
             )
-            if failed_spell is None:
-                result = perform_character_roll(sheet, "recipe", target_id)
-            else:
-                result = deepcopy(failed_spell)
-                result.update({
-                    "action_type": "recipe",
-                    "target_id": target_id,
-                    "target_name": str(recipe.get("name") or "Recipe"),
-                    "text": (
-                        f"{sheet.get('character_name', 'The character')} attempts "
-                        f"{recipe.get('name', 'a recipe')}, but the required "
-                        f"{failed_spell.get('target_name', 'spell')} fails."
-                    ),
-                })
-            result["required_spell_rolls"] = required_spell_rolls
-            result["consumed_ingredients"] = deepcopy(
-                requirements.get("ingredients", []) or []
-            )
-            result["required_vessel"] = deepcopy(requirements.get("vessel"))
-            result["required_vessels"] = deepcopy(
-                requirements.get("vessels", []) or []
-            )
-            result["required_proficiencies"] = deepcopy(
-                requirements.get("proficiencies", []) or []
-            )
-            result["required_spells"] = deepcopy(
-                requirements.get("spells", []) or []
-            )
-            output_item = requirements.get("output_item")
-            output_quantity = int(requirements.get("output_quantity", 1) or 1)
-            if result.get("success") is True and isinstance(output_item, dict):
-                def award(state: dict[str, Any]) -> None:
-                    person_state = state.setdefault("people", {}).setdefault(
-                        character_id, {}
-                    )
-                    self._inventory_add(
-                        person_state,
-                        output_item,
-                        output_item,
-                        output_quantity,
-                        source=str(recipe.get("name") or "Recipe"),
-                    )
-
-                self.campaign_repository.update_game_state(campaign_id, award)
-                result["recipe_output"] = {
-                    **deepcopy(output_item), "quantity": output_quantity,
-                }
-            self._commit_battle_action(
-                campaign_id, "person", character_id,
-                str(result.get("text") or recipe.get("name") or "Recipe attempted"),
-            )
-            return result
 
     def update_character_equipment(
         self, session_id: str, contact_id: str, slot: str, item_id: str,

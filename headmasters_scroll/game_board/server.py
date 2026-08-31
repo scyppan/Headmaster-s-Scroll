@@ -429,6 +429,11 @@ class HeadmasterPersonRollBody(BaseModel):
     target_id: str = Field(min_length=1, max_length=160)
 
 
+class HeadmasterRecipeAttemptBody(BaseModel):
+    session_id: str = Field(min_length=1, max_length=100)
+    target_id: str = Field(min_length=1, max_length=160)
+
+
 @dataclass
 class PlayerConnection:
     websocket: Any
@@ -1231,7 +1236,8 @@ def create_apps(
         "character_sheet_for_person", "create_battle", "create_board_faction",
         "create_board_group", "create_quick_character", "creature_campaign_action",
         "end_battle", "grant_board_control", "headmaster_creature_interaction",
-        "headmaster_roll_person_action", "place_campaign_creature",
+        "headmaster_attempt_person_recipe", "headmaster_roll_person_action",
+        "place_campaign_creature",
         "assign_person_location", "move_person", "place_person_on_map",
         "remove_battle_actor", "reorder_battle",
         "roll_campaign_creature_action", "set_board_camera", "set_board_group",
@@ -1288,6 +1294,67 @@ def create_apps(
             session_id,
             person_id,
         )
+
+    async def resolve_headmaster_person_roll(
+        person_id: str, body: HeadmasterPersonRollBody,
+    ) -> dict[str, Any]:
+        result = await asyncio.to_thread(
+            admin_result,
+            service.headmaster_roll_person_action,
+            body.session_id,
+            person_id,
+            body.roll_type,
+            body.target_id,
+        )
+        await runtime.chat(
+            person_id,
+            str(result.get("character_name") or "Character"),
+            "headmaster",
+            str(result.get("text") or "A character acts."),
+            body.session_id,
+            result,
+        )
+        await runtime.broadcast_battles(body.session_id)
+        return result
+
+    @admin_app.post(
+        "/api/admin/board/people/{person_id}/roll",
+        dependencies=[Depends(admin_guard)],
+    )
+    async def headmaster_person_roll(
+        person_id: str, body: HeadmasterPersonRollBody,
+    ):
+        """Resolve a server-authoritative action for a campaign character."""
+
+        return await resolve_headmaster_person_roll(person_id, body)
+
+    @admin_app.post(
+        "/api/admin/board/people/{person_id}/recipe-attempt",
+        dependencies=[Depends(admin_guard)],
+    )
+    async def headmaster_person_recipe_attempt(
+        person_id: str, body: HeadmasterRecipeAttemptBody,
+    ):
+        """Consume a confirmed recipe's requirements and resolve its roll."""
+
+        result = await asyncio.to_thread(
+            admin_result,
+            service.headmaster_attempt_person_recipe,
+            body.session_id,
+            person_id,
+            body.target_id,
+        )
+        await runtime.chat(
+            person_id,
+            str(result.get("character_name") or "Character"),
+            "headmaster",
+            str(result.get("text") or "A character prepares a recipe."),
+            body.session_id,
+            result,
+        )
+        await runtime.broadcast_battles(body.session_id)
+        await runtime.broadcast_character_sheets(body.session_id)
+        return result
 
     @admin_app.get(
         "/api/admin/board/world-people",
@@ -1826,17 +1893,9 @@ def create_apps(
     async def headmaster_battle_person_roll(
         person_id: str, body: HeadmasterPersonRollBody,
     ):
-        result = admin_result(
-            service.headmaster_roll_person_action,
-            body.session_id, person_id, body.roll_type, body.target_id,
-        )
-        await runtime.chat(
-            person_id, str(result.get("character_name") or "Character"),
-            "headmaster", str(result.get("text") or "A character acts."),
-            body.session_id, result,
-        )
-        await runtime.broadcast_battles(body.session_id)
-        return result
+        # Compatibility alias retained for the battle manager.  New callers
+        # should use the board-scoped route above.
+        return await resolve_headmaster_person_roll(person_id, body)
 
     @admin_app.get("/api/admin/creatures", dependencies=[Depends(admin_guard)])
     def search_creature_species(

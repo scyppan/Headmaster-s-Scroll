@@ -408,6 +408,165 @@ class GameBoardApiTests(unittest.TestCase):
             403,
         )
 
+    def test_headmaster_sheet_actions_roll_chat_and_consume_recipes(self):
+        imported = self.import_world_characters(1)[0]
+        unimported = next(
+            item for item in self.world_characters(10)
+            if item["id"] != imported["id"]
+        )
+        recipe_path = (
+            f"/api/admin/board/people/{imported['id']}/recipe-attempt"
+        )
+        self.assertEqual(
+            self.admin.post(
+                f"/api/admin/board/people/{unimported['id']}/recipe-attempt",
+                headers=self.admin_headers,
+                json={"session_id": self.session_id, "target_id": "tea"},
+            ).status_code,
+            404,
+        )
+        self.assertEqual(
+            self.admin.post(
+                f"/api/admin/board/people/{imported['id']}/roll",
+                headers=self.admin_headers,
+                json={
+                    "session_id": self.session_id,
+                    "roll_type": "recipe",
+                    "target_id": "tea",
+                },
+            ).status_code,
+            403,
+        )
+        self.assertEqual(
+            self.admin.post(
+                f"/api/admin/board/people/{imported['id']}/roll",
+                headers=self.admin_headers,
+                json={
+                    "session_id": "not-the-board-session",
+                    "roll_type": "spell",
+                    "target_id": "lumos",
+                },
+            ).status_code,
+            409,
+        )
+        self.assertEqual(
+            self.admin.post(
+                recipe_path,
+                headers=self.admin_headers,
+                json={
+                    "session_id": "not-the-board-session",
+                    "target_id": "tea",
+                },
+            ).status_code,
+            409,
+        )
+
+        sheet = {
+            "character_name": imported["name"],
+            "attributes": {
+                "attributes": [{"name": "Panache", "value": 1}],
+                "skills": [
+                    {"name": "Charms", "value": 2},
+                    {"name": "Potions", "value": 2},
+                ],
+                "characteristics": [], "parental_values": [],
+            },
+            "spells": [{
+                "record_id": "lumos", "name": "Lumos",
+                "skill": "Charms", "threshold": 5,
+            }],
+            "proficiencies": [],
+            "inventory": [
+                {"record_id": "leaves", "name": "Tea leaves", "quantity": 2},
+                {"record_id": "cauldron", "name": "Copper Cauldron", "quantity": 1},
+            ],
+            "recipes": [{
+                "record_id": "tea", "name": "Tea", "skill": "Potions",
+                "threshold": 5,
+                "requirements": {
+                    "ready": True, "missing": [],
+                    "ingredients": [{
+                        "name": "Tea leaves", "required": 2,
+                        "available": 2, "missing": 0,
+                    }],
+                    "vessel": {"name": "Cauldron", "available": True},
+                    "consumption": {"leaves": 2},
+                },
+            }],
+        }
+
+        def authoritative_roll(_sheet, roll_type, target_id):
+            target_name = "Lumos" if roll_type == "spell" else "Tea"
+            return {
+                "schema_version": 1,
+                "action_type": roll_type,
+                "target_id": target_id,
+                "target_name": target_name,
+                "dice": [4], "bonus": 3, "total": 7,
+                "threshold": 5, "success": True, "critical": "",
+                "outcome": "success", "formula": "4 + 3",
+                "components": [], "ability_name": "Panache",
+                "skill_name": "Charms" if roll_type == "spell" else "Potions",
+                "text": f"{imported['name']} uses {target_name}.",
+            }
+
+        with (
+            patch.object(
+                self.runtime.service, "_sheet_for_person", return_value=sheet
+            ),
+            patch(
+                "headmasters_scroll.game_board.service.perform_character_roll",
+                side_effect=authoritative_roll,
+            ),
+            patch.object(self.runtime, "chat", new_callable=AsyncMock) as chat,
+            patch.object(
+                self.runtime, "broadcast_battles", new_callable=AsyncMock
+            ) as battles,
+            patch.object(
+                self.runtime, "broadcast_character_sheets",
+                new_callable=AsyncMock,
+            ) as sheets,
+        ):
+            roll = self.admin.post(
+                f"/api/admin/board/people/{imported['id']}/roll",
+                headers=self.admin_headers,
+                json={
+                    "session_id": self.session_id,
+                    "roll_type": "spell",
+                    "target_id": "lumos",
+                },
+            )
+            recipe = self.admin.post(
+                recipe_path,
+                headers=self.admin_headers,
+                json={"session_id": self.session_id, "target_id": "tea"},
+            )
+
+        self.assertEqual(roll.status_code, 200, roll.text)
+        self.assertEqual(roll.json()["action_type"], "spell")
+        self.assertEqual(roll.json()["character_name"], imported["name"])
+        self.assertEqual(recipe.status_code, 200, recipe.text)
+        self.assertEqual(recipe.json()["action_type"], "recipe")
+        self.assertEqual(
+            recipe.json()["consumed_ingredients"][0]["name"], "Tea leaves"
+        )
+        self.assertEqual(recipe.json()["required_vessel"]["name"], "Cauldron")
+        person_state = self.runtime.service.campaign_repository.get(
+            "campaign-1"
+        )["game_state"]["people"][imported["id"]]
+        self.assertEqual(person_state["consumed_inventory"], {"leaves": 2})
+        self.assertNotIn("cauldron", person_state["consumed_inventory"])
+        self.assertEqual(chat.await_count, 2)
+        self.assertEqual(battles.await_count, 2)
+        sheets.assert_awaited_once_with(self.session_id)
+        self.assertEqual(
+            self.admin.post(
+                recipe_path,
+                json={"session_id": self.session_id, "target_id": "tea"},
+            ).status_code,
+            403,
+        )
+
     def test_headmaster_can_assign_a_character_to_a_location_without_a_map(self):
         world = deepcopy(self.runtime.service._world_document())
         world.setdefault("locations", []).append({

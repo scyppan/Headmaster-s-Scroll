@@ -79,6 +79,29 @@ class CreatureEncounterTests(unittest.TestCase):
         self.assertGreaterEqual(action["roll"], action["range"]["low"])
         self.assertLessEqual(action["roll"], action["range"]["high"])
 
+    def test_named_identity_is_normalized_explicitly(self):
+        document = {"creatures": [self.species()], "proficiencies": []}
+        migrate_creature_database(document)
+        instance = generate_creature_instance(
+            document["creatures"][0],
+            1,
+            {
+                "location_id": "",
+                "floor_id": "",
+                "map_id": "",
+                "x": 0.5,
+                "y": 0.5,
+            },
+            random.Random(4),
+        )
+        instance["named_creature_id"] = "  named-one  "
+        instance["display_name"] = "  Pip  "
+
+        normalized = normalize_campaign_creature(instance)
+
+        self.assertEqual(normalized["named_creature_id"], "named-one")
+        self.assertEqual(normalized["display_name"], "Pip")
+
     def test_harvest_pool_and_attempt_contract_rejects_invalid_state(self):
         document = {"creatures": [self.species()], "proficiencies": []}
         migrate_creature_database(document)

@@ -829,41 +829,117 @@ class GameBoardService:
             if named is None:
                 raise KeyError("Unknown named creature")
             species_id = str(named.get("species_record_id", "") or "")
+            database = self._database_document()
             species = next((
-                item for item in self._database_document().get("creatures", []) or []
+                item for item in database.get("creatures", []) or []
                 if str(item.get("record_id", "")) == species_id
             ), None)
             if species is None:
                 raise KeyError("That named creature's species is unavailable")
             map_record = self._campaign_map(world, map_id)
             result: dict[str, Any] = {}
+            now = iso_utc(utc_now())
 
             def create(state: dict[str, Any]) -> None:
                 nonlocal result
+                battles = state.setdefault("battles", {})
+                raw_battle = battles.get(battle_id)
+                if raw_battle is None:
+                    raise KeyError("Unknown battle")
+                battle = normalize_battle(raw_battle)
+                if str(battle.get("map_id", "") or "") != str(map_id):
+                    raise ValueError("Named creatures must arrive on the battle map")
+                creatures = state.setdefault("creatures", {})
+                if any(
+                    isinstance(item, dict)
+                    and str(item.get("named_creature_id", "") or "")
+                    == str(named_creature_id)
+                    for item in creatures.values()
+                ):
+                    raise ValueError(
+                        "That named creature is already part of this campaign"
+                    )
+                occupied = [
+                    (
+                        float((item.get("placement") or {}).get("x", 0.5)),
+                        float((item.get("placement") or {}).get("y", 0.5)),
+                    )
+                    for item in creatures.values()
+                    if isinstance(item, dict)
+                    and str((item.get("placement") or {}).get("map_id", "") or "")
+                    == str(map_id)
+                ]
+                for person in world.get("people", []) or []:
+                    if not isinstance(person, dict):
+                        continue
+                    placement = normalize_person_board(person.get("board")).get(
+                        "placement"
+                    )
+                    if placement and str(placement.get("map_id", "")) == str(map_id):
+                        occupied.append(
+                            (float(placement["x"]), float(placement["y"]))
+                        )
+                px, py = self._nudge_creature_point(x, y, occupied)
                 counters = state.setdefault("creature_counters", {})
                 counter = int(counters.get(species_id, 0) or 0) + 1
                 counters[species_id] = counter
-                creature = generate_creature_instance(species, counter, {
-                    "location_id": str(map_record.get("location_id", "")),
-                    "floor_id": str(map_record.get("floor_id", "") or ""),
-                    "map_id": map_id, "x": float(x), "y": float(y),
-                })
-                creature["named_creature_id"] = named_creature_id
-                creature["display_name"] = str(named.get("name") or creature["species_name"])
-                creature["visibility"] = "headmaster"
-                saved_stats = named.get("generated") or named.get("statistics")
-                if isinstance(saved_stats, dict) and saved_stats:
-                    creature["generated"] = deepcopy(saved_stats)
-                saved_actions = named.get("actions")
-                if isinstance(saved_actions, list):
-                    creature["actions"] = deepcopy(saved_actions)
-                state.setdefault("creatures", {})[creature["record_id"]] = creature
+                creature = self._build_named_campaign_creature(
+                    named,
+                    species,
+                    counter,
+                    {
+                        "location_id": str(map_record.get("location_id", "")),
+                        "floor_id": str(map_record.get("floor_id", "") or ""),
+                        "map_id": map_id,
+                        "x": px,
+                        "y": py,
+                    },
+                )
+                new_item = participant(
+                    "creature",
+                    str(creature["record_id"]),
+                    now=now,
+                    eligible_round=battle["round"],
+                )
+                prior_current = str(battle.get("current_participant_id", "") or "")
+                prior_order = list(battle.get("order", []))
+                prior_index = (
+                    prior_order.index(prior_current)
+                    if prior_current in prior_order else -1
+                )
+                battle["participants"].append(new_item)
+                self._recalculate_battle_order(
+                    battle, world, database, campaign, preserve_manual=True
+                )
+                new_index = battle["order"].index(new_item["record_id"])
+                current_index = (
+                    battle["order"].index(prior_current)
+                    if prior_current in battle["order"] else -1
+                )
+                if (
+                    battle["status"] == "active"
+                    and prior_index >= 0
+                    and new_index <= current_index
+                ):
+                    new_item["eligible_round"] = battle["round"] + 1
+                battle["current_participant_id"] = prior_current or (
+                    battle["order"][0] if battle["order"] else ""
+                )
+                battle["updated_at"] = now
+                creature["battle"] = {
+                    "active": True,
+                    "record_id": battle_id,
+                    "name": battle["name"],
+                    "entered_at": now,
+                }
+                creature["last_updated"] = creature_utc_now()
+                creatures[str(creature["record_id"])] = normalize_campaign_creature(
+                    creature
+                )
+                battles[battle_id] = battle
                 result = deepcopy(creature)
 
             self.campaign_repository.update_game_state(campaign["record_id"], create)
-            self.add_battle_actor(
-                session_id, battle_id, "creature", str(result["record_id"])
-            )
             return result
 
     def create_battle(self, session_id: str, name: str, map_id: str) -> dict[str, Any]:
@@ -2723,6 +2799,17 @@ class GameBoardService:
                         character_name=character_name,
                         name=display_name,
                     )
+                    wizard = player.get("character_wizard")
+                    if (
+                        character_id
+                        and isinstance(wizard, dict)
+                        and wizard.get("status") == "requested"
+                    ):
+                        wizard.update(
+                            status="cancelled",
+                            cancelled_at=iso_utc(utc_now()),
+                            character_id=character_id,
+                        )
                     for request in session.get("pending", []):
                         if request.get("contact_id") == contact_id:
                             request["name"] = display_name
@@ -2921,6 +3008,7 @@ class GameBoardService:
             "account_name": contact["name"],
             "character_id": contact.get("character_id"),
             "character_name": character_name,
+            "character_wizard": None,
             "name": character_name or contact["name"],
             "email": contact["email"],
             "invite_hash": None, "invite_status": "not_sent", "sent_at": None,
@@ -2931,6 +3019,154 @@ class GameBoardService:
                 "connected_seconds": 0.0, "latency_total_ms": 0.0, "latency_samples": 0,
             },
         }
+
+    def request_player_character_wizard(
+        self, session_id: str, contact_id: str,
+    ) -> dict[str, Any]:
+        """Persist one creation request for an unlinked player in a live session."""
+
+        with self._lock:
+            wrapper, session = self._active(session_id)
+            player = self._player(session, contact_id)
+            if player.get("revoked"):
+                raise PermissionError("That player's session access has been revoked")
+            if player.get("character_id"):
+                raise ValueError("That session player already has a character")
+            current = player.get("character_wizard")
+            if isinstance(current, dict) and current.get("status") == "requested":
+                wizard = current
+            else:
+                wizard = {
+                    "id": str(uuid4()),
+                    "status": "requested",
+                    "requested_at": iso_utc(utc_now()),
+                }
+                player["character_wizard"] = wizard
+                self.repository.save_active(wrapper)
+            return {
+                "session_id": str(session["id"]),
+                "contact_id": str(player["contact_id"]),
+                "player": str(player.get("account_name") or player.get("name") or "Player"),
+                "wizard": deepcopy(wizard),
+            }
+
+    def pending_player_character_wizard(
+        self, session_id: str, contact_id: str,
+    ) -> dict[str, Any] | None:
+        """Return only a still-actionable wizard for reconnect replay."""
+
+        with self._lock:
+            session = self._board_context(session_id)
+            player = self._player(session, contact_id)
+            wizard = player.get("character_wizard")
+            if not isinstance(wizard, dict) or wizard.get("status") != "requested":
+                return None
+            if player.get("revoked") or player.get("character_id"):
+                return None
+            return deepcopy(wizard)
+
+    def complete_player_character_wizard(
+        self,
+        session_id: str,
+        contact_id: str,
+        wizard_id: str,
+        name: str,
+        age: Any,
+        development_strategy: str,
+        basic_profile: str = "",
+    ) -> dict[str, Any]:
+        """Create and session-link the campaign-local character from one wizard."""
+
+        clean_wizard_id = str(wizard_id or "").strip()
+        clean_name = " ".join(str(name or "").split())
+        clean_strategy = str(development_strategy or "").strip()
+        clean_profile = str(basic_profile or "").strip()
+        if not clean_wizard_id or len(clean_wizard_id) > 100:
+            raise ValueError("A valid character wizard is required")
+        if not clean_name or len(clean_name) > 200:
+            raise ValueError("Character name must be between 1 and 200 characters")
+        if not clean_strategy or len(clean_strategy) > 80:
+            raise ValueError("Choose a valid development strategy")
+        if len(clean_profile) > 4000:
+            raise ValueError("Basic profile must be 4000 characters or fewer")
+        if isinstance(age, bool):
+            raise ValueError("Rough age must be a whole number")
+        try:
+            parsed_age = int(age)
+        except (TypeError, ValueError) as error:
+            raise ValueError("Rough age must be a whole number") from error
+        if isinstance(age, float) and not age.is_integer():
+            raise ValueError("Rough age must be a whole number")
+
+        with self._lock:
+            wrapper, session = self._active(session_id)
+            player = self._player(session, contact_id)
+            wizard = player.get("character_wizard")
+            if not isinstance(wizard, dict) or wizard.get("id") != clean_wizard_id:
+                owner = next(
+                    (
+                        item for item in session.get("roster", [])
+                        if isinstance(item.get("character_wizard"), dict)
+                        and item["character_wizard"].get("id") == clean_wizard_id
+                    ),
+                    None,
+                )
+                if owner is not None:
+                    raise PermissionError("That character wizard belongs to another player")
+                raise ValueError("That character wizard is no longer active")
+            if wizard.get("status") == "completed":
+                raise ValueError("That character wizard has already been completed")
+            if wizard.get("status") != "requested":
+                raise ValueError("That character wizard is no longer active")
+            if player.get("revoked"):
+                raise PermissionError("That player's session access has been revoked")
+            if player.get("character_id"):
+                raise ValueError("That session player already has a character")
+
+            created = self.create_quick_character(
+                session_id,
+                None,
+                clean_name,
+                parsed_age,
+                clean_strategy,
+                True,
+                clean_profile,
+                f"wizard-{clean_wizard_id}",
+                clean_wizard_id,
+            )
+            character = deepcopy(created["character"])
+            character_id = str(character["id"])
+            character_name = str(character["name"])
+            completed_at = iso_utc(utc_now())
+            wizard.update(
+                status="completed",
+                completed_at=completed_at,
+                character_id=character_id,
+                character_name=character_name,
+            )
+            player.update(
+                character_id=character_id,
+                character_name=character_name,
+                name=character_name,
+            )
+            for request in session.get("pending", []):
+                if request.get("contact_id") == contact_id:
+                    request["name"] = character_name
+            for message in session.get("chat", []):
+                if message.get("sender_id") == contact_id:
+                    message["sender_name"] = character_name
+            self.repository.save_active(wrapper)
+            character["player_character"] = True
+            return {
+                "session_id": str(session["id"]),
+                "contact_id": str(contact_id),
+                "player": {
+                    "name": character_name,
+                    "character_id": character_id,
+                },
+                "wizard": deepcopy(wizard),
+                "character": character,
+            }
 
     @staticmethod
     def _session(wrapper: dict[str, Any], session_id: str | None = None) -> dict[str, Any]:
@@ -3939,7 +4175,9 @@ class GameBoardService:
             if creature.get("carried_by_character_id"):
                 continue
             placement = creature["placement"]
-            if placement["map_id"] not in visible_maps:
+            if placement["map_id"] not in visible_maps and (
+                for_players or placement["map_id"]
+            ):
                 continue
             if for_players and creature["visibility"] != "players":
                 continue
@@ -3955,7 +4193,10 @@ class GameBoardService:
             actor = {
                 "actor_type": "creature",
                 "actor_id": creature["record_id"],
-                "name": creature["species_name"] if identified else "Unknown Creature",
+                "name": (
+                    str(creature.get("display_name") or creature["species_name"])
+                    if identified else "Unknown Creature"
+                ),
                 "location_id": placement["location_id"],
                 "floor_id": placement["floor_id"],
                 "map_id": placement["map_id"],
@@ -3976,10 +4217,18 @@ class GameBoardService:
                 "life_state": creature["life_state"],
             }
             if not for_players:
+                display_label = str(
+                    creature.get("display_name")
+                    or creature.get("internal_label")
+                    or creature["species_name"]
+                )
                 actor.update({
                     "species_record_id": creature["species_record_id"],
                     "true_name": creature["species_name"],
-                    "internal_label": creature["internal_label"],
+                    "internal_label": display_label,
+                    "named_creature_id": str(
+                        creature.get("named_creature_id", "") or ""
+                    ),
                     "generated": deepcopy(creature["generated"]),
                     "actions": deepcopy(creature["actions"]),
                     "wounds": deepcopy(creature["wounds"]),
@@ -4053,6 +4302,198 @@ class GameBoardService:
             item.pop("_search_score", None)
         return result
 
+    def named_creature_choices(
+        self, session_id: str, query: str = "", limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """Return World Builder named creatures and campaign materialization state."""
+
+        requested_limit = int(limit)
+        if not 1 <= requested_limit <= 500:
+            raise ValueError("Named creature search limit must be between 1 and 500")
+        with self._lock:
+            session = self._board_context(session_id)
+            campaign, world = self._campaign_document(session)
+            species_by_id = {
+                str(item.get("record_id", "") or ""): item
+                for item in self._database_document().get("creatures", []) or []
+                if isinstance(item, dict) and item.get("record_id")
+            }
+            materialized = {
+                str(creature.get("named_creature_id", "") or ""): (
+                    str(creature_id), normalize_campaign_creature(creature)
+                )
+                for creature_id, creature in (
+                    campaign["game_state"].get("creatures", {}) or {}
+                ).items()
+                if isinstance(creature, dict)
+                and str(creature.get("named_creature_id", "") or "")
+            }
+            needle = " ".join(str(query or "").casefold().split())
+            matches: list[dict[str, Any]] = []
+            for named in world.get("named_creatures", []) or []:
+                if not isinstance(named, dict) or not named.get("record_id"):
+                    continue
+                named_id = str(named["record_id"])
+                species_id = str(named.get("species_record_id", "") or "")
+                species = species_by_id.get(species_id, {})
+                name = str(named.get("name") or "Named creature")
+                species_name = str(species.get("name") or "Unknown species")
+                description = str(
+                    named.get("biography")
+                    or named.get("description")
+                    or species.get("description")
+                    or ""
+                )
+                haystack = " ".join(
+                    (name, species_name, description)
+                ).casefold()
+                score = 1.0 if needle and needle in haystack else (
+                    SequenceMatcher(None, needle, name.casefold()).ratio()
+                    if needle else 0.0
+                )
+                if needle and score < 0.34:
+                    continue
+                existing_id, existing = materialized.get(named_id, ("", {}))
+                placement = existing.get("placement", {}) or {}
+                matches.append({
+                    "record_id": named_id,
+                    "name": name,
+                    "species_id": species_id,
+                    "species_name": species_name,
+                    "description": description,
+                    "species_available": species_id in species_by_id,
+                    "materialized": bool(existing_id),
+                    "campaign_creature_id": existing_id,
+                    "map_id": str(placement.get("map_id", "") or ""),
+                    "location_id": str(placement.get("location_id", "") or ""),
+                    "_search_score": score,
+                })
+            matches.sort(key=lambda item: (
+                -float(item["_search_score"]),
+                item["name"].casefold(),
+                item["record_id"],
+            ))
+            result = matches[:requested_limit]
+            for item in result:
+                item.pop("_search_score", None)
+            return result
+
+    def place_named_creature(
+        self,
+        session_id: str,
+        named_creature_id: str,
+        map_id: str | None = None,
+        x: float = 0.5,
+        y: float = 0.5,
+    ) -> dict[str, Any]:
+        """Add one canonical named creature to a campaign, optionally placed."""
+
+        with self._lock:
+            session = self._board_context(session_id)
+            campaign, document = self._campaign_document(session)
+            named = next((
+                item for item in document.get("named_creatures", []) or []
+                if isinstance(item, dict)
+                and str(item.get("record_id", "") or "")
+                == str(named_creature_id)
+            ), None)
+            if named is None:
+                raise KeyError("Unknown named creature")
+            species_id = str(named.get("species_record_id", "") or "")
+            species = next((
+                item for item in self._database_document().get("creatures", []) or []
+                if isinstance(item, dict)
+                and str(item.get("record_id", "") or "") == species_id
+            ), None)
+            if species is None:
+                raise KeyError("That named creature's species is unavailable")
+            creatures = document.setdefault("campaign_creatures", {})
+            existing_entry = next((
+                (str(creature_id), creature)
+                for creature_id, creature in creatures.items()
+                if isinstance(creature, dict)
+                and str(creature.get("named_creature_id", "") or "")
+                == str(named_creature_id)
+            ), None)
+            if existing_entry is not None:
+                raise ValueError(
+                    "That named creature is already part of this campaign"
+                )
+            clean_map_id = str(map_id or "").strip()
+            map_record = (
+                self._campaign_map(document, clean_map_id)
+                if clean_map_id else {}
+            )
+            occupied = [
+                (
+                    float(creature.get("placement", {}).get("x", 0.5)),
+                    float(creature.get("placement", {}).get("y", 0.5)),
+                )
+                for creature_id, creature in creatures.items()
+                if isinstance(creature, dict)
+                and str(creature.get("placement", {}).get("map_id", "") or "")
+                == clean_map_id
+            ]
+            for person in document.get("people", []) or []:
+                if not isinstance(person, dict):
+                    continue
+                placement = normalize_person_board(person.get("board")).get(
+                    "placement"
+                )
+                if placement and str(placement.get("map_id", "")) == clean_map_id:
+                    occupied.append((float(placement["x"]), float(placement["y"])))
+            px, py = (
+                self._nudge_creature_point(x, y, occupied)
+                if clean_map_id else (0.5, 0.5)
+            )
+            counters = document.setdefault("campaign_creature_counters", {})
+            counter = int(counters.get(species_id, 0) or 0) + 1
+            counters[species_id] = counter
+            creature = self._build_named_campaign_creature(
+                named,
+                species,
+                counter,
+                {
+                    "location_id": str(map_record.get("location_id", "") or ""),
+                    "floor_id": str(map_record.get("floor_id", "") or ""),
+                    "map_id": clean_map_id,
+                    "x": px,
+                    "y": py,
+                },
+            )
+            creature_id = str(creature["record_id"])
+            creatures[creature_id] = creature
+            self._persist_campaign_document(campaign["record_id"], document)
+            return {
+                **deepcopy(creatures[creature_id]),
+                "created": True,
+                "materialized": True,
+            }
+
+    @staticmethod
+    def _build_named_campaign_creature(
+        named: dict[str, Any],
+        species: dict[str, Any],
+        counter: int,
+        placement: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Materialize one authored identity without rerolling saved details."""
+
+        creature = generate_creature_instance(species, counter, placement)
+        saved_stats = named.get("generated") or named.get("statistics")
+        if isinstance(saved_stats, dict) and saved_stats:
+            creature["generated"] = deepcopy(saved_stats)
+        saved_actions = named.get("actions")
+        if isinstance(saved_actions, list):
+            creature["actions"] = deepcopy(saved_actions)
+        creature["named_creature_id"] = str(named.get("record_id", "") or "")
+        creature["display_name"] = str(
+            named.get("name") or creature.get("species_name") or "Named creature"
+        )
+        creature["visibility"] = "headmaster"
+        creature["last_updated"] = creature_utc_now()
+        return normalize_campaign_creature(creature)
+
     def _species_record(self, species_id: str) -> dict[str, Any]:
         record = next(
             (
@@ -4090,31 +4531,48 @@ class GameBoardService:
         return x, y
 
     def place_campaign_creature(
-        self, session_id: str, species_id: str, map_id: str, x: float, y: float
+        self,
+        session_id: str,
+        species_id: str,
+        map_id: str | None = None,
+        x: float = 0.5,
+        y: float = 0.5,
     ) -> dict[str, Any]:
         with self._lock:
             session = self._board_context(session_id)
             campaign, document = self._campaign_document(session)
-            map_record = self._campaign_map(document, map_id)
+            clean_map_id = str(map_id or "").strip()
+            map_record = (
+                self._campaign_map(document, clean_map_id)
+                if clean_map_id else {}
+            )
             species = self._species_record(species_id)
             creatures = document.setdefault("campaign_creatures", {})
             occupied = [
                 (float(item["placement"]["x"]), float(item["placement"]["y"]))
                 for item in creatures.values()
-                if item.get("placement", {}).get("map_id") == map_id
+                if clean_map_id
+                and item.get("placement", {}).get("map_id") == clean_map_id
             ]
-            for person in document.get("people", []) or []:
-                placement = normalize_person_board(person.get("board")).get("placement")
-                if placement and placement.get("map_id") == map_id:
-                    occupied.append((float(placement["x"]), float(placement["y"])))
-            px, py = self._nudge_creature_point(x, y, occupied)
+            if clean_map_id:
+                for person in document.get("people", []) or []:
+                    placement = normalize_person_board(person.get("board")).get(
+                        "placement"
+                    )
+                    if placement and placement.get("map_id") == clean_map_id:
+                        occupied.append(
+                            (float(placement["x"]), float(placement["y"]))
+                        )
+                px, py = self._nudge_creature_point(x, y, occupied)
+            else:
+                px, py = 0.5, 0.5
             counters = document.setdefault("campaign_creature_counters", {})
             counter = int(counters.get(species_id, 0) or 0) + 1
             counters[species_id] = counter
             creature = generate_creature_instance(species, counter, {
                 "location_id": str(map_record.get("location_id", "")),
                 "floor_id": str(map_record.get("floor_id", "") or ""),
-                "map_id": map_id, "x": px, "y": py,
+                "map_id": clean_map_id, "x": px, "y": py,
             })
             creatures[creature["record_id"]] = creature
             self._persist_campaign_document(campaign["record_id"], document)
@@ -4276,6 +4734,8 @@ class GameBoardService:
             elif normalized_action == "leave_battle":
                 creature["battle"] = None
             elif normalized_action == "reroll":
+                if creature.get("named_creature_id"):
+                    raise ValueError("Named creatures keep their authored attributes and cannot be rerolled")
                 if creature["life_state"] != "alive" or creature["wounds"]:
                     raise ValueError("Only an alive, unwounded creature can be rerolled")
                 replacement = generate_creature_instance(
@@ -4295,7 +4755,11 @@ class GameBoardService:
                 return None
             else:
                 raise ValueError("Unknown creature action")
-            if creature["life_state"] == "dead" and not creature["harvest_pools"]:
+            if (
+                creature["life_state"] == "dead"
+                and not creature["harvest_pools"]
+                and not creature.get("named_creature_id")
+            ):
                 del creatures[creature_id]
                 self._remove_actor_from_groups(document, "creature", creature_id)
                 self._persist_campaign_document(campaign["record_id"], document)
@@ -6379,18 +6843,67 @@ class GameBoardService:
         age: int,
         development_strategy: str = "random",
         player_character: bool = False,
+        basic_profile: str = "",
+        record_id: str | None = None,
+        character_wizard_id: str = "",
     ) -> dict[str, Any]:
         """Create a lightweight campaign-owned person and progress their youth."""
 
         clean_name = " ".join(str(name or "").split())
         if not clean_name:
             raise ValueError("Character name is required")
+        clean_profile = str(basic_profile or "").strip()
+        if len(clean_profile) > 4000:
+            raise ValueError("Basic profile must be 4000 characters or fewer")
+        clean_record_id = str(record_id or "").strip()
+        clean_wizard_id = str(character_wizard_id or "").strip()
+        if clean_record_id and len(clean_record_id) > 140:
+            raise ValueError("Character record ID is too long")
         age = int(age)
         if not 0 <= age <= 1000:
             raise ValueError("Rough age must be between 0 and 1000")
         with self._lock:
             session = self._board_context(session_id)
             campaign, document = self._campaign_document(session)
+            if clean_record_id:
+                existing = next(
+                    (
+                        person for person in campaign.get("characters", []) or []
+                        if isinstance(person, dict)
+                        and str(person.get("record_id", "") or "")
+                        == clean_record_id
+                    ),
+                    None,
+                )
+                if existing is not None:
+                    if (
+                        clean_wizard_id
+                        and str(existing.get("character_wizard_id", "") or "")
+                        != clean_wizard_id
+                    ):
+                        raise ValueError(
+                            "That recovered character belongs to another creation request"
+                        )
+                    existing_plan = existing.get("development_plan", {}) or {}
+                    placement = normalize_person_board(existing.get("board")).get(
+                        "placement"
+                    )
+                    return {
+                        "character": {
+                            "id": clean_record_id,
+                            "name": str(existing.get("displayed_name") or clean_name),
+                            "birth_year": existing.get("birth_year"),
+                            "development_strategy": existing_plan.get("schema"),
+                            "development_years": len(
+                                existing_plan.get("school_years", []) or []
+                            ),
+                            "player_character": bool(
+                                existing.get("player_character", player_character)
+                            ),
+                        },
+                        "placement": deepcopy(placement),
+                        "recovered": True,
+                    }
             if any(
                 str(person.get("displayed_name", "") or "").strip().casefold()
                 == clean_name.casefold()
@@ -6452,7 +6965,7 @@ class GameBoardService:
                 "blood_status": "Pureblood",
                 "developmental_environment": "Magical",
                 "development_plan": plan,
-                "unfinished": True,
+                "unfinished": False,
             }
             draft["parental_values"] = initialize_parental_values(
                 draft,
@@ -6479,9 +6992,9 @@ class GameBoardService:
             draft["development_plan"] = plan
             timestamp = iso_utc(utc_now())
             created = {
-                "record_id": str(uuid4()),
+                "record_id": clean_record_id or str(uuid4()),
                 "displayed_name": clean_name,
-                "narrative": "",
+                "narrative": clean_profile,
                 "birth_year": birth_year,
                 "birth_month": None,
                 "birth_day": None,
@@ -6497,7 +7010,8 @@ class GameBoardService:
                 "characteristics": deepcopy(draft["characteristics"]),
                 "development_plan": deepcopy(plan),
                 "notes": "",
-                "unfinished": True,
+                "unfinished": False,
+                "character_wizard_id": clean_wizard_id,
                 "created_at": timestamp,
                 "last_updated": timestamp,
             }
@@ -6523,6 +7037,7 @@ class GameBoardService:
                     "birth_year": created.get("birth_year"),
                     "development_strategy": plan.get("schema"),
                     "development_years": visible_school_years,
+                    "player_character": bool(player_character),
                 },
                 "placement": placement,
             }

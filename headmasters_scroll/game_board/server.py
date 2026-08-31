@@ -229,6 +229,7 @@ class QuickCharacterBody(BaseModel):
     age: int = Field(ge=0, le=1000)
     development_strategy: str = Field(default="random", min_length=1, max_length=80)
     player_character: bool = False
+    basic_profile: str = Field(default="", max_length=4000)
 
 
 class WorldCharacterImportBody(BaseModel):
@@ -336,9 +337,16 @@ class BoardCameraBody(BaseModel):
 class CreaturePlaceBody(BaseModel):
     session_id: str = Field(min_length=1, max_length=100)
     species_id: str = Field(min_length=1, max_length=120)
-    map_id: str = Field(min_length=1, max_length=100)
-    x: float = Field(ge=0.0, le=1.0)
-    y: float = Field(ge=0.0, le=1.0)
+    map_id: str | None = Field(default=None, min_length=1, max_length=100)
+    x: float = Field(default=0.5, ge=0.0, le=1.0)
+    y: float = Field(default=0.5, ge=0.0, le=1.0)
+
+
+class NamedCreaturePlaceBody(BaseModel):
+    session_id: str = Field(min_length=1, max_length=100)
+    map_id: str | None = Field(default=None, min_length=1, max_length=100)
+    x: float = Field(default=0.5, ge=0.0, le=1.0)
+    y: float = Field(default=0.5, ge=0.0, le=1.0)
 
 
 class CreatureUpdateBody(BaseModel):
@@ -1237,9 +1245,11 @@ def create_apps(
         "create_board_group", "create_quick_character", "creature_campaign_action",
         "end_battle", "grant_board_control", "headmaster_creature_interaction",
         "headmaster_attempt_person_recipe", "headmaster_roll_person_action",
-        "place_campaign_creature",
+        "named_creature_choices", "place_campaign_creature",
+        "place_named_creature",
         "assign_person_location", "move_person", "place_person_on_map",
         "remove_battle_actor", "reorder_battle",
+        "request_player_character_wizard",
         "roll_campaign_creature_action", "set_board_camera", "set_board_group",
         "set_board_workspace", "set_campaign_creature_group", "set_game_datetime",
         "set_map_presentation", "set_map_published", "set_map_settings",
@@ -1605,6 +1615,44 @@ def create_apps(
         await runtime.notify_admins()
         return result
 
+    @admin_app.post(
+        "/api/admin/sessions/{session_id}/players/{contact_id}/character-wizard",
+        dependencies=[Depends(admin_guard)],
+    )
+    async def request_player_character_wizard(session_id: str, contact_id: str):
+        """Queue and, when possible, immediately deliver a player creation wizard."""
+
+        async with runtime.session_lifecycle_locks[session_id]:
+            result = await asyncio.to_thread(
+                admin_result,
+                service.request_player_character_wizard,
+                session_id,
+                contact_id,
+            )
+            connection = runtime.connections.get(f"{session_id}:{contact_id}")
+            pending = await asyncio.to_thread(
+                service.pending_player_character_wizard,
+                session_id,
+                contact_id,
+            )
+            if (
+                connection is not None
+                and connection.active
+                and pending is not None
+                and pending.get("id") == result["wizard"].get("id")
+            ):
+                try:
+                    await connection.websocket.send_json({
+                        "v": 1,
+                        "type": "character_wizard_requested",
+                        "wizard": result["wizard"],
+                    })
+                except Exception:
+                    # The durable roster state is replayed after reconnect.
+                    pass
+        await runtime.notify_admins()
+        return result
+
     @admin_app.put("/api/admin/session/event-date", dependencies=[Depends(admin_guard)])
     async def set_event_date(body: EventDateBody):
         result = admin_result(service.set_event_date, body.event_date, body.session_id)
@@ -1702,6 +1750,7 @@ def create_apps(
             body.age,
             body.development_strategy,
             body.player_character,
+            body.basic_profile,
         )
         await runtime.broadcast_board(body.session_id)
         await runtime.notify_admins()
@@ -1903,6 +1952,46 @@ def create_apps(
         limit: int = Query(default=100, ge=1, le=500),
     ):
         return {"creatures": admin_result(service.creature_species, q, limit)}
+
+    @admin_app.get(
+        "/api/admin/board/named-creatures",
+        dependencies=[Depends(admin_guard)],
+    )
+    async def search_named_creatures(
+        session_id: str = Query(min_length=1, max_length=100),
+        q: str = Query(default="", max_length=200),
+        limit: int = Query(default=100, ge=1, le=500),
+    ):
+        return {
+            "named_creatures": await asyncio.to_thread(
+                admin_result,
+                service.named_creature_choices,
+                session_id,
+                q,
+                limit,
+            )
+        }
+
+    @admin_app.post(
+        "/api/admin/board/named-creatures/{named_creature_id}",
+        dependencies=[Depends(admin_guard)],
+    )
+    async def add_named_creature_to_board(
+        named_creature_id: str,
+        body: NamedCreaturePlaceBody,
+    ):
+        result = await asyncio.to_thread(
+            admin_result,
+            service.place_named_creature,
+            body.session_id,
+            named_creature_id,
+            body.map_id,
+            body.x,
+            body.y,
+        )
+        await runtime.broadcast_board(body.session_id)
+        await runtime.notify_admins()
+        return result
 
     @admin_app.post(
         "/api/admin/board/creatures", dependencies=[Depends(admin_guard)]
@@ -2877,6 +2966,17 @@ def create_apps(
             "character_attributes": None,
             "asset_credential": asset_credential,
         })
+        wizard = await asyncio.to_thread(
+            service.pending_player_character_wizard,
+            identity["session_id"],
+            identity["contact_id"],
+        )
+        if wizard is not None and runtime.connections.get(connection_key) is connection:
+            await websocket.send_json({
+                "v": 1,
+                "type": "character_wizard_requested",
+                "wizard": wizard,
+            })
 
         def connection_is_current() -> bool:
             return (
@@ -2976,6 +3076,63 @@ def create_apps(
                         "v": 1, "type": "connection_quality",
                         "quality": quality, "latency_ms": round(latency, 1),
                     })
+                    await runtime.notify_admins()
+                elif message.get("type") == "character_wizard_submit":
+                    wizard_id = str(message.get("wizard_id", "") or "")
+                    try:
+                        result = await runtime.run_connection_operation(
+                            connection,
+                            service.complete_player_character_wizard,
+                            connection.session_id,
+                            connection.contact_id,
+                            wizard_id,
+                            message.get("name"),
+                            message.get("age"),
+                            message.get("development_strategy"),
+                            message.get("basic_profile", ""),
+                        )
+                    except (
+                        KeyError, PermissionError, RuntimeError, TypeError, ValueError,
+                    ) as error:
+                        await websocket.send_json({
+                            "v": 1,
+                            "type": "character_wizard_error",
+                            "wizard_id": wizard_id[:100],
+                            "message": str(error),
+                        })
+                        continue
+                    if not connection_is_current():
+                        continue
+                    character = result["character"]
+                    connection.name = str(result["player"]["name"])
+                    connection.character_id = str(result["player"]["character_id"])
+                    connection.controlled_ids = set(
+                        service.controlled_character_ids(
+                            connection.session_id, connection.contact_id,
+                        )
+                    )
+                    connection.character_sheet_signature = ""
+                    connection.board_state = None
+                    await websocket.send_json({
+                        "v": 1,
+                        "type": "character_wizard_completed",
+                        "character": character,
+                    })
+                    await websocket.send_json({
+                        "v": 1,
+                        "type": "identity_updated",
+                        "player": connection.name,
+                        "character_id": connection.character_id,
+                    })
+                    try:
+                        await runtime.send_character_sheet(
+                            connection, "character_sheet_updated", force=True,
+                        )
+                    except Exception:
+                        # Completion is already durable; reconnect will rebuild
+                        # the private sheet if this refresh happens to fail.
+                        pass
+                    await runtime.broadcast_board(connection.session_id)
                     await runtime.notify_admins()
                 elif message.get("type") == "acknowledgement" and isinstance(message.get("announcement_id"), str):
                     service.record_acknowledgement(

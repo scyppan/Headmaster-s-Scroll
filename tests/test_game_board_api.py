@@ -1561,6 +1561,91 @@ class GameBoardApiTests(unittest.TestCase):
             ):
                 pass
 
+    def test_player_completes_character_wizard_over_live_session(self):
+        wizard_response = self.admin.post(
+            f"/api/admin/sessions/{self.session_id}/players/"
+            f"{self.contact['id']}/character-wizard",
+            headers=self.admin_headers,
+        )
+        self.assertEqual(wizard_response.status_code, 200, wizard_response.text)
+        wizard_id = wizard_response.json()["wizard"]["id"]
+        admission = self.admission()
+        poll_headers = {
+            **self.origin_headers,
+            "Authorization": f"Bearer {admission['poll_token']}",
+        }
+        approved = self.admin.post(
+            f"/api/admin/admissions/{admission['request_id']}/approve",
+            headers=self.admin_headers,
+        )
+        self.assertEqual(approved.status_code, 200, approved.text)
+        ticket = self.player.get(
+            f"/v1/admissions/{admission['request_id']}", headers=poll_headers
+        ).json()["ticket"]
+
+        with self.player.websocket_connect(
+            f"/v1/session?ticket={ticket}", headers=self.origin_headers
+        ) as websocket:
+            self.assertEqual(websocket.receive_json()["type"], "connection_accepted")
+            requested = websocket.receive_json()
+            self.assertEqual(requested["type"], "character_wizard_requested")
+            self.assertEqual(requested["wizard"]["id"], wizard_id)
+
+            websocket.send_json({
+                "v": 1,
+                "type": "character_wizard_submit",
+                "wizard_id": "stale-wizard",
+                "name": "Wrong",
+                "age": 17,
+                "development_strategy": "Random",
+            })
+            stale_error = None
+            for _index in range(10):
+                message = websocket.receive_json()
+                if message["type"] == "character_wizard_error":
+                    stale_error = message
+                    break
+            self.assertIsNotNone(stale_error)
+            self.assertIn("no longer active", stale_error["message"])
+
+            websocket.send_json({
+                "v": 1,
+                "type": "character_wizard_submit",
+                "wizard_id": wizard_id,
+                "name": "Live Wizard",
+                "age": 16,
+                "basic_profile": "A patient duelist who collects old maps.",
+                "development_strategy": "Two skill",
+            })
+            received = {}
+            for _index in range(16):
+                message = websocket.receive_json()
+                received[message["type"]] = message
+                if {
+                    "character_wizard_completed",
+                    "identity_updated",
+                    "character_sheet_updated",
+                }.issubset(received):
+                    break
+
+            self.assertIn("character_wizard_completed", received)
+            self.assertEqual(received["identity_updated"]["player"], "Live Wizard")
+            sheet = received["character_sheet_updated"]["character_sheet"]
+            self.assertEqual(sheet["character_name"], "Live Wizard")
+            self.assertEqual(
+                sheet["overview"]["narrative"],
+                "A patient duelist who collects old maps.",
+            )
+
+        linked = self.runtime.service.session_view(self.session_id)["roster"][0]
+        self.assertEqual(linked["name"], "Live Wizard")
+        self.assertIsNotNone(linked["character_id"])
+        self.assertIsNone(
+            self.runtime.service.pending_player_character_wizard(
+                self.session_id, self.contact["id"]
+            )
+        )
+
     def test_unified_admin_request_api_decides_and_exposes_safe_history(self):
         admission = self.admission()
         equipment = self.runtime.service.campaign_repository.add_request(
@@ -1808,6 +1893,74 @@ class GameBoardApiTests(unittest.TestCase):
         self.assertEqual(socket.messages[0]["message"]["text"], "Gather in the hall")
         self.assertEqual(self.runtime.service.session_view()["chat"][0]["sender_name"], "Headmaster")
 
+    def test_player_character_wizard_is_durable_and_delivered_to_live_player(self):
+        socket = FakeSocket()
+        connection = PlayerConnection(
+            websocket=socket,
+            request_id="wizard-request",
+            contact_id=self.contact["id"],
+            name="Alice",
+            session_id=self.session_id,
+        )
+        key = f"{self.session_id}:{self.contact['id']}"
+        self.runtime.connections[key] = connection
+
+        response = self.admin.post(
+            f"/api/admin/sessions/{self.session_id}/players/"
+            f"{self.contact['id']}/character-wizard",
+            headers=self.admin_headers,
+        )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        wizard = response.json()["wizard"]
+        self.assertEqual(wizard["status"], "requested")
+        self.assertEqual(socket.messages, [{
+            "v": 1,
+            "type": "character_wizard_requested",
+            "wizard": wizard,
+        }])
+        self.assertEqual(
+            self.runtime.service.pending_player_character_wizard(
+                self.session_id, self.contact["id"]
+            )["id"],
+            wizard["id"],
+        )
+
+    def test_linking_existing_character_cancels_an_open_player_wizard(self):
+        requested = self.runtime.service.request_player_character_wizard(
+            self.session_id, self.contact["id"]
+        )
+        socket = FakeSocket()
+        connection = PlayerConnection(
+            websocket=socket,
+            request_id="wizard-cancel",
+            contact_id=self.contact["id"],
+            name="Alice",
+            session_id=self.session_id,
+        )
+        self.runtime.connections[
+            f"{self.session_id}:{self.contact['id']}"
+        ] = connection
+        character = self.world_characters(1)[0]
+
+        response = self.admin.put(
+            f"/api/admin/contacts/{self.contact['id']}/character",
+            headers=self.admin_headers,
+            json={"character_id": character["id"]},
+        )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(socket.messages[0]["type"], "identity_updated")
+        self.assertEqual(socket.messages[0]["character_id"], character["id"])
+        self.assertIsNone(
+            self.runtime.service.pending_player_character_wizard(
+                self.session_id, self.contact["id"]
+            )
+        )
+        player = self.runtime.service.session_view(self.session_id)["roster"][0]
+        self.assertEqual(player["character_wizard"]["id"], requested["wizard"]["id"])
+        self.assertEqual(player["character_wizard"]["status"], "cancelled")
+
 
 class GmailAdapterTests(unittest.TestCase):
     def test_message_is_encoded_and_sent_with_gmail_api(self):
@@ -2005,7 +2158,7 @@ class GameBoardAssetTests(unittest.TestCase):
         self.assertIn("scyppan/Headmaster-s-Scroll", loader)
         self.assertIn("apps/charms-check-game-board-weblink/", loader)
         self.assertIn("https://beast.tail102829.ts.net", loader)
-        self.assertIn("a26.8.11.010", loader)
+        self.assertIn("a26.8.30.009", loader)
         self.assertNotIn("https://game.example.com", loader)
         self.assertIn("getElementById('gameboard')", loader)
         self.assertNotIn("<script>", loader)
@@ -2021,6 +2174,18 @@ class GameBoardAssetTests(unittest.TestCase):
         self.assertIn("acknowledgement", client)
         self.assertIn("chat_message", client)
         self.assertIn("identity_updated", client)
+        self.assertIn("character_wizard_requested", client)
+        self.assertIn("character_wizard_submit", client)
+        self.assertIn("character_wizard_completed", client)
+        self.assertIn("character_wizard_error", client)
+        self.assertIn('data-ccgb="character-wizard-form"', client)
+        self.assertIn('data-ccgb="character-wizard-profile"', client)
+        self.assertIn("basic_profile:", client)
+        self.assertIn("sameWizard", client)
+        self.assertIn("sessionStorage.setItem", client)
+        self.assertIn("if (this.characterId) this.hideCharacterWizard()", client)
+        self.assertIn("ccgb-character-wizard-overlay", stylesheet)
+        self.assertIn("ccgb-character-wizard-card textarea", stylesheet)
         self.assertIn("chat-smaller", client)
         self.assertIn("chat-larger", client)
         self.assertIn("syncViewportHeight", client)

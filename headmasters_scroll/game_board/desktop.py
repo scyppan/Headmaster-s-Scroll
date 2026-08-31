@@ -769,7 +769,7 @@ def board_actor_sections(
 def board_campaign_character_empty_lines() -> tuple[str, str]:
     """Return the concise empty state for a campaign-scoped Actors rail."""
 
-    return ("No campaign actors", "Use C+ or ◆+ to add one")
+    return ("No campaign actors", "Use + to add one")
 
 
 def board_location_choices(
@@ -3740,14 +3740,18 @@ class GameBoardWindow(tk.Tk):
             style="Card.TLabel",
             font=("Segoe UI", 8, "bold"),
         ).pack(side="left")
-        for text, command, help_text in (
-            ("G+", self.create_board_group, "Create a colored character group"),
-            ("C+", self.open_add_character_menu, "Import or create a campaign character"),
-            ("◆+", self.open_add_creature_dialog, "Add creatures to this map"),
-        ):
-            button = ttk.Button(group_header, text=text, width=3, style="Quiet.TButton", command=command)
-            button.pack(side="right", padx=(3, 0))
-            self._attach_tooltip(button, help_text)
+        add_button = ttk.Button(
+            group_header,
+            text="+",
+            width=3,
+            style="Quiet.TButton",
+            command=self.open_add_actor_dialog,
+        )
+        add_button.pack(side="right", padx=(3, 0))
+        self._attach_tooltip(
+            add_button,
+            "Add a character or creature to this campaign",
+        )
         self.board_actor_search_var = tk.StringVar()
         filters = ttk.Frame(shell, style="Card.TFrame")
         filters.pack(fill="x", pady=(5, 4))
@@ -6084,10 +6088,220 @@ class GameBoardWindow(tk.Tk):
             actions.selection_set(0)
             actions.activate(0)
 
-    def open_add_creature_dialog(self) -> None:
-        if not self.selected_session_id or not self.selected_board_map_id:
+    def choose_named_creature_for_campaign(self) -> None:
+        """Import one named world creature into the selected campaign."""
+
+        if not self.selected_session_id:
             messagebox.showinfo(
-                "Add creature", "Open a campaign session and a map first.", parent=self
+                "Add named creature",
+                "Start or select a campaign session first.",
+                parent=self,
+            )
+            return
+        dialog = tk.Toplevel(self)
+        dialog.title("Add Existing Named Creature")
+        dialog.transient(self)
+        dialog.grab_set()
+        dialog.geometry("620x560")
+        dialog.minsize(470, 400)
+        apply_window_icon(dialog, GAME_BOARD_ICON)
+        body = ttk.Frame(dialog, padding=12)
+        body.pack(fill="both", expand=True)
+        ttk.Label(
+            body, text="Named creatures in the Game World", style="Title.TLabel"
+        ).pack(anchor="w")
+        ttk.Label(
+            body,
+            text=(
+                "Choose an authored creature to add to this campaign. Its saved "
+                "identity, attributes, and actions are preserved."
+            ),
+            style="Card.TLabel",
+            wraplength=570,
+        ).pack(anchor="w", pady=(2, 8))
+        query = tk.StringVar()
+        search = ttk.Entry(body, textvariable=query)
+        search.pack(fill="x", pady=(0, 6))
+        results = tk.Listbox(
+            body,
+            exportselection=False,
+            background="#fff8e6",
+            foreground=self.INK,
+            selectbackground=self.ACCENT,
+            selectforeground="#fff8e7",
+        )
+        results.pack(fill="both", expand=True)
+        detail = ttk.Label(
+            body,
+            text="Select a named creature.",
+            style="Card.TLabel",
+            wraplength=570,
+        )
+        detail.pack(fill="x", pady=(6, 4))
+        place_on_map = tk.BooleanVar(value=bool(self.selected_board_map_id))
+        map_option = ttk.Checkbutton(
+            body,
+            text="Also place on the currently open map",
+            variable=place_on_map,
+        )
+        map_option.pack(anchor="w", pady=(2, 0))
+        if not self.selected_board_map_id:
+            map_option.configure(state="disabled")
+        status = ttk.Label(body, text="Loading named creatures…", style="Status.TLabel")
+        status.pack(anchor="w", pady=(4, 0))
+        records: list[dict[str, Any]] = []
+        search_after: list[str | None] = [None]
+        generation = [0]
+
+        def close_dialog(_event: tk.Event | None = None) -> str:
+            generation[0] += 1
+            if search_after[0] is not None:
+                try:
+                    dialog.after_cancel(search_after[0])
+                except tk.TclError:
+                    pass
+                search_after[0] = None
+            if dialog.winfo_exists():
+                dialog.destroy()
+            return "break"
+
+        dialog.protocol("WM_DELETE_WINDOW", close_dialog)
+        dialog.bind("<Escape>", close_dialog)
+
+        def show_records(payload: dict[str, Any], expected: int) -> None:
+            if expected != generation[0] or not dialog.winfo_exists():
+                return
+            records[:] = list(payload.get("named_creatures") or [])
+            results.delete(0, "end")
+            for item in records:
+                suffixes = [str(item.get("species_name") or "Unknown species")]
+                if item.get("materialized"):
+                    suffixes.append("already in campaign")
+                elif not item.get("species_available", True):
+                    suffixes.append("species unavailable")
+                results.insert(
+                    "end",
+                    f"{item.get('name') or 'Named creature'}  —  "
+                    + " · ".join(suffixes),
+                )
+            status.configure(text=f"{len(records)} named creature(s)")
+            if records:
+                results.selection_set(0)
+                select_record()
+            else:
+                detail.configure(text="No named creatures match this search.")
+
+        def run_search() -> None:
+            search_after[0] = None
+            generation[0] += 1
+            expected = generation[0]
+            session_id = urllib.parse.quote(str(self.selected_session_id), safe="")
+            term = urllib.parse.quote(" ".join(query.get().strip().split()), safe="")
+            status.configure(text="Searching named creatures…")
+            self._background(
+                lambda: self.client.request(
+                    "GET",
+                    "/api/admin/board/named-creatures"
+                    f"?session_id={session_id}&q={term}&limit=100",
+                ),
+                lambda payload: show_records(payload or {}, expected),
+                failure=lambda error: (
+                    status.configure(text=str(error))
+                    if dialog.winfo_exists() and expected == generation[0]
+                    else None
+                ),
+            )
+
+        def schedule_search(*_args: Any) -> None:
+            if search_after[0] is not None:
+                try:
+                    dialog.after_cancel(search_after[0])
+                except tk.TclError:
+                    pass
+            search_after[0] = dialog.after(220, run_search)
+
+        def select_record(_event: tk.Event | None = None) -> None:
+            selected = results.curselection()
+            if not selected or int(selected[0]) >= len(records):
+                return
+            item = records[int(selected[0])]
+            description = str(item.get("description", "") or "No description")
+            detail.configure(text=(
+                f"{item.get('name') or 'Named creature'} · "
+                f"{item.get('species_name') or 'Unknown species'}\n{description}"
+            ))
+
+        def add_selected() -> None:
+            selected = results.curselection()
+            if not selected or int(selected[0]) >= len(records):
+                messagebox.showinfo(
+                    "Add named creature", "Choose a named creature first.", parent=dialog
+                )
+                return
+            item = records[int(selected[0])]
+            name = str(item.get("name") or "Named creature")
+            if item.get("materialized"):
+                close_dialog()
+                self.selected_board_actor_id = str(
+                    item.get("campaign_creature_id", "") or ""
+                )
+                self.set_notice(f"{name} is already in this campaign")
+                self.refresh(silent=True)
+                return
+            if not item.get("species_available", True):
+                messagebox.showerror(
+                    "Add named creature",
+                    "That named creature's species is not available in the creature catalog.",
+                    parent=dialog,
+                )
+                return
+            named_creature_id = str(item.get("record_id", "") or "")
+            payload: dict[str, Any] = {"session_id": self.selected_session_id}
+            if place_on_map.get() and self.selected_board_map_id:
+                payload.update({
+                    "map_id": self.selected_board_map_id,
+                    "x": 0.5,
+                    "y": 0.5,
+                })
+
+            def added(result: dict[str, Any]) -> None:
+                close_dialog()
+                self.selected_board_actor_id = str(
+                    result.get("record_id") or result.get("actor_id") or ""
+                )
+                destination = " on the current map" if payload.get("map_id") else ""
+                self.set_notice(f"Added {name}{destination}")
+                self.refresh(silent=True)
+
+            self._background(
+                lambda: self.client.request(
+                    "POST",
+                    "/api/admin/board/named-creatures/"
+                    f"{urllib.parse.quote(named_creature_id, safe='')}",
+                    payload,
+                ),
+                added,
+            )
+
+        query.trace_add("write", schedule_search)
+        results.bind("<<ListboxSelect>>", select_record)
+        results.bind("<Double-Button-1>", lambda _event: add_selected())
+        results.bind("<Return>", lambda _event: add_selected())
+        controls = ttk.Frame(body)
+        controls.pack(fill="x", pady=(8, 0))
+        ttk.Button(
+            controls, text="Cancel", style="Quiet.TButton", command=close_dialog
+        ).pack(side="right")
+        ttk.Button(
+            controls, text="Add Named Creature", command=add_selected
+        ).pack(side="right", padx=(0, 6))
+        run_search()
+        search.focus_set()
+
+    def open_add_creature_dialog(self) -> None:
+        if not self.selected_session_id:
+            messagebox.showinfo(
+                "Add creature", "Start or select a campaign session first.", parent=self
             )
             return
         dialog = tk.Toplevel(self)
@@ -6097,10 +6311,23 @@ class GameBoardWindow(tk.Tk):
         dialog.geometry("620x560")
         dialog.minsize(460, 380)
         apply_window_icon(dialog, GAME_BOARD_ICON)
-        def cancel_dialog() -> None:
+        search_after: list[str | None] = [None]
+        search_generation = [0]
+
+        def cancel_dialog(_event: tk.Event | None = None) -> str:
             self.pending_creature_battle_id = ""
-            dialog.destroy()
+            search_generation[0] += 1
+            if search_after[0] is not None:
+                try:
+                    dialog.after_cancel(search_after[0])
+                except tk.TclError:
+                    pass
+                search_after[0] = None
+            if dialog.winfo_exists():
+                dialog.destroy()
+            return "break"
         dialog.protocol("WM_DELETE_WINDOW", cancel_dialog)
+        dialog.bind("<Escape>", cancel_dialog)
         body = ttk.Frame(dialog, padding=10)
         body.pack(fill="both", expand=True)
         ttk.Label(body, text="Creature catalog", style="Title.TLabel").pack(anchor="w")
@@ -6122,9 +6349,10 @@ class GameBoardWindow(tk.Tk):
         ttk.Spinbox(quantity_row, from_=1, to=50, textvariable=quantity, width=5).pack(side="left", padx=5)
         records: list[dict[str, Any]] = []
         selected_id = tk.StringVar()
-        search_after: list[str | None] = [None]
 
-        def show_records(payload: Any) -> None:
+        def show_records(payload: Any, expected: int) -> None:
+            if expected != search_generation[0] or not dialog.winfo_exists():
+                return
             records[:] = list((payload or {}).get("creatures", []))
             results.delete(0, "end")
             for item in records:
@@ -6133,18 +6361,42 @@ class GameBoardWindow(tk.Tk):
 
         def run_search() -> None:
             search_after[0] = None
+            search_generation[0] += 1
+            expected = search_generation[0]
             term = query.get().strip()
             self._background(
                 lambda: self.client.request(
                     "GET", f"/api/admin/creatures?q={urllib.parse.quote(term)}&limit=250"
                 ),
-                show_records,
+                lambda payload: show_records(payload, expected),
             )
 
         def schedule(*_args: Any) -> None:
             if search_after[0] is not None:
-                dialog.after_cancel(search_after[0])
+                try:
+                    dialog.after_cancel(search_after[0])
+                except tk.TclError:
+                    pass
             search_after[0] = dialog.after(180, run_search)
+
+        def selected_quantity() -> int | None:
+            try:
+                count = int(quantity.get())
+            except (ValueError, tk.TclError):
+                messagebox.showwarning(
+                    "Add creatures",
+                    "Enter a whole-number quantity from 1 to 50.",
+                    parent=dialog,
+                )
+                return None
+            if not 1 <= count <= 50:
+                messagebox.showwarning(
+                    "Add creatures",
+                    "Enter a quantity from 1 to 50.",
+                    parent=dialog,
+                )
+                return None
+            return count
 
         def choose(_event: tk.Event | None = None) -> None:
             selected = results.curselection()
@@ -6163,7 +6415,9 @@ class GameBoardWindow(tk.Tk):
             if not selected_id.get():
                 messagebox.showwarning("Add creatures", "Choose a creature species first.", parent=dialog)
                 return
-            count = max(1, min(50, int(quantity.get())))
+            count = selected_quantity()
+            if count is None:
+                return
             selected = next(
                 item for item in records
                 if str(item.get("record_id", "")) == selected_id.get()
@@ -6180,7 +6434,7 @@ class GameBoardWindow(tk.Tk):
                 species_id = selected_id.get()
                 species_name = str(selected.get("name") or "Creature")
                 self.pending_creature_battle_id = ""
-                dialog.destroy()
+                cancel_dialog()
                 map_id = str(battle.get("map_id", ""))
                 warps = self._arrival_warps_for_map(map_id)
                 preferred = next((item for item in warps if item.get("player_arrival")), None)
@@ -6192,6 +6446,13 @@ class GameBoardWindow(tk.Tk):
                 else:
                     self._choose_arrival_warp(map_id, "Battle arrival", callback)
                 return
+            if not self.selected_board_map_id:
+                messagebox.showinfo(
+                    "Place creatures",
+                    "Open a map first, or use Add Unplaced to add them to the campaign now.",
+                    parent=dialog,
+                )
+                return
             self.creature_placement = {
                 "species_id": selected_id.get(),
                 "species_name": str(selected.get("name") or "Creature"),
@@ -6199,18 +6460,72 @@ class GameBoardWindow(tk.Tk):
                 "battle_id": self.pending_creature_battle_id,
             }
             self.pending_creature_battle_id = ""
-            dialog.destroy()
+            cancel_dialog()
             self._update_creature_placement_notice()
             canvas = self.board_canvases.get(self.selected_board_map_id)
             if canvas is not None:
                 canvas.configure(cursor="crosshair")
+
+        def add_unplaced() -> None:
+            if not selected_id.get():
+                messagebox.showwarning(
+                    "Add creatures", "Choose a creature species first.", parent=dialog
+                )
+                return
+            count = selected_quantity()
+            if count is None:
+                return
+            selected = next(
+                item for item in records
+                if str(item.get("record_id", "")) == selected_id.get()
+            )
+            session_id = str(self.selected_session_id or "")
+            species_id = selected_id.get()
+            species_name = str(selected.get("name") or "Creature")
+            self.pending_creature_battle_id = ""
+            cancel_dialog()
+            self.set_notice(f"Adding {count} {species_name} to the campaign…")
+
+            def create_batch() -> list[dict[str, Any]]:
+                return [
+                    self.client.request(
+                        "POST",
+                        "/api/admin/board/creatures",
+                        {"session_id": session_id, "species_id": species_id},
+                    )
+                    for _index in range(count)
+                ]
+
+            def created(items: list[dict[str, Any]]) -> None:
+                if len(items) == 1:
+                    self.selected_board_actor_id = str(
+                        items[0].get("record_id") or ""
+                    )
+                self.set_notice(
+                    f"Added {len(items)} {species_name} to the campaign without a map"
+                )
+                self.refresh(silent=True)
+
+            self._background(create_batch, created)
 
         query.trace_add("write", schedule)
         results.bind("<<ListboxSelect>>", choose)
         controls = ttk.Frame(body)
         controls.pack(fill="x", pady=(7, 0))
         ttk.Button(controls, text="Cancel", style="Quiet.TButton", command=cancel_dialog).pack(side="right")
-        ttk.Button(controls, text="Place on map", command=begin).pack(side="right", padx=(0, 5))
+        place_button = ttk.Button(
+            controls,
+            text="Add to battle" if self.pending_creature_battle_id else "Place on map",
+            command=begin,
+        )
+        place_button.pack(side="right", padx=(0, 5))
+        if not self.pending_creature_battle_id:
+            ttk.Button(
+                controls, text="Add Unplaced", style="Quiet.TButton",
+                command=add_unplaced,
+            ).pack(side="right", padx=(0, 5))
+            if not self.selected_board_map_id:
+                place_button.configure(state="disabled")
         run_search()
         search.focus_set()
 
@@ -6560,7 +6875,93 @@ class GameBoardWindow(tk.Tk):
 
         ttk.Button(buttons, text="Roll", command=roll).pack(side="right", padx=(0, 6))
 
+    def open_add_actor_dialog(self) -> None:
+        """Choose one actor-rail addition without stacking popup menus."""
+
+        if not self.selected_session_id:
+            messagebox.showinfo(
+                "Add actor",
+                "Start or select a campaign session first.",
+                parent=self,
+            )
+            return
+        dialog = tk.Toplevel(self)
+        dialog.title("Add to Actors")
+        dialog.transient(self)
+        dialog.grab_set()
+        dialog.geometry("590x545")
+        dialog.resizable(False, False)
+        apply_window_icon(dialog, GAME_BOARD_ICON)
+        body = ttk.Frame(dialog, padding=16)
+        body.pack(fill="both", expand=True)
+        ttk.Label(body, text="Add to Actors", style="Title.TLabel").pack(anchor="w")
+        ttk.Label(
+            body,
+            text="Choose what you want to add to this campaign.",
+            style="Card.TLabel",
+        ).pack(anchor="w", pady=(2, 12))
+
+        def launch(command: Callable[[], None]) -> None:
+            dialog.destroy()
+            self.after_idle(command)
+
+        choices = (
+            (
+                "Add existing character",
+                "Search the shared character database and import one character.",
+                self.choose_character_for_campaign,
+            ),
+            (
+                "Add existing named creature",
+                "Choose a named creature from the Game World and optionally place it on the open map.",
+                self.choose_named_creature_for_campaign,
+            ),
+            (
+                "Add generic creature",
+                "Choose a species, then add generated creatures unplaced or place them on the open map.",
+                self.open_add_creature_dialog,
+            ),
+            (
+                "Add player-driven character",
+                "Link the request to a player in this session and send their character wizard.",
+                self.open_player_driven_character_dialog,
+            ),
+            (
+                "Add new HM-driven character",
+                "Enter a basic profile and development strategy; the remaining profile is generated.",
+                self.quick_create_campaign_character,
+            ),
+        )
+        for title, description, command in choices:
+            card = ttk.Frame(body, style="Card.TFrame", padding=(8, 6))
+            card.pack(fill="x", pady=2)
+            ttk.Button(
+                card,
+                text=title,
+                command=lambda selected=command: launch(selected),
+            ).pack(fill="x")
+            ttk.Label(
+                card,
+                text=description,
+                style="Status.TLabel",
+                wraplength=520,
+            ).pack(fill="x", pady=(3, 0))
+
+        ttk.Button(
+            body,
+            text="Cancel",
+            style="Quiet.TButton",
+            command=dialog.destroy,
+        ).pack(side="bottom", anchor="e", pady=(10, 0))
+
     def open_add_character_menu(self) -> None:
+        """Compatibility alias for the unified actor chooser."""
+
+        self.open_add_actor_dialog()
+
+    def _legacy_open_add_character_menu(self) -> None:
+        """Retain the former two-choice menu for older integrations."""
+
         if not self.selected_session_id:
             messagebox.showinfo(
                 "Add character",
@@ -6752,17 +7153,125 @@ class GameBoardWindow(tk.Tk):
 
         self.choose_character_for_campaign()
 
-    def quick_create_campaign_character(self) -> None:
+    def open_player_driven_character_dialog(self) -> None:
+        """Choose an unlinked session player and request their character wizard."""
+
+        session = next((
+            item for item in self.state_data.get("sessions", []) or []
+            if str(item.get("id", "")) == str(self.selected_session_id or "")
+        ), None)
+        if session is None:
+            messagebox.showinfo(
+                "Player-driven character",
+                "Start or select a campaign session first.",
+                parent=self,
+            )
+            return
+        eligible = [
+            player for player in session.get("roster", []) or []
+            if not player.get("revoked")
+            and not str(player.get("character_id", "") or "")
+        ]
+        if not eligible:
+            messagebox.showinfo(
+                "Player-driven character",
+                "No active, unlinked player is available in this session.",
+                parent=self,
+            )
+            return
         dialog = tk.Toplevel(self)
-        dialog.title("New Campaign Character")
+        dialog.title("Add Player-driven Character")
         dialog.transient(self)
         dialog.grab_set()
-        dialog.geometry("540x385")
+        dialog.geometry("520x390")
+        dialog.minsize(420, 320)
+        apply_window_icon(dialog, GAME_BOARD_ICON)
+        body = ttk.Frame(dialog, padding=14)
+        body.pack(fill="both", expand=True)
+        ttk.Label(
+            body, text="Choose the player who will create this character",
+            style="Title.TLabel",
+        ).pack(anchor="w")
+        ttk.Label(
+            body,
+            text=(
+                "The player will receive a new-character wizard linked to this "
+                "session. Their finished character will become their player identity."
+            ),
+            style="Card.TLabel",
+            wraplength=480,
+        ).pack(anchor="w", pady=(3, 10))
+        listing = tk.Listbox(
+            body,
+            exportselection=False,
+            background="#fff8e6",
+            foreground=self.INK,
+            selectbackground=self.ACCENT,
+            selectforeground="#fff8e7",
+        )
+        listing.pack(fill="both", expand=True)
+        for player in eligible:
+            account_name = str(
+                player.get("account_name") or player.get("name") or "Player"
+            )
+            email = str(player.get("email", "") or "")
+            listing.insert(
+                "end", account_name + (f"  —  {email}" if email else "")
+            )
+        listing.selection_set(0)
+
+        def send_wizard() -> None:
+            selected = listing.curselection()
+            if not selected:
+                messagebox.showinfo(
+                    "Player-driven character", "Choose a player first.", parent=dialog
+                )
+                return
+            player = eligible[int(selected[0])]
+            contact_id = str(player.get("contact_id", "") or "")
+            player_name = str(
+                player.get("account_name") or player.get("name") or "Player"
+            )
+            session_id = str(session.get("id", "") or "")
+            dialog.destroy()
+
+            def requested(_result: dict[str, Any]) -> None:
+                self.set_notice(f"New-character wizard is ready for {player_name}")
+                self.refresh(silent=True)
+
+            self._background(
+                lambda: self.client.request(
+                    "POST",
+                    "/api/admin/sessions/"
+                    f"{urllib.parse.quote(session_id, safe='')}/players/"
+                    f"{urllib.parse.quote(contact_id, safe='')}/character-wizard",
+                    {},
+                ),
+                requested,
+            )
+
+        listing.bind("<Double-Button-1>", lambda _event: send_wizard())
+        listing.bind("<Return>", lambda _event: send_wizard())
+        controls = ttk.Frame(body)
+        controls.pack(fill="x", pady=(9, 0))
+        ttk.Button(
+            controls, text="Cancel", style="Quiet.TButton", command=dialog.destroy
+        ).pack(side="right")
+        ttk.Button(
+            controls, text="Send Character Wizard", command=send_wizard
+        ).pack(side="right", padx=(0, 6))
+
+    def quick_create_campaign_character(self) -> None:
+        dialog = tk.Toplevel(self)
+        dialog.title("New HM-driven Character")
+        dialog.transient(self)
+        dialog.grab_set()
+        dialog.geometry("560x520")
         dialog.resizable(False, False)
         apply_window_icon(dialog, GAME_BOARD_ICON)
         body = ttk.Frame(dialog, padding=16)
         body.pack(fill="both", expand=True)
-        ttk.Label(body, text="New Campaign Character", style="Title.TLabel").grid(row=0, column=0, columnspan=2, sticky="w")
+        ttk.Label(body, text="New HM-driven Character", style="Title.TLabel").grid(row=0, column=0, columnspan=2, sticky="w")
         ttk.Label(body, text="Name", style="Card.TLabel").grid(row=1, column=0, sticky="w", pady=(14, 4))
         name_value = tk.StringVar()
         name_entry = ttk.Entry(body, textvariable=name_value)
@@ -6771,35 +7280,53 @@ class GameBoardWindow(tk.Tk):
         age_value = tk.StringVar(value="17")
         age_entry = ttk.Spinbox(body, from_=0, to=1000, textvariable=age_value, width=10)
         age_entry.grid(row=2, column=1, sticky="w", pady=4)
-        ttk.Label(body, text="Development strategy", style="Card.TLabel").grid(row=3, column=0, sticky="w", pady=4)
+        ttk.Label(body, text="Basic profile", style="Card.TLabel").grid(
+            row=3, column=0, sticky="nw", pady=4
+        )
+        profile_text = tk.Text(
+            body,
+            height=6,
+            wrap="word",
+            background="#fff8e6",
+            foreground=self.INK,
+            relief="solid",
+            borderwidth=1,
+        )
+        profile_text.grid(row=3, column=1, sticky="ew", pady=4)
+        ttk.Label(
+            body,
+            text="Role, temperament, background, or other details to preserve.",
+            style="Status.TLabel",
+            wraplength=360,
+        ).grid(row=4, column=1, sticky="w", pady=(0, 5))
+        ttk.Label(body, text="Development strategy", style="Card.TLabel").grid(row=5, column=0, sticky="w", pady=4)
         strategy_value = tk.StringVar(value="Random")
         strategies = (
             "Random", "One skill", "Two skill", "Three skills", "Ability-focus",
             "Material Crafting", "Ingredient Crafting", "Spell-crafting", "Social", "Scattershot",
         )
         strategy = ttk.Combobox(body, textvariable=strategy_value, values=strategies, state="readonly")
-        strategy.grid(row=3, column=1, sticky="ew", pady=4)
-        player_value = tk.BooleanVar(value=False)
-        ttk.Checkbutton(body, text="Player character", variable=player_value).grid(row=4, column=1, sticky="w", pady=(6, 0))
+        strategy.grid(row=5, column=1, sticky="ew", pady=4)
         place_on_map = tk.BooleanVar(value=bool(self.selected_board_map_id))
         map_option = ttk.Checkbutton(
             body,
             text="Also place on the currently open map",
             variable=place_on_map,
         )
-        map_option.grid(row=5, column=1, sticky="w", pady=(4, 0))
+        map_option.grid(row=6, column=1, sticky="w", pady=(6, 0))
         if not self.selected_board_map_id:
             map_option.configure(state="disabled")
         note = ttk.Label(
             body,
             text=(
-                "This character belongs only to this campaign. Birth year and "
-                "development are calculated from the current Game World Date."
+                "The profile is preserved on the character sheet. The selected "
+                "strategy automatically builds the remaining development, and the "
+                "character belongs only to the current campaign."
             ),
             style="Status.TLabel",
             wraplength=450,
         )
-        note.grid(row=6, column=0, columnspan=2, sticky="w", pady=(12, 0))
+        note.grid(row=7, column=0, columnspan=2, sticky="w", pady=(12, 0))
         body.columnconfigure(1, weight=1)
 
         def create() -> None:
@@ -6813,7 +7340,8 @@ class GameBoardWindow(tk.Tk):
                 "name": name_value.get().strip(),
                 "age": age,
                 "development_strategy": strategy_value.get(),
-                "player_character": player_value.get(),
+                "player_character": False,
+                "basic_profile": profile_text.get("1.0", "end-1c").strip(),
             }
             if place_on_map.get() and self.selected_board_map_id:
                 payload["map_id"] = self.selected_board_map_id
@@ -6837,9 +7365,9 @@ class GameBoardWindow(tk.Tk):
             )
 
         controls = ttk.Frame(body)
-        controls.grid(row=7, column=0, columnspan=2, sticky="e", pady=(18, 0))
+        controls.grid(row=8, column=0, columnspan=2, sticky="e", pady=(18, 0))
         ttk.Button(controls, text="Cancel", style="Quiet.TButton", command=dialog.destroy).pack(side="right")
-        ttk.Button(controls, text="Create Character", command=create).pack(side="right", padx=(0, 6))
+        ttk.Button(controls, text="Generate Character", command=create).pack(side="right", padx=(0, 6))
         name_entry.focus_set()
 
     def quick_create_character_for_map(self) -> None:

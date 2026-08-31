@@ -230,9 +230,65 @@ class GameBoardDesktopActorTests(unittest.TestCase):
         empty_line, instruction_line = board_campaign_character_empty_lines()
 
         self.assertEqual(empty_line, "No campaign actors")
-        self.assertEqual(instruction_line, "Use C+ or ◆+ to add one")
+        self.assertEqual(instruction_line, "Use + to add one")
         self.assertLessEqual(len(empty_line), 28)
         self.assertLessEqual(len(instruction_line), 28)
+
+    def test_actor_header_has_one_add_button_and_unified_chooser(self):
+        header_source = inspect.getsource(
+            GameBoardWindow._create_board_groups_controls
+        )
+        chooser_source = inspect.getsource(GameBoardWindow.open_add_actor_dialog)
+
+        self.assertIn('text="+"', header_source)
+        self.assertIn("command=self.open_add_actor_dialog", header_source)
+        self.assertNotIn('"G+"', header_source)
+        self.assertNotIn('"C+"', header_source)
+        self.assertNotIn('"◆+"', header_source)
+        for label in (
+            "Add existing character",
+            "Add existing named creature",
+            "Add generic creature",
+            "Add player-driven character",
+            "Add new HM-driven character",
+        ):
+            self.assertIn(label, chooser_source)
+        self.assertNotIn("self.create_board_group", chooser_source)
+
+    def test_new_actor_choices_route_to_their_dedicated_flows(self):
+        chooser_source = inspect.getsource(GameBoardWindow.open_add_actor_dialog)
+        named_source = inspect.getsource(
+            GameBoardWindow.choose_named_creature_for_campaign
+        )
+        player_source = inspect.getsource(
+            GameBoardWindow.open_player_driven_character_dialog
+        )
+        hm_source = inspect.getsource(
+            GameBoardWindow.quick_create_campaign_character
+        )
+
+        self.assertIn("self.choose_character_for_campaign", chooser_source)
+        self.assertIn("self.choose_named_creature_for_campaign", chooser_source)
+        self.assertIn("self.open_add_creature_dialog", chooser_source)
+        self.assertIn("self.open_player_driven_character_dialog", chooser_source)
+        self.assertIn("self.quick_create_campaign_character", chooser_source)
+        self.assertIn('"/api/admin/board/named-creatures"', named_source)
+        self.assertIn('"materialized"', named_source)
+        self.assertIn('not str(player.get("character_id", "") or "")', player_source)
+        self.assertIn('not player.get("revoked")', player_source)
+        self.assertIn('f"{urllib.parse.quote(contact_id, safe=\'\')}/character-wizard"', player_source)
+        self.assertIn('"player_character": False', hm_source)
+        self.assertNotIn("Player character", hm_source)
+
+    def test_generic_creatures_can_be_added_before_a_map_is_open(self):
+        source = inspect.getsource(GameBoardWindow.open_add_creature_dialog)
+
+        self.assertIn('text="Add Unplaced"', source)
+        self.assertIn('{"session_id": session_id, "species_id": species_id}', source)
+        self.assertNotIn(
+            "if not self.selected_session_id or not self.selected_board_map_id",
+            source,
+        )
 
     def test_actor_render_includes_unmapped_campaign_characters_without_search(self):
         source = inspect.getsource(GameBoardWindow._render_board_actor_list)

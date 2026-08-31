@@ -319,7 +319,8 @@ class GameBoardServiceTests(unittest.TestCase):
         world_before = self.service.world_fingerprint()
 
         created = self.service.create_quick_character(
-            session["id"], None, "Campaign Quick", 13
+            session["id"], None, "Campaign Quick", 13,
+            "Two skill", False, "Quiet scholar and reluctant scout",
         )
 
         character_id = created["character"]["id"]
@@ -330,6 +331,12 @@ class GameBoardServiceTests(unittest.TestCase):
             character_id,
             {item["record_id"] for item in campaign["characters"]},
         )
+        saved = next(
+            item for item in campaign["characters"]
+            if item["record_id"] == character_id
+        )
+        self.assertEqual(saved["narrative"], "Quiet scholar and reluctant scout")
+        self.assertFalse(saved["unfinished"])
         self.assertEqual(self.service.world_fingerprint(), world_before)
         scoped = self.service.list_characters(session["id"])
         created_summary = next(item for item in scoped if item["id"] == character_id)
@@ -337,6 +344,138 @@ class GameBoardServiceTests(unittest.TestCase):
         self.assertEqual(created_summary["location_name"], "")
         self.assertEqual(created_summary["map_id"], "")
         self.assertEqual(created_summary["floor_id"], "")
+
+    def test_player_character_wizard_is_session_scoped_and_one_shot(self):
+        bob = self.service.add_contact("Bob", "bob@example.com")
+        session = self.create_session([self.alice["id"], bob["id"]])
+        other_session = self.service.create_session(
+            "Other table",
+            (date.today() + timedelta(days=2)).isoformat(),
+            [self.alice["id"]],
+            campaign_id=self.campaign_id,
+        )
+
+        requested = self.service.request_player_character_wizard(
+            session["id"], self.alice["id"]
+        )
+        repeated = self.service.request_player_character_wizard(
+            session["id"], self.alice["id"]
+        )
+        wizard_id = requested["wizard"]["id"]
+
+        self.assertEqual(requested["wizard"]["status"], "requested")
+        self.assertEqual(repeated["wizard"]["id"], wizard_id)
+        self.assertEqual(
+            self.service.pending_player_character_wizard(
+                session["id"], self.alice["id"]
+            )["id"],
+            wizard_id,
+        )
+        with self.assertRaises(PermissionError):
+            self.service.complete_player_character_wizard(
+                session["id"], bob["id"], wizard_id,
+                "Wrong Owner", 17, "Random",
+            )
+        with self.assertRaisesRegex(ValueError, "no longer active"):
+            self.service.complete_player_character_wizard(
+                session["id"], self.alice["id"], "stale-wizard",
+                "Stale", 17, "Random",
+            )
+
+        completed = self.service.complete_player_character_wizard(
+            session["id"], self.alice["id"], wizard_id,
+            "Player Made", 13, "Random",
+        )
+
+        character_id = completed["character"]["id"]
+        self.assertTrue(completed["character"]["player_character"])
+        self.assertEqual(completed["wizard"]["status"], "completed")
+        self.assertIsNone(
+            self.service.pending_player_character_wizard(
+                session["id"], self.alice["id"]
+            )
+        )
+        linked_session = self.service.session_view(session["id"])
+        linked_player = next(
+            item for item in linked_session["roster"]
+            if item["contact_id"] == self.alice["id"]
+        )
+        self.assertEqual(linked_player["character_id"], character_id)
+        self.assertEqual(linked_player["name"], "Player Made")
+        other_player = self.service.session_view(other_session["id"])["roster"][0]
+        self.assertIsNone(other_player["character_id"])
+        global_contact = next(
+            item for item in self.service.list_contacts()
+            if item["id"] == self.alice["id"]
+        )
+        self.assertIsNone(global_contact["character_id"])
+        campaign = self.service.campaign_repository.get(self.campaign_id)
+        self.assertIn(
+            character_id,
+            {item["record_id"] for item in campaign["characters"]},
+        )
+        self.assertNotIn(
+            character_id,
+            {item["id"] for item in self.service.list_characters()},
+        )
+        self.assertEqual(
+            self.service.character_sheet_for(
+                session["id"], self.alice["id"]
+            )["character_id"],
+            character_id,
+        )
+        with self.assertRaisesRegex(ValueError, "already been completed"):
+            self.service.complete_player_character_wizard(
+                session["id"], self.alice["id"], wizard_id,
+                "Second Character", 13, "Random",
+            )
+
+    def test_player_wizard_recovers_one_character_after_roster_save_failure(self):
+        session = self.create_session()
+        requested = self.service.request_player_character_wizard(
+            session["id"], self.alice["id"]
+        )
+        wizard_id = requested["wizard"]["id"]
+
+        with patch.object(
+            self.repository,
+            "save_active",
+            side_effect=OSError("simulated active-session save failure"),
+        ):
+            with self.assertRaisesRegex(OSError, "simulated"):
+                self.service.complete_player_character_wizard(
+                    session["id"], self.alice["id"], wizard_id,
+                    "Recoverable Player", 15, "Social", "Curious archivist",
+                )
+
+        after_failure = self.service.campaign_repository.get(self.campaign_id)
+        matching = [
+            item for item in after_failure["characters"]
+            if item.get("character_wizard_id") == wizard_id
+        ]
+        self.assertEqual(len(matching), 1)
+        self.assertEqual(matching[0]["narrative"], "Curious archivist")
+        self.assertEqual(
+            self.service.pending_player_character_wizard(
+                session["id"], self.alice["id"]
+            )["id"],
+            wizard_id,
+        )
+
+        completed = self.service.complete_player_character_wizard(
+            session["id"], self.alice["id"], wizard_id,
+            "Recoverable Player", 15, "Social", "Curious archivist",
+        )
+
+        self.assertEqual(completed["character"]["id"], matching[0]["record_id"])
+        recovered = self.service.campaign_repository.get(self.campaign_id)
+        self.assertEqual(
+            len([
+                item for item in recovered["characters"]
+                if item.get("character_wizard_id") == wizard_id
+            ]),
+            1,
+        )
 
     def test_campaign_person_can_be_assigned_to_a_mapless_location(self):
         world = deepcopy(self.service._world_document())

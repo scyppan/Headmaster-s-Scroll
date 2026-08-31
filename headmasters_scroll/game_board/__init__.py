@@ -1,6 +1,6 @@
 """Game Board session hosting, admission, and monitoring."""
 
-ADMIN_API_REVISION = "actor-knowledge-v4"
+ADMIN_API_REVISION = "actor-creation-v5"
 
 from .service import GameBoardService
 from .storage import GameBoardRepository

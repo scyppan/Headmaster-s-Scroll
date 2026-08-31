@@ -83,6 +83,8 @@
       this.rollRequestSequence = 0;
       this.moveRequestSequence = 0;
       this.characterSheet = null;
+      this.characterWizard = null;
+      this.characterWizardSubmitting = false;
       this.teachingTargetsLoaded = false;
       this.pendingTeachOpen = false;
       this.regionInteraction = null;
@@ -246,6 +248,55 @@
               </div>
             </aside>
           </div>
+        </section>
+
+        <section
+          class="ccgb-character-wizard-overlay"
+          data-ccgb="character-wizard"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="ccgb-character-wizard-title"
+          hidden
+        >
+          <div class="ccgb-character-wizard-card">
+            <p class="ccgb-eyebrow">A request from the Headmaster</p>
+            <h1 id="ccgb-character-wizard-title">Create your character</h1>
+            <p>
+              Choose the basic profile and development direction. The Game Board
+              will build the campaign character and link it to you in this session.
+            </p>
+            <form data-ccgb="character-wizard-form">
+              <label>
+                <span>Character name</span>
+                <input data-ccgb="character-wizard-name" maxlength="200" autocomplete="name" required>
+              </label>
+              <label>
+                <span>Rough age</span>
+                <input data-ccgb="character-wizard-age" type="number" min="0" max="1000" step="1" value="17" required>
+              </label>
+              <label>
+                <span>Basic profile</span>
+                <textarea data-ccgb="character-wizard-profile" maxlength="4000" rows="5" placeholder="Role, temperament, background, or details you want preserved"></textarea>
+              </label>
+              <label>
+                <span>Development strategy</span>
+                <select data-ccgb="character-wizard-strategy">
+                  <option>Random</option>
+                  <option>One skill</option>
+                  <option>Two skill</option>
+                  <option>Three skills</option>
+                  <option>Ability-focus</option>
+                  <option>Material Crafting</option>
+                  <option>Ingredient Crafting</option>
+                  <option>Spell-crafting</option>
+                  <option>Social</option>
+                  <option>Scattershot</option>
+                </select>
+              </label>
+              <p class="ccgb-character-wizard-status" data-ccgb="character-wizard-status" aria-live="polite"></p>
+              <button type="submit" data-ccgb="character-wizard-submit">Create and link my character</button>
+            </form>
+          </div>
         </section>`;
     }
 
@@ -265,6 +316,14 @@
       this.element('chat-form').addEventListener('submit', event => {
         event.preventDefault();
         this.sendChat();
+      });
+      this.element('character-wizard-form').addEventListener('submit', event => {
+        event.preventDefault();
+        this.submitCharacterWizard();
+      });
+      this.element('character-wizard-form').querySelectorAll('input, select, textarea').forEach(control => {
+        control.addEventListener('input', () => this.saveCharacterWizardDraft());
+        control.addEventListener('change', () => this.saveCharacterWizardDraft());
       });
       this.root.querySelectorAll('[data-section]').forEach(button => {
         button.addEventListener('click', () => this.openSection(button.dataset.section));
@@ -440,6 +499,7 @@
       this.socket.addEventListener('close', () => {
         clearTimeout(connectionTimer);
         this.releaseAssets();
+        this.hideCharacterWizard(false);
         if (this.intentionalClose) {
           this.intentionalClose = false;
           return;
@@ -538,11 +598,26 @@
         }
         this.element('player').textContent = player;
         this.element('detail-player').textContent = player;
+        if (this.characterId) this.hideCharacterWizard();
         this.updatePlayerIdentity(player);
         this.releaseAssets(false);
         // The private sheet update follows separately. Avoid rebuilding a
         // large panel with stale data between the two messages.
         if (this.activeSection === 'board') this.renderBoardView();
+      } else if (message.type === 'character_wizard_requested' && message.wizard) {
+        this.showCharacterWizard(message.wizard);
+      } else if (message.type === 'character_wizard_completed') {
+        const characterName = message.character?.name || 'Your character';
+        this.hideCharacterWizard();
+        this.showChatNotice(`${characterName} is ready and linked to you.`);
+      } else if (message.type === 'character_wizard_error') {
+        this.characterWizardSubmitting = false;
+        const submit = this.element('character-wizard-submit');
+        submit.disabled = false;
+        submit.textContent = 'Create and link my character';
+        this.element('character-wizard-status').textContent = (
+          message.message || 'The character could not be created. Review the form and try again.'
+        );
       } else if (message.type === 'board_snapshot' && message.board) {
         this.receivedFreshBoard = true;
         const previousAttributes = this.board && this.board.character_attributes;
@@ -663,9 +738,11 @@
         }
       } else if (message.type === 'access_revoked') {
         this.releaseAssets();
+        this.hideCharacterWizard();
         this.show('revoked', message.message || 'Access was revoked.');
       } else if (message.type === 'session_expired') {
         this.releaseAssets();
+        this.hideCharacterWizard();
         this.show('expired', message.message || 'The session has ended.');
       } else if (message.type === 'server_error') {
         this.regionGatePending = false;
@@ -680,6 +757,125 @@
         if (this.activeSection === 'board') this.showBoardNotice(errorMessage);
         else this.showChatNotice(errorMessage);
       }
+    }
+
+    showCharacterWizard(wizard) {
+      if (!wizard || !wizard.id) return;
+      if (this.characterId) {
+        this.clearCharacterWizardDraft(wizard.id);
+        return;
+      }
+      const sameWizard = String(this.characterWizard?.id || '') === String(wizard.id);
+      this.characterWizard = wizard;
+      if (!sameWizard) {
+        this.characterWizardSubmitting = false;
+        const defaults = wizard.defaults || {};
+        const draft = this.loadCharacterWizardDraft(wizard.id) || {};
+        this.element('character-wizard-name').value = String(draft.name ?? defaults.name ?? '');
+        this.element('character-wizard-age').value = String(draft.age ?? defaults.age ?? 17);
+        this.element('character-wizard-profile').value = String(
+          draft.basic_profile ?? defaults.basic_profile ?? ''
+        );
+        const strategy = String(
+          draft.development_strategy ?? defaults.development_strategy ?? 'Random'
+        );
+        const strategyControl = this.element('character-wizard-strategy');
+        if ([...strategyControl.options].some(option => option.value === strategy)) {
+          strategyControl.value = strategy;
+        } else {
+          strategyControl.value = 'Random';
+        }
+        this.element('character-wizard-status').textContent = (
+          'Complete this private form to join the session with your new character.'
+        );
+        const submit = this.element('character-wizard-submit');
+        submit.disabled = false;
+        submit.textContent = 'Create and link my character';
+      }
+      this.element('character-wizard').hidden = false;
+      setTimeout(() => this.element('character-wizard-name').focus(), 0);
+    }
+
+    hideCharacterWizard(clearDraft = true) {
+      const wizardId = this.characterWizard?.id;
+      if (clearDraft && wizardId) this.clearCharacterWizardDraft(wizardId);
+      this.characterWizard = null;
+      this.characterWizardSubmitting = false;
+      const overlay = this.element('character-wizard');
+      if (overlay) overlay.hidden = true;
+    }
+
+    characterWizardDraftKey(wizardId) {
+      return `${this.storageKey}-character-wizard-${String(wizardId || '')}`;
+    }
+
+    loadCharacterWizardDraft(wizardId) {
+      try {
+        return JSON.parse(sessionStorage.getItem(this.characterWizardDraftKey(wizardId)) || 'null');
+      } catch (_error) {
+        return null;
+      }
+    }
+
+    clearCharacterWizardDraft(wizardId) {
+      try {
+        sessionStorage.removeItem(this.characterWizardDraftKey(wizardId));
+      } catch (_error) {
+        // Private browsing can disable storage; the live form still works.
+      }
+    }
+
+    saveCharacterWizardDraft() {
+      if (!this.characterWizard) return;
+      try {
+        sessionStorage.setItem(
+          this.characterWizardDraftKey(this.characterWizard.id),
+          JSON.stringify({
+            name: this.element('character-wizard-name').value,
+            age: this.element('character-wizard-age').value,
+            basic_profile: this.element('character-wizard-profile').value,
+            development_strategy: this.element('character-wizard-strategy').value,
+          })
+        );
+      } catch (_error) {
+        // The wizard does not depend on browser storage.
+      }
+    }
+
+    submitCharacterWizard() {
+      if (!this.characterWizard || this.characterWizardSubmitting) return;
+      const name = this.element('character-wizard-name').value.trim();
+      const age = Number(this.element('character-wizard-age').value);
+      const status = this.element('character-wizard-status');
+      if (!name) {
+        status.textContent = 'Enter your character’s name.';
+        this.element('character-wizard-name').focus();
+        return;
+      }
+      if (!Number.isInteger(age) || age < 0 || age > 1000) {
+        status.textContent = 'Enter a whole-number age between 0 and 1000.';
+        this.element('character-wizard-age').focus();
+        return;
+      }
+      if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
+        status.textContent = 'The live room is disconnected. Rejoin and try again.';
+        return;
+      }
+      this.characterWizardSubmitting = true;
+      const submit = this.element('character-wizard-submit');
+      submit.disabled = true;
+      submit.textContent = 'Building character…';
+      status.textContent = 'Building your campaign character…';
+      this.saveCharacterWizardDraft();
+      this.send({
+        v: VERSION,
+        type: 'character_wizard_submit',
+        wizard_id: String(this.characterWizard.id),
+        name,
+        age,
+        basic_profile: this.element('character-wizard-profile').value.trim(),
+        development_strategy: this.element('character-wizard-strategy').value,
+      });
     }
 
     updatePlayerIdentity(fallback = '') {

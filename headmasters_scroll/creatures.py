@@ -342,6 +342,16 @@ def normalize_campaign_creature(value: Any) -> dict[str, Any]:
         result[field] = str(result.get(field, "") or "").strip()
         if not result[field]:
             raise ValueError(f"Every campaign creature requires {field}")
+    result["named_creature_id"] = str(
+        result.get("named_creature_id", "") or ""
+    ).strip()[:120]
+    result["display_name"] = str(
+        result.get("display_name", "") or ""
+    ).strip()[:200]
+    if result["named_creature_id"] and not result["display_name"]:
+        # Backward-compatible repair for named creatures saved before their
+        # proper name became part of the explicit campaign-creature schema.
+        result["display_name"] = result["species_name"]
     result["counter"] = max(1, int(result.get("counter", 1)))
     placement = result.get("placement") or {}
     result["placement"] = {
@@ -351,8 +361,13 @@ def normalize_campaign_creature(value: Any) -> dict[str, Any]:
         "x": max(0.0, min(1.0, float(placement.get("x", 0.5)))),
         "y": max(0.0, min(1.0, float(placement.get("y", 0.5)))),
     }
-    if not result["placement"]["map_id"] or not result["placement"]["location_id"]:
-        raise ValueError("Every campaign creature must occupy a map and location")
+    map_id = result["placement"]["map_id"]
+    location_id = result["placement"]["location_id"]
+    floor_id = result["placement"]["floor_id"]
+    if bool(map_id) != bool(location_id) or (floor_id and not map_id):
+        raise ValueError(
+            "Campaign creature placement requires a map and location together"
+        )
     offset = result.get("label_offset") or {}
     result["label_offset"] = {
         "x": max(-1.0, min(1.0, float(offset.get("x", 0.0)))),

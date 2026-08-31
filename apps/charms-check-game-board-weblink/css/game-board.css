@@ -104,6 +104,89 @@
   position: relative;
 }
 
+#gameboard .ccgb-character-wizard-overlay {
+  align-items: center;
+  background: rgba(38, 25, 16, 0.78);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  min-height: var(--ccgb-board-height, calc(100dvh - 76px));
+  overflow: auto;
+  padding: clamp(18px, 5vw, 54px);
+  position: absolute;
+  z-index: 1000;
+}
+
+#gameboard .ccgb-character-wizard-card {
+  background:
+    radial-gradient(circle at 18% 10%, rgba(255, 255, 255, 0.38), transparent 30%),
+    linear-gradient(125deg, #e2c98f, var(--ccgb-paper-pale) 9%, var(--ccgb-paper-light) 91%, #d0af70);
+  border: 2px solid var(--ccgb-red);
+  box-shadow: 0 18px 55px rgba(25, 14, 7, 0.5);
+  max-height: calc(var(--ccgb-board-height, 100dvh) - 36px);
+  max-width: 620px;
+  overflow: auto;
+  padding: clamp(22px, 5vw, 42px);
+  width: 100%;
+}
+
+#gameboard .ccgb-character-wizard-card h1 {
+  font: 700 clamp(30px, 5vw, 44px)/1.08 Georgia, "Times New Roman", serif;
+  margin: 4px 0 10px;
+}
+
+#gameboard .ccgb-character-wizard-card > p:not(.ccgb-eyebrow) {
+  color: var(--ccgb-muted);
+  margin: 0 0 20px;
+}
+
+#gameboard .ccgb-character-wizard-card form { display: grid; gap: 14px; }
+
+#gameboard .ccgb-character-wizard-card label {
+  display: grid;
+  font-weight: 750;
+  gap: 5px;
+}
+
+#gameboard .ccgb-character-wizard-card input,
+#gameboard .ccgb-character-wizard-card select,
+#gameboard .ccgb-character-wizard-card textarea {
+  background: var(--ccgb-paper-pale);
+  border: 1px solid #a77b45;
+  border-radius: 4px;
+  color: var(--ccgb-ink);
+  min-height: 42px;
+  padding: 8px 10px;
+  width: 100%;
+}
+
+#gameboard .ccgb-character-wizard-card textarea {
+  min-height: 108px;
+  resize: vertical;
+}
+
+#gameboard .ccgb-character-wizard-status {
+  color: var(--ccgb-red-dark);
+  font-weight: 650;
+  margin: 0;
+  min-height: 23px;
+}
+
+#gameboard .ccgb-character-wizard-card button {
+  background: var(--ccgb-red);
+  border: 1px solid var(--ccgb-red-dark);
+  border-radius: 4px;
+  color: #fff8e7;
+  font-weight: 800;
+  min-height: 44px;
+  padding: 10px 18px;
+}
+
+#gameboard .ccgb-character-wizard-card button:disabled {
+  cursor: wait;
+  opacity: 0.66;
+}
+
 #gameboard .ccgb-toolbar {
   align-items: center;
   background: linear-gradient(180deg, #f7eac8, #e8d4a2);

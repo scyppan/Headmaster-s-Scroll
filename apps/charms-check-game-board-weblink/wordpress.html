@@ -5,9 +5,13 @@
 (() => {
   'use strict';
 
-  const VERSION = 'a26.8.30.009';
+  const VERSION = 'a26.10.17.001';
   const REPOSITORY = 'scyppan/Headmaster-s-Scroll';
-  const API_BASE = 'https://beast.tail102829.ts.net';
+  const PUBLIC_CONFIG = Object.freeze({
+    schema: 'ccgb-public-config-v1',
+    apiBase: 'https://beast.tail102829.ts.net'
+  });
+  const API_BASE = PUBLIC_CONFIG.apiBase;
   const BASE = `https://cdn.jsdelivr.net/gh/${REPOSITORY}@${VERSION}/apps/charms-check-game-board-weblink/`;
 
   const cssFiles = ['css/game-board.css'];

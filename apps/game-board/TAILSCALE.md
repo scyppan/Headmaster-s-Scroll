@@ -14,8 +14,10 @@ The Game Board uses Tailscale Funnel as its free public bridge. Players connect 
 Open the native Game Board app first. Then open PowerShell as Administrator and run:
 
 ```powershell
-tailscale funnel 8765
+tailscale funnel --bg --yes 8765
 ```
+
+`--bg` makes the public connection persistent: it continues after the PowerShell window closes and resumes after a reboot or Tailscale restart. `--yes` permits the non-interactive configuration update after Funnel has been approved for this computer.
 
 The output looks like this:
 
@@ -26,10 +28,36 @@ https://your-computer.your-tailnet.ts.net
 |-- / proxy http://127.0.0.1:8765
 ```
 
-Copy the HTTPS address into **Connection Setup** in the native Game Board app and into `apps/charms-check-game-board-weblink/wordpress.html` as `API_BASE`.
+Copy the HTTPS address into **Connection Setup** in the native Game Board app and into `apps/charms-check-game-board-weblink/wordpress.html` as `PUBLIC_CONFIG.apiBase`.
+
+## Verify before sending invitations
+
+Check the saved Funnel configuration:
+
+```powershell
+tailscale funnel status
+```
+
+The status must show the public HTTPS hostname forwarding `/` to `http://127.0.0.1:8765`. Next, open this URL from a browser, replacing the example host with the hostname reported by the status command:
+
+```text
+https://your-computer.your-tailnet.ts.net/health
+```
+
+Only send invitations after that public `/health` URL responds. An invitation can be delivered successfully while gbfhm, DNS, TLS, CORS, or the Funnel route is still unavailable, and players cannot request admission until the public connection works.
 
 ## Stop public access
 
-Press `Ctrl+C` in the Funnel window. Because this setup deliberately runs in the foreground, closing that command stops the public connection rather than silently leaving it enabled after a reboot.
+Turn off only this route while leaving any other Funnel mappings alone by adding `off` to the command that enabled it:
+
+```powershell
+tailscale funnel --bg --yes 8765 off
+```
+
+Confirm removal with:
+
+```powershell
+tailscale funnel status
+```
 
 Never Funnel port `8764`. It is the localhost-only control API used by the native Python app.

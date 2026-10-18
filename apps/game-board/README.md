@@ -54,9 +54,23 @@ The existing WordPress signup and page-access system remains independent of Game
 Open PowerShell as Administrator and run:
 
 ```powershell
-tailscale funnel 8765
+tailscale funnel --bg --yes 8765
 ```
 
-Tailscale forwards the public HTTPS hostname only to `http://127.0.0.1:8765`. Never expose port `8764`; that localhost-only port accepts the native app's private control requests.
+The background configuration persists after the PowerShell window closes and resumes after a reboot or Tailscale restart. Tailscale forwards the public HTTPS hostname only to `http://127.0.0.1:8765`. Never expose port `8764`; that localhost-only port accepts the native app's private control requests.
 
-Press `Ctrl+C` in the Funnel window to remove public access. **End Session** revokes invitations and disconnects players but intentionally leaves the manually managed Funnel command alone.
+Confirm that Funnel is configured:
+
+```powershell
+tailscale funnel status
+```
+
+Then open `https://your-computer.your-tailnet.ts.net/health` in a browser (using the HTTPS address shown by the status command). Do not send invitations until that public health URL responds; receiving an email does not mean the public Game Board connection is ready.
+
+To remove only this Game Board route while leaving any other Funnel mappings alone, add `off` to the command that enabled it:
+
+```powershell
+tailscale funnel --bg --yes 8765 off
+```
+
+**End Session** revokes invitations and disconnects players but intentionally leaves the separately managed Funnel configuration alone.

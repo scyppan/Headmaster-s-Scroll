@@ -19,6 +19,8 @@ Place this container on the Game Board page:
 
 Paste the complete contents of `wordpress.html` into the site's **Head Scripts** field. Do not include another `<script>` element or the `<div>` in that field; WordPress already wraps the field in `<script>`.
 
+The loader's `PUBLIC_CONFIG` block is also the machine-readable connection manifest used by gbfhm's public-connection check. Keep exactly one `ccgb-public-config-v1` block on the page, and keep its `apiBase` equal to the **Public Game Board address** configured in gbfhm. If those addresses differ, gbfhm must treat the player page as not joinable and refuse to send invitations.
+
 ## Version naming
 
 Release names use `<stage>YY.M.D.NNN`:
@@ -33,7 +35,7 @@ Set `VERSION` in `wordpress.html` to the release being prepared, commit the file
 The current loader uses this pinned CDN root:
 
 ```text
-https://cdn.jsdelivr.net/gh/scyppan/Headmaster-s-Scroll@a26.8.9.004/apps/charms-check-game-board-weblink/
+https://cdn.jsdelivr.net/gh/scyppan/Headmaster-s-Scroll@a26.10.17.001/apps/charms-check-game-board-weblink/
 ```
 
 ## Security boundary

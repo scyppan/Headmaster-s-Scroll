@@ -400,7 +400,7 @@
       } catch (error) {
         if (error.name === 'AbortError') throw new Error('The Game Board did not respond in time.');
         if (error instanceof TypeError) {
-          throw new Error('The Game Board host cannot be reached. Ask the Headmaster to check Game Board and the Tailscale Funnel.');
+          throw new Error('The public Game Board connection failed. This can be caused by gbfhm, the configured public address, DNS/TLS/CORS, or the Tailscale Funnel.');
         }
         throw error;
       } finally {

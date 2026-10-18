@@ -6,6 +6,7 @@ import tempfile
 import threading
 import time
 import unittest
+import urllib.error
 from copy import deepcopy
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -69,6 +70,49 @@ class HandshakeSocket:
         self.closed_code = code
 
 
+class FakePublicHealthResponse:
+    def __init__(
+        self,
+        payload=None,
+        *,
+        raw=None,
+        status=200,
+        origin=ORIGIN,
+        url="https://game.example.com/health",
+        methods=None,
+        allow_headers=None,
+    ):
+        self.payload = (
+            raw
+            if raw is not None
+            else json.dumps(payload if payload is not None else {}).encode("utf-8")
+        )
+        self.status = status
+        self.url = url
+        self.headers = {}
+        if origin is not None:
+            self.headers["Access-Control-Allow-Origin"] = origin
+        if methods is not None:
+            self.headers["Access-Control-Allow-Methods"] = methods
+        if allow_headers is not None:
+            self.headers["Access-Control-Allow-Headers"] = allow_headers
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+    def getcode(self):
+        return self.status
+
+    def geturl(self):
+        return self.url
+
+    def read(self, _size=-1):
+        return self.payload
+
+
 class GameBoardApiTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
@@ -114,7 +158,16 @@ class GameBoardApiTests(unittest.TestCase):
             campaign_id="campaign-1",
         )
         self.session_id = session["id"]
+        self.instance_id = self.player.get("/health").json()["instance_id"]
         self.invite, _link, _entry = self.runtime.service.prepare_invite(self.contact["id"])
+        self.real_public_connection_status = self.runtime.public_connection_status
+        self.runtime.public_connection_status = Mock(return_value={
+            "configured": True,
+            "online": True,
+            "joinable": True,
+            "url": "https://game.example.com",
+            "error": "",
+        })
 
     def tearDown(self):
         self.admin.close()
@@ -127,6 +180,51 @@ class GameBoardApiTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 200, response.text)
         return response.json()
+
+    def public_loader_response(
+        self, api_base="https://game.example.com", *, legacy=False
+    ):
+        if legacy:
+            config = f"const API_BASE = '{api_base}';"
+        else:
+            config = (
+                "const PUBLIC_CONFIG = Object.freeze({ "
+                "schema: 'ccgb-public-config-v1', "
+                f"apiBase: '{api_base}' }});\n"
+                "const API_BASE = PUBLIC_CONFIG.apiBase;"
+            )
+        page = (
+            "<html><script>// Charms Check Game Board Weblink\n"
+            f"{config}\n"
+            "window.GameBoardWeblink.mount({apiBase: API_BASE});"
+            "</script></html>"
+        ).encode("utf-8")
+        return FakePublicHealthResponse(
+            raw=page,
+            origin=None,
+            url=f"{ORIGIN}/game/",
+        )
+
+    def public_health_response(self, **updates):
+        payload = {
+            "service": "game-board",
+            "instance_id": self.instance_id,
+            "available": True,
+            "paused": False,
+        }
+        payload.update(updates)
+        return FakePublicHealthResponse(payload)
+
+    @staticmethod
+    def public_admission_response(**updates):
+        values = {
+            "origin": ORIGIN,
+            "url": "https://game.example.com/v1/admissions",
+            "methods": "GET, POST, OPTIONS",
+            "allow_headers": "Authorization, Content-Type",
+        }
+        values.update(updates)
+        return FakePublicHealthResponse({}, **values)
 
     def world_characters(self, limit=10, session_id=None):
         response = self.admin.get(
@@ -156,10 +254,486 @@ class GameBoardApiTests(unittest.TestCase):
         self.assertEqual(self.player.get("/api/admin/state").status_code, 404)
         self.assertEqual(self.player.get("/data/world.json").status_code, 404)
         health = self.player.get("/health").json()
-        self.assertEqual(set(health), {"service", "available", "paused"})
+        self.assertEqual(
+            set(health), {"service", "instance_id", "available", "paused"}
+        )
+        self.assertEqual(health["instance_id"], self.instance_id)
+        self.assertEqual(len(health["instance_id"]), 64)
+        self.assertNotEqual(
+            health["instance_id"], self.repository.settings()["admin_key"]
+        )
         self.assertEqual(self.admin.get("/api/admin/state").status_code, 403)
         self.assertEqual(self.admin.get("/api/admin/state", headers=self.admin_headers).status_code, 200)
         self.assertEqual(self.admin.get("/").status_code, 404)
+
+    def test_public_connection_preflight_confirms_joinable_service(self):
+        captured = []
+
+        def open_public_route(request, timeout):
+            captured.append({
+                "url": request.full_url,
+                "method": request.get_method(),
+                "origin": request.get_header("Origin"),
+                "requested_headers": next(
+                    (
+                        value
+                        for key, value in request.header_items()
+                        if key.casefold() == "access-control-request-headers"
+                    ),
+                    None,
+                ),
+                "timeout": timeout,
+            })
+            if request.full_url == f"{ORIGIN}/game/":
+                return self.public_loader_response()
+            if request.full_url == "https://game.example.com/health":
+                return self.public_health_response()
+            if request.full_url == "https://game.example.com/v1/admissions":
+                return self.public_admission_response()
+            self.fail(f"Unexpected public request: {request.full_url}")
+
+        self.runtime.public_connection_status.side_effect = (
+            self.real_public_connection_status
+        )
+        with patch(
+            "headmasters_scroll.game_board.server._open_public_url",
+            side_effect=open_public_route,
+        ):
+            response = self.admin.get(
+                "/api/admin/public-connection", headers=self.admin_headers
+            )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json(), {
+            "configured": True,
+            "online": True,
+            "joinable": True,
+            "url": "https://game.example.com",
+            "error": "",
+        })
+        self.assertEqual(
+            [(item["method"], item["url"]) for item in captured],
+            [
+                ("GET", f"{ORIGIN}/game/"),
+                ("GET", "https://game.example.com/health"),
+                ("OPTIONS", "https://game.example.com/v1/admissions"),
+            ],
+        )
+        self.assertIsNone(captured[0]["origin"])
+        self.assertEqual(captured[1]["origin"], ORIGIN)
+        self.assertEqual(captured[2]["origin"], ORIGIN)
+        self.assertEqual(
+            {
+                item.strip().lower()
+                for item in captured[2]["requested_headers"].split(",")
+            },
+            {"authorization", "content-type"},
+        )
+        self.assertTrue(all(item["timeout"] > 0 for item in captured))
+        self.assertEqual(
+            self.admin.get("/api/admin/public-connection").status_code, 403
+        )
+
+    def test_public_connection_preflight_safely_reports_network_failure(self):
+        self.runtime.public_connection_status.side_effect = (
+            self.real_public_connection_status
+        )
+        with patch(
+            "headmasters_scroll.game_board.server._open_public_url",
+            side_effect=[
+                self.public_loader_response(),
+                urllib.error.URLError("private DNS diagnostic"),
+            ],
+        ):
+            response = self.admin.get(
+                "/api/admin/public-connection", headers=self.admin_headers
+            )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        status = response.json()
+        self.assertTrue(status["configured"])
+        self.assertFalse(status["online"])
+        self.assertFalse(status["joinable"])
+        self.assertEqual(status["url"], "https://game.example.com")
+        self.assertIn("cannot be reached", status["error"])
+        self.assertIn("tailscale funnel --bg --yes 8765", status["error"])
+        self.assertNotIn("private DNS diagnostic", response.text)
+
+    def test_wordpress_http_error_does_not_claim_public_board_is_online(self):
+        self.runtime.public_connection_status.side_effect = (
+            self.real_public_connection_status
+        )
+        page_error = urllib.error.HTTPError(
+            f"{ORIGIN}/game/", 503, "Unavailable", {}, None
+        )
+        with patch(
+            "headmasters_scroll.game_board.server._open_public_url",
+            side_effect=page_error,
+        ) as open_public:
+            response = self.admin.get(
+                "/api/admin/public-connection", headers=self.admin_headers
+            )
+
+        status = response.json()
+        self.assertFalse(status["online"])
+        self.assertFalse(status["joinable"])
+        self.assertIn("WordPress Game Board page check", status["error"])
+        self.assertIn("HTTP 503", status["error"])
+        open_public.assert_called_once()
+
+    def test_public_connection_preflight_rejects_wrong_service(self):
+        self.runtime.public_connection_status.side_effect = (
+            self.real_public_connection_status
+        )
+        with patch(
+            "headmasters_scroll.game_board.server._open_public_url",
+            side_effect=[
+                self.public_loader_response(),
+                FakePublicHealthResponse({
+                    "service": "something-else", "available": True,
+                }),
+            ],
+        ):
+            response = self.admin.get(
+                "/api/admin/public-connection", headers=self.admin_headers
+            )
+
+        status = response.json()
+        self.assertTrue(status["online"])
+        self.assertFalse(status["joinable"])
+        self.assertIn("does not lead to this Game Board", status["error"])
+
+    def test_public_connection_preflight_rejects_unavailable_service(self):
+        self.runtime.public_connection_status.side_effect = (
+            self.real_public_connection_status
+        )
+        with patch(
+            "headmasters_scroll.game_board.server._open_public_url",
+            side_effect=[
+                self.public_loader_response(),
+                self.public_health_response(available=False),
+            ],
+        ):
+            response = self.admin.get(
+                "/api/admin/public-connection", headers=self.admin_headers
+            )
+
+        status = response.json()
+        self.assertTrue(status["online"])
+        self.assertFalse(status["joinable"])
+        self.assertIn("reports that it is unavailable", status["error"])
+
+    def test_public_connection_preflight_rejects_wrong_cors_origin(self):
+        self.runtime.public_connection_status.side_effect = (
+            self.real_public_connection_status
+        )
+        with patch(
+            "headmasters_scroll.game_board.server._open_public_url",
+            side_effect=[
+                self.public_loader_response(),
+                FakePublicHealthResponse(
+                    {
+                        "service": "game-board",
+                        "instance_id": self.instance_id,
+                        "available": True,
+                        "paused": False,
+                    },
+                    origin="https://wrong.example.com",
+                ),
+            ],
+        ):
+            response = self.admin.get(
+                "/api/admin/public-connection", headers=self.admin_headers
+            )
+
+        status = response.json()
+        self.assertTrue(status["online"])
+        self.assertFalse(status["joinable"])
+        self.assertIn("configured WordPress site", status["error"])
+
+    def test_public_connection_preflight_rejects_redirected_health(self):
+        self.runtime.public_connection_status.side_effect = (
+            self.real_public_connection_status
+        )
+        redirected = self.public_health_response()
+        redirected.url = "https://other.example.com/health"
+        with patch(
+            "headmasters_scroll.game_board.server._open_public_url",
+            side_effect=[self.public_loader_response(), redirected],
+        ):
+            response = self.admin.get(
+                "/api/admin/public-connection", headers=self.admin_headers
+            )
+
+        status = response.json()
+        self.assertTrue(status["online"])
+        self.assertFalse(status["joinable"])
+        self.assertIn("redirected away", status["error"])
+
+    def test_public_connection_preflight_rejects_another_game_board_instance(self):
+        self.runtime.public_connection_status.side_effect = (
+            self.real_public_connection_status
+        )
+        with patch(
+            "headmasters_scroll.game_board.server._open_public_url",
+            side_effect=[
+                self.public_loader_response(),
+                self.public_health_response(instance_id="different-instance"),
+            ],
+        ):
+            response = self.admin.get(
+                "/api/admin/public-connection", headers=self.admin_headers
+            )
+
+        status = response.json()
+        self.assertTrue(status["online"])
+        self.assertFalse(status["joinable"])
+        self.assertIn("different Game Board instance", status["error"])
+
+    def test_public_connection_preflight_rejects_paused_public_service(self):
+        self.runtime.public_connection_status.side_effect = (
+            self.real_public_connection_status
+        )
+        with patch(
+            "headmasters_scroll.game_board.server._open_public_url",
+            side_effect=[
+                self.public_loader_response(),
+                self.public_health_response(paused=True),
+            ],
+        ):
+            response = self.admin.get(
+                "/api/admin/public-connection", headers=self.admin_headers
+            )
+
+        status = response.json()
+        self.assertTrue(status["online"])
+        self.assertFalse(status["joinable"])
+        self.assertIn("admissions are paused", status["error"])
+
+    def test_public_connection_preflight_rejects_wordpress_api_mismatch(self):
+        self.runtime.public_connection_status.side_effect = (
+            self.real_public_connection_status
+        )
+        with patch(
+            "headmasters_scroll.game_board.server._open_public_url",
+            return_value=self.public_loader_response(
+                "https://stale.example.com"
+            ),
+        ) as open_public:
+            response = self.admin.get(
+                "/api/admin/public-connection", headers=self.admin_headers
+            )
+
+        status = response.json()
+        self.assertFalse(status["joinable"])
+        self.assertIn("points to a different public server", status["error"])
+        open_public.assert_called_once()
+
+    def test_public_connection_preflight_rejects_wordpress_origin_mismatch(self):
+        settings = self.repository.settings()
+        settings["allowed_origin"] = "https://wrong.example.com"
+        self.repository.save_settings(settings)
+        self.runtime.public_connection_status.side_effect = (
+            self.real_public_connection_status
+        )
+        with patch(
+            "headmasters_scroll.game_board.server._open_public_url"
+        ) as open_public:
+            response = self.admin.get(
+                "/api/admin/public-connection", headers=self.admin_headers
+            )
+
+        status = response.json()
+        self.assertFalse(status["joinable"])
+        self.assertIn("does not match", status["error"])
+        open_public.assert_not_called()
+
+    def test_public_connection_preflight_accepts_one_legacy_loader_literal(self):
+        self.runtime.public_connection_status.side_effect = (
+            self.real_public_connection_status
+        )
+        with patch(
+            "headmasters_scroll.game_board.server._open_public_url",
+            side_effect=[
+                self.public_loader_response(legacy=True),
+                self.public_health_response(),
+                self.public_admission_response(),
+            ],
+        ):
+            response = self.admin.get(
+                "/api/admin/public-connection", headers=self.admin_headers
+            )
+
+        self.assertTrue(response.json()["joinable"], response.text)
+
+    def test_public_connection_preflight_rejects_duplicate_loader_config(self):
+        self.runtime.public_connection_status.side_effect = (
+            self.real_public_connection_status
+        )
+        duplicate = (
+            "<script>const API_BASE = 'https://game.example.com';</script>"
+            "<script>const API_BASE = 'https://game.example.com';</script>"
+        ).encode("utf-8")
+        with patch(
+            "headmasters_scroll.game_board.server._open_public_url",
+            return_value=FakePublicHealthResponse(
+                raw=duplicate, origin=None, url=f"{ORIGIN}/game/"
+            ),
+        ):
+            response = self.admin.get(
+                "/api/admin/public-connection", headers=self.admin_headers
+            )
+
+        status = response.json()
+        self.assertFalse(status["joinable"])
+        self.assertIn("one explicit public configuration", status["error"])
+
+    def test_public_connection_preflight_rejects_broken_admission_preflight(self):
+        self.runtime.public_connection_status.side_effect = (
+            self.real_public_connection_status
+        )
+        with patch(
+            "headmasters_scroll.game_board.server._open_public_url",
+            side_effect=[
+                self.public_loader_response(),
+                self.public_health_response(),
+                self.public_admission_response(methods="GET, OPTIONS"),
+            ],
+        ):
+            response = self.admin.get(
+                "/api/admin/public-connection", headers=self.admin_headers
+            )
+
+        status = response.json()
+        self.assertTrue(status["online"])
+        self.assertFalse(status["joinable"])
+        self.assertIn("browser admission requests", status["error"])
+
+    def test_public_connection_preflight_requires_authorized_polling_cors(self):
+        self.runtime.public_connection_status.side_effect = (
+            self.real_public_connection_status
+        )
+        with patch(
+            "headmasters_scroll.game_board.server._open_public_url",
+            side_effect=[
+                self.public_loader_response(),
+                self.public_health_response(),
+                self.public_admission_response(
+                    methods="GET, POST, OPTIONS",
+                    allow_headers="Content-Type",
+                ),
+            ],
+        ):
+            response = self.admin.get(
+                "/api/admin/public-connection", headers=self.admin_headers
+            )
+
+        status = response.json()
+        self.assertTrue(status["online"])
+        self.assertFalse(status["joinable"])
+        self.assertIn("browser admission requests", status["error"])
+
+    def test_public_connection_preflight_does_not_wildcard_authorization(self):
+        self.runtime.public_connection_status.side_effect = (
+            self.real_public_connection_status
+        )
+        with patch(
+            "headmasters_scroll.game_board.server._open_public_url",
+            side_effect=[
+                self.public_loader_response(),
+                self.public_health_response(),
+                self.public_admission_response(
+                    methods="GET, POST, OPTIONS",
+                    allow_headers="*",
+                ),
+            ],
+        ):
+            response = self.admin.get(
+                "/api/admin/public-connection", headers=self.admin_headers
+            )
+
+        status = response.json()
+        self.assertTrue(status["online"])
+        self.assertFalse(status["joinable"])
+        self.assertIn("browser admission requests", status["error"])
+
+    def test_invitation_batch_stops_before_preparation_or_gmail_when_public_down(self):
+        self.runtime.public_connection_status.return_value = {
+            "configured": True,
+            "online": False,
+            "joinable": False,
+            "url": "https://game.example.com",
+            "error": (
+                "The public Game Board cannot be reached. Keep the public "
+                "connection running with: tailscale funnel --bg --yes 8765"
+            ),
+        }
+        self.runtime.gmail = Mock(
+            side_effect=AssertionError("Gmail must not be opened")
+        )
+        with patch.object(
+            self.runtime.service, "prepare_invite", wraps=self.runtime.service.prepare_invite
+        ) as prepare_invite:
+            response = self.admin.post(
+                "/api/admin/invitations/send",
+                headers=self.admin_headers,
+                json={
+                    "session_id": self.session_id,
+                    "contact_ids": [self.contact["id"]],
+                },
+            )
+
+        self.assertEqual(response.status_code, 503, response.text)
+        self.assertIn("No invitations were sent", response.json()["detail"])
+        self.assertIn(
+            "tailscale funnel --bg --yes 8765", response.json()["detail"]
+        )
+        self.runtime.public_connection_status.assert_called_once_with()
+        prepare_invite.assert_not_called()
+        self.runtime.gmail.assert_not_called()
+
+    def test_invitation_batch_rejects_specifically_selected_paused_session(self):
+        other_contact = self.runtime.service.add_contact(
+            "Bob", "bob@example.com"
+        )
+        other_session = self.runtime.service.create_session(
+            "Other Active Session",
+            (date.today() + timedelta(days=1)).isoformat(),
+            [other_contact["id"]],
+            campaign_id="campaign-1",
+        )
+        self.runtime.service.set_paused(True, self.session_id)
+        self.assertEqual(
+            self.runtime.service.session_view(self.session_id)["status"],
+            "paused",
+        )
+        self.assertEqual(
+            self.runtime.service.session_view(other_session["id"])["status"],
+            "active",
+        )
+        self.runtime.gmail = Mock(
+            side_effect=AssertionError("Gmail must not be opened")
+        )
+        with patch.object(
+            self.runtime.service,
+            "prepare_invite",
+            wraps=self.runtime.service.prepare_invite,
+        ) as prepare_invite:
+            response = self.admin.post(
+                "/api/admin/invitations/send",
+                headers=self.admin_headers,
+                json={
+                    "session_id": self.session_id,
+                    "contact_ids": [self.contact["id"]],
+                },
+            )
+
+        self.assertEqual(response.status_code, 409, response.text)
+        self.assertIn("No invitations were sent", response.json()["detail"])
+        self.assertIn("selected session", response.json()["detail"])
+        self.runtime.public_connection_status.assert_not_called()
+        prepare_invite.assert_not_called()
+        self.runtime.gmail.assert_not_called()
 
     def test_admin_can_link_a_player_to_a_shared_character(self):
         character = self.world_characters(1)[0]
@@ -2158,7 +2732,7 @@ class GameBoardAssetTests(unittest.TestCase):
         self.assertIn("scyppan/Headmaster-s-Scroll", loader)
         self.assertIn("apps/charms-check-game-board-weblink/", loader)
         self.assertIn("https://beast.tail102829.ts.net", loader)
-        self.assertIn("a26.8.30.009", loader)
+        self.assertIn("a26.10.17.001", loader)
         self.assertNotIn("https://game.example.com", loader)
         self.assertIn("getElementById('gameboard')", loader)
         self.assertNotIn("<script>", loader)
@@ -2169,6 +2743,8 @@ class GameBoardAssetTests(unittest.TestCase):
         self.assertIn("this.root.innerHTML", client)
         self.assertIn("document.getElementById('gameboard')", client)
         self.assertNotIn("document.getElementById(options.rootId)", client)
+        self.assertIn("The public Game Board connection failed.", client)
+        self.assertNotIn("The Game Board host cannot be reached.", client)
         self.assertIn("Waiting for the Headmaster", client)
         self.assertIn("heartbeat_ack", client)
         self.assertIn("acknowledgement", client)
@@ -2298,6 +2874,17 @@ class GameBoardAssetTests(unittest.TestCase):
             self.assertIn(section, client)
         self.assertNotIn("world.json", loader + client)
         self.assertFalse((app / "app.json").exists())
+
+    def test_funnel_setup_is_persistent_and_requires_public_health(self):
+        root = Path(__file__).resolve().parents[1]
+        readme = (root / "apps" / "game-board" / "README.md").read_text(encoding="utf-8")
+        guide = (root / "apps" / "game-board" / "TAILSCALE.md").read_text(encoding="utf-8")
+        for document in (readme, guide):
+            self.assertIn("tailscale funnel --bg --yes 8765", document)
+            self.assertIn("tailscale funnel status", document)
+            self.assertIn("tailscale funnel --bg --yes 8765 off", document)
+            self.assertIn("/health", document)
+        self.assertNotIn("Press `Ctrl+C`", readme + guide)
 
     def test_game_board_tile_opens_native_python_controls(self):
         root = Path(__file__).resolve().parents[1]

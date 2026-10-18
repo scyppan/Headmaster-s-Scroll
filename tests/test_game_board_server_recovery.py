@@ -157,6 +157,70 @@ class LocalServerRecoveryTests(unittest.TestCase):
             [sys.executable, "-B", "-m", "headmasters_scroll.game_board.server"],
         )
 
+    def test_restart_recovers_verified_attached_service_before_starting(self):
+        client = Mock(admin_port=8764, player_port=8765)
+        server = LocalServer(client)
+        events = []
+
+        with patch.object(
+            server,
+            "stop",
+            side_effect=AssertionError("attached service is not an owned child"),
+        ), patch.object(
+            server,
+            "_recover_stale_server",
+            side_effect=lambda: events.append("recover") or True,
+        ) as recover, patch.object(
+            server,
+            "start",
+            side_effect=lambda: events.append("start"),
+        ) as start:
+            server.restart()
+
+        self.assertEqual(events, ["recover", "start"])
+        recover.assert_called_once_with()
+        start.assert_called_once_with()
+
+    def test_restart_stops_owned_child_then_rechecks_ports_and_starts(self):
+        client = Mock(admin_port=8764, player_port=8765)
+        server = LocalServer(client)
+        server.process = Mock()
+        events = []
+
+        with patch.object(
+            server,
+            "stop",
+            side_effect=lambda: events.append("stop"),
+        ) as stop, patch.object(
+            server,
+            "_recover_stale_server",
+            side_effect=lambda: events.append("recover") or False,
+        ) as recover, patch.object(
+            server,
+            "start",
+            side_effect=lambda: events.append("start"),
+        ) as start:
+            server.restart()
+
+        self.assertEqual(events, ["stop", "recover", "start"])
+        stop.assert_called_once_with()
+        recover.assert_called_once_with()
+        start.assert_called_once_with()
+
+    def test_restart_never_starts_after_attached_recovery_is_refused(self):
+        client = Mock(admin_port=8764, player_port=8765)
+        server = LocalServer(client)
+
+        with patch.object(
+            server,
+            "_recover_stale_server",
+            side_effect=RuntimeError("For safety it was not stopped"),
+        ), patch.object(server, "start") as start:
+            with self.assertRaisesRegex(RuntimeError, "For safety"):
+                server.restart()
+
+        start.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

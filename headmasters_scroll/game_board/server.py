@@ -4,8 +4,11 @@ import asyncio
 import hashlib
 import json
 import os
+import re
 import threading
 import time
+import urllib.error
+import urllib.request
 from collections import defaultdict, deque
 from contextlib import asynccontextmanager
 from copy import deepcopy
@@ -14,6 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from secrets import token_urlsafe
 from typing import Any
+from urllib.parse import urlsplit
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
@@ -39,6 +43,381 @@ from .storage import GameBoardRepository
 
 MAX_MESSAGE_BYTES = 16_384
 PLAYER_PREVIEW_DIRECTORY = RUNTIME_DIRECTORY / "game-board-image-previews"
+PUBLIC_HEALTH_MAX_BYTES = 16_384
+PUBLIC_PAGE_MAX_BYTES = 1_048_576
+PUBLIC_CONNECTION_TIMEOUT_SECONDS = 6.0
+PUBLIC_CONFIG_SCHEMA = "ccgb-public-config-v1"
+_SCRIPT_PATTERN = re.compile(
+    r"<script(?:\s[^>]*)?>(.*?)</script\s*>", re.IGNORECASE | re.DOTALL
+)
+_PUBLIC_CONFIG_PATTERN = re.compile(
+    r"const\s+PUBLIC_CONFIG\s*=\s*Object\.freeze\(\s*\{\s*"
+    r"schema\s*:\s*(['\"])ccgb-public-config-v1\1\s*,\s*"
+    r"apiBase\s*:\s*(['\"])(https://[^'\"]+)\2\s*"
+    r"\}\s*\)\s*;",
+    re.DOTALL,
+)
+_LEGACY_API_BASE_PATTERN = re.compile(
+    r"const\s+API_BASE\s*=\s*(['\"])(https://[^'\"]+)\1\s*;"
+)
+
+
+class _RejectPublicRedirects(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *_args, **_kwargs):
+        return None
+
+
+def _open_public_url(request: urllib.request.Request, timeout: float):
+    """Open one public diagnostic request without following redirects."""
+
+    return urllib.request.build_opener(_RejectPublicRedirects()).open(
+        request, timeout=timeout
+    )
+
+
+def _public_instance_id(settings: dict[str, Any]) -> str:
+    """Return a stable, non-secret identifier for this gbfhm installation."""
+
+    admin_key = str(settings.get("admin_key") or "")
+    return hashlib.sha256(
+        f"headmasters-scroll-public-instance\0{admin_key}".encode("utf-8")
+    ).hexdigest()
+
+
+def _https_url_origin(value: str) -> str:
+    parsed = urlsplit(str(value or "").strip())
+    if (
+        parsed.scheme.lower() != "https"
+        or not parsed.netloc
+        or parsed.username
+        or parsed.password
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError("Public address must be an HTTPS URL")
+    return f"https://{parsed.netloc.lower()}"
+
+
+def _https_origin(value: str) -> str:
+    parsed = urlsplit(str(value or "").strip())
+    origin = _https_url_origin(value)
+    if parsed.path not in {"", "/"}:
+        raise ValueError("Public API address must be an HTTPS origin")
+    return origin
+
+
+def _wordpress_loader_api_base(page: str) -> str:
+    """Extract the explicit public API contract from one inline loader."""
+
+    scripts = _SCRIPT_PATTERN.findall(page)
+    marker_scripts = [
+        script for script in scripts if PUBLIC_CONFIG_SCHEMA in script
+    ]
+    legacy_matches = [
+        match.group(2)
+        for script in scripts
+        for match in _LEGACY_API_BASE_PATTERN.finditer(script)
+    ]
+    if marker_scripts:
+        marker_count = sum(script.count(PUBLIC_CONFIG_SCHEMA) for script in scripts)
+        config_matches = [
+            match.group(3)
+            for script in marker_scripts
+            for match in _PUBLIC_CONFIG_PATTERN.finditer(script)
+        ]
+        if marker_count != 1 or len(config_matches) != 1 or legacy_matches:
+            raise ValueError(
+                "The WordPress Game Board page has a duplicate or invalid public configuration"
+            )
+        return _https_origin(config_matches[0])
+    if len(legacy_matches) != 1:
+        raise ValueError(
+            "The WordPress Game Board page does not contain one explicit public configuration"
+        )
+    return _https_origin(legacy_matches[0])
+
+
+def _public_connection_error(message: str, player_port: int) -> str:
+    return (
+        f"{message} Keep the public connection running with: "
+        f"tailscale funnel --bg --yes {player_port}"
+    )
+
+
+def _probe_public_connection(
+    settings: dict[str, Any],
+    timeout: float = PUBLIC_CONNECTION_TIMEOUT_SECONDS,
+) -> dict[str, Any]:
+    """Verify the exact public route that invitation links rely on."""
+
+    public_base = str(settings.get("public_api_base") or "").strip().rstrip("/")
+    origin = str(settings.get("allowed_origin") or "").strip()
+    wordpress_url = str(settings.get("wordpress_player_url") or "").strip()
+    instance_id = _public_instance_id(settings)
+    try:
+        player_port = int(settings.get("player_port") or 8765)
+    except (TypeError, ValueError):
+        player_port = 8765
+    status = {
+        "configured": bool(public_base),
+        "online": False,
+        "joinable": False,
+        "url": public_base,
+        "error": "",
+    }
+    if not public_base:
+        status["error"] = _public_connection_error(
+            "The Public Game Board address is not configured.", player_port
+        )
+        return status
+    try:
+        public_base = _https_origin(public_base)
+    except ValueError:
+        status["error"] = _public_connection_error(
+            "The Public Game Board address is invalid.", player_port
+        )
+        return status
+    status["url"] = public_base
+    if not origin:
+        status["error"] = _public_connection_error(
+            "The allowed WordPress origin is not configured.", player_port
+        )
+        return status
+    if not wordpress_url:
+        status["error"] = _public_connection_error(
+            "The WordPress Game Board page is not configured.", player_port
+        )
+        return status
+    try:
+        origin = _https_origin(origin)
+        wordpress_origin = _https_url_origin(wordpress_url)
+    except ValueError:
+        status["error"] = _public_connection_error(
+            "The WordPress Game Board page or allowed origin is invalid.",
+            player_port,
+        )
+        return status
+    if wordpress_origin != origin:
+        status["error"] = _public_connection_error(
+            "The allowed WordPress origin does not match the configured Game Board page.",
+            player_port,
+        )
+        return status
+
+    deadline = time.monotonic() + max(0.1, float(timeout))
+
+    def remaining_timeout() -> float:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("Public connection check timed out")
+        return max(0.05, remaining)
+
+    headers = {
+        "Accept": "application/json",
+        "Cache-Control": "no-cache",
+        "User-Agent": "Headmasters-Scroll-Public-Connection-Check",
+        "Origin": origin,
+    }
+    phase = "WordPress Game Board page check"
+    try:
+        page_request = urllib.request.Request(
+            wordpress_url,
+            headers={
+                "Accept": "text/html",
+                "Cache-Control": "no-cache",
+                "User-Agent": "Headmasters-Scroll-Public-Connection-Check",
+            },
+            method="GET",
+        )
+        with _open_public_url(
+            page_request, timeout=remaining_timeout()
+        ) as response:
+            page_status = int(response.getcode())
+            if page_status != 200:
+                status["error"] = _public_connection_error(
+                    f"The WordPress Game Board page returned HTTP {page_status}.",
+                    player_port,
+                )
+                return status
+            if str(response.geturl() or "") != wordpress_url:
+                status["error"] = _public_connection_error(
+                    "The WordPress Game Board page redirected away from its configured address.",
+                    player_port,
+                )
+                return status
+            page_raw = response.read(PUBLIC_PAGE_MAX_BYTES + 1)
+            if len(page_raw) > PUBLIC_PAGE_MAX_BYTES:
+                status["error"] = _public_connection_error(
+                    "The WordPress Game Board page is too large to verify.", player_port
+                )
+                return status
+            try:
+                page_api_base = _wordpress_loader_api_base(
+                    page_raw.decode("utf-8")
+                )
+            except (UnicodeDecodeError, ValueError) as error:
+                status["error"] = _public_connection_error(
+                    str(error), player_port
+                )
+                return status
+            if page_api_base != public_base:
+                status["error"] = _public_connection_error(
+                    "The WordPress Game Board page points to a different public server.",
+                    player_port,
+                )
+                return status
+
+        phase = "public Game Board health check"
+        health_url = f"{public_base}/health"
+        request = urllib.request.Request(
+            health_url, headers=headers, method="GET"
+        )
+        with _open_public_url(
+            request, timeout=remaining_timeout()
+        ) as response:
+            status["online"] = True
+            response_status = int(response.getcode())
+            if response_status != 200:
+                status["error"] = _public_connection_error(
+                    f"The public Game Board health check returned HTTP {response_status}.",
+                    player_port,
+                )
+                return status
+            if str(response.geturl() or "") != health_url:
+                status["error"] = _public_connection_error(
+                    "The public Game Board health check redirected away from the configured address.",
+                    player_port,
+                )
+                return status
+            raw = response.read(PUBLIC_HEALTH_MAX_BYTES + 1)
+            if len(raw) > PUBLIC_HEALTH_MAX_BYTES:
+                status["error"] = _public_connection_error(
+                    "The public Game Board returned an invalid health response.",
+                    player_port,
+                )
+                return status
+            try:
+                health = json.loads(raw.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                status["error"] = _public_connection_error(
+                    "The public Game Board returned an invalid health response.",
+                    player_port,
+                )
+                return status
+            if not isinstance(health, dict) or health.get("service") != "game-board":
+                status["error"] = _public_connection_error(
+                    "The public address does not lead to this Game Board service.",
+                    player_port,
+                )
+                return status
+            if health.get("instance_id") != instance_id:
+                status["error"] = _public_connection_error(
+                    "The public address leads to a different Game Board instance.",
+                    player_port,
+                )
+                return status
+            if health.get("available") is not True:
+                status["error"] = _public_connection_error(
+                    "The public Game Board reports that it is unavailable.",
+                    player_port,
+                )
+                return status
+            if health.get("paused") is True:
+                status["error"] = _public_connection_error(
+                    "The public Game Board reports that admissions are paused.",
+                    player_port,
+                )
+                return status
+            if response.headers.get("Access-Control-Allow-Origin") != origin:
+                status["error"] = _public_connection_error(
+                    "The public Game Board is not allowing the configured WordPress site.",
+                    player_port,
+                )
+                return status
+
+        phase = "browser admission readiness check"
+        admission_url = f"{public_base}/v1/admissions"
+        preflight_request = urllib.request.Request(
+            admission_url,
+            headers={
+                "Cache-Control": "no-cache",
+                "Origin": origin,
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "content-type, authorization",
+                "User-Agent": "Headmasters-Scroll-Public-Connection-Check",
+            },
+            method="OPTIONS",
+        )
+        with _open_public_url(
+            preflight_request, timeout=remaining_timeout()
+        ) as response:
+            response_status = int(response.getcode())
+            if not 200 <= response_status < 300:
+                status["error"] = _public_connection_error(
+                    f"The browser admission check returned HTTP {response_status}.",
+                    player_port,
+                )
+                return status
+            if str(response.geturl() or "") != admission_url:
+                status["error"] = _public_connection_error(
+                    "The browser admission check redirected away from the configured address.",
+                    player_port,
+                )
+                return status
+            allowed_methods = {
+                item.strip().upper()
+                for item in str(
+                    response.headers.get("Access-Control-Allow-Methods") or ""
+                ).split(",")
+                if item.strip()
+            }
+            allowed_headers = {
+                item.strip().lower()
+                for item in str(
+                    response.headers.get("Access-Control-Allow-Headers") or ""
+                ).split(",")
+                if item.strip()
+            }
+            if (
+                response.headers.get("Access-Control-Allow-Origin") != origin
+                or not {"GET", "POST"}.issubset(allowed_methods)
+                # CORS does not let `*` stand in for Authorization; browsers
+                # require that non-wildcard request header to be named.
+                or "authorization" not in allowed_headers
+                or not ({"content-type", "*"} & allowed_headers)
+            ):
+                status["error"] = _public_connection_error(
+                    "The public Game Board is not allowing browser admission requests from the configured WordPress site.",
+                    player_port,
+                )
+                return status
+    except urllib.error.HTTPError as error:
+        # A response from WordPress proves only that the invitation page is
+        # reachable.  The public Game Board has not been contacted yet.
+        if phase != "WordPress Game Board page check":
+            status["online"] = True
+        if 300 <= error.code < 400:
+            message = f"The {phase} attempted a redirect, which is not allowed."
+        else:
+            message = f"The {phase} returned HTTP {error.code}."
+        status["error"] = _public_connection_error(
+            message, player_port,
+        )
+        return status
+    except (OSError, TimeoutError, urllib.error.URLError, ValueError):
+        if phase == "public Game Board health check":
+            message = "The public Game Board cannot be reached."
+        elif phase == "WordPress Game Board page check":
+            message = "The WordPress Game Board page cannot be reached."
+        else:
+            message = "The browser admission readiness check could not be completed."
+        status["error"] = _public_connection_error(
+            message, player_port
+        )
+        return status
+
+    status["joinable"] = True
+    return status
 
 
 def _json_signature(value: Any) -> str:
@@ -657,6 +1036,11 @@ class GameBoardRuntime:
     def gmail(self) -> GmailSender:
         settings = self.service.settings(include_private=True)
         return GmailSender(settings["gmail_credentials_path"], settings["gmail_sender"])
+
+    def public_connection_status(self) -> dict[str, Any]:
+        return _probe_public_connection(
+            self.service.settings(include_private=True)
+        )
 
     async def run_connection_operation(
         self,
@@ -1292,6 +1676,12 @@ def create_apps(
             "capabilities": ["session-restart", "verified-server-recovery"],
             "pid": os.getpid(),
         }
+
+    @admin_app.get(
+        "/api/admin/public-connection", dependencies=[Depends(admin_guard)]
+    )
+    async def public_connection():
+        return await asyncio.to_thread(runtime.public_connection_status)
 
     @admin_app.get(
         "/api/admin/board/people/{person_id}/sheet",
@@ -2404,6 +2794,25 @@ def create_apps(
                 raise HTTPException(
                     status_code=400, detail="There is no active session"
                 )
+            if initial_session.get("status") == "paused":
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        "No invitations were sent. Admissions are paused for "
+                        "the selected session; resume it before sending invitations."
+                    ),
+                )
+            public_connection = await asyncio.to_thread(
+                runtime.public_connection_status
+            )
+            if not public_connection["joinable"]:
+                raise HTTPException(
+                    status_code=503,
+                    detail=(
+                        "No invitations were sent. "
+                        f"{public_connection['error']}"
+                    ),
+                )
             for contact_id in body.contact_ids:
                 # Release the lifecycle lock between recipients.  End/delete/
                 # expiration may wait for one confirmed Gmail call, never an
@@ -2417,6 +2826,16 @@ def create_apps(
                             "success": False,
                             "error": (
                                 "The session ended before this invitation "
+                                "could be sent"
+                            ),
+                        })
+                        continue
+                    if session.get("status") == "paused":
+                        results.append({
+                            "contact_id": contact_id,
+                            "success": False,
+                            "error": (
+                                "Admissions were paused before this invitation "
                                 "could be sent"
                             ),
                         })
@@ -2825,6 +3244,7 @@ def create_apps(
         sessions = service.sessions_view()
         return {
             "service": "game-board",
+            "instance_id": _public_instance_id(settings),
             "available": bool(sessions),
             "paused": bool(sessions and all(session["status"] == "paused" for session in sessions)),
         }

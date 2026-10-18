@@ -2,6 +2,7 @@ import inspect
 import unittest
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
+from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
 from headmasters_scroll.game_board.desktop import (
@@ -221,8 +222,19 @@ class GameBoardDesktopSessionTests(unittest.TestCase):
         )
         window.client = SimpleNamespace(
             request=lambda method, path: calls.append((method, path))
-            or {"id": "session-live"}
+            or {"id": "session-live"},
+            public_connection=lambda: {
+                "configured": True,
+                "online": True,
+                "joinable": True,
+                "url": "https://game.example.test",
+                "error": None,
+            },
         )
+        window.public_connection_state = {}
+        window._public_connection_after_id = None
+        window.closing = False
+        window.after = lambda _delay, _callback: "public-check"
         window.set_notice = lambda text, error=False: notices.append(
             (text, error)
         )
@@ -280,6 +292,344 @@ class GameBoardDesktopSessionTests(unittest.TestCase):
         )
 
         window.restart_selected_session()
+
+    def test_restart_checks_public_connection_before_claiming_links_work(self):
+        window = object.__new__(GameBoardWindow)
+        calls = []
+        window.server = SimpleNamespace(
+            start=lambda: calls.append(("server", "start"))
+        )
+        window.client = SimpleNamespace(
+            request=lambda method, path: calls.append((method, path))
+            or {"id": "session-live"},
+            public_connection=lambda: self.fail(
+                "restart waited for a public probe"
+            ),
+        )
+
+        result = window._restart_session_on_current_server("session-live")
+
+        self.assertEqual(result["id"], "session-live")
+        self.assertEqual(calls[-1], (
+            "POST", "/api/admin/sessions/session-live/restart"
+        ))
+
+    def test_restart_offline_notice_gives_funnel_recovery_command(self):
+        window = object.__new__(GameBoardWindow)
+        window.public_connection_state = {}
+        window._public_connection_after_id = None
+        window.closing = False
+        window.after = lambda _delay, _callback: "public-check"
+        window.client = SimpleNamespace(
+            player_port=8765,
+            public_connection=lambda: None,
+        )
+        notices = []
+        window.set_notice = lambda text, error=False: notices.append(
+            (text, error)
+        )
+        queued = []
+        window._background = lambda work, success=None, **kwargs: queued.append(
+            (work, success, kwargs)
+        )
+
+        window._finish_session_restart({"id": "session-live"})
+
+        self.assertIn("Checking whether", notices[-1][0])
+        self.assertNotIn("links are active", notices[-1][0])
+        self.assertEqual(len(queued), 1)
+        queued[0][1]({
+            "configured": True,
+            "online": False,
+            "joinable": False,
+            "url": "https://game.example.test",
+            "error": "Tailscale Funnel is not running",
+        })
+
+        self.assertTrue(notices[-1][1])
+        self.assertNotIn("links are active", notices[-1][0])
+        self.assertIn(
+            "`tailscale funnel --bg --yes 8765` as Administrator",
+            notices[-1][0],
+        )
+
+    def test_public_board_status_is_separate_and_reports_joinability(self):
+        window = object.__new__(GameBoardWindow)
+        window.public_board_status = FakeLabel()
+        window.public_connection_detail_status = FakeLabel()
+
+        window._apply_public_connection_status({
+            "configured": True,
+            "online": True,
+            "joinable": True,
+            "url": "https://game.example.test",
+            "error": None,
+        })
+
+        self.assertEqual(
+            window.public_board_status.text, "PUBLIC BOARD JOINABLE"
+        )
+        self.assertIn(
+            "https://game.example.test",
+            window.public_connection_detail_status.text,
+        )
+
+        window._apply_public_connection_status({
+            "configured": True,
+            "online": False,
+            "joinable": False,
+            "url": "https://game.example.test",
+            "error": "Funnel is down",
+        })
+
+        self.assertEqual(window.public_board_status.text, "PUBLIC BOARD OFFLINE")
+        self.assertIn("Funnel is down", window.public_connection_detail_status.text)
+
+    def test_public_connection_timer_can_be_cancelled_on_close(self):
+        window = object.__new__(GameBoardWindow)
+        window._public_connection_after_id = "public-check"
+        cancelled = []
+        window.after_cancel = cancelled.append
+
+        window._cancel_public_connection_check()
+
+        self.assertEqual(cancelled, ["public-check"])
+        self.assertIsNone(window._public_connection_after_id)
+        self.assertIn(
+            "_cancel_public_connection_check()",
+            inspect.getsource(GameBoardWindow.close),
+        )
+
+    def test_local_server_start_immediately_checks_public_connection(self):
+        window = object.__new__(GameBoardWindow)
+        window.server_status = FakeLabel()
+        calls = []
+        window.set_notice = lambda text, error=False: calls.append(
+            ("notice", text, error)
+        )
+        window._check_public_connection = lambda: calls.append(
+            ("public", "check")
+        )
+        window.refresh = lambda: calls.append(("refresh",))
+        window.after = lambda delay, callback: calls.append(
+            ("after", delay, callback.__name__)
+        )
+
+        window._server_started(None)
+
+        self.assertEqual(window.server_status.text, "LOCAL SERVER ONLINE")
+        self.assertIn(("public", "check"), calls)
+
+    def test_manual_public_connection_test_updates_status_and_reschedules(self):
+        window = object.__new__(GameBoardWindow)
+        window.closing = False
+        window._public_connection_after_id = None
+        window._public_connection_checking = False
+        window.settings_dirty = False
+        window.public_connection_state = {}
+        window.public_board_status = FakeLabel()
+        window.public_connection_detail_status = FakeLabel()
+        window.client = SimpleNamespace(public_connection=lambda: {
+            "configured": True,
+            "online": True,
+            "joinable": True,
+            "url": "https://game.example.test",
+            "error": None,
+        })
+        notices = []
+        window.set_notice = lambda text, error=False: notices.append(
+            (text, error)
+        )
+        window.after = lambda _delay, _callback: "next-public-check"
+
+        def background(work, success=None, **_kwargs):
+            result = work()
+            if success:
+                success(result)
+
+        window._background = background
+
+        window.test_public_connection()
+
+        self.assertEqual(
+            window.public_board_status.text, "PUBLIC BOARD JOINABLE"
+        )
+        self.assertIn("is reachable", notices[-1][0])
+        self.assertFalse(notices[-1][1])
+        self.assertEqual(
+            window._public_connection_after_id, "next-public-check"
+        )
+
+    def test_newer_public_probe_cannot_be_overwritten_by_stale_result(self):
+        window = object.__new__(GameBoardWindow)
+        window.closing = False
+        window._public_connection_after_id = None
+        window._public_connection_checking = False
+        window._public_connection_generation = 0
+        window._public_connection_active_generation = None
+        window.public_connection_state = {}
+        window.public_board_status = FakeLabel()
+        window.public_connection_detail_status = FakeLabel()
+        window.client = SimpleNamespace(
+            player_port=8765,
+            public_connection=lambda: None,
+        )
+        window.set_notice = lambda *_args, **_kwargs: None
+        window.after = lambda _delay, _callback: "next-public-check"
+        queued = []
+        window._background = lambda work, success=None, **kwargs: queued.append(
+            (work, success, kwargs)
+        )
+
+        window._check_public_connection(supersede=True)
+        window._check_public_connection(manual=True)
+
+        self.assertEqual(len(queued), 2)
+        queued[1][1]({
+            "configured": True,
+            "online": True,
+            "joinable": True,
+            "url": "https://new.example.test",
+            "error": "",
+        })
+        queued[0][1]({
+            "configured": True,
+            "online": False,
+            "joinable": False,
+            "url": "https://stale.example.test",
+            "error": "stale failure",
+        })
+
+        self.assertTrue(window.public_connection_state["joinable"])
+        self.assertEqual(
+            window.public_connection_state["url"],
+            "https://new.example.test",
+        )
+        self.assertEqual(
+            window.public_board_status.text, "PUBLIC BOARD JOINABLE"
+        )
+
+    def test_public_probe_callback_is_suppressed_after_close(self):
+        window = object.__new__(GameBoardWindow)
+        window.closing = False
+        window._public_connection_after_id = None
+        window._public_connection_generation = 0
+        window._public_connection_active_generation = None
+        window.public_connection_state = {}
+        window.public_board_status = FakeLabel()
+        window.client = SimpleNamespace(public_connection=lambda: None)
+        window.after = lambda _delay, _callback: "next-public-check"
+        queued = []
+        window._background = lambda work, success=None, **kwargs: queued.append(
+            (work, success, kwargs)
+        )
+
+        window._check_public_connection(supersede=True)
+        window.closing = True
+        queued[0][1]({
+            "configured": True,
+            "online": True,
+            "joinable": True,
+            "url": "https://too-late.example.test",
+            "error": "",
+        })
+
+        self.assertEqual(window.public_connection_state, {})
+        self.assertEqual(window.public_board_status.text, "")
+
+    def test_public_guidance_uses_configured_player_port(self):
+        window = object.__new__(GameBoardWindow)
+        window.client = SimpleNamespace(player_port=9911)
+
+        self.assertIn(
+            "tailscale funnel --bg --yes 9911",
+            window._public_connection_guidance(),
+        )
+
+    def test_unsaved_settings_disable_public_connection_test(self):
+        window = object.__new__(GameBoardWindow)
+        window.settings_dirty = True
+        window.test_public_connection_button = FakeManagedWidget()
+        window.public_connection_test_scope = FakeLabel()
+        notices = []
+        window.set_notice = lambda text, error=False: notices.append(
+            (text, error)
+        )
+        window._check_public_connection = lambda **_kwargs: self.fail(
+            "unsaved settings were tested"
+        )
+
+        window._update_public_connection_test_control()
+        window.test_public_connection()
+
+        self.assertEqual(
+            window.test_public_connection_button.state, "disabled"
+        )
+        self.assertIn("Save Settings", window.public_connection_test_scope.text)
+        self.assertTrue(notices[-1][1])
+        self.assertIn("Save Settings", notices[-1][0])
+
+    def test_saving_settings_restarts_attached_service_without_process_handle(self):
+        window = object.__new__(GameBoardWindow)
+        calls = []
+        window.client = SimpleNamespace(
+            request=lambda method, path, payload: calls.append(
+                (method, path, payload)
+            ) or {"saved": True}
+        )
+        window.server = SimpleNamespace(
+            process=None,
+            restart=lambda: calls.append(("server", "restart")),
+        )
+        payload = {"public_api_base": "https://game.example.test"}
+
+        result = window._save_settings_on_server(payload)
+
+        self.assertEqual(result, {"saved": True})
+        self.assertEqual(calls, [
+            ("PUT", "/api/admin/settings", payload),
+            ("server", "restart"),
+        ])
+
+    def test_invitation_503_keeps_public_connection_guidance_visible(self):
+        window = object.__new__(GameBoardWindow)
+        window.sending_invitations = False
+        window.selected_invite_ids = {"contact-a"}
+        window.send_selected_button = FakeManagedWidget()
+        window.send_all_button = FakeManagedWidget()
+        window._selected_session = lambda: {
+            "id": "session-live",
+            "roster": [{"contact_id": "contact-a", "name": "Alice"}],
+        }
+        detail = (
+            "No invitations were sent. The public Game Board cannot be "
+            "reached. Keep the public connection running with: "
+            "tailscale funnel --bg --yes 8765"
+        )
+
+        def request(*_args, **_kwargs):
+            raise RuntimeError(detail)
+
+        window.client = SimpleNamespace(request=request)
+        notices = []
+        window.set_notice = lambda text, error=False: notices.append(
+            (text, error)
+        )
+
+        def background(work, success=None, **_kwargs):
+            result = work()
+            if success:
+                success(result)
+
+        window._background = background
+
+        with patch(
+            "headmasters_scroll.game_board.desktop.messagebox.showerror"
+        ) as showerror:
+            window.send_invites(all_players=False)
+
+        self.assertEqual(notices[-1], (detail, True))
+        self.assertIn(detail, showerror.call_args.args[1])
 
     def test_sessions_restart_routes_restorable_ending_to_restart_endpoint(self):
         window = object.__new__(GameBoardWindow)
@@ -350,8 +700,19 @@ class GameBoardDesktopSessionTests(unittest.TestCase):
         )
         window.client = SimpleNamespace(
             request=lambda method, path: calls.append((method, path))
-            or {"id": "session-ended"}
+            or {"id": "session-ended"},
+            public_connection=lambda: {
+                "configured": True,
+                "online": True,
+                "joinable": True,
+                "url": "https://game.example.test",
+                "error": None,
+            },
         )
+        window.public_connection_state = {}
+        window._public_connection_after_id = None
+        window.closing = False
+        window.after = lambda _delay, _callback: "public-check"
         window.set_notice = lambda text, error=False: notices.append(
             (text, error)
         )

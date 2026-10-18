@@ -1199,6 +1199,9 @@ class AdminClient:
     def pending_admissions(self) -> dict[str, Any]:
         return self.request("GET", "/api/admin/admissions/pending", timeout=1.0)
 
+    def public_connection(self) -> dict[str, Any]:
+        return self.request("GET", "/api/admin/public-connection", timeout=8.0)
+
     def player_health(self) -> dict[str, Any]:
         request = urllib.request.Request(self.player_health_url, method="GET")
         with urllib.request.urlopen(request, timeout=1.0) as response:
@@ -1450,6 +1453,18 @@ class LocalServer:
         else:
             message += f"\n\nStartup details are saved in {self.log_path}."
         raise RuntimeError(message)
+
+    def restart(self) -> None:
+        """Restart an owned child or a safely verified attached service."""
+
+        if self.process is not None:
+            self.stop()
+        # An attached service has no Popen handle.  Reuse the dual-port,
+        # executable, and authenticated-service checks before stopping it.
+        # Calling this after stop() also refuses a different process that may
+        # have raced in and claimed either port.
+        self._recover_stale_server()
+        self.start()
 
     def stop(self) -> None:
         if self.process is None:
@@ -1873,6 +1888,7 @@ class GameBoardWindow(tk.Tk):
     ACCENT = "#7b3f2b"
     GREEN = "#49643d"
     RED = "#8a3328"
+    PUBLIC_CONNECTION_CHECK_INTERVAL_MS = 15_000
 
     def __init__(self, repository: GameBoardRepository | None = None):
         super().__init__()
@@ -1901,6 +1917,11 @@ class GameBoardWindow(tk.Tk):
         self._expiration_warning_belled_deadlines: set[str] = set()
         self._expiration_update_pending = False
         self._restart_session_pending_id: str | None = None
+        self._public_connection_after_id: str | None = None
+        self._public_connection_checking = False
+        self._public_connection_generation = 0
+        self._public_connection_active_generation: int | None = None
+        self.public_connection_state: dict[str, Any] = {}
         self.current_app_page = ""
         self.refreshing = False
         self.admission_refreshing = False
@@ -2077,6 +2098,14 @@ class GameBoardWindow(tk.Tk):
             foreground=self.ACCENT, font=("Segoe UI", 9, "bold"),
         )
         self.server_status.pack(side="right")
+        self.public_board_status = tk.Label(
+            header,
+            text="PUBLIC BOARD CHECKING",
+            background=self.PAPER,
+            foreground=self.ACCENT,
+            font=("Segoe UI", 9, "bold"),
+        )
+        self.public_board_status.pack(side="right", padx=(0, 14))
         self.active_context_status = tk.Label(
             header,
             text="NO ACTIVE SESSION  •  NO ACTIVE CAMPAIGN",
@@ -13179,13 +13208,55 @@ class GameBoardWindow(tk.Tk):
         card.columnconfigure(1, weight=1)
         controls = ttk.Frame(card, style="Card.TFrame")
         controls.grid(row=len(fields) + 1, column=0, columnspan=2, sticky="e", pady=(18, 0))
+        self.public_connection_test_scope = ttk.Label(
+            controls,
+            text="Tests saved settings.",
+            style="Card.TLabel",
+        )
+        self.public_connection_test_scope.pack(side="left", padx=(0, 8))
+        self.test_public_connection_button = ttk.Button(
+            controls,
+            text="Test Public Connection",
+            style="Quiet.TButton",
+            command=self.test_public_connection,
+        )
+        self.test_public_connection_button.pack(side="left", padx=(0, 8))
         ttk.Button(controls, text="Connect Gmail", style="Quiet.TButton", command=self.connect_gmail).pack(side="left", padx=(0, 8))
         ttk.Button(controls, text="Save Settings", command=self.save_settings).pack(side="left")
+        self.public_connection_detail_status = ttk.Label(
+            card,
+            text="Public connection: checking…",
+            style="Card.TLabel",
+        )
+        self.public_connection_detail_status.grid(
+            row=len(fields) + 2,
+            column=0,
+            columnspan=3,
+            sticky="w",
+            pady=(14, 0),
+        )
         self.gmail_status = ttk.Label(card, text="Gmail status: checking…", style="Card.TLabel")
-        self.gmail_status.grid(row=len(fields) + 2, column=0, columnspan=2, sticky="w", pady=(14, 0))
+        self.gmail_status.grid(row=len(fields) + 3, column=0, columnspan=3, sticky="w", pady=(6, 0))
 
     def _begin_settings_edit(self, _event: tk.Event | None = None) -> None:
         self.settings_dirty = True
+        self._update_public_connection_test_control()
+
+    def _update_public_connection_test_control(self) -> None:
+        button = self.__dict__.get("test_public_connection_button")
+        if button is not None:
+            button.configure(
+                state="disabled" if self.settings_dirty else "normal"
+            )
+        note = self.__dict__.get("public_connection_test_scope")
+        if note is not None:
+            note.configure(
+                text=(
+                    "Save Settings to test these changes."
+                    if self.settings_dirty
+                    else "Tests saved settings."
+                )
+            )
 
     def choose_credentials_file(self) -> None:
         selected = filedialog.askopenfilename(
@@ -13198,16 +13269,193 @@ class GameBoardWindow(tk.Tk):
             entry.delete(0, "end")
             entry.insert(0, selected)
             self.settings_dirty = True
+            self._update_public_connection_test_control()
 
     def _start_server(self) -> None:
         self._background(self.server.start, self._server_started)
 
     def _server_started(self, _result: Any) -> None:
         self.server_status.configure(text="LOCAL SERVER ONLINE", foreground=self.GREEN)
-        self.set_notice("Game Board is ready. Tailscale Funnel remains separately controlled.")
+        self.set_notice("Local Game Board is ready. Checking the public player connection…")
+        self._check_public_connection()
         self.refresh()
         self.after(150, self._poll_admissions)
         self.after(2000, self._poll)
+
+    @staticmethod
+    def _public_connection_is_joinable(payload: dict[str, Any] | None) -> bool:
+        payload = payload or {}
+        return bool(
+            payload.get("configured")
+            and payload.get("online")
+            and payload.get("joinable")
+        )
+
+    def _public_connection_guidance(self) -> str:
+        configured_port = getattr(
+            self.__dict__.get("client"), "player_port", None
+        )
+        if configured_port is None:
+            configured_port = (
+                self.__dict__.get("settings") or {}
+            ).get("player_port", 8765)
+        try:
+            player_port = int(configured_port)
+        except (TypeError, ValueError):
+            player_port = 8765
+        return (
+            f"Run `tailscale funnel --bg --yes {player_port}` as Administrator, then "
+            "use Test Public Connection."
+        )
+
+    def _apply_public_connection_status(
+        self, payload: dict[str, Any] | None
+    ) -> None:
+        status = dict(payload or {})
+        self.public_connection_state = status
+        error = str(status.get("error") or "").strip()
+        url = str(status.get("url") or "").strip()
+        if self._public_connection_is_joinable(status):
+            header_text = "PUBLIC BOARD JOINABLE"
+            color = self.GREEN
+            detail = "Public connection: joinable"
+            if url:
+                detail += f" — {url}"
+        elif status.get("configured") is False:
+            header_text = "PUBLIC BOARD NOT CONFIGURED"
+            color = self.RED
+            detail = "Public connection: no public Game Board address is configured"
+        elif status.get("online") is True:
+            header_text = "PUBLIC BOARD NOT JOINABLE"
+            color = self.RED
+            detail = "Public connection: Funnel is online, but players cannot reach the board"
+        elif status:
+            header_text = "PUBLIC BOARD OFFLINE"
+            color = self.RED
+            detail = "Public connection: offline"
+        else:
+            header_text = "PUBLIC BOARD UNKNOWN"
+            color = self.RED
+            detail = "Public connection: not yet checked"
+        if error:
+            detail += f" — {error}"
+        header = self.__dict__.get("public_board_status")
+        if header is not None:
+            header.configure(text=header_text, foreground=color)
+        detail_label = self.__dict__.get("public_connection_detail_status")
+        if detail_label is not None:
+            detail_label.configure(text=detail)
+
+    def _cancel_public_connection_check(self) -> None:
+        after_id = self.__dict__.get("_public_connection_after_id")
+        if after_id is None:
+            return
+        try:
+            self.after_cancel(after_id)
+        except tk.TclError:
+            pass
+        self._public_connection_after_id = None
+
+    def _schedule_public_connection_check(self) -> None:
+        if self.__dict__.get("closing"):
+            return
+        self._cancel_public_connection_check()
+        self._public_connection_after_id = self.after(
+            self.PUBLIC_CONNECTION_CHECK_INTERVAL_MS,
+            self._poll_public_connection,
+        )
+
+    def _poll_public_connection(self) -> None:
+        self._public_connection_after_id = None
+        self._check_public_connection()
+
+    def _check_public_connection(
+        self,
+        *,
+        manual: bool = False,
+        completion: Callable[[dict[str, Any]], None] | None = None,
+        supersede: bool = False,
+    ) -> None:
+        if self.__dict__.get("closing"):
+            return
+        active_generation = self.__dict__.get(
+            "_public_connection_active_generation"
+        )
+        if (
+            active_generation is not None
+            and not manual
+            and completion is None
+            and not supersede
+        ):
+            self._schedule_public_connection_check()
+            return
+        self._cancel_public_connection_check()
+        generation = int(
+            self.__dict__.get("_public_connection_generation") or 0
+        ) + 1
+        self._public_connection_generation = generation
+        self._public_connection_active_generation = generation
+        self._public_connection_checking = True
+        if manual:
+            self.set_notice("Testing the public player connection…")
+
+        def finish(payload: dict[str, Any]) -> None:
+            if (
+                self.__dict__.get("closing")
+                or self.__dict__.get("_public_connection_active_generation")
+                != generation
+            ):
+                return
+            self._public_connection_active_generation = None
+            self._public_connection_checking = False
+            self._apply_public_connection_status(payload)
+            if manual:
+                if self._public_connection_is_joinable(payload):
+                    url = str(payload.get("url") or "").strip()
+                    suffix = f" at {url}" if url else ""
+                    self.set_notice(f"Public Game Board is reachable{suffix}.")
+                else:
+                    self.set_notice(
+                        "Public Game Board is not reachable. "
+                        + self._public_connection_guidance(),
+                        error=True,
+                    )
+            if completion is not None:
+                completion(payload)
+            self._schedule_public_connection_check()
+
+        def done(payload: dict[str, Any]) -> None:
+            finish(dict(payload or {}))
+
+        def failed(error: Exception) -> None:
+            previous = self.__dict__.get("public_connection_state") or {}
+            payload = {
+                "online": False,
+                "joinable": False,
+                "url": previous.get("url") or "",
+                "error": str(error),
+            }
+            if "configured" in previous:
+                payload["configured"] = bool(previous.get("configured"))
+            finish(payload)
+
+        self._background(
+            self.client.public_connection,
+            done,
+            failure=failed,
+            quiet=True,
+        )
+
+    def test_public_connection(self) -> None:
+        if self.__dict__.get("settings_dirty"):
+            self.set_notice(
+                "Save Settings before testing the public connection so the "
+                "test uses the values shown here.",
+                error=True,
+            )
+            self._update_public_connection_test_control()
+            return
+        self._check_public_connection(manual=True)
 
     def _poll_admissions(self) -> None:
         if self.closing:
@@ -13255,19 +13503,33 @@ class GameBoardWindow(tk.Tk):
         failure: Callable[[Exception], None] | None = None,
         quiet: bool = False,
     ) -> None:
+        def dispatch(callback: Callable[[], None]) -> None:
+            if self.__dict__.get("closing"):
+                return
+
+            def deliver() -> None:
+                if not self.__dict__.get("closing"):
+                    callback()
+
+            try:
+                self.after(0, deliver)
+            except (RuntimeError, tk.TclError):
+                # The window can close between the worker's final check and
+                # Tk accepting the callback.
+                return
+
         def runner() -> None:
             try:
                 result = work()
             except Exception as error:
-                self.after(
-                    0,
+                dispatch(
                     lambda captured=error: (
                         failure(captured) if failure else self._failed(captured, quiet)
-                    ),
+                    )
                 )
             else:
                 if success:
-                    self.after(0, lambda: success(result))
+                    dispatch(lambda: success(result))
 
         threading.Thread(target=runner, daemon=True).start()
 
@@ -14044,6 +14306,51 @@ class GameBoardWindow(tk.Tk):
             "POST", f"/api/admin/sessions/{session_id}/restart"
         )
 
+    def _restart_session_success_notice(
+        self, public_connection: dict[str, Any] | None
+    ) -> tuple[str, bool]:
+        if self._public_connection_is_joinable(public_connection):
+            return (
+                "Session restarted from its saved campaign board; existing "
+                "player links are active. Players should reload or reopen them.",
+                False,
+            )
+        return (
+            "Session restarted locally from its saved campaign board, but "
+            "public player links are not reachable. "
+            + self._public_connection_guidance()
+            + " Players can reopen their email links after PUBLIC BOARD is "
+            "JOINABLE.",
+            True,
+        )
+
+    def _finish_session_restart(self, _result: dict[str, Any]) -> None:
+        header = self.__dict__.get("public_board_status")
+        if header is not None:
+            header.configure(
+                text="PUBLIC BOARD CHECKING", foreground=self.ACCENT
+            )
+        detail = self.__dict__.get("public_connection_detail_status")
+        if detail is not None:
+            detail.configure(
+                text="Public connection: checking after session restart…"
+            )
+        self.set_notice(
+            "Session restarted locally from its saved campaign board. "
+            "Checking whether public player links are reachable…"
+        )
+
+        def public_checked(public_connection: dict[str, Any]) -> None:
+            message, error = self._restart_session_success_notice(
+                public_connection
+            )
+            self.set_notice(message, error=error)
+
+        self._check_public_connection(
+            completion=public_checked,
+            supersede=True,
+        )
+
     def restart_selected_session(self) -> None:
         if self.__dict__.get("_restart_session_pending_id"):
             return
@@ -14072,13 +14379,9 @@ class GameBoardWindow(tk.Tk):
         self._render_board({})
         self._show_board_loading("Restarting session board…")
 
-        def done(_result: dict[str, Any]) -> None:
+        def done(result: dict[str, Any]) -> None:
             self._restart_session_pending_id = None
-            self.set_notice(
-                "Session restarted from its saved campaign board; existing "
-                "player links are active. "
-                "Players should reload or reopen them."
-            )
+            self._finish_session_restart(result)
             self.refresh()
 
         def failed(error: Exception) -> None:
@@ -14146,11 +14449,7 @@ class GameBoardWindow(tk.Tk):
             self._set_board_context_available(False)
             self._render_board({})
             self._show_board_loading("Restarting session board…")
-            self.set_notice(
-                "Session restarted from its saved campaign board; existing "
-                "player links are active. "
-                "Players should reload or reopen them."
-            )
+            self._finish_session_restart(result)
             self.refresh()
 
         def failed(error: Exception) -> None:
@@ -14966,16 +15265,16 @@ class GameBoardWindow(tk.Tk):
 
         def done(_result: Any) -> None:
             self.settings_dirty = False
+            self._update_public_connection_test_control()
             self.set_notice("Settings saved; the local communication service was refreshed")
             self.refresh()
+            self._check_public_connection(supersede=True)
 
         self._background(work, done)
 
     def _save_settings_on_server(self, payload: dict[str, str]) -> Any:
         result = self.client.request("PUT", "/api/admin/settings", payload)
-        if self.server.process is not None:
-            self.server.stop()
-            self.server.start()
+        self.server.restart()
         return result
 
     def connect_gmail(self) -> None:
@@ -14998,6 +15297,12 @@ class GameBoardWindow(tk.Tk):
         if self.closing:
             return
         self.closing = True
+        self._public_connection_generation = int(
+            self.__dict__.get("_public_connection_generation") or 0
+        ) + 1
+        self._public_connection_active_generation = None
+        self._public_connection_checking = False
+        self._cancel_public_connection_check()
         if self._expiration_warning_after_id is not None:
             try:
                 self.after_cancel(self._expiration_warning_after_id)

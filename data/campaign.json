@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "_headmasters_scroll": {
-    "revision_id": "b72c60cf-6c5d-42ab-acdb-71a12d67d2eb",
-    "last_modified_at": "2026-08-30T08:14:15.055963Z",
+    "revision_id": "d4bfcebf-a57c-446e-92a1-eb2a069bcee8",
+    "last_modified_at": "2026-10-17T23:06:32.196722Z",
     "last_modified_by": "game-board"
   },
   "campaigns": [
@@ -32,7 +32,8 @@
           "purchases": [],
           "natural_one_losses": []
         },
-        "battles": {}
+        "battles": {},
+        "character_ids": []
       },
       "events": [
         {
@@ -64,14 +65,28 @@
       "created_at": "2026-08-11T08:19:52.057462Z",
       "name": "Charms Check",
       "game_world_start_date": "2005-08-27",
-      "last_updated": "2026-08-11T12:09:10.635088Z",
+      "last_updated": "2026-10-17T23:06:32.196243Z",
       "game_state": {
         "initialized": true,
         "current_game_datetime": "2005-08-27T08:00",
         "loaded_map_ids": [
-          "4fc2ff78-e528-4ebd-b4db-9b34fc803622"
+          "4fc2ff78-e528-4ebd-b4db-9b34fc803622",
+          "e3b02941-1bac-4b0f-a91d-095d27989325"
         ],
-        "active_map_id": "4fc2ff78-e528-4ebd-b4db-9b34fc803622",
+        "active_map_id": "e3b02941-1bac-4b0f-a91d-095d27989325",
+        "player_active_map_ids": {
+          "6d870594-cf5f-47c0-b70f-ca967c125f43": "e3b02941-1bac-4b0f-a91d-095d27989325"
+        },
+        "character_ids": [
+          "6882e7fb-529a-4b3e-8929-a795b91b816d",
+          "aa3c9a68-18be-4b61-9b8a-1b58401b143f",
+          "1ca0966a-5319-425a-a7f7-f7978c7dd2ca",
+          "b10bf54d-611e-44f8-93c8-cfc273f0af7c",
+          "69ff7e0b-bd40-4bfb-9bd1-f071fa890178",
+          "2d963566-782d-4890-9659-eef27a12a5d0",
+          "abec4d85-eba4-4640-a7be-810899947e73",
+          "f81c02a3-8907-4162-91fa-8dd8d342030c"
+        ],
         "maps": {
           "4fc2ff78-e528-4ebd-b4db-9b34fc803622": {
             "players_published": true,
@@ -153,13 +168,369 @@
                   }
                 ],
                 "created_at": "2026-08-11T07:39:53.499583Z",
-                "last_updated": "2026-08-11T08:42:17.930553Z"
+                "last_updated": "2026-08-11T08:42:17.930553Z",
+                "name": ""
               }
             ],
             "obscuration_preview_opacity": 0.35,
             "obscuration_preview_color": "#ffa6a6",
             "token_scale": 0.0055,
-            "start_point": null
+            "start_point": null,
+            "headmaster_camera": {
+              "zoom": 1.0,
+              "center_x": 0.5,
+              "center_y": 0.5
+            },
+            "player_cameras": {},
+            "zoom_profile": {
+              "default_zoom": 1.0,
+              "default_center_x": 0.5,
+              "default_center_y": 0.5,
+              "default_nameplate_size": 10,
+              "tiers": {}
+            }
+          },
+          "a5a85bd9-e989-4069-936c-8acda64f0fdd": {
+            "players_published": false,
+            "obscurations": [],
+            "obscuration_preview_opacity": 0.35,
+            "obscuration_preview_color": "#ff0000",
+            "token_scale": 0.0055,
+            "start_point": null,
+            "headmaster_camera": {
+              "zoom": 1.0,
+              "center_x": 0.5,
+              "center_y": 0.5
+            },
+            "player_cameras": {},
+            "zoom_profile": {
+              "default_zoom": 1.0,
+              "default_center_x": 0.5,
+              "default_center_y": 0.5,
+              "default_nameplate_size": 10,
+              "tiers": {}
+            }
+          },
+          "868377af-78a5-4dfa-8292-94d6ebf9212c": {
+            "players_published": false,
+            "obscurations": [],
+            "obscuration_preview_opacity": 0.35,
+            "obscuration_preview_color": "#ff0000",
+            "token_scale": 0.0055,
+            "start_point": null,
+            "headmaster_camera": {
+              "zoom": 1.0,
+              "center_x": 0.5,
+              "center_y": 0.5
+            },
+            "player_cameras": {},
+            "zoom_profile": {
+              "default_zoom": 1.0,
+              "default_center_x": 0.5,
+              "default_center_y": 0.5,
+              "default_nameplate_size": 10,
+              "tiers": {}
+            }
+          },
+          "451c5d50-1891-423e-b701-5a877eafdbbe": {
+            "players_published": false,
+            "obscurations": [],
+            "obscuration_preview_opacity": 0.35,
+            "obscuration_preview_color": "#ff0000",
+            "token_scale": 0.0055,
+            "start_point": null,
+            "headmaster_camera": {
+              "zoom": 1.0,
+              "center_x": 0.5,
+              "center_y": 0.5
+            },
+            "player_cameras": {},
+            "zoom_profile": {
+              "default_zoom": 1.0,
+              "default_center_x": 0.5,
+              "default_center_y": 0.5,
+              "default_nameplate_size": 10,
+              "tiers": {}
+            }
+          },
+          "37c81ab5-2064-4339-a186-b05c7bd30674": {
+            "players_published": false,
+            "obscurations": [],
+            "obscuration_preview_opacity": 0.35,
+            "obscuration_preview_color": "#ff0000",
+            "token_scale": 0.0055,
+            "start_point": null,
+            "headmaster_camera": {
+              "zoom": 1.0,
+              "center_x": 0.5,
+              "center_y": 0.5
+            },
+            "player_cameras": {},
+            "zoom_profile": {
+              "default_zoom": 1.0,
+              "default_center_x": 0.5,
+              "default_center_y": 0.5,
+              "default_nameplate_size": 10,
+              "tiers": {}
+            }
+          },
+          "90483409-8e38-4338-8f3d-969298e8b10a": {
+            "players_published": false,
+            "obscurations": [],
+            "obscuration_preview_opacity": 0.35,
+            "obscuration_preview_color": "#ff0000",
+            "token_scale": 0.0055,
+            "start_point": null,
+            "headmaster_camera": {
+              "zoom": 1.0,
+              "center_x": 0.5,
+              "center_y": 0.5
+            },
+            "player_cameras": {},
+            "zoom_profile": {
+              "default_zoom": 1.0,
+              "default_center_x": 0.5,
+              "default_center_y": 0.5,
+              "default_nameplate_size": 10,
+              "tiers": {}
+            }
+          },
+          "aeda191f-1df4-4353-93f1-f48c93c552dc": {
+            "players_published": false,
+            "obscurations": [],
+            "obscuration_preview_opacity": 0.35,
+            "obscuration_preview_color": "#ff0000",
+            "token_scale": 0.0055,
+            "start_point": null,
+            "headmaster_camera": {
+              "zoom": 1.0,
+              "center_x": 0.5,
+              "center_y": 0.5
+            },
+            "player_cameras": {},
+            "zoom_profile": {
+              "default_zoom": 1.0,
+              "default_center_x": 0.5,
+              "default_center_y": 0.5,
+              "default_nameplate_size": 10,
+              "tiers": {}
+            }
+          },
+          "a9210e27-31cf-4732-82eb-c50649c8e5fc": {
+            "players_published": false,
+            "obscurations": [],
+            "obscuration_preview_opacity": 0.35,
+            "obscuration_preview_color": "#ff0000",
+            "token_scale": 0.0055,
+            "start_point": null,
+            "headmaster_camera": {
+              "zoom": 1.0,
+              "center_x": 0.5,
+              "center_y": 0.5
+            },
+            "player_cameras": {},
+            "zoom_profile": {
+              "default_zoom": 1.0,
+              "default_center_x": 0.5,
+              "default_center_y": 0.5,
+              "default_nameplate_size": 10,
+              "tiers": {}
+            }
+          },
+          "550fda54-78f5-487e-955f-01255567fbb8": {
+            "players_published": false,
+            "obscurations": [],
+            "obscuration_preview_opacity": 0.35,
+            "obscuration_preview_color": "#ff0000",
+            "token_scale": 0.0055,
+            "start_point": null,
+            "headmaster_camera": {
+              "zoom": 1.0,
+              "center_x": 0.5,
+              "center_y": 0.5
+            },
+            "player_cameras": {},
+            "zoom_profile": {
+              "default_zoom": 1.0,
+              "default_center_x": 0.5,
+              "default_center_y": 0.5,
+              "default_nameplate_size": 10,
+              "tiers": {}
+            }
+          },
+          "bdeaf5d3-ac23-4794-8031-5b6339a04e88": {
+            "players_published": false,
+            "obscurations": [],
+            "obscuration_preview_opacity": 0.35,
+            "obscuration_preview_color": "#ff0000",
+            "token_scale": 0.0055,
+            "start_point": null,
+            "headmaster_camera": {
+              "zoom": 1.0,
+              "center_x": 0.5,
+              "center_y": 0.5
+            },
+            "player_cameras": {},
+            "zoom_profile": {
+              "default_zoom": 1.0,
+              "default_center_x": 0.5,
+              "default_center_y": 0.5,
+              "default_nameplate_size": 10,
+              "tiers": {}
+            }
+          },
+          "b249d6fa-f2c8-4ec2-a754-1f959fb80532": {
+            "players_published": false,
+            "obscurations": [],
+            "obscuration_preview_opacity": 0.35,
+            "obscuration_preview_color": "#ff0000",
+            "token_scale": 0.0055,
+            "start_point": null,
+            "headmaster_camera": {
+              "zoom": 1.0,
+              "center_x": 0.5,
+              "center_y": 0.5
+            },
+            "player_cameras": {},
+            "zoom_profile": {
+              "default_zoom": 1.0,
+              "default_center_x": 0.5,
+              "default_center_y": 0.5,
+              "default_nameplate_size": 10,
+              "tiers": {}
+            }
+          },
+          "8ad4cf42-dc96-4ffa-bd0e-d8cb0588fdf4": {
+            "players_published": false,
+            "obscurations": [],
+            "obscuration_preview_opacity": 0.35,
+            "obscuration_preview_color": "#ff0000",
+            "token_scale": 0.0055,
+            "start_point": null,
+            "headmaster_camera": {
+              "zoom": 1.0,
+              "center_x": 0.5,
+              "center_y": 0.5
+            },
+            "player_cameras": {},
+            "zoom_profile": {
+              "default_zoom": 1.0,
+              "default_center_x": 0.5,
+              "default_center_y": 0.5,
+              "default_nameplate_size": 10,
+              "tiers": {}
+            }
+          },
+          "8d248cd4-cf2c-4dda-b266-e41c037eb4d4": {
+            "players_published": false,
+            "obscurations": [],
+            "obscuration_preview_opacity": 0.35,
+            "obscuration_preview_color": "#ff0000",
+            "token_scale": 0.0055,
+            "start_point": null,
+            "headmaster_camera": {
+              "zoom": 1.0,
+              "center_x": 0.5,
+              "center_y": 0.5
+            },
+            "player_cameras": {},
+            "zoom_profile": {
+              "default_zoom": 1.0,
+              "default_center_x": 0.5,
+              "default_center_y": 0.5,
+              "default_nameplate_size": 10,
+              "tiers": {}
+            }
+          },
+          "feea654a-6d4e-40a4-88ba-205388bb20ed": {
+            "players_published": false,
+            "obscurations": [],
+            "obscuration_preview_opacity": 0.35,
+            "obscuration_preview_color": "#ff0000",
+            "token_scale": 0.0055,
+            "start_point": null,
+            "headmaster_camera": {
+              "zoom": 1.0,
+              "center_x": 0.5,
+              "center_y": 0.5
+            },
+            "player_cameras": {},
+            "zoom_profile": {
+              "default_zoom": 1.0,
+              "default_center_x": 0.5,
+              "default_center_y": 0.5,
+              "default_nameplate_size": 10,
+              "tiers": {}
+            }
+          },
+          "e3b02941-1bac-4b0f-a91d-095d27989325": {
+            "players_published": false,
+            "obscurations": [],
+            "obscuration_preview_opacity": 0.35,
+            "obscuration_preview_color": "#ff0000",
+            "token_scale": 0.0055,
+            "start_point": null,
+            "headmaster_camera": {
+              "zoom": 1.0,
+              "center_x": 0.5,
+              "center_y": 0.5
+            },
+            "player_cameras": {
+              "6d870594-cf5f-47c0-b70f-ca967c125f43": {
+                "zoom": 1.0,
+                "center_x": 0.5,
+                "center_y": 0.5
+              }
+            },
+            "zoom_profile": {
+              "default_zoom": 1.0,
+              "default_center_x": 0.5,
+              "default_center_y": 0.5,
+              "default_nameplate_size": 10,
+              "tiers": {}
+            }
+          },
+          "cbb468df-c46b-44db-8a1a-e698cca7fbf6": {
+            "players_published": false,
+            "obscurations": [],
+            "obscuration_preview_opacity": 0.35,
+            "obscuration_preview_color": "#ff0000",
+            "token_scale": 0.0055,
+            "start_point": null,
+            "headmaster_camera": {
+              "zoom": 1.0,
+              "center_x": 0.5,
+              "center_y": 0.5
+            },
+            "player_cameras": {},
+            "zoom_profile": {
+              "default_zoom": 1.0,
+              "default_center_x": 0.5,
+              "default_center_y": 0.5,
+              "default_nameplate_size": 10,
+              "tiers": {}
+            }
+          },
+          "e809e2dc-d5c5-4a6d-84eb-e1cb3d80037b": {
+            "players_published": false,
+            "obscurations": [],
+            "obscuration_preview_opacity": 0.35,
+            "obscuration_preview_color": "#ff0000",
+            "token_scale": 0.0055,
+            "start_point": null,
+            "headmaster_camera": {
+              "zoom": 1.0,
+              "center_x": 0.5,
+              "center_y": 0.5
+            },
+            "player_cameras": {},
+            "zoom_profile": {
+              "default_zoom": 1.0,
+              "default_center_x": 0.5,
+              "default_center_y": 0.5,
+              "default_nameplate_size": 10,
+              "tiers": {}
+            }
           }
         },
         "people": {
@@ -168,14 +539,40 @@
               "location_id": "de9bca8f-8fea-4db4-a040-131af6804693",
               "floor_id": "",
               "map_id": "4fc2ff78-e528-4ebd-b4db-9b34fc803622",
-              "x": 0.9872824412370469,
-              "y": 0.3146926369595356
-            },
-            "name_revealed": true
+              "x": 0.9911256067961165,
+              "y": 0.14441747572815533
+            }
+          },
+          "aa3c9a68-18be-4b61-9b8a-1b58401b143f": {
+            "placement": {
+              "location_id": "073329c7-a04f-4e4a-b2a9-f291b3ef4e04",
+              "floor_id": "2eec0737-b9c2-4666-aa18-cb5d7fc1d3fb",
+              "map_id": "e3b02941-1bac-4b0f-a91d-095d27989325",
+              "x": 0.5799034552845529,
+              "y": 0.7439024390243902
+            }
           }
         },
-        "groups": []
-      }
+        "creatures": {},
+        "creature_counters": {},
+        "groups": [],
+        "region_interactions": {
+          "attempts": [],
+          "secret_unlocks": [],
+          "revealed_secrets": [],
+          "source_depletion": {},
+          "shop_window_sales": {},
+          "purchases": [],
+          "natural_one_losses": []
+        },
+        "battles": {}
+      },
+      "history_policy": "keep",
+      "events": [],
+      "requests": [],
+      "characters": [],
+      "shared_tags": [],
+      "tag_assignments": []
     }
   ]
 }

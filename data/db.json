@@ -2,7 +2,7 @@
   "_database": {
     "schema_version": 9,
     "database_version": "26.7.22.001",
-    "last_saved": "2026-08-22T00:10:57.213908+00:00"
+    "last_saved": "2026-10-31T00:26:20.213735+00:00"
   },
   "wand_woods": [
     {
@@ -29488,7 +29488,25 @@
           "high": null
         }
       },
-      "attacks": [],
+      "attacks": [
+        {
+          "record_id": "140c39d7-074b-4b13-b863-ec22e77c7cea",
+          "name": "Terrify",
+          "roll": {
+            "low": 7,
+            "high": 20
+          },
+          "description": "1M wound immediately + 1L wound over time every hour until healed",
+          "immediate_damage": [
+            {
+              "type": "{undefined}",
+              "severity": "Light",
+              "amount": 1
+            }
+          ],
+          "damage_over_time": []
+        }
+      ],
       "abilities": [],
       "parts": [
         {
@@ -29501,7 +29519,12 @@
           "yield": {
             "low": 1,
             "high": 1
-          }
+          },
+          "image_asset": "",
+          "base_knuts": 0,
+          "tags": [],
+          "actions": [],
+          "activation_mode": "passive"
         },
         {
           "name": "Ectoplasm",
@@ -29513,13 +29536,18 @@
           "yield": {
             "low": 1,
             "high": 1
-          }
+          },
+          "image_asset": "",
+          "base_knuts": 0,
+          "tags": [],
+          "actions": [],
+          "activation_mode": "passive"
         }
       ],
       "tags": [],
       "description": "Ghosts are spirits. They sometimes haunt and sometimes just inhabit spaces. Their demeanor is dependent on their personality when alive. They can be social creatures and will fully die when they resolve their unfinished business. Many ghosts never do. They cause 1M wound of scary presence damage.",
       "dbnotes": "",
-      "last_updated": "2026-01-07T14:31:54",
+      "last_updated": "2026-10-30T23:37:34.465505+00:00",
       "in_situ_instinct": {
         "stance": [],
         "intention": []
@@ -29712,7 +29740,30 @@
           "high": null
         }
       },
-      "attacks": [],
+      "attacks": [
+        {
+          "record_id": "57153c96-7cbe-40e1-9ef7-1877eec8542d",
+          "name": "Envelop",
+          "roll": {
+            "low": 26,
+            "high": 40
+          },
+          "description": "The lethiford surrounds the human with their entire essence slowly leaching their soul out of them. No immediate damage but 1L wound per minute until severed.",
+          "immediate_damage": [],
+          "damage_over_time": []
+        },
+        {
+          "record_id": "fb9d107b-2cdb-4cd4-a264-b9ca7b97b76e",
+          "name": "Terrify",
+          "roll": {
+            "low": 10,
+            "high": 20
+          },
+          "description": "Scares you. 1H wound immediately with 2L wounds over time ever hour until healed",
+          "immediate_damage": [],
+          "damage_over_time": []
+        }
+      ],
       "abilities": [],
       "parts": [
         {
@@ -29725,13 +29776,18 @@
           "yield": {
             "low": 1,
             "high": 1
-          }
+          },
+          "image_asset": "",
+          "base_knuts": 0,
+          "tags": [],
+          "actions": [],
+          "activation_mode": "passive"
         }
       ],
       "tags": [],
       "description": "Lethifold are dark spirits that devour whole humans. They are exceptionally dangerous.",
       "dbnotes": "",
-      "last_updated": "2025-05-23T16:28:29",
+      "last_updated": "2026-10-31T00:26:20.213678+00:00",
       "in_situ_instinct": {
         "stance": [],
         "intention": []
@@ -96441,8 +96497,8 @@
     }
   ],
   "_headmasters_scroll": {
-    "revision_id": "a4561610-7367-4303-8cc8-5f7f39ff2590",
-    "last_modified_at": "2026-08-22T00:10:57.264662Z",
+    "revision_id": "23a4987b-85d0-4b32-8781-aacec031ca69",
+    "last_modified_at": "2026-10-31T00:26:20.242412Z",
     "last_modified_by": "dbm"
   },
   "tag_catalog": [
